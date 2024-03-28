@@ -36,10 +36,11 @@ class PVA_Reader:
         self.pva_cache = {}
 
     def callbackSuccess(self, pv):
-        print('success' + pv)
+        self.pva_object = pv
+        #print(self.pva_object)
 
     def callbackError(self, code):
-        print('error' + code)
+        print('error %s' % code)
 
     def asyncGet(self):
         self.channel.asyncGet(self.callbackSuccess, self.callbackError)
@@ -47,8 +48,8 @@ class PVA_Reader:
     # def get(self):
     #     return self.channel.get()     
 
-    def readPvObject(self):
-        self.pva_object = self.channel.get()
+    # def readPvObject(self):
+    #     self.pva_object = self.asyncGet()
     
 
     def parsePvaNdattributes(self):
@@ -69,14 +70,17 @@ class PVA_Reader:
 
 
     def pvaToImage(self):
-        if "dimension" in self.pva_object:
-            shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-            image = np.array(self.pva_object["value"][0]["byteValue"])
-            image = np.reshape(image, shape)
+        if self.pva_object is not None:
+            if "dimension" in self.pva_object:
+                shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
+                image = np.array(self.pva_object["value"][0]["byteValue"])
+                image = np.reshape(image, shape)
+            else:
+                image = None
+            
+            self.image = image
         else:
-            image = None
-        
-        self.image = image
+            print('pvaObject is none')
 
 
     def startChannelMonitor(self):
@@ -112,7 +116,7 @@ class ImageWindow(QMainWindow):
         time.sleep(0.1)
         print(f"{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}")
 
-        self.reader.readPvObject()
+        self.reader.asyncGet()
         self.reader.stopChannelMonitor()
 
         self.reader.parsePvaNdattributes()
