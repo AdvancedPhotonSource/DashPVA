@@ -29,11 +29,12 @@ class PVA_Reader:
 
         """variables that will store pva data"""
         self.pva_object = None
-        self.data = {}
         self.image = None
         self.attributes = {}
         self.timestamp = None
         self.pva_cache = {}
+        self.__last_array_id = None
+        self.frames_missed = 0
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
@@ -45,11 +46,21 @@ class PVA_Reader:
     def asyncGet(self):
         self.channel.asyncGet(self.callbackSuccess, self.callbackError)
     
-    # def get(self):
-    #     return self.channel.get()     
+    def get(self):
+        return self.channel.get()     
 
     # def readPvObject(self):
     #     self.pva_object = self.asyncGet()
+
+    def calcFramesMissed(self, data):
+        if data is not None:
+            current_array_id = data['uniqueId']
+            if self.__last_array_id is not None: #and zoomUpdate == False:
+                self.frames_missed += current_array_id - self.__last_array_id - 1
+            self.__last_array_id = current_array_id
+
+    def getFramesMissed(self):
+        return self.frames_missed
     
 
     def parsePvaNdattributes(self):
@@ -95,7 +106,7 @@ class PVA_Reader:
     def getPvaImage(self):
         return self.image
     
-    def getPvaAttributes(self):
+    def getAttributesDict(self):
         return self.attributes
     
 class ImageWindow(QMainWindow):
@@ -120,7 +131,10 @@ class ImageWindow(QMainWindow):
         self.reader.stopChannelMonitor()
 
         self.reader.parsePvaNdattributes()
-        print(self.reader.getPvaAttributes())
+        print('PV UniqueID: %s' % self.reader.getAttributesDict().get('uniqueId'))
+
+        self.reader.calcFramesMissed(self.reader.pva_object)
+        print('Frames Missed: %s' % self.reader.getFramesMissed())
 
         self.reader.pvaToImage()
         image = self.reader.getPvaImage()
@@ -138,7 +152,7 @@ class ImageWindow(QMainWindow):
                 height, width = image.shape
                 qImg = QImage(image.data, width, height, QImage.Format_Grayscale8)
             else:  # RGB image
-                height, width, channel = image.shape
+                height, width = image.shape
                 bytesPerLine = 3 * width
                 qImg = QImage(image.data, width, height, bytesPerLine, QImage.Format_RGB888)
 
@@ -156,7 +170,7 @@ if __name__ == "__main__":
     # Setup QTimer to periodically update the image
     timer = QTimer()
     timer.timeout.connect(window.update_image)
-    timer.start(500)  # Timer interval in milliseconds (500 ms = 0.5 seconds)
+    timer.start(100)  # Timer interval in milliseconds (500 ms = 0.5 seconds)
 
     sys.exit(app.exec_())
  
