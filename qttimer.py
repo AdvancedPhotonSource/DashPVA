@@ -19,13 +19,12 @@ from PyQt5.QtCore import QTimer
 
 class PVA_Reader:
 
-    def __init__(self, provider=pva.PVA, pva_name="dp-ADSim:Pva1:Image", timer=None):
+    def __init__(self, provider=pva.PVA, pva_name="dp-ADSim:Pva1:Image"):
         
         """variables needed for monitoring a connection"""
         self.provider = provider
         self.pva_name = pva_name
         self.channel = pva.Channel(pva_name, provider)
-        #self.timer = timer
 
         """variables that will store pva data"""
         self.pva_object = None
@@ -120,7 +119,12 @@ class ImageWindow(QMainWindow):
         self.reader = PVA_Reader(PROVIDER_TYPE, PVA_PV)
         self.update_image()
 
+        self.deltaTime = time.time()
+        self.fr = 0.5
+
         self.show()
+
+
 
     def update_image(self):
         self.reader.startChannelMonitor()
@@ -147,16 +151,19 @@ class ImageWindow(QMainWindow):
                 f"Max: \t{image.max()}"
             )
 
-            # Convert numpy array to QImage
-            if len(image.shape) == 2:  # Grayscale image
-                height, width = image.shape
-                qImg = QImage(image.data, width, height, QImage.Format_Grayscale8)
-            else:  # RGB image
-                height, width = image.shape
-                bytesPerLine = 3 * width
-                qImg = QImage(image.data, width, height, bytesPerLine, QImage.Format_RGB888)
+            if (time.time() - self.deltaTime) >= self.fr:
+                # Convert numpy array to QImage
+                if len(image.shape) == 2:  # Grayscale image
+                    height, width = image.shape
+                    qImg = QImage(image.data, width, height, QImage.Format_Grayscale8)
+                else:  # RGB image
+                    height, width = image.shape
+                    bytesPerLine = 3 * width
+                    qImg = QImage(image.data, width, height, bytesPerLine, QImage.Format_RGB888)
 
-            self.label.setPixmap(QPixmap.fromImage(qImg))
+                self.label.setPixmap(QPixmap.fromImage(qImg))
+                self.deltaTime = time.time()
+        
               
 if __name__ == "__main__":
     
