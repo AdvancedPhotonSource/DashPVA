@@ -41,7 +41,7 @@ class PVA_Reader:
             current_array_id = data['uniqueId']
             if self.__last_array_id is not None: #and zoomUpdate == False:
                 id_diff = current_array_id - self.__last_array_id - 1
-                self.frames_missed += id_diff if id_diff > 0 else 0
+                self.frames_missed += id_diff if (id_diff > 0) else 0
             self.__last_array_id = current_array_id
 
     def getFramesMissed(self):
@@ -100,7 +100,7 @@ class PVA_Reader:
 class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
-        uic.loadUi('imageshow.ui', self)
+        uic.loadUi('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/channel_reader/imageshow.ui', self)
         self.setWindowTitle("Image Viewer")
         self.show()
         
