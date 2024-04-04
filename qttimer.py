@@ -37,6 +37,7 @@ class PVA_Reader:
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
+        self.pva_cache[self.pva_object['uniqueId']] = self.pva_object.get()
         #print(self.pva_object)
 
     def callbackError(self, code):
@@ -55,7 +56,8 @@ class PVA_Reader:
         if data is not None:
             current_array_id = data['uniqueId']
             if self.__last_array_id is not None: #and zoomUpdate == False:
-                self.frames_missed += current_array_id - self.__last_array_id - 1
+                id_diff = current_array_id - self.__last_array_id - 1
+                self.frames_missed += id_diff if (id_diff > 0) else 0
             self.__last_array_id = current_array_id
 
     def getFramesMissed(self):
@@ -124,6 +126,9 @@ class ImageWindow(QMainWindow):
 
         self.show()
 
+    def printNumFrames(self):
+        print('Number of Frames detected: %s'%len(self.reader.pva_cache.keys()))
+
 
 
     def update_image(self):
@@ -163,7 +168,8 @@ class ImageWindow(QMainWindow):
 
                 self.label.setPixmap(QPixmap.fromImage(qImg))
                 self.deltaTime = time.time()
-        
+
+     
               
 if __name__ == "__main__":
     
@@ -177,7 +183,12 @@ if __name__ == "__main__":
     # Setup QTimer to periodically update the image
     timer = QTimer()
     timer.timeout.connect(window.update_image)
-    timer.start(100)  # Timer interval in milliseconds (500 ms = 0.5 seconds)
+    timer.start(100)  # Timer interval in milliseconds (100 ms = 0.1 seconds)
+
+    countdown = QTimer()
+    countdown.singleShot(10000, timer.stop)
+
+    pr = QTimer()
+    pr.singleShot(11000, window.printNumFrames)
 
     sys.exit(app.exec_())
- 
