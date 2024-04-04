@@ -101,7 +101,7 @@ class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
         uic.loadUi('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/channel_reader/imageshow.ui', self)
-        self.setWindowTitle("Pva Viewer")
+        self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
         
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
