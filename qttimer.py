@@ -2,20 +2,11 @@ import sys
 import time
 import pvaccess as pva
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 from PyQt5.QtCore import QTimer
-
-#from pyqtgraph import QtCore #provides timer important for polling
-
-#TODO: implement polling of live data, ask Peco for assistance in setting up timer
-
-#TODO: Have polling start and stop automatically based on timer
-
-#TODO: have polling rate change with a variable
-
+import pyqtgraph as pg
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QPlainTextEdit
+from PyQt5 import uic
 
 class PVA_Reader:
 
@@ -31,39 +22,31 @@ class PVA_Reader:
         self.image = None
         self.attributes = {}
         self.timestamp = None
-        self.pva_cache = {}
+        self.pva_cache = []
         self.__last_array_id = None
         self.frames_missed = 0
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
-        self.pva_cache[self.pva_object['uniqueId']] = self.pva_object.get()
-        #print(self.pva_object)
+        self.pva_cache.append(pv)
 
     def callbackError(self, code):
         print('error %s' % code)
 
     def asyncGet(self):
         self.channel.asyncGet(self.callbackSuccess, self.callbackError)
-    
-    def get(self):
-        return self.channel.get()     
-
-    # def readPvObject(self):
-    #     self.pva_object = self.asyncGet()
 
     def calcFramesMissed(self, data):
         if data is not None:
             current_array_id = data['uniqueId']
             if self.__last_array_id is not None: #and zoomUpdate == False:
                 id_diff = current_array_id - self.__last_array_id - 1
-                self.frames_missed += id_diff if (id_diff > 0) else 0
+                self.frames_missed += id_diff if id_diff > 0 else 0
             self.__last_array_id = current_array_id
 
     def getFramesMissed(self):
         return self.frames_missed
     
-
     def parsePvaNdattributes(self):
         if self.pva_object:
             obj_dict = self.pva_object.get()
@@ -101,94 +84,97 @@ class PVA_Reader:
     def stopChannelMonitor(self):
         self.channel.stopMonitor()
 
-    def getPvaObject(self):
-        return self.pva_object
+    def getPvaObjects(self):
+        return self.pva_cache
+
+    def getLastPvaObject(self):
+        return self.pva_cache[-1]
 
     def getPvaImage(self):
         return self.image
     
     def getAttributesDict(self):
         return self.attributes
-    
+
+
 class ImageWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def __init__(self): 
+        super(ImageWindow, self).__init__()
+        uic.loadUi('imageshow.ui', self)
         self.setWindowTitle("Image Viewer")
-
-        self.label = QLabel(self)
-        self.setCentralWidget(self.label)
-
-        self.reader = PVA_Reader(PROVIDER_TYPE, PVA_PV)
-        self.update_image()
-
-        self.deltaTime = time.time()
-        self.fr = 0.5
-
         self.show()
+        
+        self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
+        self.last_unique_id = None
+        self.call_id_poll = 0
+        self.call_id_plot = 0
+        self.total_frames_received = 0
+        
+        self.start_live_view.clicked.connect(self.start_live_view_clicked)
+        self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
 
-    def printNumFrames(self):
-        print('Number of Frames detected: %s'%len(self.reader.pva_cache.keys()))
+        self.timer_poll = QTimer()
+        self.timer_poll.timeout.connect(self.async_get_and_process)
+        self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
+        
+        self.timer_plot = QTimer()
+        self.timer_plot.timeout.connect(self.update_image)
+        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+        
+        self.first_plot = True
 
 
+    def start_live_view_clicked(self):
+        self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
+        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
-    def update_image(self):
+    def stop_live_view_clicked(self):
+        self.timer_poll.stop()
+        self.timer_plot.stop()
+        
+    def async_get_and_process(self):
         self.reader.startChannelMonitor()
         time.sleep(0.1)
-        print(f"{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}")
-
+        log_text = f"\n{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}"
+        self.log_plain_text_edit.appendPlainText(log_text)
         self.reader.asyncGet()
         self.reader.stopChannelMonitor()
+        self.call_id_poll +=1 
+        self.total_frames_received += 1
+        self.log_plain_text_edit.appendPlainText(f"Call id for Poll  :  {self.call_id_poll:d}")
 
-        self.reader.parsePvaNdattributes()
-        print('PV UniqueID: %s' % self.reader.getAttributesDict().get('uniqueId'))
+    def update_image(self):
+        self.call_id_plot +=1
+        # pva_object = self.reader.pva_object 
+        pva_object = self.reader.getLastPvaObject() #caching 
+        if pva_object is not None:
+            self.reader.parsePvaNdattributes()
+            unique_id = self.reader.getAttributesDict().get("uniqueId")
+            if unique_id != self.last_unique_id:
+                self.reader.calcFramesMissed(pva_object)
+                self.last_unique_id = unique_id
 
-        self.reader.calcFramesMissed(self.reader.pva_object)
-        print('Frames Missed: %s' % self.reader.getFramesMissed())
+                self.reader.pvaToImage()
+                image = self.reader.getPvaImage()
 
-        self.reader.pvaToImage()
-        image = self.reader.getPvaImage()
-
-        if image is not None:
-            print(
-                f"Shape: \t{image.shape}\n"
-                f"DataType: \t{image.dtype}\n"
-                f"Min: \t{image.min()}\n"
-                f"Max: \t{image.max()}"
-            )
-
-            if (time.time() - self.deltaTime) >= self.fr:
-                # Convert numpy array to QImage
-                if len(image.shape) == 2:  # Grayscale image
-                    height, width = image.shape
-                    qImg = QImage(image.data, width, height, QImage.Format_Grayscale8)
-                else:  # RGB image
-                    height, width = image.shape
-                    bytesPerLine = 3 * width
-                    qImg = QImage(image.data, width, height, bytesPerLine, QImage.Format_RGB888)
-
-                self.label.setPixmap(QPixmap.fromImage(qImg))
-                self.deltaTime = time.time()
-
-     
+                if image is not None:
+                    
+                    if len(image.shape) == 2:
+                        if self.first_plot:
+                            min_level, max_level = np.min(image), np.max(image)
+                            self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
+                            self.first_plot = False
+                        else:
+                            self.image_view.setImage(image, autoRange=False, autoLevels=False)
+                        self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
+                        self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
+                        self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
+        
               
 if __name__ == "__main__":
     
     app = QApplication(sys.argv)
 
-    PVA_PV = "dp-ADSim:Pva1:Image"  # Name of the detector providing the images
-    PROVIDER_TYPE = pva.PVA  # Protocol type provided
-
     window = ImageWindow()
-
-    # Setup QTimer to periodically update the image
-    timer = QTimer()
-    timer.timeout.connect(window.update_image)
-    timer.start(100)  # Timer interval in milliseconds (100 ms = 0.1 seconds)
-
-    countdown = QTimer()
-    countdown.singleShot(10000, timer.stop)
-
-    pr = QTimer()
-    pr.singleShot(11000, window.printNumFrames)
 
     sys.exit(app.exec_())
