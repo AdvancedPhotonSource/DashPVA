@@ -103,8 +103,9 @@ class ImageWindow(QMainWindow):
         uic.loadUi('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/channel_reader/imageshow.ui', self)
         self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
-        
+
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
+        self.reader.startChannelMonitor() #start monitor once window is active to to reduce timeouts
         self.last_unique_id = None
         self.call_id_poll = 0
         self.call_id_plot = 0
@@ -133,12 +134,12 @@ class ImageWindow(QMainWindow):
         self.timer_plot.stop()
         
     def async_get_and_process(self):
-        self.reader.startChannelMonitor()
-        time.sleep(0.1)
+        #monitor start no longer needed here as it is started on click and on when run
+        time.sleep(0.08)#aneeds adjusting to see what is min value possible
         log_text = f"\n{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}"
         self.log_plain_text_edit.appendPlainText(log_text)
         self.reader.asyncGet()
-        self.reader.stopChannelMonitor()
+        #monitor stop not needed as it is only overhead and should be stopped when button is pressed
         self.call_id_poll +=1 
         self.total_frames_received += 1
         self.log_plain_text_edit.appendPlainText(f"Call id for Poll  :  {self.call_id_poll:d}")
