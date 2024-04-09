@@ -106,7 +106,7 @@ class ImageWindow(QMainWindow):
 
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active to to reduce timeouts
-        self.last_unique_id = None
+        #self.last_unique_id = None, not needed as calc frames gets the last id from reader
         self.call_id_poll = 0
         self.call_id_plot = 0
         self.total_frames_received = 0
@@ -134,43 +134,40 @@ class ImageWindow(QMainWindow):
         self.timer_plot.stop()
         
     def async_get_and_process(self):
-        #monitor start no longer needed here as it is started on click and on when run
-        time.sleep(0.08)#aneeds adjusting to see what is min value possible
+        #monitor start no longer needed here as it is started on click and on when initially run
+        time.sleep(0.05)#needs adjusting to see what is min value possible
         log_text = f"\n{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}"
         self.log_plain_text_edit.appendPlainText(log_text)
         self.reader.asyncGet()
+     
+        #calc missed frames with the polling rather than the plotting
+        self.reader.calcFramesMissed(self.reader.getLastPvaObject())
+
         #monitor stop not needed as it is only overhead and should be stopped when button is pressed
         self.call_id_poll +=1 
         self.total_frames_received += 1
         self.log_plain_text_edit.appendPlainText(f"Call id for Poll  :  {self.call_id_poll:d}")
+        self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
 
     def update_image(self):
         self.call_id_plot +=1
-        # pva_object = self.reader.pva_object 
-        pva_object = self.reader.getLastPvaObject() #caching 
-        if pva_object is not None:
-            self.reader.parsePvaNdattributes()
-            unique_id = self.reader.getAttributesDict().get("uniqueId")
-            if unique_id != self.last_unique_id:
-                self.reader.calcFramesMissed(pva_object)
-                self.last_unique_id = unique_id
 
-                self.reader.pvaToImage()
-                image = self.reader.getPvaImage()
+        self.reader.pvaToImage()
+        image = self.reader.getPvaImage()
 
-                if image is not None:
-                    
-                    if len(image.shape) == 2:
-                        if self.first_plot:
-                            min_level, max_level = np.min(image), np.max(image)
-                            self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
-                            self.first_plot = False
-                        else:
-                            self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                        self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
-                        self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
-                        self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
-        
+        if image is not None:
+            
+            if len(image.shape) == 2:
+                if self.first_plot:
+                    min_level, max_level = np.min(image), np.max(image)
+                    self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
+                    self.first_plot = False
+                else:
+                    self.image_view.setImage(image, autoRange=False, autoLevels=False)
+                self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
+                #self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
+                self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
+    
               
 if __name__ == "__main__":
     
