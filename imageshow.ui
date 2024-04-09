@@ -63,7 +63,7 @@
     <widget class="QPushButton" name="stop_live_view">
      <property name="geometry">
       <rect>
-       <x>840</x>
+       <x>1170</x>
        <y>570</y>
        <width>151</width>
        <height>31</height>
@@ -139,7 +139,7 @@
     <widget class="QPushButton" name="start_live_view">
      <property name="geometry">
       <rect>
-       <x>680</x>
+       <x>1010</x>
        <y>570</y>
        <width>151</width>
        <height>31</height>
@@ -210,6 +210,28 @@
      </property>
      <property name="text">
       <string>Plotting rate (Hz)</string>
+     </property>
+    </widget>
+    <widget class="QCheckBox" name="log_image">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>690</x>
+       <y>580</y>
+       <width>101</width>
+       <height>21</height>
+      </rect>
+     </property>
+     <property name="tabletTracking">
+      <bool>false</bool>
+     </property>
+     <property name="text">
+      <string>logn image</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
      </property>
     </widget>
    </widget>

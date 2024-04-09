@@ -68,7 +68,8 @@ class PVA_Reader:
         if self.pva_object is not None:
             if "dimension" in self.pva_object:
                 shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                image = np.array(self.pva_object["value"][0]["byteValue"])
+                #image = np.array(self.pva_object["value"][0]["byteValue"]) #int8
+                image = np.array(self.pva_object["value"][0]["uintValue"]) #uint32
                 image = np.reshape(image, shape)
             else:
                 image = None
@@ -113,6 +114,7 @@ class ImageWindow(QMainWindow):
         
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.log_image.clicked.connect(self.update_image)
 
         self.timer_poll = QTimer()
         self.timer_poll.timeout.connect(self.async_get_and_process)
@@ -160,12 +162,15 @@ class ImageWindow(QMainWindow):
             if len(image.shape) == 2:
                 if self.first_plot:
                     min_level, max_level = np.min(image), np.max(image)
+                    if self.log_image.isChecked() == True:
+                        image = np.log(image + 1)
+                        min_level = np.log(min_level + 1)
+                        max_level = np.log(max_level + 1)
                     self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
                     self.first_plot = False
                 else:
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
                 self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
-                #self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
                 self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
     
               
