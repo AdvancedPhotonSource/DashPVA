@@ -114,6 +114,7 @@ class ImageWindow(QMainWindow):
         
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
 
         self.timer_poll = QTimer()
@@ -126,6 +127,8 @@ class ImageWindow(QMainWindow):
         
         self.first_plot = True
 
+    def reset_first_plot(self):
+        self.first_plot = True
 
     def start_live_view_clicked(self):
         self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
@@ -160,18 +163,18 @@ class ImageWindow(QMainWindow):
         if image is not None:
             
             if len(image.shape) == 2:
-                if self.first_plot:
-                    min_level, max_level = np.min(image), np.max(image)
-                    if self.log_image.isChecked() == True:
+                min_level, max_level = np.min(image), np.max(image)
+                if self.log_image.isChecked():
                         image = np.log(image + 1)
                         min_level = np.log(min_level + 1)
                         max_level = np.log(max_level + 1)
+                if self.first_plot:
                     self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
                     self.first_plot = False
                 else:
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
-                self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
+                    self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
+                    self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
     
               
 if __name__ == "__main__":
