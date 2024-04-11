@@ -101,7 +101,7 @@ class PVA_Reader:
 class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
-        uic.loadUi('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/channel_reader/imageshow.ui', self)
+        uic.loadUi('imageshow.ui', self)
         self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
 
@@ -140,7 +140,7 @@ class ImageWindow(QMainWindow):
         
     def async_get_and_process(self):
         #monitor start no longer needed here as it is started on click and on when initially run
-        time.sleep(0.05)#needs adjusting to see what is min value possible
+        # time.sleep(0.05)#needs adjusting to see what is min value possible
         log_text = f"\n{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}"
         self.log_plain_text_edit.appendPlainText(log_text)
         self.reader.asyncGet()
