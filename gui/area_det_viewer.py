@@ -28,7 +28,11 @@ class PVA_Reader:
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
-        self.pva_cache.append(pv)
+        if len(self.pva_cache) < 1000 : 
+            self.pva_cache.append(pv)
+        else:
+            self.pva_cache = self.pva_cache[1:]
+            self.pva_cache.append(pv)
 
     def callbackError(self, code):
         print('error %s' % code)
