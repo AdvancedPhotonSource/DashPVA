@@ -25,22 +25,33 @@ class PVA_Reader:
         self.pva_cache = []
         self.__last_array_id = None
         self.frames_missed = 0
+        self.id = 0
+        self.frames_received = 0
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
         if len(self.pva_cache) < 1000 : 
             self.pva_cache.append(pv)
+            self.id +=1
+            self.frames_received += 1
+            self.calcFramesMissed()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv)
+            self.id +=1
+            self.frames_received += 1
+            self.calcFramesMissed()
+
 
     def callbackError(self, code):
+        self.id += 1
         print('error %s' % code)
 
-    def asyncGet(self):
-        self.channel.asyncGet(self.callbackSuccess, self.callbackError)
+    # def asyncGet(self):
+    #     self.channel.asyncGet(self.callbackSuccess, self.callbackError)
 
-    def calcFramesMissed(self, data):
+    def calcFramesMissed(self):
+        data = self.pva_cache[-1]
         if data is not None:
             current_array_id = data['uniqueId']
             if self.__last_array_id is not None: #and zoomUpdate == False:
@@ -83,7 +94,8 @@ class PVA_Reader:
             print('pvaObject is none')
 
 
-    def startChannelMonitor(self):
+    def startChannelMonitor(self, ):
+        self.channel.subscribe('callback success', self.callbackSuccess)
         self.channel.startMonitor()
 
     def stopChannelMonitor(self):
@@ -105,16 +117,13 @@ class PVA_Reader:
 class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
-        uic.loadUi('imageshow.ui', self)
+        uic.loadUi('gui/imageshow.ui', self)
         self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
 
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
-        self.reader.startChannelMonitor() #start monitor once window is active to to reduce timeouts
-        #self.last_unique_id = None, not needed as calc frames gets the last id from reader
-        self.call_id_poll = 0
+        self.reader.startChannelMonitor() #start monitor once window is active
         self.call_id_plot = 0
-        self.total_frames_received = 0
         
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
@@ -122,7 +131,7 @@ class ImageWindow(QMainWindow):
         self.log_image.clicked.connect(self.update_image)
 
         self.timer_poll = QTimer()
-        self.timer_poll.timeout.connect(self.async_get_and_process)
+        self.timer_poll.timeout.connect(self.update_labels)
         self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
         
         self.timer_plot = QTimer()
@@ -141,22 +150,24 @@ class ImageWindow(QMainWindow):
     def stop_live_view_clicked(self):
         self.timer_poll.stop()
         self.timer_plot.stop()
-        
-    def async_get_and_process(self):
-        #monitor start no longer needed here as it is started on click and on when initially run
-        # time.sleep(0.05)#needs adjusting to see what is min value possible
-        log_text = f"\n{self.reader.provider} Channel Name = {self.reader.channel.getName()} Channel is connected = {self.reader.channel.isConnected()}"
-        self.log_plain_text_edit.appendPlainText(log_text)
-        self.reader.asyncGet()
-     
-        #calc missed frames with the polling rather than the plotting
-        self.reader.calcFramesMissed(self.reader.getLastPvaObject())
 
-        #monitor stop not needed as it is only overhead and should be stopped when button is pressed
-        self.call_id_poll +=1 
-        self.total_frames_received += 1
-        self.log_plain_text_edit.appendPlainText(f"Call id for Poll  :  {self.call_id_poll:d}")
-        self.log_plain_text_edit.appendPlainText(f"Total Frames Missed  :  {self.reader.frames_missed:d}")
+    
+    #changed this to update labels as most processing will be done in the monitor call    
+    def update_labels(self):
+        #monitor start no longer needed here as it is started on click and on when initially run
+        provider_name = f"{self.reader.provider}"
+        channel_name = f"{self.reader.channel.getName()}"
+        is_connected = f"Connected" if self.reader.channel.isConnected() else "Disconnected"
+        self.provider_name.setText(provider_name)
+        self.name_val.setText(channel_name)
+        self.is_connected.setText(is_connected)
+        self.missed_frames.setText(f'{self.reader.frames_missed}')
+        self.frames_received.setText(f"{self.reader.frames_received:d}")
+        self.poll_call_id.setText(f"{self.reader.id:d}")
+
+        #async get no longer needed as it is now monitored
+     
+        #calc missed frames moved to processing done in reader
 
     def update_image(self):
         self.call_id_plot +=1
@@ -177,8 +188,10 @@ class ImageWindow(QMainWindow):
                     self.first_plot = False
                 else:
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                    self.log_plain_text_edit.appendPlainText(f"Total Frames Received: {self.total_frames_received:d}")
-                    self.log_plain_text_edit.appendPlainText(f"Call id for Plot  :  {self.call_id_plot:d}")
+                    self.plot_call_id.setText(f"{self.call_id_plot:d}")
+    
+        
+        
     
               
 if __name__ == "__main__":
