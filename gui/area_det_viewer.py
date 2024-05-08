@@ -1,11 +1,9 @@
 import sys
-import time
 import pvaccess as pva
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QPlainTextEdit
 from PyQt5 import uic
 
 class PVA_Reader:
@@ -20,35 +18,39 @@ class PVA_Reader:
         """variables that will store pva data"""
         self.pva_object = None
         self.image = None
+        self.shape = (0,0)
         self.attributes = {}
         self.timestamp = None
         self.pva_cache = []
         self.__last_array_id = None
         self.frames_missed = 0
-        self.id = 0
+        self.poll_id = 0
         self.frames_received = 0
+        self.data_type = None
 
     def callbackSuccess(self, pv):
         self.pva_object = pv
         if len(self.pva_cache) < 1000 : 
             self.pva_cache.append(pv)
-            self.id +=1
+            self.poll_id +=1
             self.frames_received += 1
+            self.parseImageDataType()
             self.calcFramesMissed()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv)
-            self.id +=1
+            self.poll_id +=1
             self.frames_received += 1
+            self.parseImageDataType()
             self.calcFramesMissed()
 
-
     def callbackError(self, code):
-        self.id += 1
+        self.poll_id += 1
         print('error %s' % code)
 
-    # def asyncGet(self):
-    #     self.channel.asyncGet(self.callbackSuccess, self.callbackError)
+    def parseImageDataType(self):
+        if self.pva_object is not None:
+            self.data_type = list(self.pva_object['value'][0].keys())[0]
 
     def calcFramesMissed(self):
         data = self.pva_cache[-1]
@@ -78,14 +80,12 @@ class PVA_Reader:
         
         self.attributes = attributes
 
-
     def pvaToImage(self):
         if self.pva_object is not None:
             if "dimension" in self.pva_object:
-                shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                #image = np.array(self.pva_object["value"][0]["byteValue"]) #int8
-                image = np.array(self.pva_object["value"][0]["uintValue"]) #uint32
-                image = np.reshape(image, shape)
+                self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
+                image = np.array(self.pva_object["value"][0][self.data_type]) #uint32
+                image = np.reshape(image, self.shape)
             else:
                 image = None
             
@@ -93,8 +93,7 @@ class PVA_Reader:
         else:
             print('pvaObject is none')
 
-
-    def startChannelMonitor(self, ):
+    def startChannelMonitor(self):
         self.channel.subscribe('callback success', self.callbackSuccess)
         self.channel.startMonitor()
 
@@ -124,7 +123,12 @@ class ImageWindow(QMainWindow):
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
         self.call_id_plot = 0
-        
+        self.min_px = 0
+        self.max_px = 0
+
+        #TODO: Find Way to make Image View take a Plot Item for axes labels to appear
+        image_vb = self.image_view.getView()
+        image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.log_image.clicked.connect(self.reset_first_plot)
@@ -132,7 +136,7 @@ class ImageWindow(QMainWindow):
 
         self.timer_poll = QTimer()
         self.timer_poll.timeout.connect(self.update_labels)
-        self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
+        self.timer_poll.start(int(1000/float(self.update_frequency.text())))
         
         self.timer_plot = QTimer()
         self.timer_plot.timeout.connect(self.update_image)
@@ -144,39 +148,47 @@ class ImageWindow(QMainWindow):
         self.first_plot = True
 
     def start_live_view_clicked(self):
-        self.timer_poll.start(int(1000/float(self.polling_frequency.text())))
+        self.timer_poll.start(int(1000/float(self.update_frequency.text())))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_live_view_clicked(self):
         self.timer_poll.stop()
         self.timer_plot.stop()
 
+            
+    #Not exactly what we want as it gets looks at each pixel without scaling
+    def update_mouse_pos(self, pos):
+        if pos is not None:
+            x, y = pos.x(), pos.y()
+            self.mouse_x_value.setText(f"{x:.2f}")
+            self.mouse_y_value.setText(f"{y:.2f}")
+
+
     
     #changed this to update labels as most processing will be done in the monitor call    
     def update_labels(self):
-        #monitor start no longer needed here as it is started on click and on when initially run
         provider_name = f"{self.reader.provider}"
-        channel_name = f"{self.reader.channel.getName()}"
-        is_connected = f"Connected" if self.reader.channel.isConnected() else "Disconnected"
+        channel_name = self.reader.channel.getName()
+        is_connected = "Connected" if self.reader.channel.isConnected() else "Disconnected"
         self.provider_name.setText(provider_name)
         self.name_val.setText(channel_name)
         self.is_connected.setText(is_connected)
-        self.missed_frames.setText(f'{self.reader.frames_missed}')
-        self.frames_received.setText(f"{self.reader.frames_received:d}")
-        self.poll_call_id.setText(f"{self.reader.id:d}")
-
-        #async get no longer needed as it is now monitored
-     
-        #calc missed frames moved to processing done in reader
+        self.missed_frames.setText(f"{self.reader.frames_missed:d}")
+        self.frames_received_val.setText(f"{self.reader.frames_received:d}")
+        self.poll_call_id.setText(f"{self.reader.poll_id:d}")
+        self.plot_call_id.setText(f"{self.call_id_plot:d}")
+        self.size_x_value.setText(f"{self.reader.shape[0]}")
+        self.size_y_value.setText(f"{self.reader.shape[1]}")
+        self.min_px_val.setText(f"{self.min_px:.2f}")
+        self.max_px_val.setText(f"{self.max_px:.2f}")
+        self.data_type_val.setText(self.reader.data_type)
 
     def update_image(self):
         self.call_id_plot +=1
-
         self.reader.pvaToImage()
         image = self.reader.getPvaImage()
 
         if image is not None:
-            
             if len(image.shape) == 2:
                 min_level, max_level = np.min(image), np.max(image)
                 if self.log_image.isChecked():
@@ -188,12 +200,12 @@ class ImageWindow(QMainWindow):
                     self.first_plot = False
                 else:
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                    self.plot_call_id.setText(f"{self.call_id_plot:d}")
-    
-        
-        
-    
-              
+            
+                self.min_px = self.image_view.quickMinMax(image)[0][0]
+                self.max_px = self.image_view.quickMinMax(image)[0][1]
+                
+
+
 if __name__ == "__main__":
     
     app = QApplication(sys.argv)
