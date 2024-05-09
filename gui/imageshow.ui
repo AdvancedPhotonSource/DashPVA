@@ -44,14 +44,14 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>19</x>
+       <x>169</x>
        <y>30</y>
-       <width>941</width>
-       <height>681</height>
+       <width>791</width>
+       <height>561</height>
       </rect>
      </property>
      <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
        <horstretch>0</horstretch>
        <verstretch>0</verstretch>
       </sizepolicy>
@@ -380,6 +380,38 @@
       </layout>
      </widget>
     </widget>
+    <widget class="QLabel" name="img_view_vertical">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>30</y>
+       <width>161</width>
+       <height>561</height>
+      </rect>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="text">
+      <string>none</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="img_view_horizonal">
+     <property name="geometry">
+      <rect>
+       <x>170</x>
+       <y>590</y>
+       <width>791</width>
+       <height>121</height>
+      </rect>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="text">
+      <string>none</string>
+     </property>
+    </widget>
    </widget>
    <widget class="QScrollArea" name="scrollArea">
     <property name="enabled">
@@ -436,7 +468,7 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>0</y>
+       <y>-320</y>
        <width>335</width>
        <height>1029</height>
       </rect>
@@ -444,10 +476,10 @@
      <widget class="QGroupBox" name="group_box_stats">
       <property name="geometry">
        <rect>
-        <x>30</x>
+        <x>20</x>
         <y>0</y>
-        <width>281</width>
-        <height>281</height>
+        <width>301</width>
+        <height>341</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -469,8 +501,8 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>261</width>
-         <height>241</height>
+         <width>281</width>
+         <height>301</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -651,30 +683,6 @@
           </property>
          </widget>
         </item>
-        <item row="6" column="1">
-         <widget class="QLineEdit" name="update_frequency">
-          <property name="minimumSize">
-           <size>
-            <width>40</width>
-            <height>22</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>140</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>2</string>
-          </property>
-         </widget>
-        </item>
         <item row="3" column="0">
          <widget class="QLabel" name="label_max_px">
           <property name="font">
@@ -745,6 +753,16 @@
           </property>
          </widget>
         </item>
+        <item row="6" column="1">
+         <widget class="QSpinBox" name="update_frequency">
+          <property name="maximum">
+           <number>999999999</number>
+          </property>
+          <property name="value">
+           <number>2</number>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </widget>
@@ -754,10 +772,10 @@
       </property>
       <property name="geometry">
        <rect>
-        <x>30</x>
-        <y>290</y>
-        <width>281</width>
-        <height>141</height>
+        <x>20</x>
+        <y>350</y>
+        <width>301</width>
+        <height>131</height>
        </rect>
       </property>
       <property name="font">
@@ -779,7 +797,7 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>261</width>
+         <width>281</width>
          <height>101</height>
         </rect>
        </property>
@@ -925,10 +943,10 @@
      <widget class="QGroupBox" name="group_box_img_info">
       <property name="geometry">
        <rect>
-        <x>30</x>
-        <y>440</y>
-        <width>281</width>
-        <height>271</height>
+        <x>20</x>
+        <y>490</y>
+        <width>301</width>
+        <height>221</height>
        </rect>
       </property>
       <property name="font">
@@ -944,8 +962,8 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>261</width>
-         <height>174</height>
+         <width>281</width>
+         <height>181</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="formLayout">
@@ -982,30 +1000,6 @@
           </property>
           <property name="text">
            <string>Plotting rate (Hz):</string>
-          </property>
-         </widget>
-        </item>
-        <item row="1" column="1">
-         <widget class="QLineEdit" name="plotting_frequency">
-          <property name="minimumSize">
-           <size>
-            <width>40</width>
-            <height>22</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>140</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>2</string>
           </property>
          </widget>
         </item>
@@ -1145,49 +1139,25 @@
           </property>
          </widget>
         </item>
+        <item row="1" column="1">
+         <widget class="QSpinBox" name="plotting_frequency">
+          <property name="maximum">
+           <number>999999999</number>
+          </property>
+          <property name="value">
+           <number>2</number>
+          </property>
+         </widget>
+        </item>
        </layout>
-      </widget>
-      <widget class="QComboBox" name="comb_box_color_scheme">
-       <property name="geometry">
-        <rect>
-         <x>10</x>
-         <y>230</y>
-         <width>260</width>
-         <height>30</height>
-        </rect>
-       </property>
-       <property name="sizeIncrement">
-        <size>
-         <width>0</width>
-         <height>0</height>
-        </size>
-       </property>
-      </widget>
-      <widget class="QLabel" name="label_color_scheme">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>210</y>
-         <width>91</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <pointsize>10</pointsize>
-        </font>
-       </property>
-       <property name="text">
-        <string>Color Scheme</string>
-       </property>
       </widget>
      </widget>
      <widget class="QGroupBox" name="group_box_roi">
       <property name="geometry">
        <rect>
-        <x>30</x>
+        <x>20</x>
         <y>720</y>
-        <width>281</width>
+        <width>301</width>
         <height>301</height>
        </rect>
       </property>
@@ -1273,5 +1243,38 @@ QPushButton::pressed {
   </customwidget>
  </customwidgets>
  <resources/>
- <connections/>
+ <connections>
+  <connection>
+   <sender>plotting_frequency</sender>
+   <signal>editingFinished()</signal>
+   <receiver>start_live_view</receiver>
+   <slot>click()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>1223</x>
+     <y>525</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>1075</x>
+     <y>770</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>update_frequency</sender>
+   <signal>valueChanged(int)</signal>
+   <receiver>start_live_view</receiver>
+   <slot>click()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>1222</x>
+     <y>209</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>1075</x>
+     <y>770</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
 </ui>

@@ -84,7 +84,7 @@ class PVA_Reader:
         if self.pva_object is not None:
             if "dimension" in self.pva_object:
                 self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                image = np.array(self.pva_object["value"][0][self.data_type]) #uint32
+                image = np.array(self.pva_object["value"][0][self.data_type])
                 image = np.reshape(image, self.shape)
             else:
                 image = None
@@ -126,9 +126,20 @@ class ImageWindow(QMainWindow):
         self.min_px = 0
         self.max_px = 0
 
+
         #TODO: Find Way to make Image View take a Plot Item for axes labels to appear
-        image_vb = self.image_view.getView()
-        image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
+        self.image_vb = self.image_view.getView()
+
+        self.x_axis = pg.AxisItem(orientation='bottom')
+        self.y_axis = pg.AxisItem(orientation='left')
+
+        # Add axis items to the view box of the image view
+        
+        
+
+
+
+        self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.log_image.clicked.connect(self.reset_first_plot)
@@ -143,6 +154,7 @@ class ImageWindow(QMainWindow):
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
         
         self.first_plot = True
+
 
     def reset_first_plot(self):
         self.first_plot = True
@@ -159,9 +171,12 @@ class ImageWindow(QMainWindow):
     #Not exactly what we want as it gets looks at each pixel without scaling
     def update_mouse_pos(self, pos):
         if pos is not None:
-            x, y = pos.x(), pos.y()
-            self.mouse_x_value.setText(f"{x:.2f}")
-            self.mouse_y_value.setText(f"{y:.2f}")
+            img = self.image_view.getImageItem()
+            q_pointer = img.mapFromScene(pos)
+            x, y = q_pointer.x(), q_pointer.y()
+
+            self.mouse_x_value.setText(f"{x:.7f}")
+            self.mouse_y_value.setText(f"{y:.7f}")
 
 
     
