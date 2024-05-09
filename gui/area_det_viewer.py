@@ -44,9 +44,9 @@ class PVA_Reader:
             self.parseImageDataType()
             self.calcFramesMissed()
 
-    def callbackError(self, code):
-        self.poll_id += 1
-        print('error %s' % code)
+    # def callbackError(self, code):
+    #     self.poll_id += 1
+    #     print('error %s' % code)
 
     def parseImageDataType(self):
         #automatically gets incoming datatype
@@ -99,7 +99,9 @@ class PVA_Reader:
         self.channel.startMonitor()
 
     def stopChannelMonitor(self):
+        self.channel.unsubscribe('callback success')
         self.channel.stopMonitor()
+
 
     def getPvaObjects(self):
         return self.pva_cache
@@ -114,6 +116,8 @@ class PVA_Reader:
         return self.attributes
 
 
+
+
 class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
@@ -121,31 +125,31 @@ class ImageWindow(QMainWindow):
         self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
 
+        #Initializing important variables
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
         self.call_id_plot = 0
         self.min_px = 0
         self.max_px = 0
+        self.first_plot = True
 
-
-        #TODO: Find Way to make Image View take a Plot Item for axes labels to appear
+        #TODO: Find Way to make Image View take a Plot Item or add Axes items to View Box
         self.image_vb = self.image_view.getView()
 
         self.x_axis = pg.AxisItem(orientation='bottom')
         self.y_axis = pg.AxisItem(orientation='left')
+        self.image_vb.scene().addItem(self.x_axis)
+        self.image_vb.scene().addItem(self.y_axis)
 
-        # Add axis items to the view box of the image view
-        
-        
-
-
-
+        #Connecting the signals to the code that will be executed
         self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.freeze_plot.stateChanged.connect(self.freeze_plot_checked)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
 
+        #Timers used for plotting and updating labels
         self.timer_poll = QTimer()
         self.timer_poll.timeout.connect(self.update_labels)
         self.timer_poll.start(int(1000/float(self.update_frequency.text())))
@@ -153,39 +157,45 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
-        
-        self.first_plot = True
-
 
     def reset_first_plot(self):
         self.first_plot = True
 
     def start_live_view_clicked(self):
-        self.timer_poll.start(int(1000/float(self.update_frequency.text())))
-        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+        if self.reader.channel.isMonitorActive():
+            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+        else:
+            self.reader.startChannelMonitor()
 
     def stop_live_view_clicked(self):
-        self.timer_poll.stop()
         self.timer_plot.stop()
+        self.reader.stopChannelMonitor()
 
-            
-    #Not exactly what we want as it gets looks at each pixel without scaling
+    def freeze_plot_checked(self):
+        if self.freeze_plot.isChecked():
+            self.timer_poll.stop()
+            self.timer_plot.stop()
+        else:
+            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+
     def update_mouse_pos(self, pos):
         if pos is not None:
             img = self.image_view.getImageItem()
             q_pointer = img.mapFromScene(pos)
             x, y = q_pointer.x(), q_pointer.y()
-
             self.mouse_x_value.setText(f"{x:.7f}")
             self.mouse_y_value.setText(f"{y:.7f}")
+            img_data = self.reader.image
+            if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
+                self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
-
-    
     #changed this to update labels as most processing will be done in the monitor call    
     def update_labels(self):
-        provider_name = f"{self.reader.provider}"
-        channel_name = self.reader.channel.getName()
-        is_connected = "Connected" if self.reader.channel.isConnected() else "Disconnected"
+        provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else None}"
+        channel_name = self.reader.channel.getName() if self.reader.channel.isMonitorActive() else "none"
+        is_connected = "Connected" if self.reader.channel.isMonitorActive() else "Disconnected"
         self.provider_name.setText(provider_name)
         self.name_val.setText(channel_name)
         self.is_connected.setText(is_connected)
@@ -218,8 +228,9 @@ class ImageWindow(QMainWindow):
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
             
                 self.min_px = self.image_view.quickMinMax(image)[0][0]
-                self.max_px = self.image_view.quickMinMax(image)[0][1]
-                
+                self.max_px = self.image_view.quickMinMax(image)[0][1]     
+
+
 
 
 if __name__ == "__main__":

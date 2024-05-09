@@ -44,10 +44,10 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>169</x>
+       <x>9</x>
        <y>30</y>
-       <width>791</width>
-       <height>561</height>
+       <width>951</width>
+       <height>691</height>
       </rect>
      </property>
      <property name="sizePolicy">
@@ -402,7 +402,7 @@
        <x>170</x>
        <y>590</y>
        <width>791</width>
-       <height>121</height>
+       <height>131</height>
       </rect>
      </property>
      <property name="frameShape">
@@ -468,7 +468,7 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>-320</y>
+       <y>0</y>
        <width>335</width>
        <height>1029</height>
       </rect>
@@ -479,7 +479,7 @@
         <x>20</x>
         <y>0</y>
         <width>301</width>
-        <height>341</height>
+        <height>231</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -502,7 +502,7 @@
          <x>10</x>
          <y>30</y>
          <width>281</width>
-         <height>301</height>
+         <height>191</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -516,58 +516,9 @@
          <number>8</number>
         </property>
         <property name="verticalSpacing">
-         <number>15</number>
+         <number>12</number>
         </property>
         <item row="0" column="0">
-         <widget class="QLabel" name="label_call_id">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>21</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>Polling Call ID:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QLabel" name="poll_call_id">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>21</height>
-           </size>
-          </property>
-          <property name="frameShape">
-           <enum>QFrame::Box</enum>
-          </property>
-          <property name="frameShadow">
-           <enum>QFrame::Sunken</enum>
-          </property>
-          <property name="text">
-           <string>0</string>
-          </property>
-         </widget>
-        </item>
-        <item row="1" column="0">
          <widget class="QLabel" name="label_frames_received">
           <property name="minimumSize">
            <size>
@@ -591,7 +542,7 @@
           </property>
          </widget>
         </item>
-        <item row="1" column="1">
+        <item row="0" column="1">
          <widget class="QLabel" name="frames_received_val">
           <property name="minimumSize">
            <size>
@@ -616,7 +567,31 @@
           </property>
          </widget>
         </item>
-        <item row="2" column="1">
+        <item row="1" column="0">
+         <widget class="QLabel" name="label_frames_missed">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>21</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
+          <property name="text">
+           <string>Frames Missed:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
          <widget class="QLabel" name="missed_frames">
           <property name="minimumSize">
            <size>
@@ -642,30 +617,76 @@
          </widget>
         </item>
         <item row="2" column="0">
-         <widget class="QLabel" name="label_frames_missed">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>21</height>
-           </size>
-          </property>
+         <widget class="QLabel" name="label_max_px">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
            </font>
           </property>
           <property name="text">
-           <string>Frames Missed:</string>
+           <string>Max [px value]:</string>
           </property>
          </widget>
         </item>
-        <item row="6" column="0">
+        <item row="2" column="1">
+         <widget class="QLabel" name="max_px_val">
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="label_min_px">
+          <property name="font">
+           <font>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
+          <property name="text">
+           <string>Min [px value]:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLabel" name="min_px_val">
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="label_data_type">
+          <property name="text">
+           <string>Data Type:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLabel" name="data_type_val">
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>none</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="0">
          <widget class="QLabel" name="update_label">
           <property name="minimumSize">
            <size>
@@ -683,77 +704,7 @@
           </property>
          </widget>
         </item>
-        <item row="3" column="0">
-         <widget class="QLabel" name="label_max_px">
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>Max [px value]:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="4" column="0">
-         <widget class="QLabel" name="label_min_px">
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>Min [px value]:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="3" column="1">
-         <widget class="QLabel" name="max_px_val">
-          <property name="frameShape">
-           <enum>QFrame::Box</enum>
-          </property>
-          <property name="frameShadow">
-           <enum>QFrame::Sunken</enum>
-          </property>
-          <property name="text">
-           <string>0.0</string>
-          </property>
-         </widget>
-        </item>
-        <item row="4" column="1">
-         <widget class="QLabel" name="min_px_val">
-          <property name="frameShape">
-           <enum>QFrame::Box</enum>
-          </property>
-          <property name="frameShadow">
-           <enum>QFrame::Sunken</enum>
-          </property>
-          <property name="text">
-           <string>0.0</string>
-          </property>
-         </widget>
-        </item>
-        <item row="5" column="0">
-         <widget class="QLabel" name="label_data_type">
-          <property name="text">
-           <string>Data Type:</string>
-          </property>
-         </widget>
-        </item>
         <item row="5" column="1">
-         <widget class="QLabel" name="data_type_val">
-          <property name="frameShape">
-           <enum>QFrame::Box</enum>
-          </property>
-          <property name="frameShadow">
-           <enum>QFrame::Sunken</enum>
-          </property>
-          <property name="text">
-           <string>none</string>
-          </property>
-         </widget>
-        </item>
-        <item row="6" column="1">
          <widget class="QSpinBox" name="update_frequency">
           <property name="maximum">
            <number>999999999</number>
@@ -773,7 +724,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>350</y>
+        <y>240</y>
         <width>301</width>
         <height>131</height>
        </rect>
@@ -798,7 +749,7 @@
          <x>10</x>
          <y>30</y>
          <width>281</width>
-         <height>101</height>
+         <height>91</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="mouse_pos_layout">
@@ -812,7 +763,7 @@
          <number>6</number>
         </property>
         <property name="verticalSpacing">
-         <number>15</number>
+         <number>12</number>
         </property>
         <property name="leftMargin">
          <number>0</number>
@@ -944,9 +895,9 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>490</y>
+        <y>380</y>
         <width>301</width>
-        <height>221</height>
+        <height>241</height>
        </rect>
       </property>
       <property name="font">
@@ -963,7 +914,7 @@
          <x>10</x>
          <y>30</y>
          <width>281</width>
-         <height>181</height>
+         <height>201</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="formLayout">
@@ -980,11 +931,53 @@
          <number>8</number>
         </property>
         <property name="verticalSpacing">
-         <number>15</number>
+         <number>12</number>
         </property>
         <property name="bottomMargin">
          <number>0</number>
         </property>
+        <item row="0" column="0">
+         <widget class="QLabel" name="label_plot_id">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
+          <property name="text">
+           <string>Plot Call ID:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLabel" name="plot_call_id">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0</string>
+          </property>
+         </widget>
+        </item>
         <item row="1" column="0">
          <widget class="QLabel" name="plotting_label">
           <property name="minimumSize">
@@ -1000,6 +993,16 @@
           </property>
           <property name="text">
            <string>Plotting rate (Hz):</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QSpinBox" name="plotting_frequency">
+          <property name="maximum">
+           <number>999999999</number>
+          </property>
+          <property name="value">
+           <number>2</number>
           </property>
          </widget>
         </item>
@@ -1083,69 +1086,24 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>log image</string>
+           <string>Log Image</string>
           </property>
           <property name="checked">
            <bool>false</bool>
           </property>
          </widget>
         </item>
+        <item row="5" column="1">
+         <widget class="QCheckBox" name="show_slices">
+          <property name="text">
+           <string>Show Slices</string>
+          </property>
+         </widget>
+        </item>
         <item row="4" column="1">
-         <widget class="QLabel" name="filler">
+         <widget class="QCheckBox" name="freeze_plot">
           <property name="text">
-           <string/>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="0">
-         <widget class="QLabel" name="label_plot_id">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>25</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>Plot Call ID:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QLabel" name="plot_call_id">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>25</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="frameShape">
-           <enum>QFrame::Box</enum>
-          </property>
-          <property name="frameShadow">
-           <enum>QFrame::Sunken</enum>
-          </property>
-          <property name="text">
-           <string>0</string>
-          </property>
-         </widget>
-        </item>
-        <item row="1" column="1">
-         <widget class="QSpinBox" name="plotting_frequency">
-          <property name="maximum">
-           <number>999999999</number>
-          </property>
-          <property name="value">
-           <number>2</number>
+           <string>Freeze Image</string>
           </property>
          </widget>
         </item>
@@ -1156,9 +1114,9 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>720</y>
+        <y>630</y>
         <width>301</width>
-        <height>301</height>
+        <height>391</height>
        </rect>
       </property>
       <property name="title">
@@ -1246,7 +1204,7 @@ QPushButton::pressed {
  <connections>
   <connection>
    <sender>plotting_frequency</sender>
-   <signal>editingFinished()</signal>
+   <signal>valueChanged(int)</signal>
    <receiver>start_live_view</receiver>
    <slot>click()</slot>
    <hints>
