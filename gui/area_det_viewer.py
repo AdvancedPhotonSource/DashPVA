@@ -49,6 +49,7 @@ class PVA_Reader:
         print('error %s' % code)
 
     def parseImageDataType(self):
+        #automatically gets incoming datatype
         if self.pva_object is not None:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
 
