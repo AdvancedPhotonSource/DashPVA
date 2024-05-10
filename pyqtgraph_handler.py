@@ -1,6 +1,6 @@
 import pyqtgraph as pg
 from pyqtgraph import ImageView, PlotWidget, GraphicsLayoutWidget
-from gui.mpl_cmaps_in_ImageItem import pg_get_cmap
+#from gui.mpl_cmaps_in_ImageItem import pg_get_cmap
 import matplotlib.pyplot as plt
 from PyQt5 import QtCore
 
@@ -36,9 +36,9 @@ class ImageViewDev(ImageView):
                                      'yRange': [None, None]
                                      }
 
-    def set_colormap(self, cmap):
-        pg_cmap = pg_get_cmap(plt.get_cmap(cmap))
-        self.setColorMap(pg_cmap)
+    # def set_colormap(self, cmap):
+    #     pg_cmap = pg_get_cmap(plt.get_cmap(cmap))
+    #     self.setColorMap(pg_cmap)
 
     def add_readback(self, display=None, extent=None, type='log'):
         # vLine = pg.InfiniteLine(angle=90, movable=False)

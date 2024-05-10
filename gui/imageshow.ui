@@ -38,34 +38,6 @@
     <property name="title">
      <string>Live View</string>
     </property>
-    <widget class="ImageView" name="image_view" native="true">
-     <property name="enabled">
-      <bool>true</bool>
-     </property>
-     <property name="geometry">
-      <rect>
-       <x>9</x>
-       <y>30</y>
-       <width>951</width>
-       <height>691</height>
-      </rect>
-     </property>
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="minimumSize">
-      <size>
-       <width>521</width>
-       <height>521</height>
-      </size>
-     </property>
-     <property name="mouseTracking">
-      <bool>true</bool>
-     </property>
-    </widget>
     <widget class="QGroupBox" name="group_box_connection">
      <property name="geometry">
       <rect>
@@ -383,8 +355,8 @@
     <widget class="QLabel" name="img_view_vertical">
      <property name="geometry">
       <rect>
-       <x>10</x>
-       <y>30</y>
+       <x>800</x>
+       <y>20</y>
        <width>161</width>
        <height>561</height>
       </rect>
@@ -399,7 +371,7 @@
     <widget class="QLabel" name="img_view_horizonal">
      <property name="geometry">
       <rect>
-       <x>170</x>
+       <x>10</x>
        <y>590</y>
        <width>791</width>
        <height>131</height>
@@ -411,6 +383,17 @@
      <property name="text">
       <string>none</string>
      </property>
+    </widget>
+    <widget class="QWidget" name="gridLayoutWidget_2">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>30</y>
+       <width>791</width>
+       <height>561</height>
+      </rect>
+     </property>
+     <layout class="QGridLayout" name="viewer_layout"/>
     </widget>
    </widget>
    <widget class="QScrollArea" name="scrollArea">
@@ -502,7 +485,7 @@
          <x>10</x>
          <y>30</y>
          <width>281</width>
-         <height>191</height>
+         <height>193</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -1192,14 +1175,6 @@ QPushButton::pressed {
    </widget>
   </widget>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>ImageView</class>
-   <extends>QWidget</extends>
-   <header>pyqtgraph</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections>
   <connection>

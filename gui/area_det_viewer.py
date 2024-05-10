@@ -4,7 +4,7 @@ import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
-from PyQt5 import uic
+from PyQt5 import uic, QtWidgets
 
 class PVA_Reader:
 
@@ -24,7 +24,6 @@ class PVA_Reader:
         self.pva_cache = []
         self.__last_array_id = None
         self.frames_missed = 0
-        self.poll_id = 0
         self.frames_received = 0
         self.data_type = None
 
@@ -32,14 +31,14 @@ class PVA_Reader:
         self.pva_object = pv
         if len(self.pva_cache) < 1000 : 
             self.pva_cache.append(pv)
-            self.poll_id +=1
+
             self.frames_received += 1
             self.parseImageDataType()
             self.calcFramesMissed()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv)
-            self.poll_id +=1
+
             self.frames_received += 1
             self.parseImageDataType()
             self.calcFramesMissed()
@@ -123,24 +122,28 @@ class ImageWindow(QMainWindow):
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
         self.setWindowTitle("Image Viewer with PVAaccess")
-        self.show()
+        #self.show()
 
         #Initializing important variables
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
         self.call_id_plot = 0
-        self.min_px = 0
-        self.max_px = 0
         self.first_plot = True
 
-        #TODO: Find Way to make Image View take a Plot Item or add Axes items to View Box
+        #overwriting image_view
+        plot = pg.PlotItem()        
+        self.image_view = pg.ImageView(view=plot) 
+
+         # Add ImageView to the layout
+        layout = self.findChild(QtWidgets.QGridLayout, "viewer_layout")
+        layout.addWidget(self.image_view, 0, 0)  # Add ImageView to row 0, column 0
+
+        self.show()
+
         self.image_vb = self.image_view.getView()
-
-        self.x_axis = pg.AxisItem(orientation='bottom')
-        self.y_axis = pg.AxisItem(orientation='left')
-        self.image_vb.scene().addItem(self.x_axis)
-        self.image_vb.scene().addItem(self.y_axis)
-
+        self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
+        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]') 
+        
         #Connecting the signals to the code that will be executed
         self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
@@ -201,12 +204,9 @@ class ImageWindow(QMainWindow):
         self.is_connected.setText(is_connected)
         self.missed_frames.setText(f"{self.reader.frames_missed:d}")
         self.frames_received_val.setText(f"{self.reader.frames_received:d}")
-        self.poll_call_id.setText(f"{self.reader.poll_id:d}")
         self.plot_call_id.setText(f"{self.call_id_plot:d}")
         self.size_x_value.setText(f"{self.reader.shape[0]}")
         self.size_y_value.setText(f"{self.reader.shape[1]}")
-        self.min_px_val.setText(f"{self.min_px:.2f}")
-        self.max_px_val.setText(f"{self.max_px:.2f}")
         self.data_type_val.setText(self.reader.data_type)
 
     def update_image(self):
@@ -222,13 +222,17 @@ class ImageWindow(QMainWindow):
                         min_level = np.log(min_level + 1)
                         max_level = np.log(max_level + 1)
                 if self.first_plot:
-                    self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level))
+                    height, width = image.shape[:2]
+                    coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
+                    self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
                     self.first_plot = False
                 else:
-                    self.image_view.setImage(image, autoRange=False, autoLevels=False)
-            
-                self.min_px = self.image_view.quickMinMax(image)[0][0]
-                self.max_px = self.image_view.quickMinMax(image)[0][1]     
+                    height, width = image.shape[:2]
+                    coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
+                    self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
+
+            self.min_px_val.setText(f"{min_level:.2f}")
+            self.max_px_val.setText(f"{max_level:.2f}") 
 
 
 
