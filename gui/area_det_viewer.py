@@ -97,7 +97,7 @@ class PVA_Reader:
         self.channel.stopMonitor()
 
     def printROI(self):
-        pv_value = epics.cainfo(self.roi_name)
+        pv_value = "none"#epics.cainfo(self.roi_name)
         print("Value of", self.roi_name, ":", pv_value)
 
     def getPvaObjects(self):
@@ -130,7 +130,8 @@ class ImageWindow(QMainWindow):
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        self.image_view.setMinimumWidth(800)
+        # self.image_view.setMinimumWidth(800)
+        # self.image_view.setMinimumHeight(800)
         self.image_view.ui.roiBtn.hide() 
 
         # Add ImageView to the layout
@@ -173,26 +174,26 @@ class ImageWindow(QMainWindow):
 
 
         #Work on getting horizontal and vertical slices
-        self.vertical_avg_plot = pg.PlotWidget()
-        self.vertical_avg_plot.setMaximumHeight(125)
-        self.vertical_avg_plot.getAxis('bottom').setRange(0,1025)
-        self.vertical_avg_plot.getAxis('left').setLabel(text="Vertical Avg.")
+        # self.vertical_avg_plot = pg.PlotWidget()
+        # self.vertical_avg_plot.setMaximumHeight(125)
+        # self.vertical_avg_plot.getAxis('bottom')#.setRange(0,1024)
+        # self.vertical_avg_plot.getAxis('left')#.setLabel(text="Vertical Avg.")
 
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
 
-        self.vertical_avg_plot.setXLink(self.image_vb)
+        # self.vertical_avg_plot.setXLink(self.image_vb)
         self.horizontal_avg_plot.setYLink(self.image_vb)
 
-        self.viewer_layout.addWidget(self.vertical_avg_plot, 0,1)
+        # self.viewer_layout.addWidget(self.vertical_avg_plot, 0,1)
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
         
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
 
-        self.vertical_avg_plot.plot(x=np.arange(0,self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
+        # self.vertical_avg_plot.plot(x=np.arange(0,self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
         self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
