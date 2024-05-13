@@ -130,11 +130,10 @@ class ImageWindow(QMainWindow):
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        # self.image_view.setMinimumWidth(800)
-        # self.image_view.setMinimumHeight(800)
-        self.image_view.ui.roiBtn.hide() 
+        
+        # self.image_view.ui.roiBtn.hide() 
+        
 
-        # Add ImageView to the layout
         self.viewer_layout.addWidget(self.image_view,1,1)
         
         self.image_vb = self.image_view.getView()
@@ -264,12 +263,15 @@ class ImageWindow(QMainWindow):
                     height, width = image.shape[:2]
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
+                    #need to also clone the image to self.image_view.image so the ROI feature  works | probably a memory leak here ?
+                    self.image_view.setImage(image, autoRange=False)
                     self.first_plot = False
                 else:
                     height, width = image.shape[:2]
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
-
+                    self.image_view.setImage(image, autoRange=False)
+                    
             self.min_px_val.setText(f"{min_level:.2f}")
             self.max_px_val.setText(f"{max_level:.2f}") 
             
