@@ -352,45 +352,13 @@
       </layout>
      </widget>
     </widget>
-    <widget class="QLabel" name="img_view_vertical">
-     <property name="geometry">
-      <rect>
-       <x>800</x>
-       <y>20</y>
-       <width>161</width>
-       <height>561</height>
-      </rect>
-     </property>
-     <property name="frameShape">
-      <enum>QFrame::Box</enum>
-     </property>
-     <property name="text">
-      <string>none</string>
-     </property>
-    </widget>
-    <widget class="QLabel" name="img_view_horizonal">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>590</y>
-       <width>791</width>
-       <height>131</height>
-      </rect>
-     </property>
-     <property name="frameShape">
-      <enum>QFrame::Box</enum>
-     </property>
-     <property name="text">
-      <string>none</string>
-     </property>
-    </widget>
     <widget class="QWidget" name="gridLayoutWidget_2">
      <property name="geometry">
       <rect>
        <x>10</x>
        <y>30</y>
-       <width>791</width>
-       <height>561</height>
+       <width>941</width>
+       <height>681</height>
       </rect>
      </property>
      <layout class="QGridLayout" name="viewer_layout"/>

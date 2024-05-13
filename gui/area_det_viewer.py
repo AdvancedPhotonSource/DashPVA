@@ -31,21 +31,14 @@ class PVA_Reader:
         self.pva_object = pv
         if len(self.pva_cache) < 1000 : 
             self.pva_cache.append(pv)
-
-            self.frames_received += 1
+            self.pvaToImage()
             self.parseImageDataType()
-            self.calcFramesMissed()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv)
-
-            self.frames_received += 1
+            self.pvaToImage()
             self.parseImageDataType()
-            self.calcFramesMissed()
-
-    # def callbackError(self, code):
-    #     self.poll_id += 1
-    #     print('error %s' % code)
+            
 
     def parseImageDataType(self):
         #automatically gets incoming datatype
@@ -53,13 +46,7 @@ class PVA_Reader:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
 
     def calcFramesMissed(self):
-        data = self.pva_cache[-1]
-        if data is not None:
-            current_array_id = data['uniqueId']
-            if self.__last_array_id is not None: #and zoomUpdate == False:
-                id_diff = current_array_id - self.__last_array_id - 1
-                self.frames_missed += id_diff if (id_diff > 0) else 0
-            self.__last_array_id = current_array_id
+        pass
 
     def getFramesMissed(self):
         return self.frames_missed
@@ -81,18 +68,29 @@ class PVA_Reader:
         self.attributes = attributes
 
     def pvaToImage(self):
-        if self.pva_object is not None:
-            if "dimension" in self.pva_object:
-                self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                image = np.array(self.pva_object["value"][0][self.data_type])
-                image = np.reshape(image, self.shape)
-            else:
-                image = None
-            
-            self.image = image
-        else:
-            print('pvaObject is none')
+        try:
+            if self.pva_object is not None:
+                self.frames_received += 1
+                if "dimension" in self.pva_object:
+                    self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
+                    image = np.array(self.pva_object["value"][0][self.data_type])
+                    image = np.reshape(image, self.shape)
+                else:
+                    image = None
+                
+                self.image = image
 
+                data = self.pva_cache[-1]
+                if data is not None:
+                    current_array_id = data['uniqueId']
+                    if self.__last_array_id is not None: #and zoomUpdate == False:
+                        id_diff = current_array_id - self.__last_array_id - 1
+                        self.frames_missed += id_diff if (id_diff > 0) else 0
+                    self.__last_array_id = current_array_id
+        except:
+            self.frames_missed += 1
+
+            
     def startChannelMonitor(self):
         self.channel.subscribe('callback success', self.callbackSuccess)
         self.channel.startMonitor()
@@ -100,7 +98,6 @@ class PVA_Reader:
     def stopChannelMonitor(self):
         self.channel.unsubscribe('callback success')
         self.channel.stopMonitor()
-
 
     def getPvaObjects(self):
         return self.pva_cache
@@ -115,34 +112,34 @@ class PVA_Reader:
         return self.attributes
 
 
-
-
 class ImageWindow(QMainWindow):
     def __init__(self): 
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
         self.setWindowTitle("Image Viewer with PVAaccess")
-        #self.show()
+        self.show()
 
+        # Making image_view a plot to show axes
+        plot = pg.PlotItem()        
+        self.image_view = pg.ImageView(view=plot) 
+
+        # Add ImageView to the layout
+        self.viewer_layout.addWidget(self.image_view,1,1)
+        
+        self.image_vb = self.image_view.getView()
+        self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
+        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]') 
+        
         #Initializing important variables
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
         self.call_id_plot = 0
         self.first_plot = True
 
-        #overwriting image_view
-        plot = pg.PlotItem()        
-        self.image_view = pg.ImageView(view=plot) 
-
-         # Add ImageView to the layout
-        layout = self.findChild(QtWidgets.QGridLayout, "viewer_layout")
-        layout.addWidget(self.image_view, 0, 0)  # Add ImageView to row 0, column 0
-
-        self.show()
-
-        self.image_vb = self.image_view.getView()
-        self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
-        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]') 
+        #TODO: Adjust so that location, width, and height are read in from the detector
+        roi = pg.ROI([0, 0], [100, 100],pen=pg.mkPen("r"),movable=False)
+        
+        self.image_view.addItem(roi)
         
         #Connecting the signals to the code that will be executed
         self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
@@ -156,10 +153,33 @@ class ImageWindow(QMainWindow):
         self.timer_poll = QTimer()
         self.timer_poll.timeout.connect(self.update_labels)
         self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+
+        self.timer_slices = QTimer()
+        self.timer_slices.timeout.connect(self.update_horizontal_vertical_plots)
+        self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
         
         self.timer_plot = QTimer()
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+
+
+        #Work on getting horizontal and vertical slices
+        self.vertical_avg_plot = pg.PlotWidget()
+        self.vertical_avg_plot.setMaximumHeight(100)
+
+        self.horizontal_avg_plot = pg.PlotWidget()
+        self.horizontal_avg_plot.setMaximumWidth(150)
+
+        self.viewer_layout.addWidget(self.vertical_avg_plot, 0,1)
+        self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
+        # y_line_plot = pg.PlotWidget()
+
+    def update_horizontal_vertical_plots(self):
+        image = self.reader.getPvaImage()
+
+        self.vertical_avg_plot.plot(x=np.linspace(0, self.reader.shape[0], self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
+        self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.linspace(0, self.reader.shape[1], self.reader.shape[1]), clear=True)
+        # self.viewer_layout.addwidget(self.x_line_plot, 0,0)
 
     def reset_first_plot(self):
         self.first_plot = True
@@ -167,9 +187,13 @@ class ImageWindow(QMainWindow):
     def start_live_view_clicked(self):
         if self.reader.channel.isMonitorActive():
             self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
             self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
         else:
             self.reader.startChannelMonitor()
+            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
+            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_live_view_clicked(self):
         self.timer_plot.stop()
@@ -181,6 +205,7 @@ class ImageWindow(QMainWindow):
             self.timer_plot.stop()
         else:
             self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
             self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def update_mouse_pos(self, pos):
@@ -211,7 +236,6 @@ class ImageWindow(QMainWindow):
 
     def update_image(self):
         self.call_id_plot +=1
-        self.reader.pvaToImage()
         image = self.reader.getPvaImage()
 
         if image is not None:
