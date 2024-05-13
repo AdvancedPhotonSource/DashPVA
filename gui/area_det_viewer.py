@@ -1,5 +1,6 @@
 import sys
 import pvaccess as pva
+import epics
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
@@ -13,7 +14,8 @@ class PVA_Reader:
         """variables needed for monitoring a connection"""
         self.provider = provider
         self.pva_name = pva_name
-        self.channel = pva.Channel(pva_name, provider)
+        self.channel = pva.Channel(self.pva_name, self.provider)
+        self.roi_name = 'dp-ADSim:ROI1:PortName_RBV'
 
         """variables that will store pva data"""
         self.pva_object = None
@@ -27,6 +29,8 @@ class PVA_Reader:
         self.frames_received = 0
         self.data_type = None
 
+        self.printROI()
+
     def callbackSuccess(self, pv):
         self.pva_object = pv
         if len(self.pva_cache) < 1000 : 
@@ -39,17 +43,10 @@ class PVA_Reader:
             self.pvaToImage()
             self.parseImageDataType()
             
-
     def parseImageDataType(self):
         #automatically gets incoming datatype
         if self.pva_object is not None:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
-
-    def calcFramesMissed(self):
-        pass
-
-    def getFramesMissed(self):
-        return self.frames_missed
     
     def parsePvaNdattributes(self):
         if self.pva_object:
@@ -99,11 +96,18 @@ class PVA_Reader:
         self.channel.unsubscribe('callback success')
         self.channel.stopMonitor()
 
+    def printROI(self):
+        pv_value = epics.cainfo(self.roi_name)
+        print("Value of", self.roi_name, ":", pv_value)
+
     def getPvaObjects(self):
         return self.pva_cache
 
     def getLastPvaObject(self):
         return self.pva_cache[-1]
+
+    def getFramesMissed(self):
+        return self.frames_missed
 
     def getPvaImage(self):
         return self.image
@@ -119,9 +123,15 @@ class ImageWindow(QMainWindow):
         self.setWindowTitle("Image Viewer with PVAaccess")
         self.show()
 
+        #Initializing important variables
+        self.call_id_plot = 0
+        self.first_plot = True
+
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
-        self.image_view = pg.ImageView(view=plot) 
+        self.image_view = pg.ImageView(view=plot)
+        self.image_view.setMinimumWidth(800)
+        self.image_view.ui.roiBtn.hide() 
 
         # Add ImageView to the layout
         self.viewer_layout.addWidget(self.image_view,1,1)
@@ -130,14 +140,13 @@ class ImageWindow(QMainWindow):
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]') 
         
-        #Initializing important variables
+        #Starting Connection to channel
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
-        self.call_id_plot = 0
-        self.first_plot = True
+        
 
         #TODO: Adjust so that location, width, and height are read in from the detector
-        roi = pg.ROI([0, 0], [100, 100],pen=pg.mkPen("r"),movable=False)
+        roi = pg.ROI([512, 512], [100, 100],pen=pg.mkPen("r"),movable=False)
         
         self.image_view.addItem(roi)
         
@@ -165,21 +174,26 @@ class ImageWindow(QMainWindow):
 
         #Work on getting horizontal and vertical slices
         self.vertical_avg_plot = pg.PlotWidget()
-        self.vertical_avg_plot.setMaximumHeight(100)
+        self.vertical_avg_plot.setMaximumHeight(125)
+        self.vertical_avg_plot.getAxis('bottom').setRange(0,1025)
+        self.vertical_avg_plot.getAxis('left').setLabel(text="Vertical Avg.")
 
         self.horizontal_avg_plot = pg.PlotWidget()
-        self.horizontal_avg_plot.setMaximumWidth(150)
+        self.horizontal_avg_plot.invertY(True)
+        self.horizontal_avg_plot.setMaximumWidth(175)
+
+        self.vertical_avg_plot.setXLink(self.image_vb)
+        self.horizontal_avg_plot.setYLink(self.image_vb)
 
         self.viewer_layout.addWidget(self.vertical_avg_plot, 0,1)
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
-        # y_line_plot = pg.PlotWidget()
+        
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
 
-        self.vertical_avg_plot.plot(x=np.linspace(0, self.reader.shape[0], self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
-        self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.linspace(0, self.reader.shape[1], self.reader.shape[1]), clear=True)
-        # self.viewer_layout.addwidget(self.x_line_plot, 0,0)
+        self.vertical_avg_plot.plot(x=np.arange(0,self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
+        self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
         self.first_plot = True
@@ -257,6 +271,7 @@ class ImageWindow(QMainWindow):
 
             self.min_px_val.setText(f"{min_level:.2f}")
             self.max_px_val.setText(f"{max_level:.2f}") 
+            
 
 
 
