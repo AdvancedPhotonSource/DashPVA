@@ -27,6 +27,7 @@ def main():
         print(f'Received: {len(m.queue)}')
         print(f'avg PVs received per sec: {len(m.queue)/time_count}')
         print(f'PVs received during this sec: {len(m.queue) - queue_len}')
+        print(f'the last PV value received: {m.queue[-1]:0.3f}')
         queue_len = len(m.queue)
 
 if __name__ == '__main__':
