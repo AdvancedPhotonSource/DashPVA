@@ -7,6 +7,13 @@ from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 from PyQt5 import uic, QtWidgets
 
+def cycle_1234():
+            #generator for the rotation
+            while True:
+                for i in range(1, 5):
+                    yield i
+gen = cycle_1234()
+    
 class PVA_Reader:
 
     def __init__(self, provider=pva.PVA, pva_name="dp-ADSim:Pva1:Image"):
@@ -28,6 +35,7 @@ class PVA_Reader:
         self.frames_missed = 0
         self.frames_received = 0
         self.data_type = None
+        
 
         self.printROI()
 
@@ -126,6 +134,7 @@ class ImageWindow(QMainWindow):
         #Initializing important variables
         self.call_id_plot = 0
         self.first_plot = True
+        self.rot_num = 1 #original rotation count
 
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
@@ -157,6 +166,7 @@ class ImageWindow(QMainWindow):
         self.freeze_plot.stateChanged.connect(self.freeze_plot_checked)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
 
         #Timers used for plotting and updating labels
         self.timer_poll = QTimer()
@@ -248,10 +258,15 @@ class ImageWindow(QMainWindow):
         self.size_y_value.setText(f"{self.reader.shape[1]}")
         self.data_type_val.setText(self.reader.data_type)
 
+    def rotation_count(self):
+        self.rot_num = next(gen)
+        print(f'{self.rot_num=}')
+
+
     def update_image(self):
         self.call_id_plot +=1
         image = self.reader.getPvaImage()
-
+        image = np.rot90(image, k = self.rot_num)
         if image is not None:
             if len(image.shape) == 2:
                 min_level, max_level = np.min(image), np.max(image)
