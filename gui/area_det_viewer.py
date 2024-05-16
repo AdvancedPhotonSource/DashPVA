@@ -181,21 +181,12 @@ class ImageWindow(QMainWindow):
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
-
-        #Work on getting horizontal and vertical slices
-        # self.vertical_avg_plot = pg.PlotWidget()
-        # self.vertical_avg_plot.setMaximumHeight(125)
-        # self.vertical_avg_plot.getAxis('bottom')#.setRange(0,1024)
-        # self.vertical_avg_plot.getAxis('left')#.setLabel(text="Vertical Avg.")
-
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
 
-        # self.vertical_avg_plot.setXLink(self.image_vb)
         self.horizontal_avg_plot.setYLink(self.image_vb)
 
-        # self.viewer_layout.addWidget(self.vertical_avg_plot, 0,1)
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
         
 
@@ -260,7 +251,7 @@ class ImageWindow(QMainWindow):
 
     def rotation_count(self):
         self.rot_num = next(gen)
-        print(f'{self.rot_num=}')
+        print(f'rotation num: {self.rot_num}')
 
 
     def update_image(self):
