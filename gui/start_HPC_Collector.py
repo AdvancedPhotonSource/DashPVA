@@ -8,7 +8,7 @@ def main():
 
     metadata = {}
 
-    with open("PVs.json", "r") as json_file:
+    with open("gui/PVs.json", "r") as json_file:
         metadata = json.load(json_file)
 
     command = "pvapy-hpc-collector --collector-id 1 --producer-id-list 1 --input-channel pvapy:dp-ADSim:Pva1:Image --control-channel collector:*:control"
@@ -25,7 +25,7 @@ def main():
             i +=1
     print(command)
     
-    #subprocess.call(command, shell=True)
+    subprocess.call(command, shell=True)
 
 if __name__ == "__main__":
     main()

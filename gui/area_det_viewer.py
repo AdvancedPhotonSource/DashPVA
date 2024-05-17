@@ -1,6 +1,5 @@
 import sys
 import pvaccess as pva
-import epics
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
@@ -10,18 +9,18 @@ from PyQt5 import uic, QtWidgets
 def cycle_1234():
             #generator for the rotation
             while True:
-                for i in range(1, 5):
+                for i in range(1,5):
                     yield i
 gen = cycle_1234()
     
 class PVA_Reader:
 
-    def __init__(self, provider=pva.PVA, pva_name="dp-ADSim:Pva1:Image"):
+    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim:Pva1:Image"):
         
         """variables needed for monitoring a connection"""
         self.provider = provider
-        self.pva_name = pva_name
-        self.channel = pva.Channel(self.pva_name, self.provider)
+        self.pva_prefix = pva_prefix
+        self.channel = pva.Channel(self.pva_prefix, self.provider)
         self.roi_name = 'dp-ADSim:ROI1:PortName_RBV'
 
         """variables that will store pva data"""
@@ -36,12 +35,9 @@ class PVA_Reader:
         self.frames_received = 0
         self.data_type = None
         
-
-        self.printROI()
-
     def callbackSuccess(self, pv):
         self.pva_object = pv
-        if len(self.pva_cache) < 1000 : 
+        if len(self.pva_cache) < 1000: 
             self.pva_cache.append(pv)
             self.pvaToImage()
             self.parseImageDataType()
@@ -131,9 +127,17 @@ class ImageWindow(QMainWindow):
         self.show()
 
         #Initializing important variables
+        self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.rot_num = 1 #original rotation count
+        self.rot_num = 0 #original rotation count
+        self.timer_poll = QTimer()
+        self.timer_avgs = QTimer()
+        self.timer_plot = QTimer()
+
+        self.timer_poll.timeout.connect(self.update_labels)
+        self.timer_avgs.timeout.connect(self.update_horizontal_vertical_plots)            
+        self.timer_plot.timeout.connect(self.update_image)
 
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
@@ -142,17 +146,14 @@ class ImageWindow(QMainWindow):
         
         self.image_vb = self.image_view.getView()
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
-        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]') 
-        
-        #Starting Connection to channel
-        self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
-        self.reader.startChannelMonitor() #start monitor once window is active
+        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
         
         #TODO: Adjust so that location, width, and height are read in from the detector
         # roi = pg.ROI([512, 512], [100, 100],pen=pg.mkPen("r"),movable=False)
         # self.image_view.addItem(roi)
         
         #Connecting the signals to the code that will be executed
+        self.pv_prefix.returnPressed.connect(self.connect_pva_reader)
         self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
@@ -161,27 +162,39 @@ class ImageWindow(QMainWindow):
         self.log_image.clicked.connect(self.update_image)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
 
-        #Timers used for plotting and updating labels
-        self.timer_poll = QTimer()
-        self.timer_poll.timeout.connect(self.update_labels)
-        self.timer_poll.start(int(1000/100))
-
-        self.timer_slices = QTimer()
-        self.timer_slices.timeout.connect(self.update_horizontal_vertical_plots)
-        self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
-        
-        self.timer_plot = QTimer()
-        self.timer_plot.timeout.connect(self.update_image)
-        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
-
         self.horizontal_avg_plot.setYLink(self.image_vb)
 
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
-        
+
+
+    def connect_pva_reader(self):
+        try:
+            prefix = self.pv_prefix.text()
+
+            if self.reader is None:
+                self.reader = PVA_Reader(pva_prefix=prefix)
+                self.reader.startChannelMonitor()
+                if self.reader.channel.isMonitorActive():
+                    self.start_timers()
+            else:
+                self.reader.stopChannelMonitor()
+                self.timer_plot.stop()
+                self.reader = PVA_Reader(pva_prefix=prefix)
+                self.reader.startChannelMonitor()
+                if self.reader.channel.isMonitorActive():
+                    self.start_timers()
+        except:
+            print("Prefix Not valid")
+
+    def start_timers(self):
+        self.timer_poll.start(1000/100)
+        self.timer_avgs.start(int(1000/float(self.plotting_frequency.text())))
+        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
@@ -192,14 +205,11 @@ class ImageWindow(QMainWindow):
 
     def start_live_view_clicked(self):
         if self.reader.channel.isMonitorActive():
-            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
-            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
-            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+            self.start_timers()
+            
         else:
             self.reader.startChannelMonitor()
-            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
-            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
-            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+            self.start_timers()
 
     def stop_live_view_clicked(self):
         self.timer_plot.stop()
@@ -209,21 +219,22 @@ class ImageWindow(QMainWindow):
         if self.freeze_image.isChecked():
             self.timer_poll.stop()
             self.timer_plot.stop()
+            self.timer_avgs.stop()
+            
         else:
-            self.timer_poll.start(int(1000/float(self.update_frequency.text())))
-            self.timer_slices.start(int(1000/float(self.plotting_frequency.text())))
-            self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+            self.start_timers()
 
     def update_mouse_pos(self, pos):
         if pos is not None:
-            img = self.image_view.getImageItem()
-            q_pointer = img.mapFromScene(pos)
-            x, y = q_pointer.x(), q_pointer.y()
-            self.mouse_x_val.setText(f"{x:.7f}")
-            self.mouse_y_val.setText(f"{y:.7f}")
-            img_data = self.reader.image
-            if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+            if self.reader is not None:
+                img = self.image_view.getImageItem()
+                q_pointer = img.mapFromScene(pos)
+                x, y = q_pointer.x(), q_pointer.y()
+                self.mouse_x_val.setText(f"{x:.7f}")
+                self.mouse_y_val.setText(f"{y:.7f}")
+                img_data = self.reader.image
+                if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
+                    self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
     #changed this to update labels as most processing will be done in the monitor call    
     def update_labels(self):
@@ -268,7 +279,6 @@ class ImageWindow(QMainWindow):
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, rect=coordinates, axes={'y': 0, 'x': 1})
                     self.image_view.setImage(image, autoRange=False, autoLevels=False)
-
                     
             self.min_px_val.setText(f"{min_level:.2f}")
             self.max_px_val.setText(f"{max_level:.2f}") 
