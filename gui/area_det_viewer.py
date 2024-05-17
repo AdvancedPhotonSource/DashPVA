@@ -94,7 +94,6 @@ class PVA_Reader:
                     self.__last_array_id = current_array_id
         except:
             self.frames_missed += 1
-
             
     def startChannelMonitor(self):
         self.channel.subscribe('callback success', self.callbackSuccess)
@@ -138,11 +137,7 @@ class ImageWindow(QMainWindow):
 
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
-        self.image_view = pg.ImageView(view=plot)
-        
-        # self.image_view.ui.roiBtn.hide() 
-        
-
+        self.image_view = pg.ImageView(view=plot)        
         self.viewer_layout.addWidget(self.image_view,1,1)
         
         self.image_vb = self.image_view.getView()
@@ -153,17 +148,15 @@ class ImageWindow(QMainWindow):
         self.reader = PVA_Reader(pva.PVA, self.pv_prefix.text())
         self.reader.startChannelMonitor() #start monitor once window is active
         
-
         #TODO: Adjust so that location, width, and height are read in from the detector
-        roi = pg.ROI([512, 512], [100, 100],pen=pg.mkPen("r"),movable=False)
-        
-        self.image_view.addItem(roi)
+        # roi = pg.ROI([512, 512], [100, 100],pen=pg.mkPen("r"),movable=False)
+        # self.image_view.addItem(roi)
         
         #Connecting the signals to the code that will be executed
         self.image_vb.scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.freeze_plot.stateChanged.connect(self.freeze_plot_checked)
+        self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
@@ -171,7 +164,7 @@ class ImageWindow(QMainWindow):
         #Timers used for plotting and updating labels
         self.timer_poll = QTimer()
         self.timer_poll.timeout.connect(self.update_labels)
-        self.timer_poll.start(int(1000/float(self.update_frequency.text())))
+        self.timer_poll.start(int(1000/100))
 
         self.timer_slices = QTimer()
         self.timer_slices.timeout.connect(self.update_horizontal_vertical_plots)
@@ -192,8 +185,6 @@ class ImageWindow(QMainWindow):
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
-
-        # self.vertical_avg_plot.plot(x=np.arange(0,self.reader.shape[0]), y=np.mean(image, axis=1), clear=True)
         self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
@@ -214,8 +205,8 @@ class ImageWindow(QMainWindow):
         self.timer_plot.stop()
         self.reader.stopChannelMonitor()
 
-    def freeze_plot_checked(self):
-        if self.freeze_plot.isChecked():
+    def freeze_image_checked(self):
+        if self.freeze_image.isChecked():
             self.timer_poll.stop()
             self.timer_plot.stop()
         else:
@@ -228,8 +219,8 @@ class ImageWindow(QMainWindow):
             img = self.image_view.getImageItem()
             q_pointer = img.mapFromScene(pos)
             x, y = q_pointer.x(), q_pointer.y()
-            self.mouse_x_value.setText(f"{x:.7f}")
-            self.mouse_y_value.setText(f"{y:.7f}")
+            self.mouse_x_val.setText(f"{x:.7f}")
+            self.mouse_y_val.setText(f"{y:.7f}")
             img_data = self.reader.image
             if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
                 self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
@@ -242,17 +233,16 @@ class ImageWindow(QMainWindow):
         self.provider_name.setText(provider_name)
         self.name_val.setText(channel_name)
         self.is_connected.setText(is_connected)
-        self.missed_frames.setText(f"{self.reader.frames_missed:d}")
+        self.missed_frames_val.setText(f"{self.reader.frames_missed:d}")
         self.frames_received_val.setText(f"{self.reader.frames_received:d}")
         self.plot_call_id.setText(f"{self.call_id_plot:d}")
-        self.size_x_value.setText(f"{self.reader.shape[0]}")
-        self.size_y_value.setText(f"{self.reader.shape[1]}")
+        self.size_x_val.setText(f"{self.reader.shape[0]}")
+        self.size_y_val.setText(f"{self.reader.shape[1]}")
         self.data_type_val.setText(self.reader.data_type)
 
     def rotation_count(self):
         self.rot_num = next(gen)
         print(f'rotation num: {self.rot_num}')
-
 
     def update_image(self):
         self.call_id_plot +=1
@@ -270,20 +260,19 @@ class ImageWindow(QMainWindow):
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
                     #need to also clone the image to self.image_view.image so the ROI feature  works | probably a memory leak here ?
-                    self.image_view.setImage(image, autoRange=False)
+                    self.image_view.setImage(image, autoRange=False, autoLevels=False)
+
                     self.first_plot = False
                 else:
                     height, width = image.shape[:2]
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
-                    self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level), rect=coordinates, axes={'y': 0, 'x': 1})
-                    self.image_view.setImage(image, autoRange=False)
+                    self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, rect=coordinates, axes={'y': 0, 'x': 1})
+                    self.image_view.setImage(image, autoRange=False, autoLevels=False)
+
                     
             self.min_px_val.setText(f"{min_level:.2f}")
             self.max_px_val.setText(f"{max_level:.2f}") 
             
-
-
-
 
 if __name__ == "__main__":
     

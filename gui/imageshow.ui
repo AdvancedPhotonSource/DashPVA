@@ -6,9 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1358</width>
+    <width>1352</width>
     <height>812</height>
    </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
@@ -377,7 +383,7 @@
      </rect>
     </property>
     <property name="sizePolicy">
-     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
       <horstretch>0</horstretch>
       <verstretch>0</verstretch>
      </sizepolicy>
@@ -434,7 +440,7 @@
        </rect>
       </property>
       <property name="sizePolicy">
-       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
         <horstretch>0</horstretch>
         <verstretch>0</verstretch>
        </sizepolicy>
@@ -470,7 +476,7 @@
          <number>12</number>
         </property>
         <item row="0" column="0">
-         <widget class="QLabel" name="label_frames_received">
+         <widget class="QLabel" name="stats_lbl_frames_received">
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -495,10 +501,16 @@
         </item>
         <item row="0" column="1">
          <widget class="QLabel" name="frames_received_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>0</height>
+            <height>25</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -519,7 +531,7 @@
          </widget>
         </item>
         <item row="1" column="0">
-         <widget class="QLabel" name="label_frames_missed">
+         <widget class="QLabel" name="stats_lbl_frames_missed">
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -543,11 +555,17 @@
          </widget>
         </item>
         <item row="1" column="1">
-         <widget class="QLabel" name="missed_frames">
+         <widget class="QLabel" name="missed_frames_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>0</height>
+            <height>25</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -568,7 +586,7 @@
          </widget>
         </item>
         <item row="2" column="0">
-         <widget class="QLabel" name="label_max_px">
+         <widget class="QLabel" name="stats_lbl_max_px">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -581,6 +599,18 @@
         </item>
         <item row="2" column="1">
          <widget class="QLabel" name="max_px_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -593,7 +623,7 @@
          </widget>
         </item>
         <item row="3" column="0">
-         <widget class="QLabel" name="label_min_px">
+         <widget class="QLabel" name="stats_lbl_min_px">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -606,6 +636,18 @@
         </item>
         <item row="3" column="1">
          <widget class="QLabel" name="min_px_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -618,7 +660,7 @@
          </widget>
         </item>
         <item row="4" column="0">
-         <widget class="QLabel" name="label_data_type">
+         <widget class="QLabel" name="stats_lbl_data_type">
           <property name="text">
            <string>Data Type:</string>
           </property>
@@ -626,6 +668,18 @@
         </item>
         <item row="4" column="1">
          <widget class="QLabel" name="data_type_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -634,34 +688,6 @@
           </property>
           <property name="text">
            <string>none</string>
-          </property>
-         </widget>
-        </item>
-        <item row="5" column="0">
-         <widget class="QLabel" name="update_label">
-          <property name="minimumSize">
-           <size>
-            <width>28</width>
-            <height>16</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>10</pointsize>
-           </font>
-          </property>
-          <property name="text">
-           <string>Update rate (Hz):</string>
-          </property>
-         </widget>
-        </item>
-        <item row="5" column="1">
-         <widget class="QSpinBox" name="update_frequency">
-          <property name="maximum">
-           <number>999999999</number>
-          </property>
-          <property name="value">
-           <number>2</number>
           </property>
          </widget>
         </item>
@@ -679,6 +705,12 @@
         <width>301</width>
         <height>131</height>
        </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
       </property>
       <property name="font">
        <font>
@@ -723,7 +755,7 @@
          <number>0</number>
         </property>
         <item row="0" column="0">
-         <widget class="QLabel" name="label_x_pos">
+         <widget class="QLabel" name="mouse_lbl_x">
           <property name="minimumSize">
            <size>
             <width>30</width>
@@ -747,7 +779,13 @@
          </widget>
         </item>
         <item row="0" column="1">
-         <widget class="QLabel" name="mouse_x_value">
+         <widget class="QLabel" name="mouse_x_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -765,7 +803,7 @@
          </widget>
         </item>
         <item row="1" column="0">
-         <widget class="QLabel" name="label_y_pos">
+         <widget class="QLabel" name="mouse_lbl_y">
           <property name="minimumSize">
            <size>
             <width>30</width>
@@ -789,7 +827,13 @@
          </widget>
         </item>
         <item row="1" column="1">
-         <widget class="QLabel" name="mouse_y_value">
+         <widget class="QLabel" name="mouse_y_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -807,7 +851,7 @@
          </widget>
         </item>
         <item row="2" column="0">
-         <widget class="QLabel" name="label_mose_px">
+         <widget class="QLabel" name="mouse_lbl_px">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -823,6 +867,12 @@
         </item>
         <item row="2" column="1">
          <widget class="QLabel" name="mouse_px_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -850,6 +900,12 @@
         <width>301</width>
         <height>261</height>
        </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
       </property>
       <property name="font">
        <font>
@@ -888,7 +944,7 @@
          <number>0</number>
         </property>
         <item row="0" column="0">
-         <widget class="QLabel" name="label_plot_id">
+         <widget class="QLabel" name="image_lbl_plot_id">
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -907,6 +963,12 @@
         </item>
         <item row="0" column="1">
          <widget class="QLabel" name="plot_call_id">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -930,7 +992,7 @@
          </widget>
         </item>
         <item row="1" column="0">
-         <widget class="QLabel" name="plotting_label">
+         <widget class="QLabel" name="image_lbl_plotting_rate">
           <property name="minimumSize">
            <size>
             <width>28</width>
@@ -949,6 +1011,12 @@
         </item>
         <item row="1" column="1">
          <widget class="QSpinBox" name="plotting_frequency">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="maximum">
            <number>999999999</number>
           </property>
@@ -958,7 +1026,7 @@
          </widget>
         </item>
         <item row="2" column="0">
-         <widget class="QLabel" name="label_size_x">
+         <widget class="QLabel" name="image_lbl_size_x">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -970,9 +1038,15 @@
          </widget>
         </item>
         <item row="2" column="1">
-         <widget class="QLabel" name="size_x_value">
+         <widget class="QLabel" name="size_x_val">
           <property name="enabled">
            <bool>true</bool>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
           </property>
           <property name="font">
            <font>
@@ -991,7 +1065,7 @@
          </widget>
         </item>
         <item row="3" column="0">
-         <widget class="QLabel" name="label_size_y">
+         <widget class="QLabel" name="image_lbl_size_y">
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -1003,7 +1077,13 @@
          </widget>
         </item>
         <item row="3" column="1">
-         <widget class="QLabel" name="size_y_value">
+         <widget class="QLabel" name="size_y_val">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -1028,6 +1108,12 @@
           <property name="enabled">
            <bool>true</bool>
           </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -1045,7 +1131,13 @@
          </widget>
         </item>
         <item row="4" column="1">
-         <widget class="QCheckBox" name="freeze_plot">
+         <widget class="QCheckBox" name="freeze_image">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="text">
            <string>Freeze Image</string>
           </property>
@@ -1154,22 +1246,6 @@ QPushButton::pressed {
     <hint type="sourcelabel">
      <x>1223</x>
      <y>525</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>1075</x>
-     <y>770</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>update_frequency</sender>
-   <signal>valueChanged(int)</signal>
-   <receiver>start_live_view</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>1222</x>
-     <y>209</y>
     </hint>
     <hint type="destinationlabel">
      <x>1075</x>
