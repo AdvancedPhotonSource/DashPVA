@@ -198,6 +198,7 @@ class ImageWindow(QMainWindow):
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
+        image = np.rot90(image, k = self.rot_num)
         self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
@@ -232,7 +233,8 @@ class ImageWindow(QMainWindow):
                 x, y = q_pointer.x(), q_pointer.y()
                 self.mouse_x_val.setText(f"{x:.7f}")
                 self.mouse_y_val.setText(f"{y:.7f}")
-                img_data = self.reader.image
+                img_data = self.reader.getPvaImage()
+                img_data = np.rot90(img_data, k = self.rot_num)
                 if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
                     self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
