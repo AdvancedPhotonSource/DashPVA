@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QDialogButtonBox" name="buttonBox">
+  <widget class="QDialogButtonBox" name="btns_ok_cancel">
    <property name="geometry">
     <rect>
      <x>220</x>
@@ -29,7 +29,7 @@
     <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
    </property>
   </widget>
-  <widget class="QLineEdit" name="lineEdit">
+  <widget class="QLineEdit" name="le_key_name">
    <property name="geometry">
     <rect>
      <x>40</x>
@@ -43,7 +43,7 @@
 border-radius:3;</string>
    </property>
   </widget>
-  <widget class="QLineEdit" name="lineEdit_2">
+  <widget class="QLineEdit" name="le_item_info">
    <property name="geometry">
     <rect>
      <x>40</x>
@@ -57,7 +57,7 @@ border-radius:3;</string>
 border-radius:3;</string>
    </property>
   </widget>
-  <widget class="QLabel" name="label">
+  <widget class="QLabel" name="lbl_key_name">
    <property name="geometry">
     <rect>
      <x>30</x>
@@ -70,7 +70,7 @@ border-radius:3;</string>
     <string>PV Key/Name:</string>
    </property>
   </widget>
-  <widget class="QLabel" name="label_2">
+  <widget class="QLabel" name="lbl_item_info">
    <property name="geometry">
     <rect>
      <x>30</x>
@@ -118,13 +118,13 @@ border-radius:3;</string>
      <height>161</height>
     </rect>
    </property>
-   <layout class="QVBoxLayout" name="verticalLayout"/>
+   <layout class="QVBoxLayout" name="vlayout_pvs"/>
   </widget>
  </widget>
  <resources/>
  <connections>
   <connection>
-   <sender>buttonBox</sender>
+   <sender>btns_ok_cancel</sender>
    <signal>accepted()</signal>
    <receiver>new_config</receiver>
    <slot>accept()</slot>
@@ -140,7 +140,7 @@ border-radius:3;</string>
    </hints>
   </connection>
   <connection>
-   <sender>buttonBox</sender>
+   <sender>btns_ok_cancel</sender>
    <signal>rejected()</signal>
    <receiver>new_config</receiver>
    <slot>reject()</slot>

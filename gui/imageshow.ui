@@ -76,12 +76,12 @@
         <height>32</height>
        </rect>
       </property>
-      <layout class="QFormLayout" name="formLayout_2">
+      <layout class="QFormLayout" name="pv_name_layout">
        <property name="formAlignment">
         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
        </property>
        <item row="0" column="0">
-        <widget class="QLabel" name="label_name">
+        <widget class="QLabel" name="lbl_pv_name">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -150,12 +150,12 @@
         <height>32</height>
        </rect>
       </property>
-      <layout class="QFormLayout" name="formLayout_6">
+      <layout class="QFormLayout" name="provider_layout">
        <property name="formAlignment">
         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
        </property>
        <item row="0" column="0">
-        <widget class="QLabel" name="label_provider">
+        <widget class="QLabel" name="lbl_pv_provider">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -224,7 +224,7 @@
         <height>32</height>
        </rect>
       </property>
-      <layout class="QFormLayout" name="formLayout_3">
+      <layout class="QFormLayout" name="state_layout">
        <property name="formAlignment">
         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
        </property>
@@ -232,7 +232,7 @@
         <number>10</number>
        </property>
        <item row="0" column="0">
-        <widget class="QLabel" name="label_state">
+        <widget class="QLabel" name="lbl_connection_state">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -294,7 +294,7 @@
         <height>32</height>
        </rect>
       </property>
-      <layout class="QFormLayout" name="formLayout_5">
+      <layout class="QFormLayout" name="prefix_layout">
        <property name="labelAlignment">
         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
        </property>
@@ -351,7 +351,7 @@
           </font>
          </property>
          <property name="text">
-          <string>dp-ADSim:Pva1:Image</string>
+          <string>dp-ADSim</string>
          </property>
         </widget>
        </item>
@@ -924,7 +924,7 @@
          <height>221</height>
         </rect>
        </property>
-       <layout class="QFormLayout" name="formLayout">
+       <layout class="QFormLayout" name="image_layout">
         <property name="sizeConstraint">
          <enum>QLayout::SetDefaultConstraint</enum>
         </property>

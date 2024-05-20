@@ -15,11 +15,11 @@ gen = cycle_1234()
     
 class PVA_Reader:
 
-    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim:Pva1:Image"):
+    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim"):
         
         """variables needed for monitoring a connection"""
         self.provider = provider
-        self.pva_prefix = pva_prefix
+        self.pva_prefix = pva_prefix + ":Pva1:Image"
         self.channel = pva.Channel(self.pva_prefix, self.provider)
         self.roi_name = 'dp-ADSim:ROI1:PortName_RBV'
 
@@ -178,43 +178,59 @@ class ImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVA_Reader(pva_prefix=prefix)
                 self.reader.startChannelMonitor()
-                if self.reader.channel.isMonitorActive():
+                if self.reader.channel.get():
                     self.start_timers()
             else:
+                self.stop_timers()
                 self.reader.stopChannelMonitor()
-                self.timer_plot.stop()
+                del self.reader
                 self.reader = PVA_Reader(pva_prefix=prefix)
                 self.reader.startChannelMonitor()
-                if self.reader.channel.isMonitorActive():
+                if self.reader.channel.get():
                     self.start_timers()
         except:
-            print("Prefix Not valid")
+            self.image_view.clear()
+            self.horizontal_avg_plot.getPlotItem().clear()
+            del self.reader
+            self.reader = None
+            self.provider_name.setText("N/A")
+            self.name_val.setText("none")
+            self.is_connected.setText("Disconnected")
 
     def start_timers(self):
         self.timer_poll.start(1000/100)
         self.timer_avgs.start(int(1000/float(self.plotting_frequency.text())))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
+    def stop_timers(self):
+        self.timer_plot.stop()
+        self.timer_avgs.stop()
+        self.timer_poll.stop()
 
     def update_horizontal_vertical_plots(self):
         image = self.reader.getPvaImage()
-        image = np.rot90(image, k = self.rot_num)
-        self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
+        if image is not None:
+            image = np.rot90(image, k = self.rot_num)
+            self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
         self.first_plot = True
 
     def start_live_view_clicked(self):
-        if self.reader.channel.isMonitorActive():
-            self.start_timers()
-            
-        else:
-            self.reader.startChannelMonitor()
-            self.start_timers()
+        if self.reader is not None:
+            if self.reader.channel.isMonitorActive():
+                self.start_timers()
+                
+            elif self.reader.channel:
+                self.reader.startChannelMonitor()
+                self.start_timers()
+
 
     def stop_live_view_clicked(self):
-        self.timer_plot.stop()
-        self.reader.stopChannelMonitor()
+        if self.reader is not None:
+            self.timer_plot.stop()
+            self.reader.stopChannelMonitor()
+        
 
     def freeze_image_checked(self):
         if self.freeze_image.isChecked():
@@ -234,9 +250,10 @@ class ImageWindow(QMainWindow):
                 self.mouse_x_val.setText(f"{x:.7f}")
                 self.mouse_y_val.setText(f"{y:.7f}")
                 img_data = self.reader.getPvaImage()
-                img_data = np.rot90(img_data, k = self.rot_num)
-                if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                    self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                if img_data is not None:
+                    img_data = np.rot90(img_data, k = self.rot_num)
+                    if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
+                       self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
     #changed this to update labels as most processing will be done in the monitor call    
     def update_labels(self):
@@ -260,8 +277,8 @@ class ImageWindow(QMainWindow):
     def update_image(self):
         self.call_id_plot +=1
         image = self.reader.getPvaImage()
-        image = np.rot90(image, k = self.rot_num)
         if image is not None:
+            image = np.rot90(image, k = self.rot_num)
             if len(image.shape) == 2:
                 min_level, max_level = np.min(image), np.max(image)
                 if self.log_image.isChecked():
