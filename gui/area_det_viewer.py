@@ -15,13 +15,12 @@ gen = cycle_1234()
     
 class PVA_Reader:
 
-    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim"):
+    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim:Pva1:Image"):
         
         """variables needed for monitoring a connection"""
         self.provider = provider
-        self.pva_prefix = pva_prefix + ":Pva1:Image"
+        self.pva_prefix = pva_prefix
         self.channel = pva.Channel(self.pva_prefix, self.provider)
-        self.roi_name = 'dp-ADSim:ROI1:PortName_RBV'
 
         """variables that will store pva data"""
         self.pva_object = None
@@ -98,10 +97,6 @@ class PVA_Reader:
     def stopChannelMonitor(self):
         self.channel.unsubscribe('callback success')
         self.channel.stopMonitor()
-
-    def printROI(self):
-        pv_value = "none"#epics.cainfo(self.roi_name)
-        print("Value of", self.roi_name, ":", pv_value)
 
     def getPvaObjects(self):
         return self.pva_cache
