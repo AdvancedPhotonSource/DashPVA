@@ -351,7 +351,7 @@
           </font>
          </property>
          <property name="text">
-          <string>dp-ADSim</string>
+          <string>dp-ADSim:Pva1:Image</string>
          </property>
         </widget>
        </item>
@@ -436,7 +436,7 @@
         <x>20</x>
         <y>0</y>
         <width>301</width>
-        <height>231</height>
+        <height>271</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -459,7 +459,7 @@
          <x>10</x>
          <y>30</y>
          <width>281</width>
-         <height>193</height>
+         <height>231</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -480,7 +480,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>0</height>
+            <height>25</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -535,7 +535,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>0</height>
+            <height>25</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -587,6 +587,12 @@
         </item>
         <item row="2" column="0">
          <widget class="QLabel" name="stats_lbl_max_px">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -624,6 +630,12 @@
         </item>
         <item row="3" column="0">
          <widget class="QLabel" name="stats_lbl_min_px">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>10</pointsize>
@@ -661,6 +673,12 @@
         </item>
         <item row="4" column="0">
          <widget class="QLabel" name="stats_lbl_data_type">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="text">
            <string>Data Type:</string>
           </property>
@@ -691,6 +709,26 @@
           </property>
          </widget>
         </item>
+        <item row="5" column="0">
+         <widget class="QLabel" name="lbl_set_max">
+          <property name="text">
+           <string>Set Max:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="1">
+         <widget class="QDoubleSpinBox" name="max_setting_val">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
+          <property name="maximum">
+           <double>999999999.990000009536743</double>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </widget>
@@ -701,7 +739,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>240</y>
+        <y>280</y>
         <width>301</width>
         <height>131</height>
        </rect>
@@ -896,7 +934,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>380</y>
+        <y>420</y>
         <width>301</width>
         <height>261</height>
        </rect>
@@ -1157,9 +1195,9 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>650</y>
+        <y>690</y>
         <width>301</width>
-        <height>371</height>
+        <height>331</height>
        </rect>
       </property>
       <property name="title">
