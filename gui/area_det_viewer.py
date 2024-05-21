@@ -186,6 +186,7 @@ class ImageWindow(QMainWindow):
                 if self.reader.channel.get():
                     self.start_timers()
         except:
+            print("Failed to Connect")
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader
