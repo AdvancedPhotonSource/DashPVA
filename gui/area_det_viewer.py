@@ -128,17 +128,14 @@ class ImageWindow(QMainWindow):
         self.first_plot = True
         self.rot_num = 0 #original rotation count
         self.timer_poll = QTimer()
-        self.timer_avgs = QTimer()
         self.timer_plot = QTimer()
 
         self.timer_poll.timeout.connect(self.update_labels)
-        self.timer_avgs.timeout.connect(self.update_horizontal_vertical_plots)            
         self.timer_plot.timeout.connect(self.update_image)
 
         # Making image_view a plot to show axes
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        #self.image_view.ui.histogram.vb.setYRange(0,max=300)
         self.viewer_layout.addWidget(self.image_view,1,1)
 
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
@@ -172,19 +169,11 @@ class ImageWindow(QMainWindow):
 
     def start_timers(self):
         self.timer_poll.start(1000/100)
-        self.timer_avgs.start(int(1000/float(self.plotting_frequency.text())))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_timers(self):
         self.timer_plot.stop()
-        self.timer_avgs.stop()
         self.timer_poll.stop()
-
-    def update_horizontal_vertical_plots(self):
-        image = self.reader.getPvaImage()
-        if image is not None:
-            image = np.rot90(image, k = self.rot_num)
-            self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
     def reset_first_plot(self):
         self.first_plot = True
@@ -231,7 +220,7 @@ class ImageWindow(QMainWindow):
             if self.freeze_image.isChecked():
                 self.timer_poll.stop()
                 self.timer_plot.stop()
-                self.timer_avgs.stop()
+                # self.timer_avgs.stop()
                 
             else:
                 self.start_timers()
@@ -282,7 +271,7 @@ class ImageWindow(QMainWindow):
                             max_level = np.log(max_level + 1)
                     if self.first_plot:
                         #need to also clone the image to self.image_view.image so the ROI feature  works | probably a memory leak here ?
-                        self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) #, levels=(min_level, max_level)
+                        self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) #axes={'y': 0, 'x': 1}
                         self.image_view.imageItem.setRect(rect=coordinates)# autoRange=False, autoLevels=False,
 
                         self.max_setting_val.setValue(max_level)
@@ -290,6 +279,9 @@ class ImageWindow(QMainWindow):
                     else:
                         self.image_view.setImage(image, autoRange=False, autoLevels=False)
                         self.image_view.imageItem.setRect(rect=coordinates)#autoRange=False, autoLevels=False,
+            
+                self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
+
 
                         
                 self.min_px_val.setText(f"{min_level:.2f}")
