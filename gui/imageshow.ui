@@ -61,103 +61,32 @@
      </property>
      <property name="font">
       <font>
-       <pointsize>10</pointsize>
+       <pointsize>12</pointsize>
       </font>
      </property>
      <property name="title">
       <string>Connection</string>
      </property>
-     <widget class="QWidget" name="formLayoutWidget_2">
+     <widget class="QWidget" name="formLayoutWidget_5">
       <property name="geometry">
        <rect>
         <x>10</x>
         <y>30</y>
-        <width>248</width>
-        <height>32</height>
-       </rect>
-      </property>
-      <layout class="QFormLayout" name="pv_name_layout">
-       <property name="formAlignment">
-        <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
-       </property>
-       <item row="0" column="0">
-        <widget class="QLabel" name="lbl_pv_name">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>40</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>50</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Name:</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="QLabel" name="name_val">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>200</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>240</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="frameShape">
-          <enum>QFrame::Box</enum>
-         </property>
-         <property name="frameShadow">
-          <enum>QFrame::Sunken</enum>
-         </property>
-         <property name="text">
-          <string>none</string>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="formLayoutWidget_5">
-      <property name="geometry">
-       <rect>
-        <x>280</x>
-        <y>30</y>
-        <width>128</width>
+        <width>141</width>
         <height>32</height>
        </rect>
       </property>
       <layout class="QFormLayout" name="provider_layout">
+       <property name="fieldGrowthPolicy">
+        <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+       </property>
        <property name="formAlignment">
         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
        </property>
        <item row="0" column="0">
         <widget class="QLabel" name="lbl_pv_provider">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -170,9 +99,14 @@
          </property>
          <property name="maximumSize">
           <size>
-           <width>60</width>
+           <width>75</width>
            <height>30</height>
           </size>
+         </property>
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
          </property>
          <property name="text">
           <string>Provider:</string>
@@ -199,6 +133,11 @@
            <height>0</height>
           </size>
          </property>
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
          <property name="frameShape">
           <enum>QFrame::Box</enum>
          </property>
@@ -218,9 +157,9 @@
      <widget class="QWidget" name="formLayoutWidget_3">
       <property name="geometry">
        <rect>
-        <x>430</x>
+        <x>180</x>
         <y>30</y>
-        <width>161</width>
+        <width>171</width>
         <height>32</height>
        </rect>
       </property>
@@ -247,7 +186,7 @@
          </property>
          <property name="font">
           <font>
-           <pointsize>10</pointsize>
+           <pointsize>12</pointsize>
           </font>
          </property>
          <property name="text">
@@ -269,6 +208,11 @@
            <height>30</height>
           </size>
          </property>
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
          <property name="frameShape">
           <enum>QFrame::Box</enum>
          </property>
@@ -288,9 +232,9 @@
      <widget class="QWidget" name="formLayoutWidget_4">
       <property name="geometry">
        <rect>
-        <x>630</x>
+        <x>380</x>
         <y>30</y>
-        <width>311</width>
+        <width>431</width>
         <height>32</height>
        </rect>
       </property>
@@ -311,7 +255,7 @@
          </property>
          <property name="minimumSize">
           <size>
-           <width>65</width>
+           <width>80</width>
            <height>30</height>
           </size>
          </property>
@@ -323,7 +267,7 @@
          </property>
          <property name="font">
           <font>
-           <pointsize>10</pointsize>
+           <pointsize>12</pointsize>
           </font>
          </property>
          <property name="text">
@@ -341,13 +285,13 @@
          </property>
          <property name="maximumSize">
           <size>
-           <width>240</width>
+           <width>340</width>
            <height>30</height>
           </size>
          </property>
          <property name="font">
           <font>
-           <pointsize>10</pointsize>
+           <pointsize>12</pointsize>
           </font>
          </property>
          <property name="text">
@@ -433,10 +377,10 @@
      <widget class="QGroupBox" name="group_box_stats">
       <property name="geometry">
        <rect>
-        <x>20</x>
+        <x>10</x>
         <y>0</y>
-        <width>301</width>
-        <height>271</height>
+        <width>321</width>
+        <height>291</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -447,7 +391,7 @@
       </property>
       <property name="font">
        <font>
-        <pointsize>10</pointsize>
+        <pointsize>12</pointsize>
        </font>
       </property>
       <property name="title">
@@ -458,8 +402,8 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>281</width>
-         <height>231</height>
+         <width>301</width>
+         <height>252</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -491,7 +435,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -518,6 +462,11 @@
             <width>16777215</width>
             <height>21</height>
            </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
           </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
@@ -546,7 +495,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -574,6 +523,11 @@
             <height>21</height>
            </size>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -595,7 +549,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -616,6 +570,11 @@
             <width>0</width>
             <height>25</height>
            </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
           </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
@@ -638,7 +597,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -660,6 +619,11 @@
             <height>25</height>
            </size>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -678,6 +642,11 @@
             <width>0</width>
             <height>25</height>
            </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
           </property>
           <property name="text">
            <string>Data Type:</string>
@@ -698,6 +667,11 @@
             <height>25</height>
            </size>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="frameShape">
            <enum>QFrame::Box</enum>
           </property>
@@ -709,14 +683,19 @@
           </property>
          </widget>
         </item>
-        <item row="5" column="0">
+        <item row="6" column="0">
          <widget class="QLabel" name="lbl_set_max">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="text">
            <string>Set Max:</string>
           </property>
          </widget>
         </item>
-        <item row="5" column="1">
+        <item row="6" column="1">
          <widget class="QDoubleSpinBox" name="max_setting_val">
           <property name="minimumSize">
            <size>
@@ -724,8 +703,34 @@
             <height>25</height>
            </size>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="maximum">
            <double>999999999.990000009536743</double>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="1">
+         <widget class="QDoubleSpinBox" name="min_setting_val">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="0">
+         <widget class="QLabel" name="lbl_set_min">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
+          <property name="text">
+           <string>Set Min:</string>
           </property>
          </widget>
         </item>
@@ -738,9 +743,9 @@
       </property>
       <property name="geometry">
        <rect>
-        <x>20</x>
-        <y>280</y>
-        <width>301</width>
+        <x>10</x>
+        <y>300</y>
+        <width>321</width>
         <height>131</height>
        </rect>
       </property>
@@ -752,7 +757,7 @@
       </property>
       <property name="font">
        <font>
-        <pointsize>10</pointsize>
+        <pointsize>12</pointsize>
        </font>
       </property>
       <property name="title">
@@ -769,8 +774,8 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>281</width>
-         <height>91</height>
+         <width>301</width>
+         <height>95</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="mouse_pos_layout">
@@ -802,7 +807,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="mouseTracking">
@@ -826,7 +831,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -850,7 +855,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="mouseTracking">
@@ -874,7 +879,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -892,7 +897,7 @@
          <widget class="QLabel" name="mouse_lbl_px">
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -913,7 +918,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -933,9 +938,9 @@
      <widget class="QGroupBox" name="group_box_img_info">
       <property name="geometry">
        <rect>
-        <x>20</x>
-        <y>420</y>
-        <width>301</width>
+        <x>10</x>
+        <y>440</y>
+        <width>321</width>
         <height>261</height>
        </rect>
       </property>
@@ -947,7 +952,7 @@
       </property>
       <property name="font">
        <font>
-        <pointsize>10</pointsize>
+        <pointsize>12</pointsize>
        </font>
       </property>
       <property name="title">
@@ -958,7 +963,7 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>281</width>
+         <width>301</width>
          <height>221</height>
         </rect>
        </property>
@@ -991,7 +996,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -1015,7 +1020,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -1039,7 +1044,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -1055,6 +1060,11 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="maximum">
            <number>999999999</number>
           </property>
@@ -1067,7 +1077,7 @@
          <widget class="QLabel" name="image_lbl_size_x">
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -1088,7 +1098,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -1106,7 +1116,7 @@
          <widget class="QLabel" name="image_lbl_size_y">
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="text">
@@ -1124,7 +1134,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="frameShape">
@@ -1154,7 +1164,7 @@
           </property>
           <property name="font">
            <font>
-            <pointsize>10</pointsize>
+            <pointsize>12</pointsize>
            </font>
           </property>
           <property name="tabletTracking">
@@ -1176,6 +1186,11 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="text">
            <string>Freeze Image</string>
           </property>
@@ -1183,6 +1198,11 @@
         </item>
         <item row="5" column="1">
          <widget class="QPushButton" name="rotate90degCCW">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
           <property name="text">
            <string>Rotate 90° CCW</string>
           </property>
@@ -1194,11 +1214,16 @@
      <widget class="QGroupBox" name="group_box_roi">
       <property name="geometry">
        <rect>
-        <x>20</x>
-        <y>690</y>
-        <width>301</width>
-        <height>331</height>
+        <x>10</x>
+        <y>710</y>
+        <width>321</width>
+        <height>311</height>
        </rect>
+      </property>
+      <property name="font">
+       <font>
+        <pointsize>12</pointsize>
+       </font>
       </property>
       <property name="title">
        <string>ROI</string>

@@ -149,7 +149,7 @@ class ImageWindow(QMainWindow):
         # self.image_view.addItem(roi)
         
         #Connecting the signals to the code that will be executed
-        self.pv_prefix.returnPressed.connect(self.connect_pva_reader)
+        self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
@@ -157,7 +157,9 @@ class ImageWindow(QMainWindow):
         self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
-        self.max_setting_val.valueChanged.connect(self.update_max_setting)
+        self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
+
 
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
@@ -166,7 +168,28 @@ class ImageWindow(QMainWindow):
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
 
 
-    def connect_pva_reader(self):
+
+
+    def start_timers(self):
+        self.timer_poll.start(1000/100)
+        self.timer_avgs.start(int(1000/float(self.plotting_frequency.text())))
+        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+
+    def stop_timers(self):
+        self.timer_plot.stop()
+        self.timer_avgs.stop()
+        self.timer_poll.stop()
+
+    def update_horizontal_vertical_plots(self):
+        image = self.reader.getPvaImage()
+        if image is not None:
+            image = np.rot90(image, k = self.rot_num)
+            self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
+
+    def reset_first_plot(self):
+        self.first_plot = True
+
+    def start_live_view_clicked(self):
         try:
             prefix = self.pv_prefix.text()
 
@@ -192,43 +215,16 @@ class ImageWindow(QMainWindow):
             del self.reader
             self.reader = None
             self.provider_name.setText("N/A")
-            self.name_val.setText("none")
             self.is_connected.setText("Disconnected")
-
-    def start_timers(self):
-        self.timer_poll.start(1000/100)
-        self.timer_avgs.start(int(1000/float(self.plotting_frequency.text())))
-        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
-
-    def stop_timers(self):
-        self.timer_plot.stop()
-        self.timer_avgs.stop()
-        self.timer_poll.stop()
-
-    def update_horizontal_vertical_plots(self):
-        image = self.reader.getPvaImage()
-        if image is not None:
-            image = np.rot90(image, k = self.rot_num)
-            self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
-
-    def reset_first_plot(self):
-        self.first_plot = True
-
-    def start_live_view_clicked(self):
-        if self.reader is not None:
-            if self.reader.channel.isMonitorActive():
-                self.start_timers()
-                
-            elif self.reader.channel:
-                self.reader.startChannelMonitor()
-                self.start_timers()
-
-
+        
     def stop_live_view_clicked(self):
         if self.reader is not None:
-            self.timer_plot.stop()
             self.reader.stopChannelMonitor()
-        
+            self.stop_timers()
+            del self.reader
+            self.reader = None
+            self.provider_name.setText("N/A")
+            self.is_connected.setText("Disconnected")
 
     def freeze_image_checked(self):
         if self.reader is not None:
@@ -246,8 +242,8 @@ class ImageWindow(QMainWindow):
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
                 x, y = q_pointer.x(), q_pointer.y()
-                self.mouse_x_val.setText(f"{x:.7f}")
-                self.mouse_y_val.setText(f"{y:.7f}")
+                self.mouse_x_val.setText(f"{x:.3f}")
+                self.mouse_y_val.setText(f"{y:.3f}")
                 img_data = self.reader.getPvaImage()
                 if img_data is not None:
                     img_data = np.rot90(img_data, k = self.rot_num)
@@ -256,10 +252,8 @@ class ImageWindow(QMainWindow):
 
     def update_labels(self):
         provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else None}"
-        channel_name = self.reader.channel.getName() if self.reader.channel.isMonitorActive() else "none"
         is_connected = "Connected" if self.reader.channel.isMonitorActive() else "Disconnected"
         self.provider_name.setText(provider_name)
-        self.name_val.setText(channel_name)
         self.is_connected.setText(is_connected)
         self.missed_frames_val.setText(f"{self.reader.frames_missed:d}")
         self.frames_received_val.setText(f"{self.reader.frames_received:d}")
@@ -280,30 +274,32 @@ class ImageWindow(QMainWindow):
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
+                    height, width = image.shape[:2]
+                    coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
                             min_level = np.log(min_level + 1)
                             max_level = np.log(max_level + 1)
                     if self.first_plot:
-                        height, width = image.shape[:2]
-                        coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
-                        self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, rect=coordinates, axes={'y': 0, 'x': 1})
                         #need to also clone the image to self.image_view.image so the ROI feature  works | probably a memory leak here ?
                         self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) #, levels=(min_level, max_level)
+                        self.image_view.imageItem.setRect(rect=coordinates)# autoRange=False, autoLevels=False,
+
                         self.max_setting_val.setValue(max_level)
                         self.first_plot = False
                     else:
-                        height, width = image.shape[:2]
-                        coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
-                        self.image_view.imageItem.setImage(image, autoRange=False, autoLevels=False, rect=coordinates, axes={'y': 0, 'x': 1})
                         self.image_view.setImage(image, autoRange=False, autoLevels=False)
+                        self.image_view.imageItem.setRect(rect=coordinates)#autoRange=False, autoLevels=False,
+
                         
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
     
-    def update_max_setting(self):
+
+    def update_min_max_setting(self):
+        min = float(self.min_setting_val.text())
         max = float(self.max_setting_val.text())
-        self.image_view.setLevels(0, max)
+        self.image_view.setLevels(min, max)
 
             
 
