@@ -14,11 +14,10 @@ def main():
     command += " --status-channel collector:*:status --output-channel collector:*:output --processor-file hpcexample.py --report-period 5"
     command += " --server-queue-size 100 --collector-cache-size 100 --monitor-queue-size 1000"
 
-    i=0
     if metadata and metadata is not None:
         command += " --metadata-channels "
-        for pv in metadata:
-            command += "ca://"+metadata[pv]
+        for i, pv in enumerate(metadata):
+            command += "pva://"+metadata[pv]
             if i < len(metadata)-1:
                 command += ","  
             i +=1

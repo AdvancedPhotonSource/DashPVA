@@ -38,13 +38,13 @@ class PVA_Reader:
         self.pva_object = pv
         if len(self.pva_cache) < 1000: 
             self.pva_cache.append(pv)
-            self.pvaToImage()
             self.parseImageDataType()
+            self.pvaToImage()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv)
-            self.pvaToImage()
             self.parseImageDataType()
+            self.pvaToImage()
             
     def parseImageDataType(self):
         if self.pva_object is not None:
@@ -86,6 +86,7 @@ class PVA_Reader:
                         id_diff = current_array_id - self.__last_array_id - 1
                         self.frames_missed += id_diff if (id_diff > 0) else 0
                     self.__last_array_id = current_array_id
+            #print("i am here")
         except:
             self.frames_missed += 1
             
