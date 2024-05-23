@@ -220,7 +220,6 @@ class ImageWindow(QMainWindow):
             if self.freeze_image.isChecked():
                 self.timer_poll.stop()
                 self.timer_plot.stop()
-                # self.timer_avgs.stop()
                 
             else:
                 self.start_timers()
@@ -258,7 +257,7 @@ class ImageWindow(QMainWindow):
     def update_image(self):
         if self.reader is not None:
             self.call_id_plot +=1
-            image = self.reader.getPvaImage()
+            image = self.reader.image
             if image is not None:
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
