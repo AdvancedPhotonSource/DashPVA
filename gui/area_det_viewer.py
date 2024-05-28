@@ -157,6 +157,7 @@ class ImageWindow(QMainWindow):
         self.rotate90degCCW.clicked.connect(self.rotation_count)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.plotting_frequency.valueChanged.connect(self.start_timers)
 
 
         self.horizontal_avg_plot = pg.PlotWidget()
@@ -240,7 +241,7 @@ class ImageWindow(QMainWindow):
                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
     def update_labels(self):
-        provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else None}"
+        provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
         is_connected = "Connected" if self.reader.channel.isMonitorActive() else "Disconnected"
         self.provider_name.setText(provider_name)
         self.is_connected.setText(is_connected)
@@ -270,15 +271,14 @@ class ImageWindow(QMainWindow):
                             min_level = np.log(min_level + 1)
                             max_level = np.log(max_level + 1)
                     if self.first_plot:
-                        #need to also clone the image to self.image_view.image so the ROI feature  works | probably a memory leak here ?
-                        self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) #axes={'y': 0, 'x': 1}
-                        self.image_view.imageItem.setRect(rect=coordinates)# autoRange=False, autoLevels=False,
+                        self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) 
+                        self.image_view.imageItem.setRect(rect=coordinates)
 
                         self.max_setting_val.setValue(max_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                        self.image_view.imageItem.setRect(rect=coordinates)#autoRange=False, autoLevels=False,
+                        self.image_view.imageItem.setRect(rect=coordinates)
             
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 

@@ -1065,6 +1065,9 @@
             <pointsize>12</pointsize>
            </font>
           </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
           <property name="maximum">
            <number>999999999</number>
           </property>
@@ -1299,22 +1302,5 @@ QPushButton::pressed {
   </widget>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>plotting_frequency</sender>
-   <signal>valueChanged(int)</signal>
-   <receiver>start_live_view</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>1223</x>
-     <y>525</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>1075</x>
-     <y>770</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>
