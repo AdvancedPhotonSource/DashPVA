@@ -39,7 +39,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         self.lastFrameTimestamp = 0
 
         self.logger.debug(f'Created HpcAdMetadataProcessor')
-        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
+        # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
       
 
     # Configure user processor
@@ -92,9 +92,10 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
             # Append the NtAttribute object to frameAttributes
             frameAttributes.append(nt_attribute)
+            frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
             self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
             self.nMetadataProcessed += 1 
-            del self.currentMetadataMap[mdChannel]
+            # del self.currentMetadataMap[mdChannel]
             return True
         elif frameTimestamp > mdTimestamp2:
             # This metadata is too old, keep it appending until new one is found (the if logic above)
@@ -104,7 +105,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             frameAttributes.append(nt_attribute)
             self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
             self.nMetadataProcessed += 1 
-            del self.currentMetadataMap[mdChannel]
+            # del self.currentMetadataMap[mdChannel]
             return True
         else:
             # This metadata is newer than the frame
@@ -164,18 +165,21 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         self.logger.debug(f'Processing pvObject: {pvObject}')
 
 
-
+        # TODO: CACHE QUEUE HERE for static metadata
+        
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
             while True:
-                if metadataChannel not in self.currentMetadataMap:
-                    try:
-                        self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
-                    except pva.QueueEmpty as ex:
-                        # No metadata in the queue, we failed
-                        associationFailed = True 
-                        break
+                # if metadataChannel not in self.currentMetadataMap:
+                try:
+                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
+                except pva.QueueEmpty as ex:
+                    # No metadata in the queue, we failed
+                    # associationFailed = True 
+                    # break
+                    pass
+                    # result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
                 result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
                 if result is not None:
                     if not result:
