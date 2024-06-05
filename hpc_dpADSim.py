@@ -65,9 +65,9 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         if 'timeStamp' in mdObject:
             mdTimestamp = TimeUtility.getTimeStampAsFloat(mdObject['timeStamp'])
             mdTimestamp2 = mdTimestamp + self.metadataTimestampOffset
-        else:
-            mdTimestamp = frameTimestamp  # Use frame timestamp if no metadata timestamp
-            mdTimestamp2 = mdTimestamp  # No offset in this case
+        # else:
+        #     mdTimestamp = frameTimestamp  # Use frame timestamp if no metadata timestamp
+        #     mdTimestamp2 = mdTimestamp  # No offset in this case
 
         if 'value' not in mdObject:
             self.logger.error(f'Metadata object {mdObject} does not have field "value"')
@@ -97,11 +97,15 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             del self.currentMetadataMap[mdChannel]
             return True
         elif frameTimestamp > mdTimestamp2:
-            # This metadata is too old, discard it and try next one
-            self.nMetadataDiscarded += 1 
+            # This metadata is too old, keep it appending until new one is found (the if logic above)
+            
+            nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
+            # Append the NtAttribute object to frameAttributes
+            frameAttributes.append(nt_attribute)
+            self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+            self.nMetadataProcessed += 1 
             del self.currentMetadataMap[mdChannel]
-            self.logger.debug(f'Discarding old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-            return None
+            return True
         else:
             # This metadata is newer than the frame
             # Association failed, but keep metadata for the next frame
