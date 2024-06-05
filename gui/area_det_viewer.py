@@ -1,5 +1,8 @@
 import sys
 import pvaccess as pva
+import json
+from epics import camonitor
+from epics import caget
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QTimer
@@ -15,12 +18,12 @@ gen = cycle_1234()
     
 class PVA_Reader:
 
-    def __init__(self, provider=pva.PVA, pva_prefix="dp-ADSim:Pva1:Image"):
+    def __init__(self, pva_prefix="dp-ADSim",provider=pva.PVA):
         
         """variables needed for monitoring a connection"""
         self.provider = provider
         self.pva_prefix = pva_prefix
-        self.channel = pva.Channel(self.pva_prefix, self.provider)
+        self.channel = pva.Channel(self.pva_prefix+":Pva1:Image", self.provider)
 
         """variables that will store pva data"""
         self.pva_object = None
@@ -33,8 +36,19 @@ class PVA_Reader:
         self.frames_missed = 0
         self.frames_received = 0
         self.data_type = None
+        self.pvs = {}
+        self.metadata = {}
+        self.num_rois = 0
+
+        with open("gui/PVs.json", "r") as json_file:
+            self.pvs = json.load(json_file)
+
+    def ca_callback(self, pvname=None, value=None, **kwargs):
+        self.metadata[pvname] = value
+        #print(f"{pvname}:  {value}")
+
         
-    def callbackSuccess(self, pv):
+    def pva_callbackSuccess(self, pv):
         self.pva_object = pv
         if len(self.pva_cache) < 1000: 
             self.pva_cache.append(pv)
@@ -72,13 +86,11 @@ class PVA_Reader:
                 self.frames_received += 1
                 if "dimension" in self.pva_object:
                     self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                    image = np.array(self.pva_object["value"][0][self.data_type])
-                    image = np.reshape(image, self.shape)
+                    self.image = np.array(self.pva_object["value"][0][self.data_type])
+                    self.image= np.reshape(self.image, self.shape)
                 else:
-                    image = None
+                    self.image = None
                 
-                self.image = image
-
                 data = self.pva_cache[-1]
                 if data is not None:
                     current_array_id = data['uniqueId']
@@ -91,11 +103,23 @@ class PVA_Reader:
             self.frames_missed += 1
             
     def startChannelMonitor(self):
-        self.channel.subscribe('callback success', self.callbackSuccess)
+        self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
+        if self.pvs and self.pvs is not None:
+            try:
+                for key in self.pvs:
+                    self.metadata[f"{self.pva_prefix}:{self.pvs[key]}"] = caget(f"{self.pva_prefix}:{self.pvs[key]}")
+                    if not(f"{self.pvs[key]}".startswith(f"ROI{self.num_rois}")):
+                        self.num_rois += 1
+                    
+                for key in self.pvs:
+                    camonitor(f"{self.pva_prefix}:{self.pvs[key]}", callback=self.ca_callback)
+            except:
+                print("Failed to connect to PV")
+        
 
     def stopChannelMonitor(self):
-        self.channel.unsubscribe('callback success')
+        self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
 
     def getPvaObjects(self):
@@ -128,6 +152,7 @@ class ImageWindow(QMainWindow):
         self.call_id_plot = 0
         self.first_plot = True
         self.rot_num = 0 #original rotation count
+        self.rois = []
         self.timer_poll = QTimer()
         self.timer_plot = QTimer()
 
@@ -141,10 +166,6 @@ class ImageWindow(QMainWindow):
 
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
-        
-        #TODO: Adjust so that location, width, and height are read in from the detector
-        # roi = pg.ROI([512, 512], [100, 100],pen=pg.mkPen("r"),movable=False)
-        # self.image_view.addItem(roi)
         
         #Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -165,7 +186,6 @@ class ImageWindow(QMainWindow):
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
-
 
 
 
@@ -199,6 +219,8 @@ class ImageWindow(QMainWindow):
 
                 if self.reader.channel.get():
                     self.start_timers()
+
+            self.add_rois()
         except:
             print("Failed to Connect")
             self.image_view.clear()
@@ -225,6 +247,19 @@ class ImageWindow(QMainWindow):
                 
             else:
                 self.start_timers()
+
+    def add_rois(self):
+        self.roi_colors = ["ff0000", "0000ff", "4CBB17", "ff00ff"]
+        for i in range(self.reader.num_rois):
+            roi = pg.ROI(
+                pos=[self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:MinX"], self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:MinY"]],
+                size=[self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:SizeX"], self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:SizeY"]],
+                movable=False,
+                pen=pg.mkPen(self.roi_colors[i])
+            )
+            self.rois.append(roi)
+            self.image_view.addItem(roi)
+
 
     def update_mouse_pos(self, pos):
         if pos is not None:

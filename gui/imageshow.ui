@@ -295,7 +295,7 @@
           </font>
          </property>
          <property name="text">
-          <string>dp-ADSim:Pva1:Image</string>
+          <string>dp-ADSim</string>
          </property>
         </widget>
        </item>

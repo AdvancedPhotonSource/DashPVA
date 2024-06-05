@@ -15,13 +15,13 @@ def main():
     if metadata and metadata is not None:
         command += " -mpv "
         for i, pv in enumerate(metadata):
-            command += "pva://"+metadata[pv]
+            command += f"ca://{prefix}:{metadata[pv]}"
             if i < len(metadata)-1:
                 command += ","  
             i +=1
     print(command)
     
-    subprocess.run(command, shell=True)
+    #subprocess.Popen(command, shell=True)
 
 if __name__ == "__main__":
     main()
