@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1352</width>
-    <height>812</height>
+    <width>1360</width>
+    <height>916</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -15,6 +15,11 @@
     <horstretch>0</horstretch>
     <verstretch>0</verstretch>
    </sizepolicy>
+  </property>
+  <property name="font">
+   <font>
+    <pointsize>12</pointsize>
+   </font>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
@@ -26,7 +31,7 @@
       <x>9</x>
       <y>-1</y>
       <width>971</width>
-      <height>801</height>
+      <height>911</height>
      </rect>
     </property>
     <property name="sizePolicy">
@@ -47,9 +52,9 @@
     <widget class="QGroupBox" name="group_box_connection">
      <property name="geometry">
       <rect>
-       <x>10</x>
-       <y>720</y>
-       <width>951</width>
+       <x>20</x>
+       <y>820</y>
+       <width>941</width>
        <height>71</height>
       </rect>
      </property>
@@ -159,7 +164,7 @@
        <rect>
         <x>180</x>
         <y>30</y>
-        <width>171</width>
+        <width>191</width>
         <height>32</height>
        </rect>
       </property>
@@ -204,7 +209,7 @@
          </property>
          <property name="maximumSize">
           <size>
-           <width>120</width>
+           <width>140</width>
            <height>30</height>
           </size>
          </property>
@@ -308,7 +313,7 @@
        <x>10</x>
        <y>30</y>
        <width>951</width>
-       <height>681</height>
+       <height>781</height>
       </rect>
      </property>
      <layout class="QGridLayout" name="viewer_layout"/>
@@ -322,8 +327,8 @@
      <rect>
       <x>990</x>
       <y>20</y>
-      <width>351</width>
-      <height>711</height>
+      <width>361</width>
+      <height>811</height>
      </rect>
     </property>
     <property name="sizePolicy">
@@ -331,6 +336,12 @@
       <horstretch>0</horstretch>
       <verstretch>0</verstretch>
      </sizepolicy>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>0</width>
+      <height>30</height>
+     </size>
     </property>
     <property name="tabletTracking">
      <bool>false</bool>
@@ -369,9 +380,9 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>0</y>
+       <y>-562</y>
        <width>335</width>
-       <height>1029</height>
+       <height>1371</height>
       </rect>
      </property>
      <widget class="QGroupBox" name="group_box_stats">
@@ -380,7 +391,7 @@
         <x>10</x>
         <y>0</y>
         <width>321</width>
-        <height>291</height>
+        <height>321</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -403,7 +414,7 @@
          <x>10</x>
          <y>30</y>
          <width>301</width>
-         <height>252</height>
+         <height>281</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="stats_layout">
@@ -700,7 +711,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>25</height>
+            <height>30</height>
            </size>
           </property>
           <property name="font">
@@ -709,7 +720,7 @@
            </font>
           </property>
           <property name="maximum">
-           <double>999999999.990000009536743</double>
+           <double>9999999999.989999771118164</double>
           </property>
          </widget>
         </item>
@@ -719,6 +730,12 @@
            <font>
             <pointsize>12</pointsize>
            </font>
+          </property>
+          <property name="minimum">
+           <double>-10000000000.000000000000000</double>
+          </property>
+          <property name="maximum">
+           <double>9999999999.989999771118164</double>
           </property>
          </widget>
         </item>
@@ -744,9 +761,9 @@
       <property name="geometry">
        <rect>
         <x>10</x>
-        <y>300</y>
+        <y>330</y>
         <width>321</width>
-        <height>131</height>
+        <height>171</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -775,7 +792,7 @@
          <x>10</x>
          <y>30</y>
          <width>301</width>
-         <height>95</height>
+         <height>131</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="mouse_pos_layout">
@@ -829,6 +846,12 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -877,6 +900,12 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -916,6 +945,12 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>25</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -939,9 +974,9 @@
       <property name="geometry">
        <rect>
         <x>10</x>
-        <y>440</y>
+        <y>510</y>
         <width>321</width>
-        <height>261</height>
+        <height>291</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -964,7 +999,7 @@
          <x>10</x>
          <y>30</y>
          <width>301</width>
-         <height>221</height>
+         <height>251</height>
         </rect>
        </property>
        <layout class="QFormLayout" name="image_layout">
@@ -1135,6 +1170,12 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -1201,13 +1242,53 @@
         </item>
         <item row="5" column="1">
          <widget class="QPushButton" name="rotate90degCCW">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
           <property name="font">
            <font>
-            <pointsize>12</pointsize>
+            <family>Sans Serif</family>
+            <pointsize>11</pointsize>
+            <weight>50</weight>
+            <italic>false</italic>
+            <bold>false</bold>
            </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 11pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius: 3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}
+</string>
           </property>
           <property name="text">
            <string>Rotate 90° CCW</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="0">
+         <widget class="QCheckBox" name="display_rois">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Show Rois</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
@@ -1218,9 +1299,9 @@
       <property name="geometry">
        <rect>
         <x>10</x>
-        <y>710</y>
+        <y>810</y>
         <width>321</width>
-        <height>311</height>
+        <height>551</height>
        </rect>
       </property>
       <property name="font">
@@ -1231,14 +1312,334 @@
       <property name="title">
        <string>ROI</string>
       </property>
+      <widget class="QWidget" name="formLayoutWidget_2">
+       <property name="geometry">
+        <rect>
+         <x>9</x>
+         <y>29</y>
+         <width>301</width>
+         <height>241</height>
+        </rect>
+       </property>
+       <layout class="QFormLayout" name="formLayout">
+        <property name="labelAlignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
+        <property name="formAlignment">
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+        </property>
+        <property name="verticalSpacing">
+         <number>20</number>
+        </property>
+        <item row="0" column="0">
+         <widget class="QLabel" name="lbl_ROI1">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">color: rgb(255, 0, 0);</string>
+          </property>
+          <property name="text">
+           <string>ROI1 Total:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="lbl_ROI2">
+          <property name="font">
+           <font>
+            <pointsize>12</pointsize>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">color: rgb(0, 0, 255);</string>
+          </property>
+          <property name="text">
+           <string>ROI2 Total:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="lbl_ROI3">
+          <property name="styleSheet">
+           <string notr="true">color: rgb(76, 187, 23);
+font: 12pt &quot;Sans Serif&quot;;</string>
+          </property>
+          <property name="text">
+           <string>ROI3 Total:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="lbl_ROI4">
+          <property name="styleSheet">
+           <string notr="true">color: rgb(255, 0, 255);
+font: 12pt &quot;Sans Serif&quot;;</string>
+          </property>
+          <property name="text">
+           <string>ROI4 Total:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="lbl_image_total">
+          <property name="text">
+           <string>Stats5 Total:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLabel" name="roi1_total_value">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLabel" name="roi2_total_value">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLabel" name="roi3_total_value">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLabel" name="roi4_total_value">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLabel" name="stats5_total_value">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Box</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Sunken</enum>
+          </property>
+          <property name="text">
+           <string>0.0</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QLabel" name="lbl_roi_specifi_stats">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>280</y>
+         <width>151</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <pointsize>12</pointsize>
+        </font>
+       </property>
+       <property name="text">
+        <string>ROI Specific Stats</string>
+       </property>
+      </widget>
+      <widget class="QWidget" name="verticalLayoutWidget">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>300</y>
+         <width>301</width>
+         <height>241</height>
+        </rect>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <widget class="QPushButton" name="btn_Stats1">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <family>Sans Serif</family>
+            <pointsize>12</pointsize>
+            <weight>50</weight>
+            <italic>false</italic>
+            <bold>false</bold>
+           </font>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 12pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius: 3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
+          </property>
+          <property name="text">
+           <string>Stats1</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_Stats2">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 12pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius:3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}
+</string>
+          </property>
+          <property name="text">
+           <string>Stats2</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_Stats3">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 12pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius:3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}
+</string>
+          </property>
+          <property name="text">
+           <string>Stats3</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_Stats4">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 12pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius:3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
+          </property>
+          <property name="text">
+           <string>Stats4</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </widget>
    </widget>
    <widget class="QPushButton" name="stop_live_view">
     <property name="geometry">
      <rect>
-      <x>1180</x>
-      <y>740</y>
+      <x>1190</x>
+      <y>840</y>
       <width>151</width>
       <height>61</height>
      </rect>
@@ -1249,11 +1650,20 @@
       <height>26</height>
      </size>
     </property>
+    <property name="font">
+     <font>
+      <family>Sans Serif</family>
+      <pointsize>11</pointsize>
+      <weight>50</weight>
+      <italic>false</italic>
+      <bold>false</bold>
+     </font>
+    </property>
     <property name="styleSheet">
      <string notr="true">QPushButton{
-font-size:13px;
+font: 11pt &quot;Sans Serif&quot;;
 border: 1px solid #8f8f91;
-border-radius: 8px;
+border-radius: 7px;
 background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                       stop: 0 #f6f7fa, stop: 1 #dadbde);
 }
@@ -1271,7 +1681,7 @@ QPushButton:pressed {
     <property name="geometry">
      <rect>
       <x>1000</x>
-      <y>740</y>
+      <y>840</y>
       <width>151</width>
       <height>61</height>
      </rect>
@@ -1282,11 +1692,20 @@ QPushButton:pressed {
       <height>26</height>
      </size>
     </property>
+    <property name="font">
+     <font>
+      <family>Sans Serif</family>
+      <pointsize>11</pointsize>
+      <weight>50</weight>
+      <italic>false</italic>
+      <bold>false</bold>
+     </font>
+    </property>
     <property name="styleSheet">
      <string notr="true">QPushButton{
-font-size:13px;
+font: 11pt &quot;Sans Serif&quot;;
 border: 1px solid #8f8f91;
-border-radius: 8px;
+border-radius: 7px;
 background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
                                       stop: 0 #f6f7fa, stop: 1 #dadbde);
 }

@@ -4,7 +4,7 @@ import json
 from epics import camonitor
 from epics import caget
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 from PyQt5 import uic, QtWidgets
@@ -15,6 +15,40 @@ def cycle_1234():
                 for i in range(1,5):
                     yield i
 gen = cycle_1234()
+
+
+class ROI_Stats_Dialog(QDialog):
+
+    def __init__(self, parent, text):
+        super(ROI_Stats_Dialog,self).__init__()
+        uic.loadUi("gui/roi_stats_dialog.ui", self)
+        self.text = text
+        self.setWindowTitle(f"{self.text} Info")
+
+        #self.stat_num = int(text[-1])
+        self.parent = parent
+
+        self.timer_labels = QTimer()
+        self.timer_labels.timeout.connect(self.update_stats_labels)
+        self.timer_labels.start(1000/100)
+
+    def update_stats_labels(self):
+        prefix = self.parent.reader.pva_prefix
+        self.stats_total_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Total_RBV', '0.0')}")
+        #self.stats_net_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Net_RBV', '0.0')}")
+        self.stats_min_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MinValue_RBV', 0.0)}")
+        self.stats_max_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MaxValue_RBV', 0.0)}")
+        self.stats_sigma_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Sigma_RBV', 0.0):.4f}")
+        self.stats_mean_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MeanValue_RBV', 0.0):.4f}")
+
+    def closeEvent(self, event):
+        self.timer_labels.stop()
+        self.parent.stats_dialog[self.text] = None
+        super(ROI_Stats_Dialog,self).closeEvent(event)
+
+    
+
+
     
 class PVA_Reader:
 
@@ -45,8 +79,6 @@ class PVA_Reader:
 
     def ca_callback(self, pvname=None, value=None, **kwargs):
         self.metadata[pvname] = value
-        #print(f"{pvname}:  {value}")
-
         
     def pva_callbackSuccess(self, pv):
         self.pva_object = pv
@@ -98,7 +130,6 @@ class PVA_Reader:
                         id_diff = current_array_id - self.__last_array_id - 1
                         self.frames_missed += id_diff if (id_diff > 0) else 0
                     self.__last_array_id = current_array_id
-            #print("i am here")
         except:
             self.frames_missed += 1
             
@@ -108,16 +139,18 @@ class PVA_Reader:
         if self.pvs and self.pvs is not None:
             try:
                 for key in self.pvs:
-                    self.metadata[f"{self.pva_prefix}:{self.pvs[key]}"] = caget(f"{self.pva_prefix}:{self.pvs[key]}")
-                    if not(f"{self.pvs[key]}".startswith(f"ROI{self.num_rois}")):
-                        self.num_rois += 1
+                    if f"{self.pvs[key]}".startswith(f"ROI"):
+                        self.metadata[f"{self.pva_prefix}:{self.pvs[key]}"] = caget(f"{self.pva_prefix}:{self.pvs[key]}")
+                        camonitor(f"{self.pva_prefix}:{self.pvs[key]}", callback=self.ca_callback)
+
+                        if not(f"{self.pvs[key]}".startswith(f"ROI{self.num_rois}")):
+                            self.num_rois += 1
                     
-                for key in self.pvs:
-                    camonitor(f"{self.pva_prefix}:{self.pvs[key]}", callback=self.ca_callback)
+                    
+                        
             except:
                 print("Failed to connect to PV")
         
-
     def stopChannelMonitor(self):
         self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
@@ -153,6 +186,8 @@ class ImageWindow(QMainWindow):
         self.first_plot = True
         self.rot_num = 0 #original rotation count
         self.rois = []
+        self.stats_dialog = {}
+        self.stats_data = {}
         self.timer_poll = QTimer()
         self.timer_plot = QTimer()
 
@@ -169,16 +204,21 @@ class ImageWindow(QMainWindow):
         
         #Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
-        self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
+        self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.btn_Stats1.clicked.connect(self.stats_button_clicked)
+        self.btn_Stats2.clicked.connect(self.stats_button_clicked)
+        self.btn_Stats3.clicked.connect(self.stats_button_clicked)
+        self.btn_Stats4.clicked.connect(self.stats_button_clicked)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
-        self.log_image.clicked.connect(self.reset_first_plot)
         self.log_image.clicked.connect(self.update_image)
-        self.rotate90degCCW.clicked.connect(self.rotation_count)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
-        self.plotting_frequency.valueChanged.connect(self.start_timers)
+        self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
+        self.log_image.clicked.connect(self.reset_first_plot)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
+
 
 
         self.horizontal_avg_plot = pg.PlotWidget()
@@ -196,9 +236,6 @@ class ImageWindow(QMainWindow):
     def stop_timers(self):
         self.timer_plot.stop()
         self.timer_poll.stop()
-
-    def reset_first_plot(self):
-        self.first_plot = True
 
     def start_live_view_clicked(self):
         try:
@@ -219,8 +256,9 @@ class ImageWindow(QMainWindow):
 
                 if self.reader.channel.get():
                     self.start_timers()
-
+            self.start_stats_monitors()
             self.add_rois()
+
         except:
             print("Failed to Connect")
             self.image_view.clear()
@@ -234,10 +272,33 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             self.reader.stopChannelMonitor()
             self.stop_timers()
+            for key in self.stats_dialog:
+                self.stats_dialog[key] = None
             del self.reader
             self.reader = None
             self.provider_name.setText("N/A")
             self.is_connected.setText("Disconnected")
+    
+    def start_stats_monitors(self):
+        try:
+            if self.reader.pvs and self.reader.pvs is not None:
+                for key in self.reader.pvs:
+                    if f"{self.reader.pvs[key]}".startswith("Stats"):
+                            camonitor(f"{self.reader.pva_prefix}:{self.reader.pvs[key]}", callback=self.stats_ca_callback)
+        except:
+            print("Failed to Connect to PV")
+
+    def stats_ca_callback(self, pvname, value, **kwargs):
+        self.stats_data[pvname] = value
+        
+    def stats_button_clicked(self):
+        if self.reader:
+            sending_button = self.sender()
+            text = sending_button.text()
+            self.stats_dialog[text] = ROI_Stats_Dialog(parent=self,text=text)
+            self.stats_dialog[text].show()
+    
+    #TODO: Add functionality to show ROIs checkbox
 
     def freeze_image_checked(self):
         if self.reader is not None:
@@ -247,6 +308,12 @@ class ImageWindow(QMainWindow):
                 
             else:
                 self.start_timers()
+    def reset_first_plot(self):
+        self.first_plot = True
+
+    def rotation_count(self):
+        self.rot_num = next(gen)
+        print(f'rotation num: {self.rot_num}')
 
     def add_rois(self):
         self.roi_colors = ["ff0000", "0000ff", "4CBB17", "ff00ff"]
@@ -259,7 +326,7 @@ class ImageWindow(QMainWindow):
             )
             self.rois.append(roi)
             self.image_view.addItem(roi)
-
+    
 
     def update_mouse_pos(self, pos):
         if pos is not None:
@@ -286,10 +353,13 @@ class ImageWindow(QMainWindow):
         self.size_x_val.setText(f"{self.reader.shape[0]}")
         self.size_y_val.setText(f"{self.reader.shape[1]}")
         self.data_type_val.setText(self.reader.data_type)
+        self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
+        self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
+        self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
+        self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
+        self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
-    def rotation_count(self):
-        self.rot_num = next(gen)
-        print(f'rotation num: {self.rot_num}')
+
 
     def update_image(self):
         if self.reader is not None:
