@@ -76,9 +76,6 @@ class PVA_Reader:
 
         with open("gui/PVs.json", "r") as json_file:
             self.pvs = json.load(json_file)
-
-    def ca_callback(self, pvname=None, value=None, **kwargs):
-        self.metadata[pvname] = value
         
     def pva_callbackSuccess(self, pv):
         self.pva_object = pv
@@ -141,13 +138,9 @@ class PVA_Reader:
                 for key in self.pvs:
                     if f"{self.pvs[key]}".startswith(f"ROI"):
                         self.metadata[f"{self.pva_prefix}:{self.pvs[key]}"] = caget(f"{self.pva_prefix}:{self.pvs[key]}")
-                        camonitor(f"{self.pva_prefix}:{self.pvs[key]}", callback=self.ca_callback)
 
                         if not(f"{self.pvs[key]}".startswith(f"ROI{self.num_rois}")):
-                            self.num_rois += 1
-                    
-                    
-                        
+                            self.num_rois += 1                        
             except:
                 print("Failed to connect to PV")
         
@@ -169,8 +162,6 @@ class PVA_Reader:
     
     def getAttributesDict(self):
         return self.attributes
-
-
 
 
 class ImageWindow(QMainWindow):
@@ -254,7 +245,9 @@ class ImageWindow(QMainWindow):
 
                 if self.reader.channel.get():
                     self.start_timers()
+
             self.start_stats_monitors()
+            self.start_roi_monitors()
             self.add_rois()
 
         except:
@@ -276,7 +269,16 @@ class ImageWindow(QMainWindow):
             self.reader = None
             self.provider_name.setText("N/A")
             self.is_connected.setText("Disconnected")
-    
+
+    def start_roi_monitors(self):
+        try:
+            if self.reader.pvs and self.reader.pvs is not None:
+                for key in self.reader.pvs:
+                    if f"{self.reader.pvs[key]}".startswith("ROI"):
+                            camonitor(f"{self.reader.pva_prefix}:{self.reader.pvs[key]}", callback=self.roi_ca_callback)
+        except:
+            print("Failed to Connect to PV")
+
     def start_stats_monitors(self):
         try:
             if self.reader.pvs and self.reader.pvs is not None:
@@ -285,6 +287,14 @@ class ImageWindow(QMainWindow):
                             camonitor(f"{self.reader.pva_prefix}:{self.reader.pvs[key]}", callback=self.stats_ca_callback)
         except:
             print("Failed to Connect to PV")
+    
+    def roi_ca_callback(self, pvname, value, **kwargs):
+        self.reader.metadata[pvname] = value
+        prefix = self.reader.pva_prefix
+        
+        for i, roi in enumerate(self.rois):
+            roi.setPos(self.reader.metadata[f"{prefix}:ROI{i+1}:MinX"], y=self.reader.metadata[f"{prefix}:ROI{i+1}:MinY"])
+            roi.setSize((self.reader.metadata[f"{prefix}:ROI{i+1}:SizeX"], self.reader.metadata[f"{prefix}:ROI{i+1}:SizeY"]))
 
     def stats_ca_callback(self, pvname, value, **kwargs):
         self.stats_data[pvname] = value
@@ -313,6 +323,7 @@ class ImageWindow(QMainWindow):
                 
             else:
                 self.start_timers()
+
     def reset_first_plot(self):
         self.first_plot = True
 
@@ -332,7 +343,6 @@ class ImageWindow(QMainWindow):
             self.rois.append(roi)
             self.image_view.addItem(roi)
     
-
     def update_mouse_pos(self, pos):
         if pos is not None:
             if self.reader is not None:
@@ -364,8 +374,6 @@ class ImageWindow(QMainWindow):
         self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
-
-
     def update_image(self):
         if self.reader is not None:
             self.call_id_plot +=1
@@ -380,6 +388,7 @@ class ImageWindow(QMainWindow):
                             image = np.log(image + 1)
                             min_level = np.log(min_level + 1)
                             max_level = np.log(max_level + 1)
+
                     if self.first_plot:
                         self.image_view.setImage(image, autoRange=False, autoLevels=False, levels=(min_level, max_level)) 
                         self.image_view.imageItem.setRect(rect=coordinates)
@@ -392,12 +401,9 @@ class ImageWindow(QMainWindow):
             
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), y=np.arange(0,self.reader.shape[1]), clear=True)
 
-
-                        
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
     
-
     def update_min_max_setting(self):
         min = float(self.min_setting_val.text())
         max = float(self.max_setting_val.text())
