@@ -55,7 +55,7 @@
        <x>20</x>
        <y>820</y>
        <width>941</width>
-       <height>71</height>
+       <height>81</height>
       </rect>
      </property>
      <property name="sizePolicy">
@@ -75,10 +75,10 @@
      <widget class="QWidget" name="formLayoutWidget_5">
       <property name="geometry">
        <rect>
-        <x>10</x>
+        <x>20</x>
         <y>30</y>
-        <width>141</width>
-        <height>32</height>
+        <width>151</width>
+        <height>42</height>
        </rect>
       </property>
       <layout class="QFormLayout" name="provider_layout">
@@ -91,7 +91,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="lbl_pv_provider">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -99,13 +99,13 @@
          <property name="minimumSize">
           <size>
            <width>60</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>75</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="font">
@@ -120,16 +120,22 @@
        </item>
        <item row="0" column="1">
         <widget class="QLabel" name="provider_name">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="minimumSize">
           <size>
-           <width>40</width>
-           <height>30</height>
+           <width>50</width>
+           <height>40</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>60</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="sizeIncrement">
@@ -162,10 +168,10 @@
      <widget class="QWidget" name="formLayoutWidget_3">
       <property name="geometry">
        <rect>
-        <x>180</x>
+        <x>190</x>
         <y>30</y>
-        <width>191</width>
-        <height>32</height>
+        <width>201</width>
+        <height>42</height>
        </rect>
       </property>
       <layout class="QFormLayout" name="state_layout">
@@ -178,7 +184,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="lbl_connection_state">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -186,7 +192,13 @@
          <property name="minimumSize">
           <size>
            <width>0</width>
-           <height>30</height>
+           <height>40</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>40</height>
           </size>
          </property>
          <property name="font">
@@ -201,16 +213,22 @@
        </item>
        <item row="0" column="1">
         <widget class="QLabel" name="is_connected">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="minimumSize">
           <size>
            <width>100</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>140</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="font">
@@ -237,10 +255,10 @@
      <widget class="QWidget" name="formLayoutWidget_4">
       <property name="geometry">
        <rect>
-        <x>380</x>
+        <x>420</x>
         <y>30</y>
-        <width>431</width>
-        <height>32</height>
+        <width>441</width>
+        <height>42</height>
        </rect>
       </property>
       <layout class="QFormLayout" name="prefix_layout">
@@ -253,7 +271,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="pv_prefix_label">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -261,13 +279,13 @@
          <property name="minimumSize">
           <size>
            <width>80</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>65</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="font">
@@ -282,16 +300,22 @@
        </item>
        <item row="0" column="1">
         <widget class="QLineEdit" name="pv_prefix">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="minimumSize">
           <size>
            <width>180</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>340</width>
-           <height>30</height>
+           <height>40</height>
           </size>
          </property>
          <property name="font">
@@ -380,9 +404,9 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>-562</y>
+       <y>0</y>
        <width>335</width>
-       <height>1371</height>
+       <height>1451</height>
       </rect>
      </property>
      <widget class="QGroupBox" name="group_box_stats">
@@ -413,7 +437,7 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>301</width>
+         <width>311</width>
          <height>281</height>
         </rect>
        </property>
@@ -1301,7 +1325,7 @@ QPushButton::pressed {
         <x>10</x>
         <y>810</y>
         <width>321</width>
-        <height>551</height>
+        <height>631</height>
        </rect>
       </property>
       <property name="font">
@@ -1511,7 +1535,7 @@ font: 12pt &quot;Sans Serif&quot;;</string>
          <x>10</x>
          <y>300</y>
          <width>301</width>
-         <height>241</height>
+         <height>321</height>
         </rect>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout">
@@ -1627,6 +1651,32 @@ QPushButton::pressed {
           </property>
           <property name="text">
            <string>Stats4</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_Stats5">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">QPushButton{
+font: 12pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius:3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
+          </property>
+          <property name="text">
+           <string>Stats5</string>
           </property>
          </widget>
         </item>

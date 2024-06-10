@@ -205,29 +205,27 @@ class ImageWindow(QMainWindow):
         #Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
-        self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
+        self.log_image.clicked.connect(self.update_image)
+        self.log_image.clicked.connect(self.reset_first_plot)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
         self.btn_Stats4.clicked.connect(self.stats_button_clicked)
+        self.btn_Stats5.clicked.connect(self.stats_button_clicked)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
-        self.log_image.clicked.connect(self.update_image)
+        self.display_rois.stateChanged.connect(self.show_rois_checked)
+        self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
-        self.log_image.clicked.connect(self.reset_first_plot)
-        self.rotate90degCCW.clicked.connect(self.rotation_count)
-
-
 
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
-
-
 
     def start_timers(self):
         self.timer_poll.start(1000/100)
@@ -298,7 +296,14 @@ class ImageWindow(QMainWindow):
             self.stats_dialog[text] = ROI_Stats_Dialog(parent=self,text=text)
             self.stats_dialog[text].show()
     
-    #TODO: Add functionality to show ROIs checkbox
+    def show_rois_checked(self):
+        if self.reader is not None:
+            if self.display_rois.isChecked():
+                for roi in self.rois:
+                    roi.show()
+            else:
+                for roi in self.rois:
+                    roi.hide()
 
     def freeze_image_checked(self):
         if self.reader is not None:
