@@ -25,7 +25,6 @@ class ROI_Stats_Dialog(QDialog):
         self.text = text
         self.setWindowTitle(f"{self.text} Info")
 
-        #self.stat_num = int(text[-1])
         self.parent = parent
 
         self.timer_labels = QTimer()
@@ -35,7 +34,6 @@ class ROI_Stats_Dialog(QDialog):
     def update_stats_labels(self):
         prefix = self.parent.reader.pva_prefix
         self.stats_total_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Total_RBV', '0.0')}")
-        #self.stats_net_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Net_RBV', '0.0')}")
         self.stats_min_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MinValue_RBV', 0.0)}")
         self.stats_max_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MaxValue_RBV', 0.0)}")
         self.stats_sigma_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Sigma_RBV', 0.0):.4f}")
@@ -45,9 +43,6 @@ class ROI_Stats_Dialog(QDialog):
         self.timer_labels.stop()
         self.parent.stats_dialog[self.text] = None
         super(ROI_Stats_Dialog,self).closeEvent(event)
-
-    
-
 
     
 class PVA_Reader:
@@ -408,6 +403,11 @@ class ImageWindow(QMainWindow):
         min = float(self.min_setting_val.text())
         max = float(self.max_setting_val.text())
         self.image_view.setLevels(min, max)
+    
+    def closeEvent(self, event):
+        del self.stats_dialog
+        super(ImageWindow,self).closeEvent(event)
+
 
             
 
