@@ -92,7 +92,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
             # Append the NtAttribute object to frameAttributes
             frameAttributes.append(nt_attribute)
-            frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
+            # frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
             self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
             self.nMetadataProcessed += 1 
             # del self.currentMetadataMap[mdChannel]
