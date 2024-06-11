@@ -33,7 +33,7 @@ class ROI_Stats_Dialog(QDialog):
 
     def update_stats_labels(self):
         prefix = self.parent.reader.pva_prefix
-        self.stats_total_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Total_RBV', '0.0')}")
+        self.stats_total_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Total_RBV', 0.0)}")
         self.stats_min_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MinValue_RBV', 0.0)}")
         self.stats_max_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:MaxValue_RBV', 0.0)}")
         self.stats_sigma_value.setText(f"{self.parent.stats_data.get(f'{prefix}:{self.text}:Sigma_RBV', 0.0):.4f}")

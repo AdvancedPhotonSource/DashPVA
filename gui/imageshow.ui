@@ -91,7 +91,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="lbl_pv_provider">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+          <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -184,7 +184,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="lbl_connection_state">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+          <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -271,7 +271,7 @@
        <item row="0" column="0">
         <widget class="QLabel" name="pv_prefix_label">
          <property name="sizePolicy">
-          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+          <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
            <verstretch>0</verstretch>
           </sizepolicy>
@@ -404,7 +404,7 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>0</y>
+       <y>-642</y>
        <width>335</width>
        <height>1451</height>
       </rect>
@@ -437,7 +437,7 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>311</width>
+         <width>301</width>
          <height>281</height>
         </rect>
        </property>
@@ -1688,7 +1688,7 @@ QPushButton::pressed {
    <widget class="QPushButton" name="stop_live_view">
     <property name="geometry">
      <rect>
-      <x>1190</x>
+      <x>1180</x>
       <y>840</y>
       <width>151</width>
       <height>61</height>
