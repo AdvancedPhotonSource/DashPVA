@@ -43,7 +43,7 @@ class ROI_Stats_Dialog(QDialog):
         self.timer_labels.stop()
         self.parent.stats_dialog[self.text] = None
         super(ROI_Stats_Dialog,self).closeEvent(event)
-
+        
     
 class PVA_Reader:
 
@@ -111,7 +111,7 @@ class PVA_Reader:
                 if "dimension" in self.pva_object:
                     self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
                     self.image = np.array(self.pva_object["value"][0][self.data_type])
-                    self.image= np.reshape(self.image, self.shape)
+                    self.image= np.reshape(self.image, self.shape).T
                 else:
                     self.image = None
                 
