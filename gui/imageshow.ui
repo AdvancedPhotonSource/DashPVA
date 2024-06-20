@@ -404,7 +404,7 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>-642</y>
+       <y>0</y>
        <width>335</width>
        <height>1451</height>
       </rect>
@@ -437,7 +437,7 @@
         <rect>
          <x>10</x>
          <y>30</y>
-         <width>301</width>
+         <width>302</width>
          <height>281</height>
         </rect>
        </property>
@@ -494,7 +494,7 @@
           </property>
           <property name="maximumSize">
            <size>
-            <width>16777215</width>
+            <width>150</width>
             <height>21</height>
            </size>
           </property>
@@ -554,7 +554,7 @@
           </property>
           <property name="maximumSize">
            <size>
-            <width>16777215</width>
+            <width>150</width>
             <height>21</height>
            </size>
           </property>
@@ -606,6 +606,12 @@
             <height>25</height>
            </size>
           </property>
+          <property name="maximumSize">
+           <size>
+            <width>150</width>
+            <height>16777215</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -652,6 +658,12 @@
            <size>
             <width>0</width>
             <height>25</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>150</width>
+            <height>16777215</height>
            </size>
           </property>
           <property name="font">
@@ -702,6 +714,12 @@
             <height>25</height>
            </size>
           </property>
+          <property name="maximumSize">
+           <size>
+            <width>150</width>
+            <height>16777215</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -738,6 +756,12 @@
             <height>30</height>
            </size>
           </property>
+          <property name="maximumSize">
+           <size>
+            <width>150</width>
+            <height>16777215</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -750,6 +774,12 @@
         </item>
         <item row="5" column="1">
          <widget class="QDoubleSpinBox" name="min_setting_val">
+          <property name="maximumSize">
+           <size>
+            <width>150</width>
+            <height>16777215</height>
+           </size>
+          </property>
           <property name="font">
            <font>
             <pointsize>12</pointsize>
@@ -1131,7 +1161,7 @@
            <number>999999999</number>
           </property>
           <property name="value">
-           <number>2</number>
+           <number>5</number>
           </property>
          </widget>
         </item>
