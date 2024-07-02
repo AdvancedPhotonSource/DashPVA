@@ -1,13 +1,17 @@
 import sys
+import os.path
 import pvaccess as pva
 import json
 from epics import camonitor
 from epics import caget
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
-from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 import pyqtgraph as pg
+from PyQt5.QtCore import QTimer
 from PyQt5 import uic, QtWidgets
+# Custom imported classes
+from roi_stats_dialog import ROI_Stats_Dialog
+
 
 def rotation_cycle():
             # generator for the rotation
@@ -17,49 +21,45 @@ def rotation_cycle():
 gen = rotation_cycle()
 
 
-class ROI_Stats_Dialog(QDialog):
-    def __init__(self, parent, stats_text):
-        """
-        Pop up QDialog for additional stats within an ROI.
+class Config_Dialog(QDialog):
 
-        KeyWord Args:
-        parent (QObject) -- The main window that opened the dialog has data it grabs from
-        stats_text (str) -- Text sent from the button pressed to get the right data from parent
-        """
-        super(ROI_Stats_Dialog,self).__init__()
-        uic.loadUi("gui/roi_stats_dialog.ui", self)
-        self.setWindowTitle(f"{stats_text} Info")
-        self.stats_text = stats_text
-        self.parent = parent
-        self.prefix = self.parent.reader.pva_prefix
-        # Setting up clock for updating QDialog Labels
-        self.timer_labels = QTimer()
-        self.timer_labels.timeout.connect(self.update_stats_labels)
-        self.timer_labels.start(1000/100)
+    def __init__(self):
+        super(Config_Dialog,self).__init__()
+        uic.loadUi('gui/pv_config.ui', self)
+        self.setWindowTitle('PV Config')
+        # initializing variables to pass to Image Viewer
+        self.prefix = ''
+        self.collector_address = ''
+        self.pvs_path = ''
 
-    def update_stats_labels(self):
-        """Uses dict.get(key, default_return) method in case a PV isn't monitored."""
-        self.stats_total_value.setText(f"{self.parent.stats_data.get(f'{self.prefix}:{self.stats_text}:Total_RBV', 0.0)}")
-        self.stats_min_value.setText(f"{self.parent.stats_data.get(f'{self.prefix}:{self.stats_text}:MinValue_RBV', 0.0)}")
-        self.stats_max_value.setText(f"{self.parent.stats_data.get(f'{self.prefix}:{self.stats_text}:MaxValue_RBV', 0.0)}")
-        self.stats_sigma_value.setText(f"{self.parent.stats_data.get(f'{self.prefix}:{self.stats_text}:Sigma_RBV', 0.0):.4f}")
-        self.stats_mean_value.setText(f"{self.parent.stats_data.get(f'{self.prefix}:{self.stats_text}:MeanValue_RBV', 0.0):.4f}")
+        self.btn_load.clicked.connect(self.open_file_dialog)
+        self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted)
+        self.btn_edit.clicked.connect(self.open_file_dialog)
+        self.le_pv_prefix.setFocus()
+    
 
-    def closeEvent(self, event):
-        """
-        An altered closeEvent so pop up is removed from memory when closed.
-        
-        Keyword Args:
-        event -- closing event sent by dialog window
-        """
-        self.timer_labels.stop()
-        self.parent.stats_dialog[self.stats_text] = None
-        super(ROI_Stats_Dialog,self).closeEvent(event)
-        
+    def open_file_dialog(self):
+        btn_sender = self.sender()
+        sender_name = btn_sender.objectName()
+        path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', "Json (*.json)")
+
+        if sender_name.endswith('load'):
+            self.le_load_file_path.setText(path)
+        else:
+            self.le_edit_file_path.setText(path)
+
+    def dialog_accepted(self):
+        self.prefix = self.le_pv_prefix.text()
+        self.collector_address = self.le_collector.text()
+        self.pvs_path = self.le_load_file_path.text()
+        self.image_viewer = ImageWindow(prefix=self.prefix,
+                                        collector_address=self.collector_address,
+                                        file_path=self.pvs_path)
+
+
     
 class PVA_Reader:
-
-    def __init__(self, pva_prefix="dp-ADSim", provider=pva.PVA):
+    def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
         """
         Variables needed for monitoring a connection.
         
@@ -69,7 +69,11 @@ class PVA_Reader:
         """
         self.pva_prefix = pva_prefix        
         self.provider = provider
-        self.channel = pva.Channel(self.pva_prefix+":Pva1:Image", self.provider)
+        self.collector_address = collector_address
+        self.config_filepath = config_filepath
+        self.pva_address = self.pva_prefix + ':Pva1:Image' if self.collector_address == "" else self.collector_address
+
+        self.channel = pva.Channel(self.pva_address, self.provider)
         # variables that will store pva data
         self.pva_object = None
         self.image = None
@@ -84,9 +88,11 @@ class PVA_Reader:
         self.pvs = {}
         self.metadata = {}
         self.num_rois = 0
-        with open("pv_configs/PVs.json", "r") as json_file:
-            # dumps the pvs json file into a python dictionary
-            self.pvs = json.load(json_file)
+
+        if self.config_filepath is not '':
+            with open(self.config_filepath, 'r') as json_file:
+                # dumps the pvs json file into a python dictionary
+                self.pvs = json.load(json_file)
         
     def pva_callbackSuccess(self, pv):
         """
@@ -138,9 +144,9 @@ class PVA_Reader:
         try:
             if self.pva_object is not None:
                 self.frames_received += 1
-                if "dimension" in self.pva_object:
-                    self.shape = tuple([dim["size"] for dim in self.pva_object["dimension"]])
-                    self.image = np.array(self.pva_object["value"][0][self.data_type])
+                if 'dimension' in self.pva_object:
+                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+                    self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # reshapes but also transposes image so it is viewed correctly
                     self.image= np.reshape(self.image, self.shape).T
                 else:
@@ -169,13 +175,13 @@ class PVA_Reader:
         if self.pvs and self.pvs is not None:
             try:
                 for key in self.pvs:
-                    if f"{self.pvs[key]}".startswith("ROI"):
-                        metadata_name = f"{self.pva_prefix}:{self.pvs[key]}"
+                    if f'{self.pvs[key]}'.startswith('ROI'):
+                        metadata_name = f'{self.pva_prefix}:{self.pvs[key]}'
                         self.metadata[metadata_name] = caget(metadata_name)
-                        if not(f"{self.pvs[key]}".startswith(f"ROI{self.num_rois}")):
+                        if not(f'{self.pvs[key]}'.startswith(f'ROI{self.num_rois}')):
                             self.num_rois += 1                        
             except:
-                print("Failed to connect to PV ROIs/Stats")
+                print('Failed to connect to PV ROIs/Stats')
         
     def stop_channel_monitor(self):
         """Stops all monitorg and callback functions from continuing"""
@@ -200,7 +206,7 @@ class PVA_Reader:
 
 
 class ImageWindow(QMainWindow):
-    def __init__(self): 
+    def __init__(self, prefix='dp-ADSim', collector_address='', file_path=''): 
         """
         This is the Main Window that first pops up and allows a user to type 
         a detector prefix in and connect to it. It does things like allow one 
@@ -210,7 +216,7 @@ class ImageWindow(QMainWindow):
         """
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
-        self.setWindowTitle("Image Viewer with PVAaccess")
+        self.setWindowTitle('Image Viewer with PVAaccess')
         self.show()
         # Initializing important variables
         self.reader = None
@@ -220,6 +226,10 @@ class ImageWindow(QMainWindow):
         self.rois = []
         self.stats_dialog = {}
         self.stats_data = {}
+        self._prefix = prefix
+        self.pv_prefix.setText(self._prefix)
+        self._collector_address = collector_address
+        self._file_path = file_path
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
@@ -278,7 +288,7 @@ class ImageWindow(QMainWindow):
             prefix = self.pv_prefix.text()
             # a double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(pva_prefix=prefix)
+                self.reader = PVA_Reader(pva_prefix=prefix, collector_address=self._collector_address, config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
                 if self.reader.channel.get():
                     self.start_timers()
@@ -286,7 +296,7 @@ class ImageWindow(QMainWindow):
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                self.reader = PVA_Reader(pva_prefix=prefix)
+                self.reader = PVA_Reader(pva_prefix=self._prefix, collector_address=self._collector_address, config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
                 if self.reader.channel.get():
                     self.start_timers()
@@ -296,13 +306,13 @@ class ImageWindow(QMainWindow):
             self.start_roi_monitors()
             self.add_rois()
         except:
-            print("Failed to Connect")
+            print('Failed to Connect')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader
             self.reader = None
-            self.provider_name.setText("N/A")
-            self.is_connected.setText("Disconnected")
+            self.provider_name.setText('N/A')
+            self.is_connected.setText('Disconnected')
         
     def stop_live_view_clicked(self):
         """Clears the connection for the PVA channel and any active monitors."""
@@ -313,27 +323,27 @@ class ImageWindow(QMainWindow):
                 self.stats_dialog[key] = None
             del self.reader
             self.reader = None
-            self.provider_name.setText("N/A")
-            self.is_connected.setText("Disconnected")
+            self.provider_name.setText('N/A')
+            self.is_connected.setText('Disconnected')
 
     def start_roi_monitors(self):
         """Monitors used for changing the shape/location of ROIS Live."""
         try:
             if self.reader.pvs and self.reader.pvs is not None:
                 for key in self.reader.pvs:
-                    if f"{self.reader.pvs[key]}".startswith("ROI"):
-                            camonitor(pvname=f"{self.reader.pva_prefix}:{self.reader.pvs[key]}",
+                    if f'{self.reader.pvs[key]}'.startswith('ROI'):
+                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}',
                                       callback=self.roi_ca_callback)
         except:
-            print("Failed to Connect to ROI CA Monitors")
+            print('Failed to Connect to ROI CA Monitors')
 
     def start_stats_monitors(self):
         """Monitors used to update Stats values."""
         try:
             if self.reader.pvs and self.reader.pvs is not None:
                 for key in self.reader.pvs:
-                    if f"{self.reader.pvs[key]}".startswith("Stats"):
-                            camonitor(pvname=f"{self.reader.pva_prefix}:{self.reader.pvs[key]}", 
+                    if f'{self.reader.pvs[key]}'.startswith('Stats'):
+                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}', 
                                       callback=self.stats_ca_callback)
         except:
             print("Failed to Connect to Stats CA Monitors")
@@ -351,10 +361,10 @@ class ImageWindow(QMainWindow):
         self.reader.metadata[pvname] = value
         prefix = self.reader.pva_prefix
         for i, roi in enumerate(self.rois):
-            roi.setPos(pos=self.reader.metadata[f"{prefix}:ROI{i+1}:MinX"], 
-                       y=self.reader.metadata[f"{prefix}:ROI{i+1}:MinY"])
-            roi.setSize(size=(self.reader.metadata[f"{prefix}:ROI{i+1}:SizeX"], 
-                              self.reader.metadata[f"{prefix}:ROI{i+1}:SizeY"]))
+            roi.setPos(pos=self.reader.metadata[f'{prefix}:ROI{i+1}:MinX'], 
+                       y=self.reader.metadata[f'{prefix}:ROI{i+1}:MinY'])
+            roi.setSize(size=(self.reader.metadata[f'{prefix}:ROI{i+1}:SizeX'], 
+                              self.reader.metadata[f'{prefix}:ROI{i+1}:SizeY']))
 
     def stats_ca_callback(self, pvname, value, **kwargs):
         """
@@ -372,7 +382,7 @@ class ImageWindow(QMainWindow):
             sending_button = self.sender()
             text = sending_button.text()
             # TODO: Pass it a timer so it doesn't create a new one every time
-            self.stats_dialog[text] = ROI_Stats_Dialog(parent=self, stats_text=text)
+            self.stats_dialog[text] = ROI_Stats_Dialog(parent=self, stats_text=text, timer=self.timer_labels)
             self.stats_dialog[text].show()
     
     def show_rois_checked(self):
@@ -403,7 +413,7 @@ class ImageWindow(QMainWindow):
     def rotation_count(self):
         """Used to cycle image rotation number between 1 - 4."""
         self.rot_num = next(gen)
-        #print(f'rotation num: {self.rot_num}')
+        # print(f'rotation num: {self.rot_num}')
 
     def add_rois(self):
         """
@@ -416,12 +426,12 @@ class ImageWindow(QMainWindow):
         ROI3 -- Green (4CBB17)
         ROI4 -- Pink (ff00ff)
         """
-        self.roi_colors = ["ff0000", "0000ff", "4CBB17", "ff00ff"]
+        self.roi_colors = ['ff0000', '0000ff', '4CBB17', 'ff00ff']
         for i in range(self.reader.num_rois):
-            roi = pg.ROI(pos=[self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:MinX"],
-                               self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:MinY"]],
-                         size=[self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:SizeX"], 
-                              self.reader.metadata[f"{self.reader.pva_prefix}:ROI{i+1}:SizeY"]],
+            roi = pg.ROI(pos=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinX'],
+                               self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinY']],
+                         size=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeX'], 
+                              self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeY']],
                          movable=False,
                          pen=pg.mkPen(self.roi_colors[i]))
             self.rois.append(roi)
@@ -451,14 +461,14 @@ class ImageWindow(QMainWindow):
     def update_labels(self):
         """Updates labels based on connection and cached data"""
         provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-        is_connected = "Connected" if self.reader.channel.isMonitorActive() else "Disconnected"
+        is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
         self.provider_name.setText(provider_name)
         self.is_connected.setText(is_connected)
-        self.missed_frames_val.setText(f"{self.reader.frames_missed:d}")
-        self.frames_received_val.setText(f"{self.reader.frames_received:d}")
-        self.plot_call_id.setText(f"{self.call_id_plot:d}")
-        self.size_x_val.setText(f"{self.reader.shape[0]}")
-        self.size_y_val.setText(f"{self.reader.shape[1]}")
+        self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
+        self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+        self.plot_call_id.setText(f'{self.call_id_plot:d}')
+        self.size_x_val.setText(f'{self.reader.shape[0]:d}')
+        self.size_y_val.setText(f'{self.reader.shape[1]:d}')
         self.data_type_val.setText(self.reader.data_type)
         self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
         self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
@@ -521,10 +531,11 @@ class ImageWindow(QMainWindow):
         super(ImageWindow,self).closeEvent(event)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     
     app = QApplication(sys.argv)
 
-    window = ImageWindow()
+    window = Config_Dialog()
+    window.show()
 
     sys.exit(app.exec_())

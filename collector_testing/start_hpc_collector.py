@@ -21,7 +21,7 @@ def main():
             if i < len(metadata)-1:
                 command += ","  
             i +=1
-    command += " --log-level debug"
+    # command += " --log-level debug"
     print(command)
     
     subprocess.run(args=command, shell=True)

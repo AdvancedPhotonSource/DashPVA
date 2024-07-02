@@ -324,7 +324,7 @@
           </font>
          </property>
          <property name="text">
-          <string>dp-ADSim</string>
+          <string/>
          </property>
         </widget>
        </item>
