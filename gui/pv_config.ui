@@ -193,6 +193,9 @@ border-radius:3;
 border-radius:3;
 </string>
     </property>
+    <property name="text">
+     <string>dp-ADSim</string>
+    </property>
    </widget>
    <widget class="QLineEdit" name="le_collector">
     <property name="geometry">
@@ -211,6 +214,9 @@ border-radius:3;
     <property name="styleSheet">
      <string notr="true">border:1px solid black;
 border-radius:3;</string>
+    </property>
+    <property name="text">
+     <string>collector:1:output</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_pva_prefix">
@@ -264,6 +270,15 @@ border-radius:3;</string>
    </property>
   </widget>
  </widget>
+ <tabstops>
+  <tabstop>le_pv_prefix</tabstop>
+  <tabstop>le_collector</tabstop>
+  <tabstop>btn_load</tabstop>
+  <tabstop>le_load_file_path</tabstop>
+  <tabstop>btn_edit</tabstop>
+  <tabstop>le_edit_file_path</tabstop>
+  <tabstop>btn_new_config</tabstop>
+ </tabstops>
  <resources/>
  <connections>
   <connection>

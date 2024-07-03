@@ -162,7 +162,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
 
         # Log the entire pvObject for debugging
-        self.logger.debug(f'Processing pvObject: {pvObject}')
+        # self.logger.debug(f'Processing pvObject: {pvObject.fram}')
 
 
         # TODO: CACHE QUEUE HERE for static metadata

@@ -581,7 +581,7 @@ class AdSimServer:
             metadataValueDict = self.getMetadataValueDict()
 
             # Update metadata and take timestamp
-            updateTime = self.updateMetadataPvs(metadataValueDict)
+            updateTime = self.updateMetadataPvs(next(metadataValueDict))
 
             # Prepare frame with a given timestamp
             # so that metadata and image times are as close as possible

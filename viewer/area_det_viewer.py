@@ -8,7 +8,7 @@ import numpy as np
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 import pyqtgraph as pg
 from PyQt5.QtCore import QTimer
-from PyQt5 import uic, QtWidgets
+from PyQt5 import uic, QtGui
 # Custom imported classes
 from roi_stats_dialog import ROI_Stats_Dialog
 
@@ -33,20 +33,25 @@ class Config_Dialog(QDialog):
         self.pvs_path = ''
 
         self.btn_load.clicked.connect(self.open_file_dialog)
-        self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted)
         self.btn_edit.clicked.connect(self.open_file_dialog)
-        self.le_pv_prefix.setFocus()
-    
+        self.btn_new_config.clicked.connect(self.save_file_dialog)
+        self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
+           
 
     def open_file_dialog(self):
         btn_sender = self.sender()
         sender_name = btn_sender.objectName()
-        path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', "Json (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
 
         if sender_name.endswith('load'):
             self.le_load_file_path.setText(path)
         else:
             self.le_edit_file_path.setText(path)
+
+    def save_file_dialog(self):
+        path, _ = QFileDialog.getSaveFileName(self, 'Save File', 'pv_configs', '.json (*.json)')
+        self.le_edit_file_path.setText(path)
+        
 
     def dialog_accepted(self):
         self.prefix = self.le_pv_prefix.text()
@@ -55,10 +60,13 @@ class Config_Dialog(QDialog):
         self.image_viewer = ImageWindow(prefix=self.prefix,
                                         collector_address=self.collector_address,
                                         file_path=self.pvs_path)
+        
+    
 
 
     
 class PVA_Reader:
+
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
         """
         Variables needed for monitoring a connection.
@@ -91,7 +99,7 @@ class PVA_Reader:
 
         if self.config_filepath is not '':
             with open(self.config_filepath, 'r') as json_file:
-                # dumps the pvs json file into a python dictionary
+                # loads the pvs in the json file into a python dictionary
                 self.pvs = json.load(json_file)
         
     def pva_callbackSuccess(self, pv):
@@ -206,6 +214,7 @@ class PVA_Reader:
 
 
 class ImageWindow(QMainWindow):
+
     def __init__(self, prefix='dp-ADSim', collector_address='', file_path=''): 
         """
         This is the Main Window that first pops up and allows a user to type 
