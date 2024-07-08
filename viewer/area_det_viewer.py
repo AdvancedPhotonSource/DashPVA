@@ -21,6 +21,13 @@ def rotation_cycle():
 gen = rotation_cycle()
 
 
+class PV_Setup_Dialog(QDialog):
+    def __init__(self, parent):
+        super(PV_Setup_Dialog,self).__init__(parent)
+        uic.loadUi('gui/edit_add_config_dialog.ui',self)
+        
+
+
 class Config_Dialog(QDialog):
 
     def __init__(self):
