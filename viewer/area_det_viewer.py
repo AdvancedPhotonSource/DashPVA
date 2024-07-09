@@ -25,7 +25,7 @@ class PV_Setup_Dialog(QDialog):
     def __init__(self, parent):
         super(PV_Setup_Dialog,self).__init__(parent)
         uic.loadUi('gui/edit_add_config_dialog.ui',self)
-        
+
 
 
 class Config_Dialog(QDialog):
@@ -246,10 +246,12 @@ class ImageWindow(QMainWindow):
         self.pv_prefix.setText(self._prefix)
         self._collector_address = collector_address
         self._file_path = file_path
+        self.__output_cache = {}
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
+        self.timer_plot.timeout.connect(self.output_reader_cache)
         self.timer_plot.timeout.connect(self.update_image)
 
         # Adding widgets manually to have better control over them
@@ -535,6 +537,11 @@ class ImageWindow(QMainWindow):
         min = float(self.min_setting_val.text())
         max = float(self.max_setting_val.text())
         self.image_view.setLevels(min, max)
+
+    def output_reader_cache(self):
+        if len(self.reader.pva_cache) > 1000:
+            with open('pv_configs/output_cache.json','w',1) as output_json:
+                json.dump(self.reader.pva_cache, output_json, indent=4)
     
     def closeEvent(self, event):
         """
