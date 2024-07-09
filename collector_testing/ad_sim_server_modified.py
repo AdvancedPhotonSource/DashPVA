@@ -34,6 +34,7 @@ try:
     import yaml
 except ImportError:
     yaml = None
+import logging
 
 import pvaccess as pva
 from pvapy.utility.adImageUtility import AdImageUtility
@@ -325,7 +326,15 @@ class AdSimServer:
         self.nFrames = nFrames
         self.configFile = None
         self.colorMode = colorMode
-
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+        self.scan_gen_instance = self.scan_gen()  
+        
         inputFiles = []
         if inputDirectory is not None:
             inputFiles = [os.path.join(inputDirectory, f) for f in os.listdir(inputDirectory) if os.path.isfile(os.path.join(inputDirectory, f))]
@@ -470,31 +479,29 @@ class AdSimServer:
                 print(f'Creating PVA metadata record: {mPv}')
                 mPvObject = pva.PvObject(self.METADATA_TYPE_DICT)
                 self.pvaServer.addRecord(mPv, mPvObject, None)
-
-    def getMetadataValueDict(self):
-        """Testing Generator """
-        # metadataValueDict = {}
-        # for mPv in self.metadataPvs:
-        #     value = random.uniform(0,1)
-        #     metadataValueDict[mPv] = value
-        # return metadataValueDict
+    def scan_gen(self):
         size = 1024
-        # x_positions = []
-        # y_positions = []
-        
         for i in range(size):
             if i % 2 == 0:  # Even rows
                 for j in range(size):
-                    # x_positions.append(j)
-                    # y_positions.append(i)
                     yield i, j
             else:  # Odd rows
                 for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
-                    # x_positions.append(j)
-                    # y_positions.append(i)
                     yield i, j
-        
-        # return np.array(x_positions), np.array(y_positions)
+    def getMetadataValueDict(self):
+        """Testing Generator """
+        metadataValueDict = {}
+        try:
+            value = next(self.scan_gen_instance)  #generator instance
+        except StopIteration:
+            self.scan_gen_instance = self.scan_gen()  # Reinitialize 
+            value = next(self.scan_gen_instance)
+            
+        # self.logger.debug(f'metadata val: {value} ')
+        for index, mPv in enumerate(self.metadataPvs):
+            # value = random.uniform(0,1)
+            metadataValueDict[mPv] = value[index]
+        return metadataValueDict
 
     def updateMetadataPvs(self, metadataValueDict):
         # Returns time when metadata is published
@@ -581,7 +588,7 @@ class AdSimServer:
             metadataValueDict = self.getMetadataValueDict()
 
             # Update metadata and take timestamp
-            updateTime = self.updateMetadataPvs(next(metadataValueDict))
+            updateTime = self.updateMetadataPvs(metadataValueDict)
 
             # Prepare frame with a given timestamp
             # so that metadata and image times are as close as possible
