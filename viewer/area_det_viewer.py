@@ -20,6 +20,16 @@ def rotation_cycle():
                     yield i
 gen = rotation_cycle()
 
+def convert_ndarray_to_list(obj):
+    if isinstance(obj, dict):
+        return {k: convert_ndarray_to_list(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_ndarray_to_list(elem) for elem in obj]
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
 
 class PV_Setup_Dialog(QDialog):
     def __init__(self, parent):
@@ -120,7 +130,7 @@ class PVA_Reader:
         pv (PVObject) -- Received by channel Monitor
         """
         self.pva_object = pv
-        if len(self.pva_cache) < 1000: 
+        if len(self.pva_cache) < 100: 
             self.pva_cache.append(pv)
             self.parse_image_data_type()
             self.pva_to_image()
@@ -129,6 +139,10 @@ class PVA_Reader:
             self.pva_cache.append(pv)
             self.parse_image_data_type()
             self.pva_to_image()
+            # with open('pv_configs/output_cache.json','w',1) as output_json:
+            with open('pv_configs/output.txt', 'w') as f:
+                for pv in self.pva_cache:
+                    f.write(f'{pv}\n')
             
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -246,12 +260,11 @@ class ImageWindow(QMainWindow):
         self.pv_prefix.setText(self._prefix)
         self._collector_address = collector_address
         self._file_path = file_path
-        self.__output_cache = {}
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
-        self.timer_plot.timeout.connect(self.output_reader_cache)
+        # self.timer_plot.timeout.connect(self.output_reader_cache)
         self.timer_plot.timeout.connect(self.update_image)
 
         # Adding widgets manually to have better control over them
@@ -538,10 +551,6 @@ class ImageWindow(QMainWindow):
         max = float(self.max_setting_val.text())
         self.image_view.setLevels(min, max)
 
-    def output_reader_cache(self):
-        if len(self.reader.pva_cache) > 1000:
-            with open('pv_configs/output_cache.json','w',1) as output_json:
-                json.dump(self.reader.pva_cache, output_json, indent=4)
     
     def closeEvent(self, event):
         """
