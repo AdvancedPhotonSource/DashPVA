@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 import pyqtgraph as pg
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic, QtGui
+import copy
 # Custom imported classes
 from roi_stats_dialog import ROI_Stats_Dialog
 
@@ -130,13 +131,15 @@ class PVA_Reader:
         pv (PVObject) -- Received by channel Monitor
         """
         self.pva_object = pv
+        # Create a deep copy of pv before appending
+        pv_copy = copy.deepcopy(pv)
         if len(self.pva_cache) < 100: 
-            self.pva_cache.append(pv)
+            self.pva_cache.append(pv_copy)
             self.parse_image_data_type()
             self.pva_to_image()
         else:
             self.pva_cache = self.pva_cache[1:]
-            self.pva_cache.append(pv)
+            self.pva_cache.append(pv_copy)
             self.parse_image_data_type()
             self.pva_to_image()
             # with open('pv_configs/output_cache.json','w',1) as output_json:
