@@ -404,9 +404,9 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>0</y>
+       <y>-782</y>
        <width>335</width>
-       <height>1451</height>
+       <height>1591</height>
       </rect>
      </property>
      <widget class="QGroupBox" name="group_box_stats">
@@ -1711,6 +1711,32 @@ QPushButton::pressed {
          </widget>
         </item>
        </layout>
+      </widget>
+     </widget>
+     <widget class="QGroupBox" name="groupBox">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>1460</y>
+        <width>321</width>
+        <height>121</height>
+       </rect>
+      </property>
+      <property name="title">
+       <string>Analysis</string>
+      </property>
+      <widget class="QPushButton" name="btn_analysis_window">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>30</y>
+         <width>301</width>
+         <height>81</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Open Analysis Window</string>
+       </property>
       </widget>
      </widget>
     </widget>

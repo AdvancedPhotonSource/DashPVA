@@ -2,9 +2,9 @@ from PyQt5.QtWidgets import QDialog
 from PyQt5 import uic
 
 
-class ROI_Stats_Dialog(QDialog):
+class RoiStatsDialog(QDialog):
     def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer'): # type: ignore # needed so annotations don't show warnings
-        super(ROI_Stats_Dialog,self).__init__()
+        super(RoiStatsDialog,self).__init__()
         """
         Pop up QDialog for additional stats within an ROI.
 
@@ -39,4 +39,4 @@ class ROI_Stats_Dialog(QDialog):
         event -- closing event sent by dialog window
         """
         self.parent.stats_dialog[self.stats_text] = None
-        super(ROI_Stats_Dialog,self).closeEvent(event)
+        super(RoiStatsDialog,self).closeEvent(event)

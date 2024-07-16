@@ -9,9 +9,12 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 import pyqtgraph as pg
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic, QtGui
+import time
 import copy
+import multiprocessing
 # Custom imported classes
-from roi_stats_dialog import ROI_Stats_Dialog
+from roi_stats_dialog import RoiStatsDialog
+from analysis_window import AnalysisWindow, analysis_window_process
 
 
 def rotation_cycle():
@@ -19,7 +22,10 @@ def rotation_cycle():
             while True:
                 for i in range(1,5):
                     yield i
+
+
 gen = rotation_cycle()
+
 
 def convert_ndarray_to_list(obj):
     if isinstance(obj, dict):
@@ -32,11 +38,14 @@ def convert_ndarray_to_list(obj):
         return obj
 
 
-class PV_Setup_Dialog(QDialog):
-    def __init__(self, parent):
-        super(PV_Setup_Dialog,self).__init__(parent)
+class PVSetupDialog(QDialog):
+    def __init__(self, parent, file_mode, path='pv_configs'):
+        super(PVSetupDialog,self).__init__(parent)
         uic.loadUi('gui/edit_add_config_dialog.ui',self)
 
+    def save_file_dialog(self):
+        path, _ = QFileDialog.getSaveFileName(self, 'Save File', 'pv_configs', '.json (*.json)')
+        self.le_edit_file_path.setText(path)
 
 
 class Config_Dialog(QDialog):
@@ -52,7 +61,7 @@ class Config_Dialog(QDialog):
 
         self.btn_load.clicked.connect(self.open_file_dialog)
         self.btn_edit.clicked.connect(self.open_file_dialog)
-        self.btn_new_config.clicked.connect(self.save_file_dialog)
+        self.btn_new_config.clicked.connect(self.new_pv_setup)
         self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
            
 
@@ -66,10 +75,11 @@ class Config_Dialog(QDialog):
         else:
             self.le_edit_file_path.setText(path)
 
-    def save_file_dialog(self):
-        path, _ = QFileDialog.getSaveFileName(self, 'Save File', 'pv_configs', '.json (*.json)')
-        self.le_edit_file_path.setText(path)
-        
+    def new_pv_setup(self):
+        self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w')
+    
+    def edit_pv_setup(self):
+        self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+')
 
     def dialog_accepted(self):
         self.prefix = self.le_pv_prefix.text()
@@ -77,10 +87,7 @@ class Config_Dialog(QDialog):
         self.pvs_path = self.le_load_file_path.text()
         self.image_viewer = ImageWindow(prefix=self.prefix,
                                         collector_address=self.collector_address,
-                                        file_path=self.pvs_path)
-        
-    
-
+                                        file_path=self.pvs_path)        
 
     
 class PVA_Reader:
@@ -133,19 +140,21 @@ class PVA_Reader:
         self.pva_object = pv
         # Create a deep copy of pv before appending
         pv_copy = copy.deepcopy(pv)
-        if len(self.pva_cache) < 100: 
+        if len(self.pva_cache) < 10: 
             self.pva_cache.append(pv_copy)
-            self.parse_image_data_type()
-            self.pva_to_image()
         else:
             self.pva_cache = self.pva_cache[1:]
             self.pva_cache.append(pv_copy)
-            self.parse_image_data_type()
-            self.pva_to_image()
-            # with open('pv_configs/output_cache.json','w',1) as output_json:
-            with open('pv_configs/output.txt', 'w') as f:
-                for pv in self.pva_cache:
-                    f.write(f'{pv}\n')
+
+        self.parse_image_data_type()
+        self.pva_to_image()
+
+        # with open('pv_configs/output_cache.json','w',1) as output_json:
+        # currentt_ime = time.time()
+            # if currentt_ime % 10 < 1:
+            #     with open('pv_configs/output.txt', 'w') as f:
+            #         for pv in self.pva_cache:
+            #             f.write(f'{pv}\n')
             
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -269,6 +278,8 @@ class ImageWindow(QMainWindow):
         self.timer_labels.timeout.connect(self.update_labels)
         # self.timer_plot.timeout.connect(self.output_reader_cache)
         self.timer_plot.timeout.connect(self.update_image)
+        # multiprocessing variables to test sharing memory
+        self.pipe_main, self.pipe_child = multiprocessing.Pipe()
 
         # Adding widgets manually to have better control over them
         # First is a Image View with a plot to view incoming images with axes shown
@@ -288,6 +299,7 @@ class ImageWindow(QMainWindow):
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
         self.log_image.clicked.connect(self.update_image)
         self.log_image.clicked.connect(self.reset_first_plot)
@@ -302,6 +314,14 @@ class ImageWindow(QMainWindow):
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
+
+    def open_analysis_window_clicked(self):
+        # Start the second window in a new process
+        self.p = multiprocessing.Process(target=analysis_window_process, args=(self.pipe_child,))
+        self.p.start()
+        
+        # Send a message to the second window
+        self.pipe_main.send("Hello from the First Window")
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -416,7 +436,7 @@ class ImageWindow(QMainWindow):
             sending_button = self.sender()
             text = sending_button.text()
             # TODO: Pass it a timer so it doesn't create a new one every time
-            self.stats_dialog[text] = ROI_Stats_Dialog(parent=self, stats_text=text, timer=self.timer_labels)
+            self.stats_dialog[text] = RoiStatsDialog(parent=self, stats_text=text, timer=self.timer_labels)
             self.stats_dialog[text].show()
     
     def show_rois_checked(self):
