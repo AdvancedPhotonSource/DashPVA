@@ -14,6 +14,7 @@ import os
 import os.path
 import ctypes.util
 import numpy as np
+import scipy.fft as fft
 # HDF5 is optional
 try:
     import h5py as h5
@@ -247,8 +248,19 @@ class NumpyRandomGenerator(FrameGenerator):
         self.datatype = datatype
         self.minimum = minimum
         self.maximum = maximum
+        self.scan_gen_instance = self.scan_gen()
         self.generateFrames()
-
+        
+    def scan_gen(self):
+        size = 1024
+        for i in range(size):
+            if i % 2 == 0:  # Even rows
+                for j in range(size):
+                    yield i, j
+            else:  # Odd rows
+                for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
+                    yield i, j
+                    
     def generateFrames(self):
         if self.colorMode not in AdImageUtility.COLOR_MODE_MAP:
             raise Exception(f'Invalid color mode: {self.colorMode}. Available modes: {list(AdImageUtility.COLOR_MODE_MAP.keys())}')
@@ -277,7 +289,56 @@ class NumpyRandomGenerator(FrameGenerator):
             mx = dtinfo.max
             if self.maximum is not None:
                 mx = int(min(dtinfo.max, self.maximum))
-            self.frames = np.random.randint(mn, mx, size=frameArraySize, dtype=dt)
+            # self.frames = np.random.randint(mn, mx, size=frameArraySize, dtype=dt)
+            
+            # Initialize frames array
+            self.frames = np.zeros(frameArraySize, dtype=dt)
+
+            frames_generated = 0
+            while frames_generated < frameArraySize[0]:
+                try:
+                    # Get current scan position
+                    current_scan_position = next(self.scan_gen_instance)
+                    x, y = current_scan_position
+
+                    # Adjust x and y to ensure ROI fits within pattern size
+                    x = x // 10 + 512
+                    y = y // 10 + 512
+
+                    # ROI size (hard-coded as 50)
+                    roi_size = 50
+
+                    # Create 2D grids using linspace
+                    x_vals = np.linspace(0, frameArraySize[1] - 1, frameArraySize[1])
+                    y_vals = np.linspace(0, frameArraySize[2] - 1, frameArraySize[2])
+                    xx, yy = np.meshgrid(x_vals, y_vals, indexing='ij')
+
+                    # Calculate 2D sinusoidal pattern
+                    period_pattern = np.sin(xx) + np.cos(yy)
+
+                    # Determine ROI bounds
+                    x_start = max(0, x - roi_size // 2)
+                    x_end = min(frameArraySize[1], x_start + roi_size)
+                    y_start = max(0, y - roi_size // 2)
+                    y_end = min(frameArraySize[2], y_start + roi_size)
+
+                    # Extract ROI from period_pattern
+                    roi = period_pattern[y_start:y_end, x_start:x_end]
+
+                    # Compute FFT of ROI
+                    fft_roi = fft.fft2(roi)
+
+                    # Assign FFT data to frames array
+                    self.frames[frames_generated, y_start:y_end, x_start:x_end] = fft_roi
+
+                    # Increment frames_generated
+                    frames_generated += 1
+
+                except StopIteration:
+                    # Reset scan_gen_instance if all frames are generated
+                    self.scan_gen_instance = self.scan_gen()
+
+
         else:
             # Use float32 for min/max, to prevent overflow errors
             dtinfo = np.finfo(np.float32)
@@ -288,6 +349,7 @@ class NumpyRandomGenerator(FrameGenerator):
             if self.maximum is not None:
                 mx = float(min(dtinfo.max, self.maximum))
             self.frames = np.random.uniform(mn, mx, size=frameArraySize)
+                    
             if self.datatype == 'float32':
                 self.frames = np.float32(self.frames)
 
@@ -334,7 +396,7 @@ class AdSimServer:
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
         self.scan_gen_instance = self.scan_gen()  
-        
+        self.current_scan_position = None  # Cache for current scan position
         inputFiles = []
         if inputDirectory is not None:
             inputFiles = [os.path.join(inputDirectory, f) for f in os.listdir(inputDirectory) if os.path.isfile(os.path.join(inputDirectory, f))]
@@ -488,21 +550,35 @@ class AdSimServer:
             else:  # Odd rows
                 for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
                     yield i, j
+    # def getMetadataValueDict(self):
+    #     """Testing Generator """
+    #     metadataValueDict = {}
+    #     try:
+    #         value = next(self.scan_gen_instance)  #generator instance
+    #     except StopIteration:
+    #         self.scan_gen_instance = self.scan_gen()  # Reinitialize 
+    #         value = next(self.scan_gen_instance)
+            
+    #     # self.logger.debug(f'metadata val: {value} ')
+    #     for index, mPv in enumerate(self.metadataPvs):
+    #         # value = random.uniform(0,1)
+    #         metadataValueDict[mPv] = value[index]
+    #     return metadataValueDict
     def getMetadataValueDict(self):
-        """Testing Generator """
         metadataValueDict = {}
         try:
-            value = next(self.scan_gen_instance)  #generator instance
+            if self.current_scan_position is None:
+                self.current_scan_position = next(self.scan_gen_instance)
+            value = self.current_scan_position
         except StopIteration:
-            self.scan_gen_instance = self.scan_gen()  # Reinitialize 
-            value = next(self.scan_gen_instance)
+            self.scan_gen_instance = self.scan_gen()  # Reinitialize generator
+            self.current_scan_position = next(self.scan_gen_instance)
+            value = self.current_scan_position
             
-        # self.logger.debug(f'metadata val: {value} ')
         for index, mPv in enumerate(self.metadataPvs):
-            # value = random.uniform(0,1)
             metadataValueDict[mPv] = value[index]
         return metadataValueDict
-
+    
     def updateMetadataPvs(self, metadataValueDict):
         # Returns time when metadata is published
         # For CA metadata will be published before data timestamp
@@ -564,7 +640,7 @@ class AdSimServer:
                 # All frames are in cache or we cannot generate any more data
                 break
         self.printReport(f'Frame producer is done after {frameId} generated frames')
-
+    
     def prepareFrame(self, t=0):
         # Get cached frame
         frame = self.getFrameFromCache()
