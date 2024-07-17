@@ -324,9 +324,12 @@ class NumpyRandomGenerator(FrameGenerator):
 
                     # Extract ROI from period_pattern
                     roi = period_pattern[y_start:y_end, x_start:x_end]
+                    
+                    selected_pattern = np.zeros(period_pattern.shape, dtype=dt)
+                    selected_pattern[y_start:y_end, x_start:x_end] = roi
 
-                    # Compute FFT of ROI
-                    fft_roi = fft.fft2(roi)
+                    # Compute FFT so that the output has the same shape
+                    fft_roi = fft.fft2(selected_pattern)
 
                     # Assign FFT data to frames array
                     self.frames[frames_generated, y_start:y_end, x_start:x_end] = fft_roi
