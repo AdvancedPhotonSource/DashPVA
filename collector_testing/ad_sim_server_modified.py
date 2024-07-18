@@ -332,7 +332,7 @@ class NumpyRandomGenerator(FrameGenerator):
                     fft_roi = fft.fft2(selected_pattern)
 
                     # Assign FFT data to frames array
-                    self.frames[frames_generated, y_start:y_end, x_start:x_end] = fft_roi
+                    self.frames[frames_generated,:,:] = np.abs(fft_roi)
 
                     # Increment frames_generated
                     frames_generated += 1

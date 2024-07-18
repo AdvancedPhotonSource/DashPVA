@@ -5,16 +5,16 @@ import json
 from epics import camonitor
 from epics import caget
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy
 import pyqtgraph as pg
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic, QtGui
 import time
 import copy
-import multiprocessing
+import multiprocessing as mp
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
-from analysis_window import AnalysisWindow, analysis_window_process
+from analysis_window import analysis_window_process
 
 
 def rotation_cycle():
@@ -279,12 +279,13 @@ class ImageWindow(QMainWindow):
         # self.timer_plot.timeout.connect(self.output_reader_cache)
         self.timer_plot.timeout.connect(self.update_image)
         # multiprocessing variables to test sharing memory
-        self.pipe_main, self.pipe_child = multiprocessing.Pipe()
+        self.pipe_main, self.pipe_child = mp.Pipe()
 
         # Adding widgets manually to have better control over them
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
+        # self.image_view.getView().set
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
@@ -317,11 +318,11 @@ class ImageWindow(QMainWindow):
 
     def open_analysis_window_clicked(self):
         # Start the second window in a new process
-        self.p = multiprocessing.Process(target=analysis_window_process, args=(self.pipe_child,))
-        self.p.start()
-        
+        p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
+        p.start()        
         # Send a message to the second window
         self.pipe_main.send("Hello from the First Window")
+
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -587,9 +588,8 @@ class ImageWindow(QMainWindow):
 
 
 if __name__ == '__main__':
-    
+    mp.set_start_method('spawn')
     app = QApplication(sys.argv)
-
     window = Config_Dialog()
     window.show()
 
