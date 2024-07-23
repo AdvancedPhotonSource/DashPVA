@@ -2,6 +2,8 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic
+from PyQt5.QtGui import QPixmap, QImage
+import numpy as np
 
 
 # Define the second window as a class
@@ -13,12 +15,17 @@ class AnalysisWindow(QMainWindow):
         self.setWindowTitle('Analysis Window')
         self.init_ui()
         self.timer = QTimer()
-        self.timer.timeout.connect(self.timer_check_message)
-        self.timer.start(1000)
+        self.timer.timeout.connect(self.timer_poll_pipe)
+        self.timer.start(1000/100)
+        self.pv_dict = None
 
-    def timer_check_message(self):
-        message = self.pipe.recv()
-        self.label_a.setText(message)
+    def timer_poll_pipe(self):
+        if self.pipe.poll():
+            self.pv_dict = self.pipe.recv() # try to send uniqueID
+            image = self.pv_dict[list(self.pv_dict.keys())[0]]
+            pixmap = QPixmap()
+            pixmap.convertFromImage(QImage(image.data, image.shape[1], image.shape[0], image.strides[0],QImage.Format.Format_RGB888))
+            self.label_a.setPixmap(pixmap)
     
     def init_ui(self):
         self.label_a = QLabel()
@@ -27,7 +34,7 @@ class AnalysisWindow(QMainWindow):
     def closeEvent(self, event):
         self.pipe.send('close')
         event.accept()
-        # super(AnalysisWindow, self).closeEvent()
+        # super(AnalysisWindow, self).closeEvent(event)
 
 # Global function so it can be called without needing to be within a class and get around
 # not being able to pass arguments to pyqt slots
@@ -36,8 +43,6 @@ def analysis_window_process(pipe):
     window = AnalysisWindow(pipe)
     window.show()
     app.exec_()
-    # pipe.send('close')
-    pipe.close()
 
 if __name__ == '__main__':
     import multiprocessing as mp
@@ -45,7 +50,7 @@ if __name__ == '__main__':
     p = mp.Process(target=analysis_window_process, args=(child_pipe,))
     
     p.start()
-    parent_pipe.send("Hello from the main process!")
+    parent_pipe.send({1000:np.zeros((100,100))})
     try:
         while True:
             # Handling messages from the main process if necessary

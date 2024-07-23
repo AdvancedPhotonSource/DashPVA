@@ -1,17 +1,16 @@
 import sys
-import os.path
-import pvaccess as pva
 import json
-from epics import camonitor
-from epics import caget
-import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy
-import pyqtgraph as pg
-from PyQt5.QtCore import QTimer
-from PyQt5 import uic, QtGui
-import time
 import copy
+import numpy as np
+import pvaccess as pva
+import pyqtgraph as pg
 import multiprocessing as mp
+from PyQt5 import uic
+from epics import caget
+from epics import camonitor
+from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy, QLabel, QFormLayout, QWidget, QFrame
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
 from analysis_window import analysis_window_process
@@ -27,27 +26,47 @@ def rotation_cycle():
 gen = rotation_cycle()
 
 
-def convert_ndarray_to_list(obj):
-    if isinstance(obj, dict):
-        return {k: convert_ndarray_to_list(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_ndarray_to_list(elem) for elem in obj]
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
-
-
 class PVSetupDialog(QDialog):
-    def __init__(self, parent, file_mode, path='pv_configs'):
+    def __init__(self, parent, file_mode, path=None):
         super(PVSetupDialog,self).__init__(parent)
         uic.loadUi('gui/edit_add_config_dialog.ui',self)
+        self.config_dict = {}
+        self.path = path
+        self.file_mode = file_mode
+
+        self.form_widget = QWidget()
+        self.config_layout = QFormLayout(self.form_widget)
+        self.config_layout.setLabelAlignment(Qt.AlignRight)
+        self.scroll_area.setWidget(self.form_widget)
+        self.scroll_area.setWidgetResizable(True)
+
+        self.load_config()
+        self.show()
 
     def save_file_dialog(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save File', 'pv_configs', '.json (*.json)')
-        self.le_edit_file_path.setText(path)
-
-
+        return path
+    
+    def load_config(self):
+        if self.file_mode == 'w':
+            return
+        with open(self.path, "r") as config_json:
+            self.config_dict = json.load(config_json)
+            for key, value in self.config_dict.items():
+                # set the label part of the form widget
+                label = QLabel(key + ':')
+                label.setMinimumHeight(35)
+                label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+                # set the field part of the form widget
+                field = QLabel(value)
+                field.setMinimumHeight(35)
+                field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+                field.setFrameShape(QFrame.Shape.Box)
+                field.setFrameShadow(QFrame.Shadow.Sunken)
+                
+                self.config_layout.addRow(label, field)
+            
+                
 class Config_Dialog(QDialog):
 
     def __init__(self):
@@ -62,24 +81,27 @@ class Config_Dialog(QDialog):
         self.btn_load.clicked.connect(self.open_file_dialog)
         self.btn_edit.clicked.connect(self.open_file_dialog)
         self.btn_new_config.clicked.connect(self.new_pv_setup)
+        self.btn_edit_accept_reject.accepted.connect(self.edit_pv_setup)
         self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
-           
 
     def open_file_dialog(self):
         btn_sender = self.sender()
         sender_name = btn_sender.objectName()
-        path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
+        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
 
         if sender_name.endswith('load'):
-            self.le_load_file_path.setText(path)
+            self.le_load_file_path.setText(self.pvs_path)
         else:
-            self.le_edit_file_path.setText(path)
+            self.le_edit_file_path.setText(self.pvs_path)
 
     def new_pv_setup(self):
-        self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w')
+        self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
     def edit_pv_setup(self):
-        self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+')
+        if self.le_edit_file_path.text() is not '':
+            self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
+        else:
+            print('file path empty')
 
     def dialog_accepted(self):
         self.prefix = self.le_pv_prefix.text()
@@ -105,7 +127,6 @@ class PVA_Reader:
         self.collector_address = collector_address
         self.config_filepath = config_filepath
         self.pva_address = self.pva_prefix + ':Pva1:Image' if self.collector_address == "" else self.collector_address
-
         self.channel = pva.Channel(self.pva_address, self.provider)
         # variables that will store pva data
         self.pva_object = None
@@ -140,7 +161,7 @@ class PVA_Reader:
         self.pva_object = pv
         # Create a deep copy of pv before appending
         pv_copy = copy.deepcopy(pv)
-        if len(self.pva_cache) < 10: 
+        if len(self.pva_cache) < 100: 
             self.pva_cache.append(pv_copy)
         else:
             self.pva_cache = self.pva_cache[1:]
@@ -150,11 +171,11 @@ class PVA_Reader:
         self.pva_to_image()
 
         # with open('pv_configs/output_cache.json','w',1) as output_json:
-        # currentt_ime = time.time()
-            # if currentt_ime % 10 < 1:
-            #     with open('pv_configs/output.txt', 'w') as f:
-            #         for pv in self.pva_cache:
-            #             f.write(f'{pv}\n')
+        # current_time = time.time()
+        # if current_time % 10 < 1:
+        #     with open('pv_configs/output.txt', 'w') as f:
+        #         for pv in self.pva_cache:
+        #             f.write(f'{pv}\n')
             
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -276,7 +297,6 @@ class ImageWindow(QMainWindow):
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
-        # self.timer_plot.timeout.connect(self.output_reader_cache)
         self.timer_plot.timeout.connect(self.update_image)
         # multiprocessing variables to test sharing memory
         self.pipe_main, self.pipe_child = mp.Pipe()
@@ -285,7 +305,6 @@ class ImageWindow(QMainWindow):
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        # self.image_view.getView().set
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
@@ -318,11 +337,18 @@ class ImageWindow(QMainWindow):
 
     def open_analysis_window_clicked(self):
         # Start the second window in a new process
-        p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
-        p.start()        
-        # Send a message to the second window
-        self.pipe_main.send("Hello from the First Window")
+        
 
+        self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
+        self.p.start()
+        self.timer_send = QTimer()
+        self.timer_send.timeout.connect(self.send_to_analysis_window)
+        self.timer_send.start(1000/100)
+
+    def send_to_analysis_window(self):
+        # Send a message to the second window
+        self.pipe_main.send({1000:np.zeros((1000,1000))})
+        # {self.reader.pva_object['uniqueId']:self.reader.image}
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -468,7 +494,6 @@ class ImageWindow(QMainWindow):
     def rotation_count(self):
         """Used to cycle image rotation number between 1 - 4."""
         self.rot_num = next(gen)
-        # print(f'rotation num: {self.rot_num}')
 
     def add_rois(self):
         """
@@ -574,7 +599,6 @@ class ImageWindow(QMainWindow):
         min = float(self.min_setting_val.text())
         max = float(self.max_setting_val.text())
         self.image_view.setLevels(min, max)
-
     
     def closeEvent(self, event):
         """
