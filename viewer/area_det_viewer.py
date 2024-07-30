@@ -16,14 +16,14 @@ from roi_stats_dialog import RoiStatsDialog
 from analysis_window import analysis_window_process
 
 
-def rotation_cycle():
+def rotation_cycle(min,max):
             # generator for the rotation
             while True:
-                for i in range(1,5):
+                for i in range(min,max):
                     yield i
 
 
-gen = rotation_cycle()
+rot_gen = rotation_cycle(1,5)
 
 
 class PVSetupDialog(QDialog):
@@ -111,7 +111,8 @@ class Config_Dialog(QDialog):
                                         collector_address=self.collector_address,
                                         file_path=self.pvs_path)        
 
-    
+
+max_cache_size = 1024
 class PVA_Reader:
 
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
@@ -134,7 +135,9 @@ class PVA_Reader:
         self.shape = (0,0)
         self.attributes = {}
         self.timestamp = None
-        self.pva_cache = []
+        # self.pva_cache = []
+        self.images_cache = None
+        self.positions_cache = None
         self.__last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
@@ -142,6 +145,7 @@ class PVA_Reader:
         self.pvs = {}
         self.metadata = {}
         self.num_rois = 0
+        self.cache_id_gen = rotation_cycle(0,max_cache_size)
 
         if self.config_filepath is not '':
             with open(self.config_filepath, 'r') as json_file:
@@ -160,15 +164,22 @@ class PVA_Reader:
         """
         self.pva_object = pv
         # Create a deep copy of pv before appending
-        pv_copy = copy.deepcopy(pv)
-        if len(self.pva_cache) < 100: 
-            self.pva_cache.append(pv_copy)
-        else:
-            self.pva_cache = self.pva_cache[1:]
-            self.pva_cache.append(pv_copy)
+        # pv_copy = copy.deepcopy(pv)
+        # if len(self.pva_cache) < 100: 
+        #     self.pva_cache.append(pv_copy)
+        # else:
+        #     self.pva_cache = self.pva_cache[1:]
+        #     self.pva_cache.append(pv_copy)
 
+        self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
+        id = next(self.cache_id_gen)
+        self.images_cache[id,:,:] = copy.deepcopy(self.image)
+        self.positions_cache[id,0] = copy.deepcopy(self.attributes.get('x', ))#TODO: generalize for whatever scan positions we get
+        self.positions_cache[id,1] = copy.deepcopy(self.attributes.get('y',))#TODO: generalize for whatever scan positions we get
+
+        
 
         # with open('pv_configs/output_cache.json','w',1) as output_json:
         # current_time = time.time()
@@ -183,20 +194,20 @@ class PVA_Reader:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
     
     # TODO: Needs modifying to handle metadata
-    # def parse_pva_ndattributes(self):
-    #     """Convert a pva object to python dict and parses attributes into a separate dict."""
-    #     if self.pva_object is not None:
-    #         obj_dict = self.pva_object.get()
-    #     else:
-    #         return None
+    def parse_pva_ndattributes(self):
+        """Convert a pva object to python dict and parses attributes into a separate dict."""
+        if self.pva_object is not None:
+            obj_dict = self.pva_object.get()
+        else:
+            return None
 
-    #     attributes = {
-    #         attr["name"]: [val for val in attr.get("value", "")] for attr in obj_dict.get("attribute", {})
-    #         }
-    #     for value in ["codec", "uniqueId", "uncompressedSize"]:
-    #         if value in self.pva_object:
-    #             attributes[value] = self.pva_object[value]
-    #     self.attributes = attributes
+        attributes = {
+            attr["name"]: [val for val in attr.get("value", "")] for attr in obj_dict.get("attribute", {})
+            }
+        for value in ["codec", "uniqueId", "uncompressedSize"]:
+            if value in self.pva_object:
+                attributes[value] = self.pva_object[value]
+        self.attributes = attributes
 
     def pva_to_image(self):
         """
@@ -213,6 +224,11 @@ class PVA_Reader:
                     self.image= np.reshape(self.image, self.shape).T
                 else:
                     self.image = None
+
+                if self.images_cache is None:
+                    self.images_cache = np.zeros((max_cache_size, *self.shape))
+                    self.positions_cache = np.zeros((max_cache_size,2)) # TODO: make useable for more metadata
+                
                 # Check for missed frame starts here
                 current_array_id = self.pva_object['uniqueId']
                 if self.__last_array_id is not None: 
@@ -337,18 +353,30 @@ class ImageWindow(QMainWindow):
 
     def open_analysis_window_clicked(self):
         # Start the second window in a new process
-        
-
         self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
         self.p.start()
         self.timer_send = QTimer()
         self.timer_send.timeout.connect(self.send_to_analysis_window)
         self.timer_send.start(1000/100)
+        
 
     def send_to_analysis_window(self):
         # Send a message to the second window
-        self.pipe_main.send({1000:np.zeros((1000,1000))})
-        # {self.reader.pva_object['uniqueId']:self.reader.image}
+        #TODO get ROI values from analysis window 
+        if self.pipe_main.poll():
+                message = self.pipe_main.recv()
+                if message == 'close':
+                    self.pipe_main.close()  
+
+        roi_x = 100
+        roi_y = 200
+        roi_width = 20
+        roi_height = 50
+
+        self.image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+        self.unique_x_positions = np.unique(self.reader.positions_cache[:,0])
+        self.unique_y_positions = np.unique(self.reader.positions_cache[:,1])
+        self.pipe_main.send({'roi':self.image_rois, 'x_positions':self.unique_x_positions, 'y_positions': self.unique_y_positions})
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -493,7 +521,7 @@ class ImageWindow(QMainWindow):
 
     def rotation_count(self):
         """Used to cycle image rotation number between 1 - 4."""
-        self.rot_num = next(gen)
+        self.rot_num = next(rot_gen)
 
     def add_rois(self):
         """
@@ -576,7 +604,8 @@ class ImageWindow(QMainWindow):
                             min_level = np.log(min_level + 1)
                             max_level = np.log(max_level + 1)
                     if self.first_plot:
-                        self.image_view.setImage(image, autoRange=False, 
+                        self.image_view.setImage(image, 
+                                                 autoRange=False, 
                                                  autoLevels=False, 
                                                  levels=(min_level, max_level)) 
                         self.image_view.imageItem.setRect(rect=coordinates)
@@ -607,7 +636,7 @@ class ImageWindow(QMainWindow):
         Keyword Args:
         event -- close event sent by main window
         """
-        del self.stats_dialog
+        del self.stats_dialog # otherwise memory piles up
         super(ImageWindow,self).closeEvent(event)
 
 

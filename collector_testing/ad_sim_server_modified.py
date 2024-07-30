@@ -250,9 +250,39 @@ class NumpyRandomGenerator(FrameGenerator):
         self.maximum = maximum
         self.scan_gen_instance = self.scan_gen()
         self.generateFrames()
+
+    def gaussian_2d(self, x, y, x0, y0, sigma_x, sigma_y, total_intensity):
+        """Gaussian peak simulation."""
+        return total_intensity * np.exp(-((x - x0)**2 / (2 * sigma_x**2) + (y - y0)**2 / (2 * sigma_y**2)))
+    
+    def generate_gaussian_peak_array(self,size=1024):
+        sigma_x = 14
+        sigma_y = 20
+        freq_x = 90
+        freq_y = 50
+        shift_x = 0 
+        shift_y = 0 
+        total_intensity = 200 
+        #array = np.zeros((size, size))
+        x = np.linspace(0, size - 1, size)
+        y = np.linspace(0, size - 1, size)
+        x_grid, y_grid = np.meshgrid(x, y)
+
+        x0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_x * (x_grid+ shift_x) / size)) 
+        y0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_y * (y_grid+ shift_y) / size)) 
+        # for i in range(size):
+        #     for j in range(size):
+        #         array[i, j] = gaussian_2d(x_grid[i, j], y_grid[i, j], x0[i, j], y0[i, j], sigma_x, sigma_y, total_intensity)
+        #array[:,:] = gaussian_2d(x_grid[:,:], y_grid[:,:], x0[:,:], y0[:,:], sigma_x, sigma_y, total_intensity)
+        
+        #the functions in guassian_2d can also be broadcasted so array is initialized through vectorizing the parameters
+        array = self.gaussian_2d(x_grid, y_grid, x0, y0, sigma_x, sigma_y, total_intensity)
+
+        return array
         
     def scan_gen(self):
         size = 1024
+
         for i in range(size):
             if i % 2 == 0:  # Even rows
                 for j in range(size):
@@ -306,27 +336,28 @@ class NumpyRandomGenerator(FrameGenerator):
                     y = y // 10 + 512
 
                     # ROI size (hard-coded as 50)
-                    roi_size = 50
+                    # roi_size = 50
 
-                    # Create 2D grids using linspace
-                    x_vals = np.linspace(0, frameArraySize[1] - 1, frameArraySize[1])
-                    y_vals = np.linspace(0, frameArraySize[2] - 1, frameArraySize[2])
-                    xx, yy = np.meshgrid(x_vals, y_vals, indexing='ij')
+                    # # Create 2D grids using linspace
+                    # x_vals = np.linspace(0, frameArraySize[1] - 1, frameArraySize[1])
+                    # y_vals = np.linspace(0, frameArraySize[2] - 1, frameArraySize[2])
+                    # xx, yy = np.meshgrid(x_vals, y_vals, indexing='ij')
 
-                    # Calculate 2D sinusoidal pattern
-                    period_pattern = np.sin(xx) + np.cos(yy)
+                    # # Calculate 2D sinusoidal pattern
+                    # period_pattern = np.sin(xx) + np.cos(yy)
 
-                    # Determine ROI bounds
-                    x_start = max(0, x - roi_size // 2)
-                    x_end = min(frameArraySize[1], x_start + roi_size)
-                    y_start = max(0, y - roi_size // 2)
-                    y_end = min(frameArraySize[2], y_start + roi_size)
+                    # # Determine ROI bounds
+                    # x_start = max(0, x - roi_size // 2)
+                    # x_end = min(frameArraySize[1], x_start + roi_size)
+                    # y_start = max(0, y - roi_size // 2)
+                    # y_end = min(frameArraySize[2], y_start + roi_size)
 
-                    # Extract ROI from period_pattern
-                    roi = period_pattern[y_start:y_end, x_start:x_end]
+                    # # Extract ROI from period_pattern
+                    # roi = period_pattern[y_start:y_end, x_start:x_end]
                     
-                    selected_pattern = np.zeros(period_pattern.shape, dtype=dt)
-                    selected_pattern[y_start:y_end, x_start:x_end] = roi
+                    # selected_pattern = np.zeros(period_pattern.shape, dtype=dt)
+                    # selected_pattern[y_start:y_end, x_start:x_end] = roi
+                    selected_pattern = self.generate_gaussian_peak_array()
 
                     # Compute FFT so that the output has the same shape
                     fft_roi = fft.fft2(selected_pattern)

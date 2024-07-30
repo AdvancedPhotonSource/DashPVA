@@ -1,8 +1,10 @@
 import sys
+import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
+from PyQt5.QtCore import Qt
 import numpy as np
 
 
@@ -20,21 +22,38 @@ class AnalysisWindow(QMainWindow):
         self.pv_dict = None
 
     def timer_poll_pipe(self):
+
         if self.pipe.poll():
             self.pv_dict = self.pipe.recv() # try to send uniqueID
-            image = self.pv_dict[list(self.pv_dict.keys())[0]]
-            pixmap = QPixmap()
-            pixmap.convertFromImage(QImage(image.data, image.shape[1], image.shape[0], image.strides[0],QImage.Format.Format_RGB888))
-            self.label_a.setPixmap(pixmap)
+            self.received_roi = self.pv_dict['roi']
+            
+            # Plot the data
+            # TODO: Ask Peco how data should be displayed once received, 
+            # possible to do with matplotlib but slower, first attempt is using a plotwidget instead to get axis
+            self.plot_item.plot(data=self.received_roi[-1,:,:], clear=True)
+
+            # pixmap = QPixmap()
+            # pixmap.convertFromImage(QImage(self.received_roi.data, self.received_roi.shape[0], self.received_roi.shape[0], self.received_roi.strides[0],QImage.Format.Format_RGB888))
+
+            # self.label_a.setPixmap(pixmap)
+        
     
     def init_ui(self):
-        self.label_a = QLabel()
-        self.grid_a.addWidget(self.label_a,0,0)
+        # self.label_a = QLabel()
+        self.plot_widget = pg.PlotWidget()
+        self.plot_item = self.plot_widget.getPlotItem()
+        # Configure axes
+        self.plot_item.setLabel('bottom', 'X Axis')
+        self.plot_item.setLabel('left', 'Y Axis')
+        self.plot_item.setTitle('Plot with Axes')
+        self.grid_a.addWidget(self.plot_widget,0,0)
+        # self.grid_a.addWidget(self.label_a,0,0)
 
     def closeEvent(self, event):
         self.pipe.send('close')
-        event.accept()
-        # super(AnalysisWindow, self).closeEvent(event)
+        self.pipe.close()
+        # event.accept()
+        super(AnalysisWindow, self).closeEvent(event)
 
 # Global function so it can be called without needing to be within a class and get around
 # not being able to pass arguments to pyqt slots
@@ -50,7 +69,7 @@ if __name__ == '__main__':
     p = mp.Process(target=analysis_window_process, args=(child_pipe,))
     
     p.start()
-    parent_pipe.send({1000:np.zeros((100,100))})
+    parent_pipe.send({1000:np.zeros((1024,1024))})
     try:
         while True:
             # Handling messages from the main process if necessary
