@@ -2,10 +2,21 @@ import sys
 import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
 from PyQt5.QtCore import QTimer
+from PyQt5.QtChart import QChart
 from PyQt5 import uic
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
 import numpy as np
+
+
+
+# Global function so it can be called without needing to be within a class and get around
+# not being able to pass arguments to pyqt slots
+def analysis_window_process(pipe):
+    app = QApplication(sys.argv)
+    window = AnalysisWindow(pipe)
+    window.show()
+    app.exec_()
 
 
 # Define the second window as a class
@@ -25,17 +36,10 @@ class AnalysisWindow(QMainWindow):
 
         if self.pipe.poll():
             self.pv_dict = self.pipe.recv() # try to send uniqueID
-            self.received_roi = self.pv_dict['roi']
+            self.received_cache = self.pv_dict['roi']
+
+
             
-            # Plot the data
-            # TODO: Ask Peco how data should be displayed once received, 
-            # possible to do with matplotlib but slower, first attempt is using a plotwidget instead to get axis
-            self.plot_item.plot(data=self.received_roi[-1,:,:], clear=True)
-
-            # pixmap = QPixmap()
-            # pixmap.convertFromImage(QImage(self.received_roi.data, self.received_roi.shape[0], self.received_roi.shape[0], self.received_roi.strides[0],QImage.Format.Format_RGB888))
-
-            # self.label_a.setPixmap(pixmap)
         
     
     def init_ui(self):
@@ -52,16 +56,9 @@ class AnalysisWindow(QMainWindow):
     def closeEvent(self, event):
         self.pipe.send('close')
         self.pipe.close()
-        # event.accept()
+        event.accept()
         super(AnalysisWindow, self).closeEvent(event)
 
-# Global function so it can be called without needing to be within a class and get around
-# not being able to pass arguments to pyqt slots
-def analysis_window_process(pipe):
-    app = QApplication(sys.argv)
-    window = AnalysisWindow(pipe)
-    window.show()
-    app.exec_()
 
 if __name__ == '__main__':
     import multiprocessing as mp

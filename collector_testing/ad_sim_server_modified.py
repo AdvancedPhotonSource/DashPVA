@@ -255,13 +255,14 @@ class NumpyRandomGenerator(FrameGenerator):
         """Gaussian peak simulation."""
         return total_intensity * np.exp(-((x - x0)**2 / (2 * sigma_x**2) + (y - y0)**2 / (2 * sigma_y**2)))
     
-    def generate_gaussian_peak_array(self,size=1024):
+    def generate_gaussian_peak_array(self,shift_x, shift_y):
+        size=1024
         sigma_x = 14
         sigma_y = 20
         freq_x = 90
         freq_y = 50
-        shift_x = 0 
-        shift_y = 0 
+        # shift_x = 0 
+        # shift_y = 0 
         total_intensity = 200 
         #array = np.zeros((size, size))
         x = np.linspace(0, size - 1, size)
@@ -280,8 +281,19 @@ class NumpyRandomGenerator(FrameGenerator):
 
         return array
         
-    def scan_gen(self):
-        size = 1024
+    def scan_gen(self, size=1024):
+
+        # x_positions = np.zeros(shape=(size,size), dtype=np.int8)
+        # y_positions = np.zeros(shape=(size,size), dtype=np.int8)
+
+        # x_positions[::2] += np.arange(size)
+        # x_positions[1::2] += np.arange(size-1,-1,-1)
+        # x_positions = x_positions.ravel() 
+
+        # y_positions+= np.arange(size)[:,np.newaxis]
+        # y_positions = y_positions.ravel()
+        
+        # return np.array(x_positions), np.array(y_positions)
 
         for i in range(size):
             if i % 2 == 0:  # Even rows
@@ -322,7 +334,7 @@ class NumpyRandomGenerator(FrameGenerator):
             # self.frames = np.random.randint(mn, mx, size=frameArraySize, dtype=dt)
             
             # Initialize frames array
-            self.frames = np.zeros(frameArraySize, dtype=dt)
+            self.frames = [] # np.array([self.generate_gaussian_peak_array(1024, sigma_x, sigma_y, freq_x, freq_y, shift_x, shift_y, total_intensity) for shift_x, shift_y in zip(x_positions, y_positions)])
 
             frames_generated = 0
             while frames_generated < frameArraySize[0]:
@@ -330,10 +342,11 @@ class NumpyRandomGenerator(FrameGenerator):
                     # Get current scan position
                     current_scan_position = next(self.scan_gen_instance)
                     x, y = current_scan_position
-
+                    self.frames.append(self.generate_gaussian_peak_array(x, y,))
                     # Adjust x and y to ensure ROI fits within pattern size
-                    x = x // 10 + 512
-                    y = y // 10 + 512
+                    
+                    # x = x // 10 + 512
+                    # y = y // 10 + 512
 
                     # ROI size (hard-coded as 50)
                     # roi_size = 50
@@ -357,13 +370,13 @@ class NumpyRandomGenerator(FrameGenerator):
                     
                     # selected_pattern = np.zeros(period_pattern.shape, dtype=dt)
                     # selected_pattern[y_start:y_end, x_start:x_end] = roi
-                    selected_pattern = self.generate_gaussian_peak_array()
+                    # selected_pattern = self.generate_gaussian_peak_array()
 
-                    # Compute FFT so that the output has the same shape
-                    fft_roi = fft.fft2(selected_pattern)
+                    # # Compute FFT so that the output has the same shape
+                    # fft_roi = fft.fft2(selected_pattern)
 
-                    # Assign FFT data to frames array
-                    self.frames[frames_generated,:,:] = np.abs(fft_roi)
+                    # # Assign FFT data to frames array
+                    # self.frames[frames_generated,:,:] = np.abs(fft_roi)
 
                     # Increment frames_generated
                     frames_generated += 1
@@ -371,7 +384,7 @@ class NumpyRandomGenerator(FrameGenerator):
                 except StopIteration:
                     # Reset scan_gen_instance if all frames are generated
                     self.scan_gen_instance = self.scan_gen()
-
+            self.frames = np.array(self.frames)
 
         else:
             # Use float32 for min/max, to prevent overflow errors
@@ -575,6 +588,7 @@ class AdSimServer:
                 print(f'Creating PVA metadata record: {mPv}')
                 mPvObject = pva.PvObject(self.METADATA_TYPE_DICT)
                 self.pvaServer.addRecord(mPv, mPvObject, None)
+
     def scan_gen(self):
         size = 1024
         for i in range(size):
