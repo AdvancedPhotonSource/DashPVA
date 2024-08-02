@@ -35,22 +35,50 @@ class AnalysisWindow(QMainWindow):
     def timer_poll_pipe(self):
 
         if self.pipe.poll():
-            self.pv_dict = self.pipe.recv() # try to send uniqueID
-            self.received_cache = self.pv_dict['roi']
+            self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
 
+            image_rois = self.pv_dict.get('rois', [[]])
+            intensity_values = self.pv_dict.get('intensity', [])
+            x_positions = self.pv_dict.get('x_pos',[])
+            y_positions = self.pv_dict.get('y_pos',[])
+            unique_x_positions = self.pv_dict.get('unique_x_pos',[])
+            unique_y_positions = self.pv_dict.get('unique_y_pos',[])
+
+            x_indices = np.searchsorted(unique_x_positions, x_positions)
+            y_indices = np.searchsorted(unique_y_positions, y_positions)
+
+            y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2]))
+
+            # Compute weighted sums
+            weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2))
+            weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2))
+
+            # Calculate COM
+            com_y = weighted_sum_y / intensity_values
+            com_x = weighted_sum_x / intensity_values
+            intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+            com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+            com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+            # Populate the matrices using the indices
+            intensity_matrix[y_indices, x_indices] = intensity_values
+            com_x_matrix[y_indices, x_indices] = com_x
+            com_y_matrix[y_indices, x_indices] = com_y
+            
+            height, width = intensity_matrix.shape[:2]
+            # print(intensity_matrix.shape[:2])
+            coordinates = pg.QtCore.QRectF(0,0, width - 1, height - 1)
+            self.plot_viewer.setImage(intensity_matrix, autoRange=False, autoLevels=True)
+            self.plot_viewer.imageItem.setRect(rect=coordinates)
 
             
-        
-    
+
+            # self.plot.plot(x=histx, y=histy, clear=True)
+
     def init_ui(self):
         # self.label_a = QLabel()
-        self.plot_widget = pg.PlotWidget()
-        self.plot_item = self.plot_widget.getPlotItem()
-        # Configure axes
-        self.plot_item.setLabel('bottom', 'X Axis')
-        self.plot_item.setLabel('left', 'Y Axis')
-        self.plot_item.setTitle('Plot with Axes')
-        self.grid_a.addWidget(self.plot_widget,0,0)
+        self.plot = pg.PlotItem()
+        self.plot_viewer = pg.ImageView(view=self.plot,)
+        self.grid_a.addWidget(self.plot_viewer,0,0)
         # self.grid_a.addWidget(self.label_a,0,0)
 
     def closeEvent(self, event):

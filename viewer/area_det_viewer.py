@@ -330,13 +330,23 @@ class ImageWindow(QMainWindow):
 
         roi_x = 100
         roi_y = 200
-        roi_width = 20
+        roi_width = 50
         roi_height = 50
 
-        self.image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
-        self.unique_x_positions = np.unique(self.reader.positions_cache[:,0])
-        self.unique_y_positions = np.unique(self.reader.positions_cache[:,1])
-        self.pipe_main.send({'roi':self.image_rois, 'x_positions':self.unique_x_positions, 'y_positions': self.unique_y_positions})
+        image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+        intensity_values = np.sum(image_rois, axis=(1, 2))
+        x_positions = self.reader.positions_cache[:,0]
+        y_positions = self.reader.positions_cache[:,1]
+        unique_x_positions = np.unique(x_positions)
+        unique_y_positions = np.unique(y_positions)
+        self.pipe_main.send({
+                            'rois': image_rois,
+                            'intensity': intensity_values, 
+                            'x_pos': x_positions,
+                            'y_pos': y_positions,
+                            'unique_x_pos': unique_x_positions, 
+                            'unique_y_pos': unique_y_positions
+                            })
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -558,6 +568,7 @@ class ImageWindow(QMainWindow):
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
                     height, width = image.shape[:2]
+                    # print(image.shape[:2])
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
