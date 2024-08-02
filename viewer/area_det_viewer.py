@@ -1,6 +1,7 @@
 import sys
 import json
 import copy
+import time
 import numpy as np
 import pvaccess as pva
 import pyqtgraph as pg
@@ -312,12 +313,17 @@ class ImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
-        # Start the second window in a new process
-        self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
-        self.p.start()
-        self.timer_send = QTimer()
-        self.timer_send.timeout.connect(self.send_to_analysis_window)
-        self.timer_send.start(1000/100)
+        if len(self.reader.images_cache) == max_cache_size:
+            # Start the second window in a new process
+            self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
+            self.p.start()
+            self.timer_send = QTimer()
+            self.timer_send.timeout.connect(self.send_to_analysis_window)
+            self.timer_send.start(1000/100)
+        else:
+            print("waiting until cache is saturated")
+            # time.sleep(30)
+            # self.open_analysis_window_clicked()
         
 
     def send_to_analysis_window(self):
@@ -333,12 +339,15 @@ class ImageWindow(QMainWindow):
         roi_width = 50
         roi_height = 50
 
+
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+
         intensity_values = np.sum(image_rois, axis=(1, 2))
         x_positions = self.reader.positions_cache[:,0]
         y_positions = self.reader.positions_cache[:,1]
         unique_x_positions = np.unique(x_positions)
         unique_y_positions = np.unique(y_positions)
+
         self.pipe_main.send({
                             'rois': image_rois,
                             'intensity': intensity_values, 

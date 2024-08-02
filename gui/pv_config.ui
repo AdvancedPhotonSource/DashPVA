@@ -194,7 +194,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>dp-ADSim</string>
+     <string/>
     </property>
    </widget>
    <widget class="QLineEdit" name="le_collector">
@@ -216,7 +216,7 @@ border-radius:3;
 border-radius:3;</string>
     </property>
     <property name="text">
-     <string>collector:1:output</string>
+     <string>pvapy:image</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_pva_prefix">

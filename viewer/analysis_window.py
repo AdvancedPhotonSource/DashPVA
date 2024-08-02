@@ -29,7 +29,7 @@ class AnalysisWindow(QMainWindow):
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
-        self.timer.start(1000/100)
+        self.timer.start(1000)
         self.pv_dict = None
 
     def timer_poll_pipe(self):
@@ -43,6 +43,7 @@ class AnalysisWindow(QMainWindow):
             y_positions = self.pv_dict.get('y_pos',[])
             unique_x_positions = self.pv_dict.get('unique_x_pos',[])
             unique_y_positions = self.pv_dict.get('unique_y_pos',[])
+
 
             x_indices = np.searchsorted(unique_x_positions, x_positions)
             y_indices = np.searchsorted(unique_y_positions, y_positions)
@@ -63,12 +64,26 @@ class AnalysisWindow(QMainWindow):
             intensity_matrix[y_indices, x_indices] = intensity_values
             com_x_matrix[y_indices, x_indices] = com_x
             com_y_matrix[y_indices, x_indices] = com_y
-            
-            height, width = intensity_matrix.shape[:2]
+
+            intensity_matrix = np.log(intensity_matrix+1)
+            intensity_matrix = np.random.randn(1024, 1024)
+            height, width = intensity_matrix.shape
+
+            # TESTING QIMAGE:
+            # img = QImage(intensity_matrix.data, height, width, width*intensity_matrix.itemsize , QImage.Format.Format_Grayscale8)
+            # pixmap = QPixmap.fromImage(img)
+            # self.label_a.setPixmap(pixmap)
+
+            # height, width = intensity_matrix.shape[:2]
             # print(intensity_matrix.shape[:2])
+            
+            # TESTING IMAGEVIEWER
             coordinates = pg.QtCore.QRectF(0,0, width - 1, height - 1)
             self.plot_viewer.setImage(intensity_matrix, autoRange=False, autoLevels=True)
             self.plot_viewer.imageItem.setRect(rect=coordinates)
+            
+            # USING PLOT DOES NOT WORK OUT OF THE BOX
+            # self.plot_viewer.getPlotItem().plot(x=histx, y=histy, clear=True)
 
             
 
@@ -76,10 +91,11 @@ class AnalysisWindow(QMainWindow):
 
     def init_ui(self):
         # self.label_a = QLabel()
+        # self.grid_a.addWidget(self.label_a,0,0)
         self.plot = pg.PlotItem()
         self.plot_viewer = pg.ImageView(view=self.plot,)
+        # self.plot_viewer = pg.PlotWidget(plotItem=self.plot)
         self.grid_a.addWidget(self.plot_viewer,0,0)
-        # self.grid_a.addWidget(self.label_a,0,0)
 
     def closeEvent(self, event):
         self.pipe.send('close')
