@@ -7,6 +7,7 @@ from PyQt5 import uic
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
 import numpy as np
+import copy
 
 
 
@@ -37,12 +38,12 @@ class AnalysisWindow(QMainWindow):
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
 
-            image_rois = self.pv_dict.get('rois', [[]])
-            intensity_values = self.pv_dict.get('intensity', [])
-            x_positions = self.pv_dict.get('x_pos',[])
+            image_rois = copy.deepcopy(self.pv_dict.get('rois', [[]]))
+            intensity_values = copy.deepcopy(self.pv_dict.get('intensity', []))
+            x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
             y_positions = self.pv_dict.get('y_pos',[])
-            unique_x_positions = self.pv_dict.get('unique_x_pos',[])
-            unique_y_positions = self.pv_dict.get('unique_y_pos',[])
+            unique_x_positions = copy.deepcopy(self.pv_dict.get('unique_x_pos',[]))
+            unique_y_positions = copy.deepcopy(self.pv_dict.get('unique_y_pos',[]))
 
 
             x_indices = np.searchsorted(unique_x_positions, x_positions)
@@ -65,8 +66,13 @@ class AnalysisWindow(QMainWindow):
             com_x_matrix[y_indices, x_indices] = com_x
             com_y_matrix[y_indices, x_indices] = com_y
 
-            intensity_matrix = np.log(intensity_matrix+1)
-            intensity_matrix = np.random.randn(1024, 1024)
+            # TESTING: CAST MATRIX INTO NUMPY ARRAY
+            intensity_matrix = np.array(intensity_matrix)
+
+            # intensity_matrix = np.log(intensity_matrix+1)
+
+            # TESTING WITH RANDIOM MATRIX 
+            # intensity_matrix = np.random.randn(1024, 1024)
             height, width = intensity_matrix.shape
 
             # TESTING QIMAGE:
@@ -76,14 +82,13 @@ class AnalysisWindow(QMainWindow):
 
             # height, width = intensity_matrix.shape[:2]
             # print(intensity_matrix.shape[:2])
-            
+
             # TESTING IMAGEVIEWER
             coordinates = pg.QtCore.QRectF(0,0, width - 1, height - 1)
             self.plot_viewer.setImage(intensity_matrix, autoRange=False, autoLevels=True)
             self.plot_viewer.imageItem.setRect(rect=coordinates)
             
             # USING PLOT DOES NOT WORK OUT OF THE BOX
-            # self.plot_viewer.getPlotItem().plot(x=histx, y=histy, clear=True)
 
             
 
@@ -94,7 +99,6 @@ class AnalysisWindow(QMainWindow):
         # self.grid_a.addWidget(self.label_a,0,0)
         self.plot = pg.PlotItem()
         self.plot_viewer = pg.ImageView(view=self.plot,)
-        # self.plot_viewer = pg.PlotWidget(plotItem=self.plot)
         self.grid_a.addWidget(self.plot_viewer,0,0)
 
     def closeEvent(self, event):
