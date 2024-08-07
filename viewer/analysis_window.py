@@ -7,6 +7,7 @@ from PyQt5 import uic
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
 import numpy as np
+import matplotlib.pyplot as plt
 import copy
 
 
@@ -67,39 +68,62 @@ class AnalysisWindow(QMainWindow):
             com_y_matrix[y_indices, x_indices] = com_y
 
             # TESTING: CAST MATRIX INTO NUMPY ARRAY
-            intensity_matrix = np.array(intensity_matrix)
+            # intensity_matrix = np.array(intensity_matrix)
 
             # intensity_matrix = np.log(intensity_matrix+1)
 
-            # TESTING WITH RANDIOM MATRIX 
-            # intensity_matrix = np.random.randn(1024, 1024)
+            # TESTING: USE RANDOM MATRIX 
+            intensity_matrix = np.random.randn(1024, 1024)
             height, width = intensity_matrix.shape
 
-            # TESTING QIMAGE:
-            # img = QImage(intensity_matrix.data, height, width, width*intensity_matrix.itemsize , QImage.Format.Format_Grayscale8)
-            # pixmap = QPixmap.fromImage(img)
-            # self.label_a.setPixmap(pixmap)
+            # TESTING: QIMAGE -- Plots Successfully with random imagea
+            img = QImage(intensity_matrix.data, height, width, width*intensity_matrix.itemsize , QImage.Format.Format_Grayscale8)
+            pixmap = QPixmap.fromImage(img)
+            self.label_a.setPixmap(pixmap)
 
             # height, width = intensity_matrix.shape[:2]
             # print(intensity_matrix.shape[:2])
 
-            # TESTING IMAGEVIEWER
-            coordinates = pg.QtCore.QRectF(0,0, width - 1, height - 1)
-            self.plot_viewer.setImage(intensity_matrix, autoRange=False, autoLevels=True)
-            self.plot_viewer.imageItem.setRect(rect=coordinates)
+            # TESTING: IMAGEVIEWER -- Plots successfully with random matrix
+            # coordinates = pg.QtCore.QRectF(0,0, width - 1, height - 1)
+            # self.plot_viewer.setImage(intensity_matrix, autoRange=False, autoLevels=True)
+            # self.plot_viewer.imageItem.setRect(rect=coordinates)
             
-            # USING PLOT DOES NOT WORK OUT OF THE BOX
-
+            # Plotting
+            plt.figure(figsize=(10, 10))
+            plt.imshow(intensity_matrix, cmap='viridis', extent=(min(x_positions), max(x_positions), min(y_positions), max(y_positions)), origin='lower')
+            plt.colorbar(label='Total Intensity in ROI')
+            plt.title('Total Intensity in ROI for Each Scan Position')
+            plt.xlabel('X Position')
+            plt.ylabel('Y Position')
+            plt.show()
             
+            plt.figure(figsize=(10, 10))
+            plt.imshow(com_x_matrix, cmap='viridis', extent=(min(x_positions), max(x_positions), min(y_positions), max(y_positions)), origin='lower')
+            plt.colorbar()
+            plt.title('Center of Mass X Positions')
+            plt.xlabel('X Position')
+            plt.ylabel('Y Position')
+            plt.gca().invert_yaxis()
+            plt.show()
+            
+            plt.figure(figsize=(10, 10))
+            plt.imshow(com_y_matrix, cmap='viridis', extent=(min(x_positions), max(x_positions), min(y_positions), max(y_positions)), origin='lower')
+            plt.colorbar()
+            plt.title('Center of Mass Y Positions')
+            plt.xlabel('X Position')
+            plt.ylabel('Y Position')
+            plt.gca().invert_yaxis()
+            plt.show()
 
-            # self.plot.plot(x=histx, y=histy, clear=True)
+            plt.savefig(f"plot_image_{1}.png")            
 
     def init_ui(self):
-        # self.label_a = QLabel()
-        # self.grid_a.addWidget(self.label_a,0,0)
-        self.plot = pg.PlotItem()
-        self.plot_viewer = pg.ImageView(view=self.plot,)
-        self.grid_a.addWidget(self.plot_viewer,0,0)
+        self.label_a = QLabel()
+        self.grid_a.addWidget(self.label_a,0,0)
+        # self.plot = pg.PlotItem()
+        # self.plot_viewer = pg.ImageView(view=self.plot,)
+        # self.grid_a.addWidget(self.plot_viewer,0,0)
 
     def closeEvent(self, event):
         self.pipe.send('close')
