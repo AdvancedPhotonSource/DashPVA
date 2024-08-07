@@ -59,7 +59,7 @@ class ConfigDialog(QDialog):
         self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
     def edit_pv_setup(self):
-        if self.le_edit_file_path.text() is not '':
+        if self.le_edit_file_path.text() != '':
             self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
         else:
             print('file path empty')
@@ -73,7 +73,7 @@ class ConfigDialog(QDialog):
                                         file_path=self.pvs_path)        
 
 
-max_cache_size = 1024
+max_cache_size = 625 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
 class PVA_Reader:
 
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
@@ -108,7 +108,7 @@ class PVA_Reader:
         self.num_rois = 0
         self.cache_id_gen = rotation_cycle(0,max_cache_size)
 
-        if self.config_filepath is not '':
+        if self.config_filepath != '':
             with open(self.config_filepath, 'r') as json_file:
                 # loads the pvs in the json file into a python dictionary
                 self.pvs = json.load(json_file)
@@ -135,10 +135,10 @@ class PVA_Reader:
         self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
-        id = next(self.cache_id_gen)
-        self.images_cache[id,:,:] = copy.deepcopy(self.image)
-        self.positions_cache[id,0] = copy.deepcopy(self.attributes.get('x', ))#TODO: generalize for whatever scan positions we get
-        self.positions_cache[id,1] = copy.deepcopy(self.attributes.get('y',))#TODO: generalize for whatever scan positions we get
+        self.cache_id = next(self.cache_id_gen)
+        self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
+        self.positions_cache[self.cache_id,0] = copy.deepcopy(self.attributes.get('x', ))#TODO: generalize for whatever scan positions we get
+        self.positions_cache[self.cache_id,1] = copy.deepcopy(self.attributes.get('y',))#TODO: generalize for whatever scan positions we get
 
         
 
@@ -313,17 +313,17 @@ class ImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
-        if len(self.reader.images_cache) == max_cache_size:
-            # Start the second window in a new process
-            self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
-            self.p.start()
-            self.timer_send = QTimer()
-            self.timer_send.timeout.connect(self.send_to_analysis_window)
-            self.timer_send.start(1000/100)
-        else:
-            print("waiting until cache is saturated")
-            # time.sleep(30)
-            # self.open_analysis_window_clicked()
+        # if self.reader.cache_id == max_cache_size:
+        # Start the second window in a new process
+        self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
+        self.p.start()
+        self.timer_send = QTimer()
+        self.timer_send.timeout.connect(self.send_to_analysis_window)
+        self.timer_send.start(1000/100)
+        # else:
+        #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
+        #     # time.sleep(30)
+        #     # self.open_analysis_window_clicked()
         
 
     def send_to_analysis_window(self):
@@ -342,19 +342,19 @@ class ImageWindow(QMainWindow):
 
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
 
-        intensity_values = np.sum(image_rois, axis=(1, 2))
+        # intensity_values = np.sum(image_rois, axis=(1, 2))
         x_positions = self.reader.positions_cache[:,0]
         y_positions = self.reader.positions_cache[:,1]
-        unique_x_positions = np.unique(x_positions)
-        unique_y_positions = np.unique(y_positions)
+        # unique_x_positions = np.unique(x_positions)
+        # unique_y_positions = np.unique(y_positions)
 
         self.pipe_main.send({
                             'rois': image_rois,
-                            'intensity': intensity_values, 
+                            # 'intensity': intensity_values, 
                             'x_pos': x_positions,
                             'y_pos': y_positions,
-                            'unique_x_pos': unique_x_positions, 
-                            'unique_y_pos': unique_y_positions
+                            # 'unique_x_pos': unique_x_positions, 
+                            # 'unique_y_pos': unique_y_positions
                             })
 
     def start_timers(self):

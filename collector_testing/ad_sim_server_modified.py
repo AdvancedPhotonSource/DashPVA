@@ -242,13 +242,15 @@ class NumpyRandomGenerator(FrameGenerator):
     def __init__(self, nf, nx, ny, colorMode, datatype, minimum, maximum):
         FrameGenerator.__init__(self)
         self.nf = nf
+        self.nscans = int(np.round(np.sqrt(self.nf),decimals=0))
         self.nx = nx
         self.ny = ny
         self.colorMode = colorMode
         self.datatype = datatype
         self.minimum = minimum
         self.maximum = maximum
-        self.scan_gen_instance = self.scan_gen()
+        self.x_positions, self.y_positions = self.generate_raster_scan_positions(size=self.nscans)
+        self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
         self.generateFrames()
 
     def gaussian_2d(self, x, y, x0, y0, sigma_x, sigma_y, total_intensity):
@@ -281,27 +283,31 @@ class NumpyRandomGenerator(FrameGenerator):
 
         return array
         
-    def scan_gen(self, size=1024):
+    # def scan_gen(self, size=(1024,1024)):
+    #     for i in range(size[0]):
+    #         if i % 2 == 0:  # Even rows
+    #             for j in range(size[1]):
+    #                 yield i, j
+    #         else:  # Odd rows
+    #             for j in range(size[1]-1, -1, -1):  # Reverse iteration for odd rows
+    #                 yield i, j
+                    
+    def generate_raster_scan_positions(self, size): #TODO: x and y have different range. 
+        x_positions = np.zeros(shape=(size,size), dtype=np.int8)
+        y_positions = np.zeros(shape=(size,size), dtype=np.int8)
 
-        # x_positions = np.zeros(shape=(size,size), dtype=np.int8)
-        # y_positions = np.zeros(shape=(size,size), dtype=np.int8)
+        x_positions[::2] += np.arange(size)
+        x_positions[1::2] += np.arange(size-1,-1,-1)
+        x_positions = x_positions.ravel()   
 
-        # x_positions[::2] += np.arange(size)
-        # x_positions[1::2] += np.arange(size-1,-1,-1)
-        # x_positions = x_positions.ravel() 
-
-        # y_positions+= np.arange(size)[:,np.newaxis]
-        # y_positions = y_positions.ravel()
+        y_positions+= np.arange(size)[:,np.newaxis]
+        y_positions = y_positions.ravel()
         
-        # return np.array(x_positions), np.array(y_positions)
-
-        for i in range(size):
-            if i % 2 == 0:  # Even rows
-                for j in range(size):
-                    yield i, j
-            else:  # Odd rows
-                for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
-                    yield i, j
+        return np.array(x_positions), np.array(y_positions)
+    
+    def scan_gen(self, xpos, ypos):
+        for i in range(len(xpos)): #xpos and ypos must have same dimensions
+            yield xpos[i], ypos[i]
                     
     def generateFrames(self):
         if self.colorMode not in AdImageUtility.COLOR_MODE_MAP:
@@ -341,6 +347,7 @@ class NumpyRandomGenerator(FrameGenerator):
                 try:
                     # Get current scan position
                     current_scan_position = next(self.scan_gen_instance)
+                    # print(f'scan pos: {current_scan_position} ')
                     x, y = current_scan_position
                     self.frames.append(self.generate_gaussian_peak_array(x, y,))
                     # Adjust x and y to ensure ROI fits within pattern size
@@ -383,7 +390,7 @@ class NumpyRandomGenerator(FrameGenerator):
 
                 except StopIteration:
                     # Reset scan_gen_instance if all frames are generated
-                    self.scan_gen_instance = self.scan_gen()
+                    self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
             self.frames = np.array(self.frames)
 
         else:
@@ -442,7 +449,11 @@ class AdSimServer:
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
-        self.scan_gen_instance = self.scan_gen()  
+        self.nscans = int(np.round(np.sqrt(nFrames),decimals=0))
+        self.nx = nx
+        self.ny = ny
+        self.x_positions, self.y_positions = self.generate_raster_scan_positions(size=self.nscans)
+        self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)  
         self.current_scan_position = None  # Cache for current scan position
         inputFiles = []
         if inputDirectory is not None:
@@ -588,16 +599,43 @@ class AdSimServer:
                 print(f'Creating PVA metadata record: {mPv}')
                 mPvObject = pva.PvObject(self.METADATA_TYPE_DICT)
                 self.pvaServer.addRecord(mPv, mPvObject, None)
+    
+    # def scan_gen(self, size=(1024,1024)):
+    #     for i in range(size[0]):
+    #         if i % 2 == 0:  # Even rows
+    #             for j in range(size[1]):
+    #                 yield i, j
+    #         else:  # Odd rows
+    #             for j in range(size[1]-1, -1, -1):  # Reverse iteration for odd rows
+    #                 yield i, j
+    
+    # def scan_gen(self):
+    #     size = 1024
+    #     for i in range(size):
+    #         if i % 2 == 0:  # Even rows
+    #             for j in range(size):
+    #                 yield i, j
+    #         else:  # Odd rows
+    #             for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
+    #                 yield i, j
+    
+    def generate_raster_scan_positions(self, size): #TODO: x and y have different range. 
+        x_positions = np.zeros(shape=(size,size), dtype=np.int8)
+        y_positions = np.zeros(shape=(size,size), dtype=np.int8)
 
-    def scan_gen(self):
-        size = 1024
-        for i in range(size):
-            if i % 2 == 0:  # Even rows
-                for j in range(size):
-                    yield i, j
-            else:  # Odd rows
-                for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
-                    yield i, j
+        x_positions[::2] += np.arange(size)
+        x_positions[1::2] += np.arange(size-1,-1,-1)
+        x_positions = x_positions.ravel()   
+
+        y_positions+= np.arange(size)[:,np.newaxis]
+        y_positions = y_positions.ravel()
+        
+        return np.array(x_positions), np.array(y_positions)
+    
+    def scan_gen(self, xpos, ypos):
+        for i in range(len(xpos)): #xpos and ypos must have same dimensions
+            yield xpos[i], ypos[i]
+            
     # def getMetadataValueDict(self):
     #     """Testing Generator """
     #     metadataValueDict = {}
@@ -616,12 +654,15 @@ class AdSimServer:
         metadataValueDict = {}
         try:
             if self.current_scan_position is None:
-                self.current_scan_position = next(self.scan_gen_instance)
-            value = self.current_scan_position
-        except StopIteration:
-            self.scan_gen_instance = self.scan_gen()  # Reinitialize generator
+                self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
             self.current_scan_position = next(self.scan_gen_instance)
             value = self.current_scan_position
+        except StopIteration:
+            self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)  # Reinitialize generator
+            self.current_scan_position = next(self.scan_gen_instance)
+            value = self.current_scan_position
+        # print(f'metadata val: {value} ')
+        
             
         for index, mPv in enumerate(self.metadataPvs):
             metadataValueDict[mPv] = value[index]
