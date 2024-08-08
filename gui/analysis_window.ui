@@ -35,7 +35,21 @@
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_a"/>
+     <layout class="QGridLayout" name="grid_a">
+      <item row="0" column="0">
+       <widget class="QLabel" name="intensity_matrix">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>Intensity Matrix</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_b">
@@ -59,7 +73,21 @@
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_b"/>
+     <layout class="QGridLayout" name="grid_b">
+      <item row="0" column="0">
+       <widget class="QLabel" name="center_of_mass_x">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>Center of Mass X</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_c">
@@ -83,7 +111,21 @@
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_c"/>
+     <layout class="QGridLayout" name="grid_c">
+      <item row="0" column="0">
+       <widget class="QLabel" name="center_of_mass_y">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>Center of Mass Y</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </widget>
    <widget class="QComboBox" name="cbox_select_roi">
@@ -125,6 +167,110 @@
     </property>
     <property name="text">
      <string>Stop</string>
+    </property>
+   </widget>
+   <widget class="QPlainTextEdit" name="roi_x">
+    <property name="geometry">
+     <rect>
+      <x>580</x>
+      <y>510</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="plainText">
+     <string>100</string>
+    </property>
+   </widget>
+   <widget class="QPlainTextEdit" name="roi_y">
+    <property name="geometry">
+     <rect>
+      <x>580</x>
+      <y>570</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="plainText">
+     <string>200</string>
+    </property>
+   </widget>
+   <widget class="QPlainTextEdit" name="roi_width">
+    <property name="geometry">
+     <rect>
+      <x>810</x>
+      <y>510</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="plainText">
+     <string>50</string>
+    </property>
+   </widget>
+   <widget class="QPlainTextEdit" name="roi_height">
+    <property name="geometry">
+     <rect>
+      <x>810</x>
+      <y>570</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="plainText">
+     <string>50</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>500</x>
+      <y>520</y>
+      <width>60</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>ROI x</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>500</x>
+      <y>580</y>
+      <width>60</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>ROI y</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_3">
+    <property name="geometry">
+     <rect>
+      <x>730</x>
+      <y>520</y>
+      <width>60</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>ROI width</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_4">
+    <property name="geometry">
+     <rect>
+      <x>730</x>
+      <y>580</y>
+      <width>71</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>ROI height</string>
     </property>
    </widget>
   </widget>

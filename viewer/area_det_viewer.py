@@ -131,16 +131,21 @@ class PVA_Reader:
         # else:
         #     self.pva_cache = self.pva_cache[1:]
         #     self.pva_cache.append(pv_copy)
-
+        # t1 = time.time()
         self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
         self.cache_id = next(self.cache_id_gen)
         self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-        self.positions_cache[self.cache_id,0] = copy.deepcopy(self.attributes.get('x', ))#TODO: generalize for whatever scan positions we get
-        self.positions_cache[self.cache_id,1] = copy.deepcopy(self.attributes.get('y',))#TODO: generalize for whatever scan positions we get
+        # print(f"{self.attributes}")
+        x_value = self.attributes.get('x')[0]['value']
+        y_value = self.attributes.get('y')[0]['value']
+        # print(f"{x_value=} , {y_value=}")
+        self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
+        self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+        # print(f" {self.cache_id=}")
 
-        print(f"{self.attributes}")
+        
 
         # with open('pv_configs/output_cache.json','w',1) as output_json:
         # current_time = time.time()
@@ -333,8 +338,8 @@ class ImageWindow(QMainWindow):
         self.timer_send.start(int(1000/100))
         # else:
         #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
-        #     # time.sleep(30)
-        #     # self.open_analysis_window_clicked()
+            # time.sleep(30)
+            # self.open_analysis_window_clicked()
         
 
     def send_to_analysis_window(self):

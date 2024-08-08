@@ -216,7 +216,7 @@ border-radius:3;
 border-radius:3;</string>
     </property>
     <property name="text">
-     <string>pvapy:image</string>
+     <string>collector:1:output</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_pva_prefix">
