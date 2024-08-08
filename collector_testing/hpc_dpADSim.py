@@ -21,9 +21,9 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         AdImageProcessor.__init__(self, configDict)
         # Configuration
         self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
-        self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
+        # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
         self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset', self.DEFAULT_METADATA_TIMESTAMP_OFFSET))
-        self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
+        # self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
 
         # Statistics
         self.nFramesProcessed = 0 # Number of images associated with metadata
@@ -34,6 +34,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
 
         # Current metadata map       
         self.currentMetadataMap = {}
+        # self.currentframe_attributes = {}
 
         # The last object time
         self.lastFrameTimestamp = 0
@@ -55,6 +56,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
     # Associate metadata
     # Returns true on success, false on definite failure, none on failure/try another
     def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
+        self.logger.debug(f"{self.currentMetadataMap=}")
         if mdChannel not in self.currentMetadataMap:
             self.logger.error(f'Metadata channel {mdChannel} not found in current metadata map')
             return False
@@ -93,7 +95,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             # Append the NtAttribute object to frameAttributes
             frameAttributes.append(nt_attribute)
             # frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
-            self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
+            # self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
             self.nMetadataProcessed += 1 
             # del self.currentMetadataMap[mdChannel]
             return True
@@ -102,7 +104,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
             # Append the NtAttribute object to frameAttributes
             frameAttributes.append(nt_attribute)
-            self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+            # self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
             self.nMetadataProcessed += 1 
             # del self.currentMetadataMap[mdChannel]
             return True
@@ -110,7 +112,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             # This metadata is newer than the frame
             # Association failed, but keep metadata for the next frame
             associationFailed = True 
-            self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+            # self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+            self.logger.debug('ERROR')
             return False
         # else:
         #     # Use metadata_dict approach if tags are not available
@@ -150,6 +153,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             return pvObject
 
         frameAttributes = []
+        
         if 'attribute' in pvObject:
             frameAttributes = pvObject['attribute']
 
@@ -185,7 +189,26 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                         # Definite failure
                         associationFailed = True 
                     break
-                
+        # Create a list of metadata channels that are in currentMetadataMap
+        processedChannels = list(self.currentMetadataMap.keys())
+
+        # Additional loop to check for any missed metadata channels
+        for metadataChannel, metadataQueue in self.metadataQueueMap.items():
+            if metadataChannel in processedChannels:
+                # Remove the processed channel from the list
+                processedChannels.remove(metadataChannel)
+        self.logger.debug(f"Remaining channel to append to broacast; {processedChannels}")
+
+        # If there are any remaining channels in processedChannels, process them
+        for metadataChannel in processedChannels:
+            while True:
+                result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
+                if result is not None:
+                    if not result:
+                        # Definite failure
+                        associationFailed = True 
+                    break
+            
         # #debug 
         # if 'attribute' in pvObject:
         #     frameAttributes = pvObject['attribute']
@@ -196,6 +219,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             self.nFrameErrors += 1 
         else:
             self.nFramesProcessed += 1 
+        # self.logger.debug(f"{frameAttributes=}")
                        
         pvObject['attribute'] = frameAttributes 
         self.updateOutputChannel(pvObject)

@@ -15,7 +15,8 @@ def monitor_callback(data):
         
         print("\nReceived data:")
         # image_data = data['value'][0]['ubyteValue']
-        image_data = data['value'][0]['uintValue']
+        # image_data = data['value'][0]['uintValue']
+        image_data = data['value'][0]['doubleValue']
 
         print(f"Image data length: {len(image_data)}")
 
@@ -41,7 +42,8 @@ def monitor_callback(data):
             
         if previous_data is None:
             # previous_data = data['value'][0]['ubyteValue']
-            previous_data = data['value'][0]['uintValue']
+            # previous_data = data['value'][0]['uintValue']
+            previous_data = data['value'][0]['doubleValue']
             print('data recorded!')
 
 # collector_channel = pva.Channel("pvapy:image", pva.PVA)

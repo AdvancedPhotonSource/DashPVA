@@ -140,7 +140,7 @@ class PVA_Reader:
         self.positions_cache[self.cache_id,0] = copy.deepcopy(self.attributes.get('x', ))#TODO: generalize for whatever scan positions we get
         self.positions_cache[self.cache_id,1] = copy.deepcopy(self.attributes.get('y',))#TODO: generalize for whatever scan positions we get
 
-        
+        print(f"{self.attributes}")
 
         # with open('pv_configs/output_cache.json','w',1) as output_json:
         # current_time = time.time()
@@ -162,12 +162,23 @@ class PVA_Reader:
         else:
             return None
 
-        attributes = {
-            attr["name"]: [val for val in attr.get("value", "")] for attr in obj_dict.get("attribute", {})
-            }
+        # attributes = {
+        #     attr["name"]: [val for val in attr.get("value", "")] for attr in obj_dict.get("attribute", {})
+        #     }
+        # for value in ["codec", "uniqueId", "uncompressedSize"]:
+        #     if value in self.pva_object:
+        #         attributes[value] = self.pva_object[value]
+        # self.attributes = attributes
+        attributes = {}
+        for attr in obj_dict.get("attribute", []):
+            name = attr['name']
+            value = attr['value']
+            attributes[name] = value
+
         for value in ["codec", "uniqueId", "uncompressedSize"]:
             if value in self.pva_object:
                 attributes[value] = self.pva_object[value]
+
         self.attributes = attributes
 
     def pva_to_image(self):
@@ -319,7 +330,7 @@ class ImageWindow(QMainWindow):
         self.p.start()
         self.timer_send = QTimer()
         self.timer_send.timeout.connect(self.send_to_analysis_window)
-        self.timer_send.start(1000/100)
+        self.timer_send.start(int(1000/100))
         # else:
         #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
         #     # time.sleep(30)
@@ -359,7 +370,7 @@ class ImageWindow(QMainWindow):
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
-        self.timer_labels.start(1000/100)
+        self.timer_labels.start(int(1000/100))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_timers(self):
@@ -588,13 +599,13 @@ class ImageWindow(QMainWindow):
                                                  autoRange=False, 
                                                  autoLevels=False, 
                                                  levels=(min_level, max_level)) 
-                        self.image_view.imageItem.setRect(rect=coordinates)
+                        # self.image_view.imageItem.setRect(rect=coordinates)
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                        self.image_view.imageItem.setRect(rect=coordinates)
+                        # self.image_view.imageItem.setRect(rect=coordinates)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
                                               y=np.arange(0,self.reader.shape[1]), 

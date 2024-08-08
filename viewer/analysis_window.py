@@ -65,7 +65,7 @@ class AnalysisWindow(QMainWindow):
             # com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
             # com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
             # # Populate the matrices using the indices
-            # intensity_matrix[y_indices, x_indices] = intensity_values
+            intensity_matrix[y_indices, x_indices] = intensity_values
             # com_x_matrix[y_indices, x_indices] = com_x
             # com_y_matrix[y_indices, x_indices] = com_y
 
