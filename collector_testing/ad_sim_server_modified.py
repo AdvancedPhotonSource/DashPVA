@@ -349,7 +349,9 @@ class NumpyRandomGenerator(FrameGenerator):
                     current_scan_position = next(self.scan_gen_instance)
                     # print(f'scan pos: {current_scan_position} ')
                     x, y = current_scan_position
-                    self.frames.append(self.generate_gaussian_peak_array(x, y,))
+                    image = self.generate_gaussian_peak_array(x, y,)
+                    image = image * np.random.poisson(5, image.shape)
+                    self.frames.append(image)
                     # Adjust x and y to ensure ROI fits within pattern size
                     
                     # x = x // 10 + 512

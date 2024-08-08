@@ -31,8 +31,9 @@ class AnalysisWindow(QMainWindow):
         # self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
-        self.timer.start(1000)
+        self.timer.start(10)
         self.pv_dict = None
+        self.roll_nums = 1
 
     def timer_poll_pipe(self):
 
@@ -47,55 +48,65 @@ class AnalysisWindow(QMainWindow):
             intensity_values = np.sum(image_rois, axis=(1, 2))
             x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
             y_positions = copy.deepcopy(self.pv_dict.get('y_pos',[]))
-            unique_x_positions = np.unique(x_positions)
-            unique_y_positions = np.unique(y_positions)
-      
+            
+            #rolling to correct the starting point
+            image_rois = np.roll(image_rois, -1*self.roll_nums, axis=0)
+            x_positions = np.roll(x_positions, -1*self.roll_nums)
+            y_positions = np.roll(y_positions, -1*self.roll_nums)
+            
+            print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
+            if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
+                unique_x_positions = np.unique(x_positions)
+                unique_y_positions = np.unique(y_positions)
+        
 
 
-            x_indices = np.searchsorted(unique_x_positions, x_positions)
-            y_indices = np.searchsorted(unique_y_positions, y_positions)
+                x_indices = np.searchsorted(unique_x_positions, x_positions)
+                y_indices = np.searchsorted(unique_y_positions, y_positions)
 
-            y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2]))
+                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2]))
 
-            # Compute weighted sums
-            weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2))
-            weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2))
+                # Compute weighted sums
+                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2))
+                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2))
 
-            # Calculate COM
-            com_y = weighted_sum_y / intensity_values
-            com_x = weighted_sum_x / intensity_values
-            
-            #filter out inf
-            com_x[com_x==np.nan] = 0
-            com_y[com_y==np.nan] = 0
-            #Two lines below don't work if unique positions are messed by incomplete x y positions 
-            # intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-            # intensity_matrix[y_indices, x_indices] = intensity_values
-            
-            scan_range = int(np.sqrt(np.shape(image_rois)[0]))
-            intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
-            
-            com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-            com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-            # # Populate the matrices using the indices
-            
-            com_x_matrix[y_indices, x_indices] = com_x
-            com_y_matrix[y_indices, x_indices] = com_y
+                # Calculate COM
+                com_y = weighted_sum_y / intensity_values
+                com_x = weighted_sum_x / intensity_values
+                
+                #filter out inf
+                com_x[com_x==np.nan] = 0
+                com_y[com_y==np.nan] = 0
+                #Two lines below don't work if unique positions are messed by incomplete x y positions 
+                intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+                intensity_matrix[y_indices, x_indices] = intensity_values
+                
+                # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
+                # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
+                
+                com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+                com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
+                # # Populate the matrices using the indices
+                
+                com_x_matrix[y_indices, x_indices] = com_x
+                com_y_matrix[y_indices, x_indices] = com_y
 
-            height, width = intensity_matrix.shape
-            img = QImage(intensity_matrix.data, width, height, width, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(img)
-            self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=True))
-            
-            height, width = com_x_matrix.shape
-            img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(img)
-            self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=True))
-            
-            height, width = com_y_matrix.shape
-            img = QImage(com_y_matrix.data, width, height, width, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(img)
-            self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
+                height, width = intensity_matrix.shape
+                img = QImage(intensity_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                pixmap = QPixmap.fromImage(img)
+                self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=True))
+                
+                height, width = com_x_matrix.shape
+                img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                pixmap = QPixmap.fromImage(img)
+                self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=True))
+                
+                height, width = com_y_matrix.shape
+                img = QImage(com_y_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                pixmap = QPixmap.fromImage(img)
+                self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
+            else:
+                self.roll_nums += 1
 
 
     # def init_ui(self):

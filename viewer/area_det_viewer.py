@@ -27,7 +27,7 @@ def rotation_cycle(min,max):
 
 rot_gen = rotation_cycle(1,5)         
                 
-
+timer_for_roi_change = time.time()
 class ConfigDialog(QDialog):
 
     def __init__(self):
@@ -331,6 +331,10 @@ class ImageWindow(QMainWindow):
     def open_analysis_window_clicked(self):
         # if self.reader.cache_id == max_cache_size:
         # Start the second window in a new process
+        # if (self.reader.positions_cache[:,0][-1] != 0 ) and (self.reader.positions_cache[:,1][-1] != 0 ):
+        #     print(f"x: {self.reader.positions_cache[:,0][-1]}, y {self.reader.positions_cache[:,1][-1]}")
+        #     self.open_analysis_window_clicked() 
+        # else:
         self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
         self.p.start()
         self.timer_send = QTimer()
@@ -349,11 +353,21 @@ class ImageWindow(QMainWindow):
                 message = self.pipe_main.recv()
                 if message == 'close':
                     self.pipe_main.close()  
-
-        roi_x = 100
-        roi_y = 200
-        roi_width = 50
-        roi_height = 50
+        if time.time() - timer_for_roi_change <10:
+            roi_x = 100
+            roi_y = 200
+            roi_width = 50
+            roi_height = 50
+        elif time.time() -timer_for_roi_change > 10 and time.time() -timer_for_roi_change <20:
+            roi_x = 300
+            roi_y = 400
+            roi_width = 50
+            roi_height = 50
+        else:
+            roi_x = 500
+            roi_y = 600
+            roi_width = 50
+            roi_height = 50
 
 
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
