@@ -252,6 +252,8 @@ class NumpyRandomGenerator(FrameGenerator):
         self.x_positions, self.y_positions = self.generate_raster_scan_positions(size=self.nscans)
         self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
         self.generateFrames()
+        np.save('xpos.npy', self.x_positions)
+        np.save('ypos.npy', self.y_positions)
 
     def gaussian_2d(self, x, y, x0, y0, sigma_x, sigma_y, total_intensity):
         """Gaussian peak simulation."""
@@ -393,6 +395,14 @@ class NumpyRandomGenerator(FrameGenerator):
                 except StopIteration:
                     # Reset scan_gen_instance if all frames are generated
                     self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
+                    
+                    # create another frame generation so that it has differen noise with same positions 
+                    for i in range(frames_generated):
+                        current_scan_position = next(self.scan_gen_instance)
+                        x, y = current_scan_position
+                        image = self.generate_gaussian_peak_array(x, y,)
+                        image = image * np.random.poisson(5, image.shape) * 100
+                        self.frames.append(image)
             self.frames = np.array(self.frames)
 
         else:

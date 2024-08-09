@@ -107,6 +107,8 @@ class PVA_Reader:
         self.metadata = {}
         self.num_rois = 0
         self.cache_id_gen = rotation_cycle(0,max_cache_size)
+        self.first_scan_detected = False
+
 
         if self.config_filepath != '':
             with open(self.config_filepath, 'r') as json_file:
@@ -135,24 +137,39 @@ class PVA_Reader:
         self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
-        self.cache_id = next(self.cache_id_gen)
-        self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-        # print(f"{self.attributes}")
         x_value = self.attributes.get('x')[0]['value']
         y_value = self.attributes.get('y')[0]['value']
-        # print(f"{x_value=} , {y_value=}")
-        self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-        self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
-        # print(f" {self.cache_id=}")
-
+        #need to avoid hard coding the initial scan position 
+        if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
+            self.first_scan_detected = True
+            print(f"First Scan detected...")
+            self.images_cache[:,:,:] = 0
+            self.positions_cache[:,:] = 0 #TODO: generalize for whatever scan positions we get
         
+            
+        #now start caching after the first scan is detected 
+        # now scan pos recorded should match the prerecorded scan positions 
+        # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
+        # and overwrite if not
+        if self.first_scan_detected: 
+            self.cache_id = next(self.cache_id_gen)
+            # print(f"{self.cache_id=}")
+            self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
+            # print(f"{self.attributes}")
+            
+            # print(f"{x_value=} , {y_value=}")
+            self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
+            self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+            # print(f" {self.cache_id=}")
 
-        # with open('pv_configs/output_cache.json','w',1) as output_json:
-        # current_time = time.time()
-        # if current_time % 10 < 1:
-        #     with open('pv_configs/output.txt', 'w') as f:
-        #         for pv in self.pva_cache:
-        #             f.write(f'{pv}\n')
+            
+
+            # with open('pv_configs/output_cache.json','w',1) as output_json:
+            # current_time = time.time()
+            # if current_time % 10 < 1:
+            #     with open('pv_configs/output.txt', 'w') as f:
+            #         for pv in self.pva_cache:
+            #             f.write(f'{pv}\n')
             
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -278,6 +295,7 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
+        self.caching_frequency = 10 #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -339,7 +357,7 @@ class ImageWindow(QMainWindow):
         self.p.start()
         self.timer_send = QTimer()
         self.timer_send.timeout.connect(self.send_to_analysis_window)
-        self.timer_send.start(int(1000/100))
+        self.timer_send.start(int(1000/float(self.caching_frequency)))
         # else:
         #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
             # time.sleep(30)
@@ -353,12 +371,12 @@ class ImageWindow(QMainWindow):
                 message = self.pipe_main.recv()
                 if message == 'close':
                     self.pipe_main.close()  
-        if time.time() - timer_for_roi_change <10:
+        if time.time() - timer_for_roi_change <60:
             roi_x = 100
             roi_y = 200
             roi_width = 50
             roi_height = 50
-        elif time.time() -timer_for_roi_change > 10 and time.time() -timer_for_roi_change <20:
+        elif time.time() -timer_for_roi_change > 60 and time.time() -timer_for_roi_change <120:
             roi_x = 300
             roi_y = 400
             roi_width = 50
@@ -368,7 +386,10 @@ class ImageWindow(QMainWindow):
             roi_y = 600
             roi_width = 50
             roi_height = 50
-
+        # roi_x = 100
+        # roi_y = 200
+        # roi_width = 50
+        # roi_height = 50
 
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
 
@@ -383,13 +404,15 @@ class ImageWindow(QMainWindow):
                             # 'intensity': intensity_values, 
                             'x_pos': x_positions,
                             'y_pos': y_positions,
+                            'first_scan' : self.reader.first_scan_detected,
+                            'cache_freq' : self.caching_frequency
                             # 'unique_x_pos': unique_x_positions, 
                             # 'unique_y_pos': unique_y_positions
                             })
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
-        self.timer_labels.start(int(1000/100))
+        self.timer_labels.start(int(1000/float(self.caching_frequency)))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_timers(self):

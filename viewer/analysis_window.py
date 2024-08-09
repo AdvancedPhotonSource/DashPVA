@@ -22,6 +22,8 @@ def analysis_window_process(pipe):
 
 
 # Define the second window as a class
+x_positions = np.load("xpos.npy")
+y_positions = np.load("ypos.npy")
 class AnalysisWindow(QMainWindow):
     def __init__(self,pipe):
         super(AnalysisWindow, self).__init__()
@@ -31,31 +33,52 @@ class AnalysisWindow(QMainWindow):
         # self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
-        self.timer.start(10)
+        self.timer.start(int(1000/10))
+        self.cache_timer_corr = False
         self.pv_dict = None
         self.roll_nums = 1
+        self.call_times = 0
 
     def timer_poll_pipe(self):
 
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
             image_rois = copy.deepcopy(self.pv_dict.get('rois', [[]]))
-            # roi_x = 100# int(self.roi_x.toPlainText())
-            # roi_y = 100 #int(self.roi_y.toPlainText())
-            # roi_width = 50 #int(self.roi_width.toPlainText())
-            # roi_height = 50#int(self.roi_height.toPlainText())
-            # image_rois=image_rois[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
-            intensity_values = np.sum(image_rois, axis=(1, 2))
-            x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
-            y_positions = copy.deepcopy(self.pv_dict.get('y_pos',[]))
-            
-            #rolling to correct the starting point
-            image_rois = np.roll(image_rois, -1*self.roll_nums, axis=0)
-            x_positions = np.roll(x_positions, -1*self.roll_nums)
-            y_positions = np.roll(y_positions, -1*self.roll_nums)
-            
-            print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
-            if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
+            if self.cache_timer_corr == False:
+                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',[[]]))))
+                self.cache_timer_corr = True 
+            if self.pv_dict.get('first_scan', [[]]) == False:
+                self.status_text.setText("Waiting for the first scan...")
+                
+            else:
+                self.status_text.setText("Scanning...")
+                self.call_times += 1
+                # print(f"{self.call_times=}")
+                
+                # roi_x = 100# int(self.roi_x.toPlainText())
+                # roi_y = 100 #int(self.roi_y.toPlainText())
+                # roi_width = 50 #int(self.roi_width.toPlainText())
+                # roi_height = 50#int(self.roi_height.toPlainText())
+                # image_rois=image_rois[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+                intensity_values = np.sum(image_rois, axis=(1, 2))
+                intensity_values_non_zeros = copy.deepcopy(intensity_values)
+                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6
+                # print(f"total intensity val calculated: {np.count_nonzero(intensity_values)}")
+                # x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
+                # y_positions = copy.deepcopy(self.pv_dict.get('y_pos',[]))
+                
+                # Instead of reading the scan positions from collector 
+                # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
+                # and overwrite if not
+                # we had made sure in area_det_viewr that the starting scan position match
+                
+                # #rolling to correct the starting point
+                # image_rois = np.roll(image_rois, -1*self.roll_nums, axis=0)
+                # x_positions = np.roll(x_positions, -1*self.roll_nums)
+                # y_positions = np.roll(y_positions, -1*self.roll_nums)
+                
+                # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
+                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
                 unique_x_positions = np.unique(x_positions)
                 unique_y_positions = np.unique(y_positions)
         
@@ -71,8 +94,8 @@ class AnalysisWindow(QMainWindow):
                 weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2))
 
                 # Calculate COM
-                com_y = weighted_sum_y / intensity_values
-                com_x = weighted_sum_x / intensity_values
+                com_y = weighted_sum_y / intensity_values_non_zeros
+                com_x = weighted_sum_x / intensity_values_non_zeros
                 
                 #filter out inf
                 com_x[com_x==np.nan] = 0
@@ -81,32 +104,82 @@ class AnalysisWindow(QMainWindow):
                 intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
                 intensity_matrix[y_indices, x_indices] = intensity_values
                 
-                # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
-                # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
-                
                 com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
                 com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
                 # # Populate the matrices using the indices
                 
                 com_x_matrix[y_indices, x_indices] = com_x
                 com_y_matrix[y_indices, x_indices] = com_y
+                
+                # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
+                # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
+                # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
+                
+                # Normalize the data to the range [0, 65535]
+                min_val = np.min(intensity_matrix)
+                max_val = np.max(intensity_matrix)
+
+                # Avoid division by zero if max_val equals min_val
+                if max_val > min_val:
+                    intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535
+                else:
+                    intensity_matrix = np.zeros_like(intensity_matrix)  # If all values are the same, set to zero
+
+                intensity_matrix = intensity_matrix.astype(np.uint16)
+
+                # print(f"intensity_matrix non-zeros: {np.count_nonzero(intensity_matrix)}")
 
                 height, width = intensity_matrix.shape
-                img = QImage(intensity_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
+
+                # Ensure data is contiguous for QImage
+                img = QImage(intensity_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
+
                 pixmap = QPixmap.fromImage(img)
-                self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=True))
+                self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
                 
+                # Normalize the com_x_matrix
+                min_val = np.min(com_x_matrix)
+                max_val = np.max(com_x_matrix)
+                if max_val > min_val:
+                    com_x_matrix = ((com_x_matrix - min_val) / (max_val - min_val)) * 65535
+                else:
+                    com_x_matrix = np.zeros_like(com_x_matrix)
+                com_x_matrix = com_x_matrix.astype(np.uint16)
+
+                # Create the QImage for com_x_matrix
                 height, width = com_x_matrix.shape
-                img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
+                img = QImage(com_x_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
                 pixmap = QPixmap.fromImage(img)
-                self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=True))
-                
+                self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=Qt.KeepAspectRatio))
+
+                # Normalize the com_y_matrix
+                min_val = np.min(com_y_matrix)
+                max_val = np.max(com_y_matrix)
+                if max_val > min_val:
+                    com_y_matrix = ((com_y_matrix - min_val) / (max_val - min_val)) * 65535
+                else:
+                    com_y_matrix = np.zeros_like(com_y_matrix)
+                com_y_matrix = com_y_matrix.astype(np.uint16)
+
+                # Create the QImage for com_y_matrix
                 height, width = com_y_matrix.shape
-                img = QImage(com_y_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
+                img = QImage(com_y_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
                 pixmap = QPixmap.fromImage(img)
-                self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
-            else:
-                self.roll_nums += 1
+                self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=Qt.KeepAspectRatio))
+                # height, width = com_x_matrix.shape
+                # img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                # pixmap = QPixmap.fromImage(img)
+                # self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=True))
+                
+                # height, width = com_y_matrix.shape
+                # img = QImage(com_y_matrix.data, width, height, width, QImage.Format_Grayscale8)
+                # pixmap = QPixmap.fromImage(img)
+                # self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
+            # else:
+            #     self.roll_nums += 1
 
 
     # def init_ui(self):
