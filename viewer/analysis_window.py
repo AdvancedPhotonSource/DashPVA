@@ -9,6 +9,7 @@ from PyQt5.QtCore import Qt
 import numpy as np
 import matplotlib.pyplot as plt
 import copy
+from label_with_axis import MyLabel
 
 
 
@@ -30,7 +31,7 @@ class AnalysisWindow(QMainWindow):
         self.pipe = pipe # used to share memory with another process
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
-        # self.init_ui()
+        self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
         self.timer.start(int(1000/10))
@@ -43,7 +44,7 @@ class AnalysisWindow(QMainWindow):
 
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
-            image_rois = copy.deepcopy(self.pv_dict.get('rois', [[]]))
+            image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             if self.cache_timer_corr == False:
                 self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',[[]]))))
                 self.cache_timer_corr = True 
@@ -60,9 +61,12 @@ class AnalysisWindow(QMainWindow):
                 # roi_width = 50 #int(self.roi_width.toPlainText())
                 # roi_height = 50#int(self.roi_height.toPlainText())
                 # image_rois=image_rois[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
-                intensity_values = np.sum(image_rois, axis=(1, 2))
-                intensity_values_non_zeros = copy.deepcopy(intensity_values)
-                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6
+
+                
+                intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
+                intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
+                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
+
                 # print(f"total intensity val calculated: {np.count_nonzero(intensity_values)}")
                 # x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
                 # y_positions = copy.deepcopy(self.pv_dict.get('y_pos',[]))
@@ -78,52 +82,54 @@ class AnalysisWindow(QMainWindow):
                 # y_positions = np.roll(y_positions, -1*self.roll_nums)
                 
                 # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
-                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
-                unique_x_positions = np.unique(x_positions)
-                unique_y_positions = np.unique(y_positions)
+                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 )
+                # :
+                unique_x_positions = np.unique(x_positions) # Time Complexity = O(nlog(n))
+                unique_y_positions = np.unique(y_positions) # Time Complexity = O(nlog(n))
+                # print(len(x_positions), len(y_positions))
         
+                x_indices = np.searchsorted(unique_x_positions, x_positions) # Time Complexity = O(log(n))
+                y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity = O(log(n))
 
-
-                x_indices = np.searchsorted(unique_x_positions, x_positions)
-                y_indices = np.searchsorted(unique_y_positions, y_positions)
-
-                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2]))
+                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
 
                 # Compute weighted sums
-                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2))
-                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2))
+                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
 
                 # Calculate COM
-                com_y = weighted_sum_y / intensity_values_non_zeros
-                com_x = weighted_sum_x / intensity_values_non_zeros
+                com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
+                com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
                 
                 #filter out inf
-                com_x[com_x==np.nan] = 0
-                com_y[com_y==np.nan] = 0
+                com_x[com_x==np.nan] = 0 # time complexity = O(1)
+                com_y[com_y==np.nan] = 0 # time complexity = O(1)
+
                 #Two lines below don't work if unique positions are messed by incomplete x y positions 
-                intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-                intensity_matrix[y_indices, x_indices] = intensity_values
+                intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
+                intensity_matrix[y_indices, x_indices] = intensity_values # Time Complexity = O(1)
+                self.intensity_matrix.shape = intensity_matrix.shape
                 
-                com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-                com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions)))
-                # # Populate the matrices using the indices
-                
-                com_x_matrix[y_indices, x_indices] = com_x
-                com_y_matrix[y_indices, x_indices] = com_y
+                com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
+                com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
+
+                # Populate the matrices using the indices
+                com_x_matrix[y_indices, x_indices] = com_x # Time Complexity = O(1)
+                com_y_matrix[y_indices, x_indices] = com_y # Time Complexity = O(1)
                 
                 # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
                 # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
                 # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
                 
                 # Normalize the data to the range [0, 65535]
-                min_val = np.min(intensity_matrix)
-                max_val = np.max(intensity_matrix)
+                min_val = np.min(intensity_matrix) # Time Complexity = O(n)
+                max_val = np.max(intensity_matrix) # Time Complexity = O(n)
 
                 # Avoid division by zero if max_val equals min_val
                 if max_val > min_val:
-                    intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535
+                    intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535 # Time Complexity = O(1)
                 else:
-                    intensity_matrix = np.zeros_like(intensity_matrix)  # If all values are the same, set to zero
+                    intensity_matrix = np.zeros_like(intensity_matrix) # Time Complexity = O(n)  # If all values are the same, set to zero
 
                 intensity_matrix = intensity_matrix.astype(np.uint16)
 
@@ -139,12 +145,12 @@ class AnalysisWindow(QMainWindow):
                 self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
                 
                 # Normalize the com_x_matrix
-                min_val = np.min(com_x_matrix)
-                max_val = np.max(com_x_matrix)
+                min_val = np.min(com_x_matrix) # Time Complexity = O(n)
+                max_val = np.max(com_x_matrix) # Time Complexity = O(n)
                 if max_val > min_val:
                     com_x_matrix = ((com_x_matrix - min_val) / (max_val - min_val)) * 65535
                 else:
-                    com_x_matrix = np.zeros_like(com_x_matrix)
+                    com_x_matrix = np.zeros_like(com_x_matrix) # Time Complexity = O(n)
                 com_x_matrix = com_x_matrix.astype(np.uint16)
 
                 # Create the QImage for com_x_matrix
@@ -155,12 +161,12 @@ class AnalysisWindow(QMainWindow):
                 self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=Qt.KeepAspectRatio))
 
                 # Normalize the com_y_matrix
-                min_val = np.min(com_y_matrix)
-                max_val = np.max(com_y_matrix)
+                min_val = np.min(com_y_matrix) # Time Complexity = O(n)
+                max_val = np.max(com_y_matrix) # Time Complexity = O(n)
                 if max_val > min_val:
                     com_y_matrix = ((com_y_matrix - min_val) / (max_val - min_val)) * 65535
                 else:
-                    com_y_matrix = np.zeros_like(com_y_matrix)
+                    com_y_matrix = np.zeros_like(com_y_matrix) # Time Complexity = O(n)
                 com_y_matrix = com_y_matrix.astype(np.uint16)
 
                 # Create the QImage for com_y_matrix
@@ -182,13 +188,14 @@ class AnalysisWindow(QMainWindow):
             #     self.roll_nums += 1
 
 
-    # def init_ui(self):
-    #     self.label_a = QLabel()
-    #     self.label_a.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-    #     self.grid_a.addWidget(self.label_a,0,0)
-    #     # self.plot = pg.PlotItem()
-    #     # self.plot_viewer = pg.ImageView(view=self.plot,)
-    #     # self.grid_a.addWidget(self.plot_viewer,0,0)
+    def init_ui(self):
+        self.intensity_matrix = MyLabel()
+        self.intensity_matrix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.grid_a.addWidget(self.intensity_matrix,0,0)
+        # self.plot = pg.PlotItem()
+        # self.plot_viewer = pg.ImageView(view=self.plot,)
+        # self.grid_a.addWidget(self.plot_viewer,0,0)
+
     # def init_ui(self):
     #     self.label_a = QLabel()
     #     self.label_a.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -197,6 +204,7 @@ class AnalysisWindow(QMainWindow):
     #     self.grid_a.addWidget(self.label_a, 0, 0)
     #     self.grid_a.setRowStretch(0, 1)
     #     self.grid_a.setColumnStretch(0, 1)
+
     def closeEvent(self, event):
         self.pipe.send('close')
         self.pipe.close()

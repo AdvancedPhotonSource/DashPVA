@@ -38,6 +38,7 @@ class ConfigDialog(QDialog):
         self.prefix = ''
         self.collector_address = ''
         self.pvs_path = ''
+        self.cache_frequency = 0
 
         self.btn_load.clicked.connect(self.open_file_dialog)
         self.btn_edit.clicked.connect(self.open_file_dialog)
@@ -68,9 +69,16 @@ class ConfigDialog(QDialog):
         self.prefix = self.le_pv_prefix.text()
         self.collector_address = self.le_collector.text()
         self.pvs_path = self.le_load_file_path.text()
-        self.image_viewer = ImageWindow(prefix=self.prefix,
-                                        collector_address=self.collector_address,
-                                        file_path=self.pvs_path)        
+        self.cache_frequency = self.sb_collector_frequency.value()
+        if self.cache_frequency > 0 and self.collector_address != '':
+            self.image_viewer = ImageWindow(prefix=self.prefix,
+                                            collector_address=self.collector_address,
+                                            file_path=self.pvs_path,
+                                            cache_frequency=self.cache_frequency) 
+        else:
+            self.image_viewer = ImageWindow(prefix=self.prefix,
+                                            collector_address=self.collector_address,
+                                            file_path=self.pvs_path,)        
 
 
 max_cache_size = 625 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
@@ -176,7 +184,6 @@ class PVA_Reader:
         if self.pva_object is not None:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
     
-    # TODO: Needs modifying to handle metadata
     def parse_pva_ndattributes(self):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
         if self.pva_object is not None:
@@ -279,7 +286,7 @@ class PVA_Reader:
 
 class ImageWindow(QMainWindow):
 
-    def __init__(self, prefix='dp-ADSim', collector_address='', file_path=''): 
+    def __init__(self, prefix='dp-ADSim', collector_address='', file_path='', cache_frequency=100): 
         """
         This is the Main Window that first pops up and allows a user to type 
         a detector prefix in and connect to it. It does things like allow one 
@@ -295,7 +302,7 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.caching_frequency = 10 #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
+        self.caching_frequency = cache_frequency #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -309,8 +316,7 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
-        # multiprocessing variables to test sharing memory
-        self.pipe_main, self.pipe_child = mp.Pipe()
+        
 
         # Adding widgets manually to have better control over them
         # First is a Image View with a plot to view incoming images with axes shown
@@ -353,11 +359,15 @@ class ImageWindow(QMainWindow):
         #     print(f"x: {self.reader.positions_cache[:,0][-1]}, y {self.reader.positions_cache[:,1][-1]}")
         #     self.open_analysis_window_clicked() 
         # else:
+        # multiprocessing variables to test sharing memory
+        self.pipe_main, self.pipe_child = mp.Pipe()
+        self.pipe_main_adjust_roi, self.pipe_child_adjust_roi = mp.Pipe()
         self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
         self.p.start()
         self.timer_send = QTimer()
         self.timer_send.timeout.connect(self.send_to_analysis_window)
         self.timer_send.start(int(1000/float(self.caching_frequency)))
+
         # else:
         #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
             # time.sleep(30)
