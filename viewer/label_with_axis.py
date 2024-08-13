@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt, QPointF
 import numpy as np
 
 class MyLabel(QLabel):
-    def __init__(self, parent=None, shape=(0,0)):
+    def __init__(self, parent=None, shape=(25, 25)):
         super(MyLabel, self).__init__(parent)
         self.m_pixmap = None
         self.left_margin = 10
@@ -32,7 +32,7 @@ class MyLabel(QLabel):
             painter.setPen(QPen(Qt.white))
             painter.setFont(QFont('Arial', 10))
 
-            num_ticks = 10
+            num_ticks = self.shape[0]
             
             percent = np.linspace(start=0, stop=1, num=num_ticks+1)
 
@@ -56,6 +56,6 @@ class MyLabel(QLabel):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     label = MyLabel()
-    label.setPixmap(QPixmap.fromImage(QImage(800, 800, QImage.Format_RGB888)))
+    label.setPixmap(QPixmap.fromImage(QImage(800, 800, QImage.Format_RGB888)),)
     label.show()
     sys.exit(app.exec_())

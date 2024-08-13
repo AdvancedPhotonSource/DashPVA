@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>470</width>
-    <height>552</height>
+    <height>624</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>250</y>
+     <y>320</y>
      <width>451</width>
      <height>81</height>
     </rect>
@@ -72,7 +72,7 @@ border-radius:3;
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>350</y>
+     <y>420</y>
      <width>451</width>
      <height>131</height>
     </rect>
@@ -163,7 +163,7 @@ border-radius:3;
      <x>10</x>
      <y>10</y>
      <width>451</width>
-     <height>211</height>
+     <height>291</height>
     </rect>
    </property>
    <property name="font">
@@ -250,12 +250,41 @@ border-radius:3;</string>
      <string>Collector (Optional)</string>
     </property>
    </widget>
+   <widget class="QLabel" name="lbl_collector_frequency">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>210</y>
+      <width>421</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Collector Frequency (Mandatory with Collector)</string>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="sb_collector_frequency">
+    <property name="geometry">
+     <rect>
+      <x>12</x>
+      <y>240</y>
+      <width>411</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <number>999999999</number>
+    </property>
+    <property name="value">
+     <number>10</number>
+    </property>
+   </widget>
   </widget>
   <widget class="QDialogButtonBox" name="btn_setup_accept_reject">
    <property name="geometry">
     <rect>
      <x>140</x>
-     <y>500</y>
+     <y>570</y>
      <width>181</width>
      <height>51</height>
     </rect>

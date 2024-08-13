@@ -35,21 +35,7 @@
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_a">
-      <item row="0" column="0">
-       <widget class="QLabel" name="intensity_matrix">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="text">
-         <string>Intensity Matrix</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
+     <layout class="QGridLayout" name="grid_a"/>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_b">

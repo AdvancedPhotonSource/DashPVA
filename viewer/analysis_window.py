@@ -9,6 +9,7 @@ from PyQt5.QtCore import Qt
 import numpy as np
 import matplotlib.pyplot as plt
 import copy
+import time
 from label_with_axis import MyLabel
 
 
@@ -52,6 +53,7 @@ class AnalysisWindow(QMainWindow):
                 self.status_text.setText("Waiting for the first scan...")
                 
             else:
+                time_start = time.time()
                 self.status_text.setText("Scanning...")
                 self.call_times += 1
                 # print(f"{self.call_times=}")
@@ -82,8 +84,9 @@ class AnalysisWindow(QMainWindow):
                 # y_positions = np.roll(y_positions, -1*self.roll_nums)
                 
                 # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
-                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 )
-                # :
+                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
+
+                # TODO: MOVE THIS OUT OF TIMER POLL 
                 unique_x_positions = np.unique(x_positions) # Time Complexity = O(nlog(n))
                 unique_y_positions = np.unique(y_positions) # Time Complexity = O(nlog(n))
                 # print(len(x_positions), len(y_positions))
@@ -175,6 +178,11 @@ class AnalysisWindow(QMainWindow):
                 img = QImage(com_y_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
                 pixmap = QPixmap.fromImage(img)
                 self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=Qt.KeepAspectRatio))
+
+                # print(f'time for 50x50 roi: {time.time() - time_start}')
+                # print(f'time for 100x100 roi: {time.time() - time_start}')
+                print(f'time for 200x200 roi: {time.time() - time_start}')
+
                 # height, width = com_x_matrix.shape
                 # img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
                 # pixmap = QPixmap.fromImage(img)

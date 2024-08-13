@@ -159,7 +159,8 @@ class PVA_Reader:
         # now scan pos recorded should match the prerecorded scan positions 
         # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
         # and overwrite if not
-        if self.first_scan_detected: 
+        if self.first_scan_detected:
+            #TODO: Debug why starting cache causes missed frames 
             self.cache_id = next(self.cache_id_gen)
             # print(f"{self.cache_id=}")
             self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
@@ -381,29 +382,28 @@ class ImageWindow(QMainWindow):
                 message = self.pipe_main.recv()
                 if message == 'close':
                     self.pipe_main.close()  
-        if time.time() - timer_for_roi_change <60:
-            roi_x = 100
-            roi_y = 200
-            roi_width = 50
-            roi_height = 50
-        elif time.time() -timer_for_roi_change > 60 and time.time() -timer_for_roi_change <120:
-            roi_x = 300
-            roi_y = 400
-            roi_width = 50
-            roi_height = 50
-        else:
-            roi_x = 500
-            roi_y = 600
-            roi_width = 50
-            roi_height = 50
-        # roi_x = 100
-        # roi_y = 200
-        # roi_width = 50
-        # roi_height = 50
+        # if time.time() - timer_for_roi_change <60:
+        #     roi_x = 100
+        #     roi_y = 200
+        #     roi_width = 50
+        #     roi_height = 50
+        # elif time.time() -timer_for_roi_change > 60 and time.time() -timer_for_roi_change <120:
+        #     roi_x = 300
+        #     roi_y = 400
+        #     roi_width = 50
+        #     roi_height = 50
+        # else:
+        #     roi_x = 500
+        #     roi_y = 600
+        #     roi_width = 50
+        #     roi_height = 50
+        roi_x = 100
+        roi_y = 200
+        roi_width = 200
+        roi_height = 200
 
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
 
-        # intensity_values = np.sum(image_rois, axis=(1, 2))
         x_positions = self.reader.positions_cache[:,0]
         y_positions = self.reader.positions_cache[:,1]
         # unique_x_positions = np.unique(x_positions)
