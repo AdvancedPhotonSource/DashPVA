@@ -56,7 +56,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
     # Associate metadata
     # Returns true on success, false on definite failure, none on failure/try another
     def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
-        self.logger.debug(f"{self.currentMetadataMap=}")
+        self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
             self.logger.error(f'Metadata channel {mdChannel} not found in current metadata map')
             return False
