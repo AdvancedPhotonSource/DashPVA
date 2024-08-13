@@ -23,9 +23,15 @@ def analysis_window_process(pipe):
     app.exec_()
 
 
-# Define the second window as a class
 x_positions = np.load("xpos.npy")
 y_positions = np.load("ypos.npy")
+unique_x_positions = np.unique(x_positions) # Time Complexity = O(nlog(n))
+unique_y_positions = np.unique(y_positions) # Time Complexity = O(nlog(n))
+x_indices = np.searchsorted(unique_x_positions, x_positions) # Time Complexity = O(log(n))
+y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity = O(log(n))
+
+# Define the second window as a class
+
 class AnalysisWindow(QMainWindow):
     def __init__(self,pipe):
         super(AnalysisWindow, self).__init__()
@@ -65,7 +71,6 @@ class AnalysisWindow(QMainWindow):
                 # roi_height = 50#int(self.roi_height.toPlainText())
                 # image_rois=image_rois[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
 
-                
                 intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
                 intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
                 intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
@@ -85,15 +90,7 @@ class AnalysisWindow(QMainWindow):
                 # y_positions = np.roll(y_positions, -1*self.roll_nums)
                 
                 # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
-                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):
-
-                # TODO: MOVE THIS OUT OF TIMER POLL 
-                unique_x_positions = np.unique(x_positions) # Time Complexity = O(nlog(n))
-                unique_y_positions = np.unique(y_positions) # Time Complexity = O(nlog(n))
-                # print(len(x_positions), len(y_positions))
-        
-                x_indices = np.searchsorted(unique_x_positions, x_positions) # Time Complexity = O(log(n))
-                y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity = O(log(n))
+                # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):                
 
                 y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
 
@@ -127,7 +124,7 @@ class AnalysisWindow(QMainWindow):
                 # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
                 
                 # Normalize the data to the range [0, 65535]
-                min_val = np.min(intensity_matrix) # Time Complexity = O(n)
+                min_val = 0 # np.min(intensity_matrix) # Time Complexity = O(n)
                 max_val = np.max(intensity_matrix) # Time Complexity = O(n)
 
                 # Avoid division by zero if max_val equals min_val
@@ -150,7 +147,7 @@ class AnalysisWindow(QMainWindow):
                 self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
                 
                 # Normalize the com_x_matrix
-                min_val = np.min(com_x_matrix) # Time Complexity = O(n)
+                min_val = 0 # np.min(com_x_matrix) # Time Complexity = O(n)
                 max_val = np.max(com_x_matrix) # Time Complexity = O(n)
                 if max_val > min_val:
                     com_x_matrix = ((com_x_matrix - min_val) / (max_val - min_val)) * 65535
@@ -166,7 +163,7 @@ class AnalysisWindow(QMainWindow):
                 self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=Qt.KeepAspectRatio))
 
                 # Normalize the com_y_matrix
-                min_val = np.min(com_y_matrix) # Time Complexity = O(n)
+                min_val = 0 # np.min(com_y_matrix) # Time Complexity = O(n)
                 max_val = np.max(com_y_matrix) # Time Complexity = O(n)
                 if max_val > min_val:
                     com_y_matrix = ((com_y_matrix - min_val) / (max_val - min_val)) * 65535
@@ -185,6 +182,7 @@ class AnalysisWindow(QMainWindow):
                 # print(f'50x50: {np.average(self.time_to_avg)}')
                 # print(f'100x100: {np.average(self.time_to_avg)}')
                 # print(f'200x200: {np.average(self.time_to_avg)}')
+                # print(f'400x400: {np.average(self.time_to_avg)}')
 
                 # height, width = com_x_matrix.shape
                 # img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)

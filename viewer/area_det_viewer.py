@@ -151,8 +151,8 @@ class PVA_Reader:
         if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
             self.first_scan_detected = True
             print(f"First Scan detected...")
-            self.images_cache[:,:,:] = 0
-            self.positions_cache[:,:] = 0 #TODO: generalize for whatever scan positions we get
+            # self.images_cache[:,:,:] = 0
+            # self.positions_cache[:,:] = 0 #TODO: generalize for whatever scan positions we get
         
             
         #now start caching after the first scan is detected 
