@@ -399,8 +399,8 @@ class ImageWindow(QMainWindow):
         #     roi_height = 50
         roi_x = 100
         roi_y = 200
-        roi_width = 200
-        roi_height = 200
+        roi_width = 50
+        roi_height = 50
 
         image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
 

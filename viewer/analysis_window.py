@@ -40,6 +40,7 @@ class AnalysisWindow(QMainWindow):
         self.pv_dict = None
         self.roll_nums = 1
         self.call_times = 0
+        # self.time_to_avg = np.array([])
 
     def timer_poll_pipe(self):
 
@@ -53,7 +54,7 @@ class AnalysisWindow(QMainWindow):
                 self.status_text.setText("Waiting for the first scan...")
                 
             else:
-                time_start = time.time()
+                # time_start = time.time()
                 self.status_text.setText("Scanning...")
                 self.call_times += 1
                 # print(f"{self.call_times=}")
@@ -111,6 +112,7 @@ class AnalysisWindow(QMainWindow):
                 #Two lines below don't work if unique positions are messed by incomplete x y positions 
                 intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
                 intensity_matrix[y_indices, x_indices] = intensity_values # Time Complexity = O(1)
+                # gets the shape of the image to set the length of the axis
                 self.intensity_matrix.shape = intensity_matrix.shape
                 
                 com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
@@ -179,9 +181,10 @@ class AnalysisWindow(QMainWindow):
                 pixmap = QPixmap.fromImage(img)
                 self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=Qt.KeepAspectRatio))
 
-                # print(f'time for 50x50 roi: {time.time() - time_start}')
-                # print(f'time for 100x100 roi: {time.time() - time_start}')
-                print(f'time for 200x200 roi: {time.time() - time_start}')
+                # self.time_to_avg = np.append(self.time_to_avg, time.time()-time_start)
+                # print(f'50x50: {np.average(self.time_to_avg)}')
+                # print(f'100x100: {np.average(self.time_to_avg)}')
+                # print(f'200x200: {np.average(self.time_to_avg)}')
 
                 # height, width = com_x_matrix.shape
                 # img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
