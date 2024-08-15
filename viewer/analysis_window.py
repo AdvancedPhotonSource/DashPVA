@@ -31,7 +31,6 @@ x_indices = np.searchsorted(unique_x_positions, x_positions) # Time Complexity =
 y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity = O(log(n))
 
 # Define the second window as a class
-
 class AnalysisWindow(QMainWindow):
     def __init__(self, pipe, roi_pipe):
         super(AnalysisWindow, self).__init__()
@@ -42,17 +41,18 @@ class AnalysisWindow(QMainWindow):
         self.init_ui()
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
-        self.timer.start(int(1000/10))
+        self.timer.start(int(1000/self.calc_freq.value()))
         self.cache_timer_corr = False
         self.pv_dict = None
-        self.roll_nums = 1
+        # self.roll_nums = 1
         self.call_times = 0
         # self.time_to_avg = np.array([])
 
-        self.roi_x.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_y.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_width.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_height.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_x.editingFinished.connect(self.roi_boxes_changed)
+        self.roi_y.editingFinished.connect(self.roi_boxes_changed)
+        self.roi_width.editingFinished.connect(self.roi_boxes_changed)
+        self.roi_height.editingFinished.connect(self.roi_boxes_changed)
+        self.calc_freq.editingFinished.connect(self.frequency_changed)
 
     def roi_boxes_changed(self):
         self.roi_pipe.send({
@@ -61,14 +61,16 @@ class AnalysisWindow(QMainWindow):
                             'width': self.roi_width.value(),
                             'height': self.roi_height.value()
                             })
+        
+    def frequency_changed(self):
+        self.timer.start(int(1000/self.calc_freq.value()))
 
     def timer_poll_pipe(self):
-
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
             image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             if self.cache_timer_corr == False:
-                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',[[]]))))#TODO: differernt frequency required... need a textbox
+                self.timer.start(int(1000/float(self.calc_freq.value())))#TODO: differernt frequency required... need a textbox
                 self.cache_timer_corr = True 
             if self.pv_dict.get('first_scan', [[]]) == False:
                 self.status_text.setText("Waiting for the first scan...")
@@ -79,12 +81,6 @@ class AnalysisWindow(QMainWindow):
                 self.call_times += 1
                 # print(f"{self.call_times=}")
                 
-                # roi_x = 100# int(self.roi_x.toPlainText())
-                # roi_y = 100 #int(self.roi_y.toPlainText())
-                # roi_width = 50 #int(self.roi_width.toPlainText())
-                # roi_height = 50#int(self.roi_height.toPlainText())
-                # image_rois=image_rois[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
-
                 intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
                 intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
                 intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
@@ -98,10 +94,6 @@ class AnalysisWindow(QMainWindow):
                 # and overwrite if not
                 # we had made sure in area_det_viewr that the starting scan position match
                 
-                # #rolling to correct the starting point
-                # image_rois = np.roll(image_rois, -1*self.roll_nums, axis=0)
-                # x_positions = np.roll(x_positions, -1*self.roll_nums)
-                # y_positions = np.roll(y_positions, -1*self.roll_nums)
                 
                 # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
                 # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):                

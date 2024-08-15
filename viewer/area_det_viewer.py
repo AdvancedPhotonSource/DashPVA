@@ -413,8 +413,8 @@ class ImageWindow(QMainWindow):
                             # 'intensity': intensity_values, 
                             # 'x_pos': x_positions,
                             # 'y_pos': y_positions,
-                            'first_scan' : self.reader.first_scan_detected,
-                            'cache_freq' : self.caching_frequency
+                            'first_scan' : self.reader.first_scan_detected
+                            # 'cache_freq' : self.caching_frequency
                             # 'unique_x_pos': unique_x_positions, 
                             # 'unique_y_pos': unique_y_positions
                             })
