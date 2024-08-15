@@ -81,7 +81,7 @@ class ConfigDialog(QDialog):
                                             file_path=self.pvs_path,)        
 
 
-max_cache_size = 625 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
+max_cache_size = 900 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
 class PVA_Reader:
 
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
@@ -317,6 +317,15 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
+        # multiprocessing variables to test sharing memory
+        self.pipe_main, self.pipe_child = mp.Pipe()
+        self.pipe_main_adjust_roi, self.pipe_child_adjust_roi = mp.Pipe()
+
+        #for testing ROIs being sent from analysis window
+        self.roi_x = 100
+        self.roi_y = 200
+        self.roi_width = 50
+        self.roi_height = 50
         
 
         # Adding widgets manually to have better control over them
@@ -360,19 +369,24 @@ class ImageWindow(QMainWindow):
         #     print(f"x: {self.reader.positions_cache[:,0][-1]}, y {self.reader.positions_cache[:,1][-1]}")
         #     self.open_analysis_window_clicked() 
         # else:
-        # multiprocessing variables to test sharing memory
-        self.pipe_main, self.pipe_child = mp.Pipe()
-        self.pipe_main_adjust_roi, self.pipe_child_adjust_roi = mp.Pipe()
-        self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child,))
+
+        self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child, self.pipe_child_adjust_roi))
         self.p.start()
         self.timer_send = QTimer()
         self.timer_send.timeout.connect(self.send_to_analysis_window)
         self.timer_send.start(int(1000/float(self.caching_frequency)))
 
-        # else:
-        #     print(f"Please wait until cache is saturated. Current cache id is {self.reader.cache_id}")
-            # time.sleep(30)
-            # self.open_analysis_window_clicked()
+        self.timer_receive_roi_changes = QTimer()
+        self.timer_receive_roi_changes.timeout.connect(self.receive_roi_changes)
+        self.timer_receive_roi_changes.start(int(1000/100))
+
+    def receive_roi_changes(self):
+        if self.pipe_main_adjust_roi.poll():
+            roi : dict = self.pipe_main_adjust_roi.recv()
+            self.roi_x = roi["x"]
+            self.roi_y = roi["y"]
+            self.roi_width = roi["width"]
+            self.roi_height = roi["height"]
         
 
     def send_to_analysis_window(self):
@@ -382,38 +396,23 @@ class ImageWindow(QMainWindow):
                 message = self.pipe_main.recv()
                 if message == 'close':
                     self.pipe_main.close()  
-        # if time.time() - timer_for_roi_change <60:
-        #     roi_x = 100
-        #     roi_y = 200
-        #     roi_width = 50
-        #     roi_height = 50
-        # elif time.time() -timer_for_roi_change > 60 and time.time() -timer_for_roi_change <120:
-        #     roi_x = 300
-        #     roi_y = 400
-        #     roi_width = 50
-        #     roi_height = 50
-        # else:
-        #     roi_x = 500
-        #     roi_y = 600
-        #     roi_width = 50
-        #     roi_height = 50
-        roi_x = 100
-        roi_y = 200
-        roi_width = 50
-        roi_height = 50
+        # roi_x = 100
+        # roi_y = 200
+        # roi_width = 50
+        # roi_height = 50
 
-        image_rois = self.reader.images_cache[:,roi_y:roi_y + roi_height, roi_x:roi_x + roi_width]
+        image_rois = self.reader.images_cache[:,self.roi_y:self.roi_y + self.roi_height, self.roi_x:self.roi_x + self.roi_width]
 
-        x_positions = self.reader.positions_cache[:,0]
-        y_positions = self.reader.positions_cache[:,1]
+        # x_positions = self.reader.positions_cache[:,0]
+        # y_positions = self.reader.positions_cache[:,1]
         # unique_x_positions = np.unique(x_positions)
         # unique_y_positions = np.unique(y_positions)
 
         self.pipe_main.send({
                             'rois': image_rois,
                             # 'intensity': intensity_values, 
-                            'x_pos': x_positions,
-                            'y_pos': y_positions,
+                            # 'x_pos': x_positions,
+                            # 'y_pos': y_positions,
                             'first_scan' : self.reader.first_scan_detected,
                             'cache_freq' : self.caching_frequency
                             # 'unique_x_pos': unique_x_positions, 

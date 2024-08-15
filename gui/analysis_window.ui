@@ -29,13 +29,49 @@
     <widget class="QWidget" name="gridLayoutWidget">
      <property name="geometry">
       <rect>
-       <x>-1</x>
+       <x>79</x>
        <y>19</y>
-       <width>461</width>
-       <height>441</height>
+       <width>381</width>
+       <height>381</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_a"/>
+     <layout class="QGridLayout" name="grid_a">
+      <item row="0" column="1">
+       <widget class="QLabel" name="intensity_matrix">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>Intensity Matrix</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+    <widget class="QWidget" name="horizontalLayoutWidget">
+     <property name="geometry">
+      <rect>
+       <x>80</x>
+       <y>399</y>
+       <width>381</width>
+       <height>61</height>
+      </rect>
+     </property>
+     <layout class="QHBoxLayout" name="h_layout_intensity"/>
+    </widget>
+    <widget class="QWidget" name="verticalLayoutWidget">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>20</y>
+       <width>81</width>
+       <height>381</height>
+      </rect>
+     </property>
+     <layout class="QVBoxLayout" name="v_layout_intensity"/>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_b">
@@ -155,58 +191,6 @@
      <string>Stop</string>
     </property>
    </widget>
-   <widget class="QPlainTextEdit" name="roi_x">
-    <property name="geometry">
-     <rect>
-      <x>580</x>
-      <y>510</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="plainText">
-     <string>100</string>
-    </property>
-   </widget>
-   <widget class="QPlainTextEdit" name="roi_y">
-    <property name="geometry">
-     <rect>
-      <x>580</x>
-      <y>570</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="plainText">
-     <string>200</string>
-    </property>
-   </widget>
-   <widget class="QPlainTextEdit" name="roi_width">
-    <property name="geometry">
-     <rect>
-      <x>810</x>
-      <y>510</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="plainText">
-     <string>50</string>
-    </property>
-   </widget>
-   <widget class="QPlainTextEdit" name="roi_height">
-    <property name="geometry">
-     <rect>
-      <x>810</x>
-      <y>570</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="plainText">
-     <string>50</string>
-    </property>
-   </widget>
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
@@ -238,7 +222,7 @@
      <rect>
       <x>730</x>
       <y>520</y>
-      <width>60</width>
+      <width>71</width>
       <height>16</height>
      </rect>
     </property>
@@ -270,6 +254,70 @@
     </property>
     <property name="text">
      <string>Status</string>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="roi_x">
+    <property name="geometry">
+     <rect>
+      <x>560</x>
+      <y>510</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <number>1000000000</number>
+    </property>
+    <property name="value">
+     <number>100</number>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="roi_y">
+    <property name="geometry">
+     <rect>
+      <x>560</x>
+      <y>570</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <number>1000000000</number>
+    </property>
+    <property name="value">
+     <number>200</number>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="roi_width">
+    <property name="geometry">
+     <rect>
+      <x>830</x>
+      <y>510</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <number>1000000000</number>
+    </property>
+    <property name="value">
+     <number>50</number>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="roi_height">
+    <property name="geometry">
+     <rect>
+      <x>830</x>
+      <y>570</y>
+      <width>141</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <number>1000000000</number>
+    </property>
+    <property name="value">
+     <number>50</number>
     </property>
    </widget>
   </widget>

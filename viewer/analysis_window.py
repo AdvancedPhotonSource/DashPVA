@@ -16,9 +16,9 @@ from label_with_axis import MyLabel
 
 # Global function so it can be called without needing to be within a class and get around
 # not being able to pass arguments to pyqt slots
-def analysis_window_process(pipe):
+def analysis_window_process(pipe, roi_pipe):
     app = QApplication(sys.argv)
-    window = AnalysisWindow(pipe)
+    window = AnalysisWindow(pipe, roi_pipe)
     window.show()
     app.exec_()
 
@@ -33,9 +33,10 @@ y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity =
 # Define the second window as a class
 
 class AnalysisWindow(QMainWindow):
-    def __init__(self,pipe):
+    def __init__(self, pipe, roi_pipe):
         super(AnalysisWindow, self).__init__()
         self.pipe = pipe # used to share memory with another process
+        self.roi_pipe = roi_pipe
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
         self.init_ui()
@@ -48,13 +49,26 @@ class AnalysisWindow(QMainWindow):
         self.call_times = 0
         # self.time_to_avg = np.array([])
 
+        self.roi_x.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_y.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_width.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_height.valueChanged.connect(self.roi_boxes_changed)
+
+    def roi_boxes_changed(self):
+        self.roi_pipe.send({
+                            'x': self.roi_x.value(),
+                            'y': self.roi_y.value(),
+                            'width': self.roi_width.value(),
+                            'height': self.roi_height.value()
+                            })
+
     def timer_poll_pipe(self):
 
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
             image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             if self.cache_timer_corr == False:
-                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',[[]]))))
+                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',[[]]))))#TODO: differernt frequency required... need a textbox
                 self.cache_timer_corr = True 
             if self.pv_dict.get('first_scan', [[]]) == False:
                 self.status_text.setText("Waiting for the first scan...")
@@ -110,7 +124,6 @@ class AnalysisWindow(QMainWindow):
                 intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
                 intensity_matrix[y_indices, x_indices] = intensity_values # Time Complexity = O(1)
                 # gets the shape of the image to set the length of the axis
-                self.intensity_matrix.shape = intensity_matrix.shape
                 
                 com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
                 com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
@@ -142,10 +155,9 @@ class AnalysisWindow(QMainWindow):
 
                 # Ensure data is contiguous for QImage
                 img = QImage(intensity_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
-
                 pixmap = QPixmap.fromImage(img)
-                self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
-                
+                self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))                
+                            
                 # Normalize the com_x_matrix
                 min_val = 0 # np.min(com_x_matrix) # Time Complexity = O(n)
                 max_val = np.max(com_x_matrix) # Time Complexity = O(n)
@@ -198,9 +210,17 @@ class AnalysisWindow(QMainWindow):
 
 
     def init_ui(self):
-        self.intensity_matrix = MyLabel()
-        self.intensity_matrix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.grid_a.addWidget(self.intensity_matrix,0,0)
+        self.x_axis_intensity= MyLabel(location='bottom', img_resolution=(len(unique_x_positions), len(unique_y_positions)))
+        self.x_axis_intensity.side_length = 379# self.intensity_matrix.width()
+        # self.x_axis_intensity.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.h_layout_intensity.addWidget(self.x_axis_intensity)
+
+        self.y_axis_intensity= MyLabel(location='left',img_resolution=(len(unique_x_positions), len(unique_y_positions)))
+        self.y_axis_intensity.side_length = 379# self.intensity_matrix.width()
+        # self.y_axis_intensity.h = len(unique_y_positions)
+        # self.x_axis_intensity.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.v_layout_intensity.addWidget(self.y_axis_intensity)
+        
         # self.plot = pg.PlotItem()
         # self.plot_viewer = pg.ImageView(view=self.plot,)
         # self.grid_a.addWidget(self.plot_viewer,0,0)
