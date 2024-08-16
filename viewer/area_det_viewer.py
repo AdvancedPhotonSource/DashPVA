@@ -379,14 +379,17 @@ class ImageWindow(QMainWindow):
         self.timer_receive_roi_changes = QTimer()
         self.timer_receive_roi_changes.timeout.connect(self.receive_roi_changes)
         self.timer_receive_roi_changes.start(int(1000/100))
+        self.pipe_main_adjust_roi.send({'num_rois': self.reader.num_rois})
+
 
     def receive_roi_changes(self):
         if self.pipe_main_adjust_roi.poll():
             roi : dict = self.pipe_main_adjust_roi.recv()
-            self.roi_x = roi["x"]
-            self.roi_y = roi["y"]
-            self.roi_width = roi["width"]
-            self.roi_height = roi["height"]
+            self.roi_x = roi["x"] if type(roi["x"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['x']}"]
+            self.roi_y = roi["y"] if type(roi["y"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['y']}"]
+            self.roi_width = roi["width"] if type(roi["width"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['width']}"]
+            self.roi_height = roi["height"] if type(roi["height"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['height']}"]
+            print(self.roi_x, self.roi_y, self.roi_width, self.roi_height)
         
 
     def send_to_analysis_window(self):
@@ -631,6 +634,7 @@ class ImageWindow(QMainWindow):
         Processes the images based on the different settings in the main window.
         And shows the min/max pixel value within the entire image
         """
+        # print(self.reader.num_rois)
         if self.reader is not None:
             self.call_id_plot +=1
             image = self.reader.image

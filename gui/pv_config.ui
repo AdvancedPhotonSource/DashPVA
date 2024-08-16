@@ -194,7 +194,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string/>
+     <string>dp-ADSim</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="le_collector">

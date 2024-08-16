@@ -42,8 +42,12 @@ class AnalysisWindow(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.timer_poll_pipe)
         self.timer.start(int(1000/self.calc_freq.value()))
+        self.timer_receive_num_rois = QTimer()
+        self.timer_receive_num_rois.timeout.connect(self.check_num_rois)
+        self.timer_receive_num_rois.start(int(1000/100))
         self.cache_timer_corr = False
         self.pv_dict = None
+        self.num_rois = None
         # self.roll_nums = 1
         self.call_times = 0
         # self.time_to_avg = np.array([])
@@ -53,6 +57,27 @@ class AnalysisWindow(QMainWindow):
         self.roi_width.editingFinished.connect(self.roi_boxes_changed)
         self.roi_height.editingFinished.connect(self.roi_boxes_changed)
         self.calc_freq.editingFinished.connect(self.frequency_changed)
+        self.cbox_select_roi.currentIndexChanged.connect(self.roi_selection_changed)
+
+    def check_num_rois(self):
+        if self.roi_pipe.poll():
+            num_message: dict = self.roi_pipe.recv()
+            self.num_rois = num_message.get('num_rois',0)
+            if self.num_rois > 0:
+                for i in range(self.num_rois):
+                    self.cbox_select_roi.addItem(f'ROI{i+1}')
+                self.timer_receive_num_rois.stop()
+            elif self.num_rois == 0:
+                self.timer_receive_num_rois.stop()
+
+
+    def roi_selection_changed(self):
+        text = self.cbox_select_roi.currentText()
+        self.roi_pipe.send({'x': f'{text}:MinX',
+                            'y': f'{text}:MinY',
+                            'width': f'{text}:SizeX',
+                            'height': f'{text}:SizeY'
+                            })
 
     def roi_boxes_changed(self):
         self.roi_pipe.send({
