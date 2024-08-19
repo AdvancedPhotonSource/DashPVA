@@ -357,9 +357,9 @@ class ImageWindow(QMainWindow):
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
-        self.plotting_frequency.valueChanged.connect(self.start_timers)
-        self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
-        self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.plotting_frequency.editingFinished.connect(self.start_timers)
+        self.max_setting_val.editingFinished.connect(self.update_min_max_setting)
+        self.min_setting_val.editingFinished.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
@@ -416,8 +416,8 @@ class ImageWindow(QMainWindow):
                             # 'intensity': intensity_values, 
                             # 'x_pos': x_positions,
                             # 'y_pos': y_positions,
-                            'first_scan' : self.reader.first_scan_detected
-                            # 'cache_freq' : self.caching_frequency
+                            'first_scan' : self.reader.first_scan_detected,
+                            'cache_freq' : self.caching_frequency
                             # 'unique_x_pos': unique_x_positions, 
                             # 'unique_y_pos': unique_y_positions
                             })

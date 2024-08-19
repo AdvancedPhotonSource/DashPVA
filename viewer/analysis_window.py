@@ -39,16 +39,19 @@ class AnalysisWindow(QMainWindow):
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
         self.init_ui()
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.timer_poll_pipe)
-        self.timer.start(int(1000/self.calc_freq.value()))
+        self.timer_poll = QTimer()
+        self.timer_poll.timeout.connect(self.timer_poll_pipe)
+        self.timer_poll.start(int(1000/10))
         self.timer_receive_num_rois = QTimer()
         self.timer_receive_num_rois.timeout.connect(self.check_num_rois)
         self.timer_receive_num_rois.start(int(1000/100))
+        self.timer= QTimer()
+        self.timer.timeout.connect(self.timer_plot)
+        self.timer.start(int(1000/self.calc_freq.value()))
+
         self.cache_timer_corr = False
         self.pv_dict = None
         self.num_rois = None
-        # self.roll_nums = 1
         self.call_times = 0
         # self.time_to_avg = np.array([])
 
@@ -93,10 +96,17 @@ class AnalysisWindow(QMainWindow):
     def timer_poll_pipe(self):
         if self.pipe.poll():
             self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
-            image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             if self.cache_timer_corr == False:
-                self.timer.start(int(1000/float(self.calc_freq.value())))#TODO: differernt frequency required... need a textbox
+                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',10))))#TODO: differernt frequency required... need a textbox
                 self.cache_timer_corr = True 
+        
+
+    def timer_plot(self):
+        if self.pv_dict is not None:
+            image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+            # if self.cache_timer_corr == False:
+            #     self.timer.start(int(1000/float(self.calc_freq.value())))#TODO: differernt frequency required... need a textbox
+            #     self.cache_timer_corr = True 
             if self.pv_dict.get('first_scan', [[]]) == False:
                 self.status_text.setText("Waiting for the first scan...")
                 
