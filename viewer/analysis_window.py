@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import copy
 import time
+# from area_det_viewer import ImageWindow
 from label_with_axis import MyLabel
 
 
@@ -32,26 +33,31 @@ y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity =
 
 # Define the second window as a class
 class AnalysisWindow(QMainWindow):
-    def __init__(self, pipe, roi_pipe):
+    def __init__(self, parent,): # pipe, roi_pipe
         super(AnalysisWindow, self).__init__()
-        self.pipe = pipe # used to share memory with another process
-        self.roi_pipe = roi_pipe
+        # self.pipe = pipe # used to share memory with another process
+        # self.roi_pipe = roi_pipe
+        # self.parent : ImageWindow = parent
+        self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
         self.init_ui()
-        self.timer_poll = QTimer()
-        self.timer_poll.timeout.connect(self.timer_poll_pipe)
-        self.timer_poll.start(int(1000/10))
-        self.timer_receive_num_rois = QTimer()
-        self.timer_receive_num_rois.timeout.connect(self.check_num_rois)
-        self.timer_receive_num_rois.start(int(1000/100))
-        self.timer= QTimer()
-        self.timer.timeout.connect(self.timer_plot)
-        self.timer.start(int(1000/self.calc_freq.value()))
+
+        # self.timer_poll = QTimer()
+        # self.timer_poll.timeout.connect(self.timer_poll_pipe)
+        # self.timer_poll.start()
+
+        # self.timer_receive_num_rois = QTimer()
+        # self.timer_receive_num_rois.timeout.connect(self.check_num_rois)
+        # self.timer_receive_num_rois.start(int(1000/100))
+
+        self.timer_plot= QTimer()
+        self.timer_plot.timeout.connect(self.plot_images)
+        self.timer_plot.start(int(1000/self.calc_freq.value()))
 
         self.cache_timer_corr = False
-        self.pv_dict = None
-        self.num_rois = None
+        # self.pv_dict = None
+        # self.num_rois = None
         self.call_times = 0
         # self.time_to_avg = np.array([])
 
@@ -63,53 +69,59 @@ class AnalysisWindow(QMainWindow):
         self.cbox_select_roi.currentIndexChanged.connect(self.roi_selection_changed)
 
     def check_num_rois(self):
-        if self.roi_pipe.poll():
-            num_message: dict = self.roi_pipe.recv()
-            self.num_rois = num_message.get('num_rois',0)
-            if self.num_rois > 0:
-                for i in range(self.num_rois):
+            num_rois =  self.parent.reader.num_rois
+        # if self.roi_pipe.poll():
+            # num_message: dict = self.roi_pipe.recv()
+            # self.num_rois = num_message.get('num_rois',0)
+            # if self.num_rois > 0:
+            if num_rois > 0:
+                for i in range(num_rois):
                     self.cbox_select_roi.addItem(f'ROI{i+1}')
-                self.timer_receive_num_rois.stop()
-            elif self.num_rois == 0:
-                self.timer_receive_num_rois.stop()
+                # self.timer_receive_num_rois.stop()
+            # elif self.num_rois == 0:
+            #     self.timer_receive_num_rois.stop()
 
 
     def roi_selection_changed(self):
-        text = self.cbox_select_roi.currentText()
-        self.roi_pipe.send({'x': f'{text}:MinX',
-                            'y': f'{text}:MinY',
-                            'width': f'{text}:SizeX',
-                            'height': f'{text}:SizeY'
-                            })
+        pass
+        # text = self.cbox_select_roi.currentText()
+        # self.roi_pipe.send({'x': f'{text}:MinX',
+        #                     'y': f'{text}:MinY',
+        #                     'width': f'{text}:SizeX',
+        #                     'height': f'{text}:SizeY'
+        #                     })
 
     def roi_boxes_changed(self):
-        self.roi_pipe.send({
-                            'x': self.roi_x.value(),
-                            'y': self.roi_y.value(),
-                            'width': self.roi_width.value(),
-                            'height': self.roi_height.value()
-                            })
+        self.parent.roi_x = self.roi_x.value()
+        self.parent.roi_y = self.roi_y.value()
+        self.parent.roi_width = self.roi_width.value()
+        self.parent.roi_height = self.roi_height.value()
+        # self.roi_pipe.send({
+        #                     'x': self.roi_x.value(),
+        #                     'y': self.roi_y.value(),
+        #                     'width': self.roi_width.value(),
+        #                     'height': self.roi_height.value()
+        #                     })
         
     def frequency_changed(self):
-        self.timer.start(int(1000/self.calc_freq.value()))
+        self.timer_plot.start(int(1000/self.calc_freq.value()))
 
-    def timer_poll_pipe(self):
-        if self.pipe.poll():
-            self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
-            if self.cache_timer_corr == False:
-                self.timer.start(int(1000/float(self.pv_dict.get('cache_freq',10))))#TODO: differernt frequency required... need a textbox
-                self.cache_timer_corr = True 
-        
+    # def timer_poll_pipe(self):
+    #     if self.pipe.poll():
+    #         self.pv_dict : dict = self.pipe.recv() # try to send uniqueID
+    #         if self.pv_dict is not None:
+    #             self.timer.start(int(1000/float(self.pv_dict['cache_freq'])))#TODO: differernt frequency required... need a textbox
 
-    def timer_plot(self):
-        if self.pv_dict is not None:
-            image_rois = self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+    def plot_images(self):
+        # if self.pv_dict is not None:
+            image_rois = self.parent.reader.images_cache[:,
+                                                         self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
+                                                         self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             # if self.cache_timer_corr == False:
             #     self.timer.start(int(1000/float(self.calc_freq.value())))#TODO: differernt frequency required... need a textbox
             #     self.cache_timer_corr = True 
-            if self.pv_dict.get('first_scan', [[]]) == False:
+            if self.parent.reader.first_scan_detected == False: # self.pv_dict.get('first_scan', [[]])
                 self.status_text.setText("Waiting for the first scan...")
-                
             else:
                 # time_start = time.time()
                 self.status_text.setText("Scanning...")
@@ -261,11 +273,11 @@ class AnalysisWindow(QMainWindow):
     #     self.grid_a.setRowStretch(0, 1)
     #     self.grid_a.setColumnStretch(0, 1)
 
-    def closeEvent(self, event):
-        self.pipe.send('close')
-        self.pipe.close()
-        event.accept()
-        super(AnalysisWindow, self).closeEvent(event)
+    # def closeEvent(self, event):
+    #     self.pipe.send('close')
+    #     self.pipe.close()
+    #     event.accept()
+    #     super(AnalysisWindow, self).closeEvent(event)
 
 
 if __name__ == '__main__':
