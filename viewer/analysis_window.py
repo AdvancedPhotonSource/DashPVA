@@ -66,7 +66,8 @@ class AnalysisWindow(QMainWindow):
         self.roi_width.editingFinished.connect(self.roi_boxes_changed)
         self.roi_height.editingFinished.connect(self.roi_boxes_changed)
         self.calc_freq.editingFinished.connect(self.frequency_changed)
-        self.cbox_select_roi.currentIndexChanged.connect(self.roi_selection_changed)
+        self.cbox_select_roi.activated.connect(self.roi_selection_changed)
+        self.check_num_rois()
 
     def check_num_rois(self):
             num_rois =  self.parent.reader.num_rois
@@ -83,8 +84,24 @@ class AnalysisWindow(QMainWindow):
 
 
     def roi_selection_changed(self):
-        pass
-        # text = self.cbox_select_roi.currentText()
+        text = self.cbox_select_roi.currentText()
+        if text.startswith('ROI'):
+            x = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinX"]
+            y = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinY"]
+            w= self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeX"]
+            h = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeY"]
+            #change the roi values being analyzed
+            self.parent.roi_x = x
+            self.parent.roi_y = y
+            self.parent.roi_width = w
+            self.parent.roi_height = h
+            # Make changes seen in the text boxes
+            self.roi_x.setValue(x)
+            self.roi_y.setValue(y)
+            self.roi_width.setValue(w)
+            self.roi_height.setValue(h)
+
+
         # self.roi_pipe.send({'x': f'{text}:MinX',
         #                     'y': f'{text}:MinY',
         #                     'width': f'{text}:SizeX',
@@ -96,6 +113,7 @@ class AnalysisWindow(QMainWindow):
         self.parent.roi_y = self.roi_y.value()
         self.parent.roi_width = self.roi_width.value()
         self.parent.roi_height = self.roi_height.value()
+        self.cbox_select_roi.setCurrentIndex(0)
         # self.roi_pipe.send({
         #                     'x': self.roi_x.value(),
         #                     'y': self.roi_y.value(),
