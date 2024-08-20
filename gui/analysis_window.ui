@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1443</width>
-    <height>681</height>
+    <width>1491</width>
+    <height>692</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,136 +18,72 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>10</y>
-      <width>461</width>
-      <height>461</height>
+      <y>0</y>
+      <width>471</width>
+      <height>481</height>
      </rect>
     </property>
     <property name="title">
-     <string>A</string>
+     <string>Total Intensity of ROI</string>
     </property>
     <widget class="QWidget" name="gridLayoutWidget">
      <property name="geometry">
       <rect>
-       <x>79</x>
-       <y>19</y>
-       <width>381</width>
-       <height>381</height>
+       <x>9</x>
+       <y>30</y>
+       <width>451</width>
+       <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_a">
-      <item row="0" column="1">
-       <widget class="QLabel" name="intensity_matrix">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="text">
-         <string>Intensity Matrix</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-    <widget class="QWidget" name="horizontalLayoutWidget">
-     <property name="geometry">
-      <rect>
-       <x>80</x>
-       <y>399</y>
-       <width>381</width>
-       <height>61</height>
-      </rect>
-     </property>
-     <layout class="QHBoxLayout" name="h_layout_intensity"/>
-    </widget>
-    <widget class="QWidget" name="verticalLayoutWidget">
-     <property name="geometry">
-      <rect>
-       <x>0</x>
-       <y>20</y>
-       <width>81</width>
-       <height>381</height>
-      </rect>
-     </property>
-     <layout class="QVBoxLayout" name="v_layout_intensity"/>
+     <layout class="QGridLayout" name="grid_a"/>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_b">
     <property name="geometry">
      <rect>
-      <x>490</x>
-      <y>10</y>
-      <width>461</width>
-      <height>461</height>
+      <x>500</x>
+      <y>0</y>
+      <width>481</width>
+      <height>481</height>
      </rect>
     </property>
     <property name="title">
-     <string>B</string>
+     <string>Center of Mass (x) of ROI</string>
     </property>
     <widget class="QWidget" name="gridLayoutWidget_2">
      <property name="geometry">
       <rect>
-       <x>-1</x>
-       <y>19</y>
+       <x>9</x>
+       <y>29</y>
        <width>461</width>
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_b">
-      <item row="0" column="0">
-       <widget class="QLabel" name="center_of_mass_x">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="text">
-         <string>Center of Mass X</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
+     <layout class="QGridLayout" name="grid_b"/>
     </widget>
    </widget>
    <widget class="QGroupBox" name="gbox_c">
     <property name="geometry">
      <rect>
-      <x>970</x>
-      <y>10</y>
-      <width>461</width>
-      <height>461</height>
+      <x>1000</x>
+      <y>0</y>
+      <width>481</width>
+      <height>481</height>
      </rect>
     </property>
     <property name="title">
-     <string>C</string>
+     <string>Center of Mass (y) of ROI</string>
     </property>
     <widget class="QWidget" name="gridLayoutWidget_3">
      <property name="geometry">
       <rect>
-       <x>-1</x>
-       <y>20</y>
+       <x>9</x>
+       <y>30</y>
        <width>461</width>
        <height>441</height>
       </rect>
      </property>
-     <layout class="QGridLayout" name="grid_c">
-      <item row="0" column="0">
-       <widget class="QLabel" name="center_of_mass_y">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="text">
-         <string>Center of Mass Y</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
+     <layout class="QGridLayout" name="grid_c"/>
     </widget>
    </widget>
    <widget class="QComboBox" name="cbox_select_roi">
@@ -165,7 +101,7 @@
      </property>
     </item>
    </widget>
-   <widget class="QPushButton" name="btn_start">
+   <widget class="QPushButton" name="btn_reset">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -175,20 +111,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Start</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="btn_stop">
-    <property name="geometry">
-     <rect>
-      <x>180</x>
-      <y>590</y>
-      <width>151</width>
-      <height>61</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Stop</string>
+     <string>Reset</string>
     </property>
    </widget>
    <widget class="QLabel" name="label">

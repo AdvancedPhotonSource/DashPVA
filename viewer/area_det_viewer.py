@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSi
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
-from analysis_window import AnalysisWindow, analysis_window_process
+from analysis_window import AnalysisWindow #, analysis_window_process
 
 
 def rotation_cycle(min,max):
@@ -317,9 +317,7 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
-        # multiprocessing variables to test sharing memory
-        # self.pipe_main, self.pipe_child = mp.Pipe()
-        # self.pipe_main_adjust_roi, self.pipe_child_adjust_roi = mp.Pipe()
+        
 
         #for testing ROIs being sent from analysis window
         self.roi_x = 100
@@ -363,68 +361,9 @@ class ImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
-
+        #TODO: make sure to clear this once window is closed
         self.analysis_window = AnalysisWindow(parent=self)
         self.analysis_window.show()
-
-        # if self.reader.cache_id == max_cache_size:
-        # Start the second window in a new process
-        # if (self.reader.positions_cache[:,0][-1] != 0 ) and (self.reader.positions_cache[:,1][-1] != 0 ):
-        #     print(f"x: {self.reader.positions_cache[:,0][-1]}, y {self.reader.positions_cache[:,1][-1]}")
-        #     self.open_analysis_window_clicked() 
-        # else:
-
-        # self.p = mp.Process(target=analysis_window_process, args=(self.pipe_child, self.pipe_child_adjust_roi))
-        # self.p.start()
-        # self.timer_send = QTimer()
-        # self.timer_send.timeout.connect(self.send_to_analysis_window)
-        # self.timer_send.start(int(1000/float(self.caching_frequency)))
-
-        # self.timer_receive_roi_changes = QTimer()
-        # self.timer_receive_roi_changes.timeout.connect(self.receive_roi_changes)
-        # self.timer_receive_roi_changes.start(int(1000/100))
-        # self.pipe_main_adjust_roi.send({'num_rois': self.reader.num_rois})
-
-
-    # def receive_roi_changes(self):
-    #     if self.pipe_main_adjust_roi.poll():
-    #         roi : dict = self.pipe_main_adjust_roi.recv()
-    #         self.roi_x = roi["x"] if type(roi["x"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['x']}"]
-    #         self.roi_y = roi["y"] if type(roi["y"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['y']}"]
-    #         self.roi_width = roi["width"] if type(roi["width"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['width']}"]
-    #         self.roi_height = roi["height"] if type(roi["height"]) == int else self.reader.metadata[f"{self.reader.pva_prefix}:{roi['height']}"]
-    #         print(self.roi_x, self.roi_y, self.roi_width, self.roi_height)
-        
-
-    # def send_to_analysis_window(self):
-    #     # Send a message to the second window
-    #     #TODO get ROI values from analysis window 
-    #     if  self.pipe_main.poll():
-    #             message = self.pipe_main.recv()
-    #             if message == 'close':
-    #                 self.pipe_main.close()  
-    #     # roi_x = 100
-    #     # roi_y = 200
-    #     # roi_width = 50
-    #     # roi_height = 50
-
-    #     image_rois = self.reader.images_cache[:,self.roi_y:self.roi_y + self.roi_height, self.roi_x:self.roi_x + self.roi_width]
-
-    #     # x_positions = self.reader.positions_cache[:,0]
-    #     # y_positions = self.reader.positions_cache[:,1]
-    #     # unique_x_positions = np.unique(x_positions)
-    #     # unique_y_positions = np.unique(y_positions)
-
-    #     self.pipe_main.send({
-    #                         'rois': image_rois,
-    #                         # 'intensity': intensity_values, 
-    #                         # 'x_pos': x_positions,
-    #                         # 'y_pos': y_positions,
-    #                         'first_scan' : self.reader.first_scan_detected,
-    #                         'cache_freq' : self.caching_frequency
-    #                         # 'unique_x_pos': unique_x_positions, 
-    #                         # 'unique_y_pos': unique_y_positions
-    #                         })
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""

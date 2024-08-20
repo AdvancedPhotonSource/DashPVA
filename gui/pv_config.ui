@@ -50,6 +50,9 @@ border-radius:3;
 
 </string>
     </property>
+    <property name="text">
+     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/pv_configs/test_pvs.json</string>
+    </property>
    </widget>
    <widget class="QPushButton" name="btn_load">
     <property name="geometry">
