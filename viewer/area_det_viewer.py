@@ -13,21 +13,16 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy, QLabel, QFormLayout, QWidget, QFrame
 # Custom imported classes
+from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow #, analysis_window_process
 
 
-def rotation_cycle(min,max):
-            # generator for the rotation
-            while True:
-                for i in range(min,max):
-                    yield i
-
-
+max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file
 rot_gen = rotation_cycle(1,5)         
                 
-timer_for_roi_change = time.time()
+# timer_for_roi_change = time.time()
 class ConfigDialog(QDialog):
 
     def __init__(self, prefix='', c_address='', cache_freq=10):
@@ -96,7 +91,6 @@ class ConfigDialog(QDialog):
             self.new_dialog.show()    
 
 
-max_cache_size = 900 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
 class PVA_Reader:
 
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):

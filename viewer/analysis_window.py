@@ -2,7 +2,6 @@ import sys
 import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
 from PyQt5.QtCore import QTimer
-# from PyQt5.QtChart import QChart
 from PyQt5 import uic
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
 from PyQt5.QtCore import Qt
@@ -10,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import copy
 import time
-# from area_det_viewer import ImageWindow
+from generators import rotation_cycle
 from label_with_axis import MyLabel
 
 
@@ -73,6 +72,7 @@ class AnalysisWindow(QMainWindow):
         self.view_comy.clear()
         self.call_times = 0
         self.parent.reader.images_cache = None# [:,:,:] = 0 
+        self.parent.reader.cache_id_gen = rotation_cycle(0,len(x_positions))
         self.parent.start_timers()
 
     def check_num_rois(self):
@@ -215,7 +215,7 @@ class AnalysisWindow(QMainWindow):
                 self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True)
                 self.view_comx.setImage(img=com_x_matrix.T, autoRange=False)
                 self.view_comy.setImage(img=com_y_matrix.T, autoRange=False)
-                
+
                 self.view_comx.setLevels(0, self.roi_width.value())
                 self.view_comy.setLevels(0,self.roi_height.value())
             else:
