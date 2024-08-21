@@ -3,9 +3,9 @@ import json
 import copy
 import time
 import numpy as np
+import os.path as osp
 import pvaccess as pva
 import pyqtgraph as pg
-import multiprocessing as mp
 from PyQt5 import uic
 from epics import caget
 from epics import camonitor
@@ -30,21 +30,30 @@ rot_gen = rotation_cycle(1,5)
 timer_for_roi_change = time.time()
 class ConfigDialog(QDialog):
 
-    def __init__(self):
+    def __init__(self, prefix='', c_address='', cache_freq=10):
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.prefix = ''
-        self.collector_address = ''
-        self.pvs_path = ''
-        self.cache_frequency = 0
+        self.prefix = prefix
+        self.collector_address = c_address
+        self.pvs_path =  ''
+        self.cache_frequency = cache_freq
+
+        self.init_ui()
 
         self.btn_load.clicked.connect(self.open_file_dialog)
         self.btn_edit.clicked.connect(self.open_file_dialog)
         self.btn_new_config.clicked.connect(self.new_pv_setup)
         self.btn_edit_accept_reject.accepted.connect(self.edit_pv_setup)
         self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
+
+    
+    def init_ui(self):
+        self.le_pv_prefix.setText(self.prefix)
+        self.le_collector.setText(self.collector_address)
+        self.sb_collector_frequency.setValue(self.cache_frequency)
+
 
     def open_file_dialog(self):
         btn_sender = self.sender()
@@ -70,15 +79,21 @@ class ConfigDialog(QDialog):
         self.collector_address = self.le_collector.text()
         self.pvs_path = self.le_load_file_path.text()
         self.cache_frequency = self.sb_collector_frequency.value()
-        if self.cache_frequency > 0 and self.collector_address != '':
-            self.image_viewer = ImageWindow(prefix=self.prefix,
-                                            collector_address=self.collector_address,
-                                            file_path=self.pvs_path,
-                                            cache_frequency=self.cache_frequency) 
+        if osp.isfile(self.pvs_path) ^ (self.pvs_path == ''):
+            if self.cache_frequency > 0 and self.collector_address != '':
+                self.image_viewer = ImageWindow(prefix=self.prefix,
+                                                collector_address=self.collector_address,
+                                                file_path=self.pvs_path,
+                                                cache_frequency=self.cache_frequency) 
+            else:
+                self.image_viewer = ImageWindow(prefix=self.prefix,
+                                                collector_address=self.collector_address,
+                                                file_path=self.pvs_path,) 
         else:
-            self.image_viewer = ImageWindow(prefix=self.prefix,
-                                            collector_address=self.collector_address,
-                                            file_path=self.pvs_path,)        
+            print('File Path Doesn\'t Exitst')  
+            #TODO: ADD ERROR Dialog rather than print message so message is clearer
+            self.new_dialog = ConfigDialog(prefix=self.prefix, c_address=self.collector_address, cache_freq=self.cache_frequency)
+            self.new_dialog.show()    
 
 
 max_cache_size = 900 #TODO: ask the user this impornat information before opening the analysis window. Ask for a scan plan json file
@@ -371,7 +386,7 @@ class ImageWindow(QMainWindow):
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_timers(self):
-        """Stops the updateing of Main Window Labels"""
+        """Stops the updating of Main Window Labels"""
         self.timer_plot.stop()
         self.timer_labels.stop()
 
@@ -630,9 +645,8 @@ class ImageWindow(QMainWindow):
 
 
 if __name__ == '__main__':
-    mp.set_start_method('spawn')
     app = QApplication(sys.argv)
-    window = ConfigDialog()
+    window = ConfigDialog(prefix='dp-ADSim', c_address='collector:1:output')
     window.show()
 
     sys.exit(app.exec_())

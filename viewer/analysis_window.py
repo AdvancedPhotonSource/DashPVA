@@ -72,7 +72,8 @@ class AnalysisWindow(QMainWindow):
         self.view_comx.clear()
         self.view_comy.clear()
         self.call_times = 0
-        self.parent.reader.images_cache[:,:,:] = 0 
+        self.parent.reader.images_cache = None# [:,:,:] = 0 
+        self.parent.start_timers()
 
     def check_num_rois(self):
             num_rois =  self.parent.reader.num_rois
@@ -130,13 +131,12 @@ class AnalysisWindow(QMainWindow):
 
     def plot_images(self):
         # if self.pv_dict is not None:
-        image_rois = self.parent.reader.images_cache[:,
-                                                    self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
-                                                    self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-        
         if self.parent.reader.first_scan_detected == False: # self.pv_dict.get('first_scan', [[]])
             self.status_text.setText("Waiting for the first scan...")
         else:
+            image_rois = self.parent.reader.images_cache[:,
+                                                    self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
+                                                    self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             # time_start = time.time()
             self.status_text.setText("Scanning...")
             self.call_times += 1
@@ -215,6 +215,7 @@ class AnalysisWindow(QMainWindow):
                 self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True)
                 self.view_comx.setImage(img=com_x_matrix.T, autoRange=False)
                 self.view_comy.setImage(img=com_y_matrix.T, autoRange=False)
+                
                 self.view_comx.setLevels(0, self.roi_width.value())
                 self.view_comy.setLevels(0,self.roi_height.value())
             else:
@@ -302,7 +303,7 @@ class AnalysisWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.parent.start_timers()
-        self.parent.analysis_window = None
+        del self.parent.analysis_window
         event.accept()
         super(AnalysisWindow, self).closeEvent(event)
 
