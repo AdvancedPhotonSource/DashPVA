@@ -402,8 +402,9 @@ class NumpyRandomGenerator(FrameGenerator):
                         x, y = current_scan_position
                         image = self.generate_gaussian_peak_array(x, y,)
                         image = image * np.random.poisson(5, image.shape) * 100
-                        self.frames.append(image)
-            self.frames = np.array(self.frames)
+                        image = ((image-image.min())/ (image.max()-image.min())) * 65535 #normalize and then scale to 0 -65535
+                        self.frames.append(np.clip(image, 0, 65535).astype(np.uint16)) #append as unint16
+            self.frames = np.array(self.frames, dtype=np.uint16)
 
         else:
             # Use float32 for min/max, to prevent overflow errors
