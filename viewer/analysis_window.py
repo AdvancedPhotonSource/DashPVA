@@ -8,6 +8,8 @@ from PyQt5.QtCore import Qt
 import numpy as np
 import matplotlib.pyplot as plt
 import copy
+import h5py
+from datetime import datetime
 import time
 from generators import rotation_cycle
 from label_with_axis import MyLabel
@@ -23,46 +25,83 @@ from label_with_axis import MyLabel
 #     app.exec_()
 
 
-x_positions = np.load("xpos.npy")
-y_positions = np.load("ypos.npy")
-unique_x_positions = np.unique(x_positions) # Time Complexity = O(nlog(n))
-unique_y_positions = np.unique(y_positions) # Time Complexity = O(nlog(n))
-x_indices = np.searchsorted(unique_x_positions, x_positions) # Time Complexity = O(log(n))
-y_indices = np.searchsorted(unique_y_positions, y_positions) # Time Complexity = O(log(n))
-
 # Define the second window as a class
 class AnalysisWindow(QMainWindow):
-    def __init__(self, parent,): # pipe, roi_pipe
+    def __init__(self, parent,xpos_path, ypos_path, save_path): # pipe, roi_pipe
         super(AnalysisWindow, self).__init__()
-        # self.pipe = pipe # used to share memory with another process
-        # self.roi_pipe = roi_pipe
         # self.parent : ImageWindow = parent
         self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
         self.init_ui()
-
-        # self.timer_poll = QTimer()
-        # self.timer_poll.timeout.connect(self.timer_poll_pipe)
-        # self.timer_poll.start()
-
-        # self.timer_receive_num_rois = QTimer()
-        # self.timer_receive_num_rois.timeout.connect(self.check_num_rois)
-        # self.timer_receive_num_rois.start(int(1000/100))
+        self.xpos_path = xpos_path
+        self.ypos_path = ypos_path
+        self.save_path = save_path
+        self.load_path()
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
         self.timer_plot.start(int(1000/self.calc_freq.value()))
         self.call_times = 0
 
-        self.roi_x.editingFinished.connect(self.roi_boxes_changed)
-        self.roi_y.editingFinished.connect(self.roi_boxes_changed)
-        self.roi_width.editingFinished.connect(self.roi_boxes_changed)
-        self.roi_height.editingFinished.connect(self.roi_boxes_changed)
-        self.calc_freq.editingFinished.connect(self.frequency_changed)
+        self.btn_create_hdf5.clicked.connect(self.save_hdf5)
+        self.roi_x.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_y.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_width.valueChanged.connect(self.roi_boxes_changed)
+        self.roi_height.valueChanged.connect(self.roi_boxes_changed)
+        self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.btn_reset.clicked.connect(self.reset_plot)
         self.check_num_rois()
+
+    def load_path(self):
+        # TODO: These positions are references, use only when we miss frames.
+        self.x_positions = np.load(self.xpos_path)
+        self.y_positions = np.load(self.ypos_path)
+        self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
+        self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
+        self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
+        self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
+
+    def create_hdf5_file(self, filename, images_cache, scan_pos, metadata, attributes, intensity_values, com_x_matrix, com_y_matrix):
+        with h5py.File(filename, 'w') as h5file:
+            #data
+            h5file.create_group('/data')
+            h5file.create_dataset('/data/images', data=images_cache)
+
+            #scan pos
+            h5file.create_group('/data/scan_pos')
+            h5file.create_dataset('/data/scan_pos/x_positions', data=scan_pos['x_positions'])
+            h5file.create_dataset('/data/scan_pos/y_positions', data=scan_pos['y_positions'])
+
+            #save all metadata and attributes too. Expecting dictionaries
+            h5file.create_group('/metadata')
+            for key, value in metadata.items():
+                h5file['/metadata'].attrs[key] = value
+            h5file.create_group('/attributes')
+            for key, value in attributes.items():
+                h5file['/attributes'].attrs[key] = value
+
+            #Analysis data 
+            h5file.create_group('/analysis')
+            h5file.create_dataset('/analysis/total_intensity', data=intensity_values)
+            h5file.create_dataset('/analysis/com_x', data=com_x_matrix)
+            h5file.create_dataset('/analysis/com_y', data=com_y_matrix)
+
+            
+    def save_hdf5(self):
+        
+        #time stamp for file name
+        # Get the current time as a timestamp
+        dt = datetime.fromtimestamp(time.time())
+        formatted_time = dt.strftime('%Y%m%d%H%M')
+        #put scan pos in dictionary 
+        scan_pos = {
+                'x_positions': self.x_positions,
+                'y_positions': self.y_positions
+            }
+        #call this to write file
+        self.create_hdf5_file(f"{self.save_path}/{formatted_time}data.h5", self.parent.reader.images_cache, scan_pos, self.parent.reader.metadata, self.parent.reader.attributes, self.intensity_matrix, self.com_x_matrix, self.com_y_matrix)
 
     def reset_plot(self):
         self.parent.reader.first_scan_detected = False
@@ -72,22 +111,17 @@ class AnalysisWindow(QMainWindow):
         self.view_comy.clear()
         self.call_times = 0
         self.parent.reader.images_cache = None# [:,:,:] = 0 
-        self.parent.reader.cache_id_gen = rotation_cycle(0,len(x_positions))
+        # Done because caching should be done from scratch
+        self.parent.reader.frames_received = 0
+        self.parent.reader.frames_missed = 0
+        self.parent.reader.cache_id_gen = rotation_cycle(0,len(self.x_positions))
         self.parent.start_timers()
 
     def check_num_rois(self):
             num_rois =  self.parent.reader.num_rois
-        # if self.roi_pipe.poll():
-            # num_message: dict = self.roi_pipe.recv()
-            # self.num_rois = num_message.get('num_rois',0)
-            # if self.num_rois > 0:
             if num_rois > 0:
                 for i in range(num_rois):
                     self.cbox_select_roi.addItem(f'ROI{i+1}')
-                # self.timer_receive_num_rois.stop()
-            # elif self.num_rois == 0:
-            #     self.timer_receive_num_rois.stop()
-
 
     def roi_selection_changed(self):
         text = self.cbox_select_roi.currentText()
@@ -106,12 +140,7 @@ class AnalysisWindow(QMainWindow):
             self.roi_y.setValue(y)
             self.roi_width.setValue(w)
             self.roi_height.setValue(h)
-        # self.roi_pipe.send({'x': f'{text}:MinX',
-        #                     'y': f'{text}:MinY',
-        #                     'width': f'{text}:SizeX',
-        #                     'height': f'{text}:SizeY'
-        #                     })
-
+        
     def roi_boxes_changed(self):
         self.parent.roi_x = self.roi_x.value()
         self.parent.roi_y = self.roi_y.value()
@@ -119,19 +148,12 @@ class AnalysisWindow(QMainWindow):
         self.parent.roi_height = self.roi_height.value()
         self.cbox_select_roi.setCurrentIndex(0)
         self.call_times = 0
-        # self.roi_pipe.send({
-        #                     'x': self.roi_x.value(),
-        #                     'y': self.roi_y.value(),
-        #                     'width': self.roi_width.value(),
-        #                     'height': self.roi_height.value()
-        #                     })
         
     def frequency_changed(self):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
     def plot_images(self):
-        # if self.pv_dict is not None:
-        if self.parent.reader.first_scan_detected == False: # self.pv_dict.get('first_scan', [[]])
+        if self.parent.reader.first_scan_detected == False:
             self.status_text.setText("Waiting for the first scan...")
         else:
             image_rois = self.parent.reader.images_cache[:,
@@ -140,7 +162,7 @@ class AnalysisWindow(QMainWindow):
             # time_start = time.time()
             self.status_text.setText("Scanning...")
             self.call_times += 1
-            # print(f"{self.call_times=}")
+            # print(f"call_times = {self.call_times}")
             
             intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
             intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
@@ -174,16 +196,16 @@ class AnalysisWindow(QMainWindow):
             com_y[com_y==np.nan] = 0 # time complexity = O(1)
 
             #Two lines below don't work if unique positions are messed by incomplete x y positions 
-            intensity_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
-            intensity_matrix[y_indices, x_indices] = intensity_values # Time Complexity = O(1)
+            self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+            self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
             # gets the shape of the image to set the length of the axis
             
-            com_x_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
-            com_y_matrix = np.zeros((len(unique_y_positions), len(unique_x_positions))) # Time Complexity = O(n)
+            self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+            self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
 
             # Populate the matrices using the indices
-            com_x_matrix[y_indices, x_indices] = com_x # Time Complexity = O(1)
-            com_y_matrix[y_indices, x_indices] = com_y # Time Complexity = O(1)
+            self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
+            self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
             
             # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
             # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
@@ -212,16 +234,16 @@ class AnalysisWindow(QMainWindow):
             # self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
             # USING IMAGE VIEW:
             if self.call_times == 10:
-                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True)
-                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False)
-                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False)
+                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True)
+                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False)
+                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False)
 
                 self.view_comx.setLevels(0, self.roi_width.value())
                 self.view_comy.setLevels(0,self.roi_height.value())
             else:
-                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False)
-                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False)
-                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False)
+                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False)
+                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False)
+                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False)
          
                         
             # Normalize the com_x_matrix
@@ -280,26 +302,28 @@ class AnalysisWindow(QMainWindow):
             #     self.roll_nums += 1
 
     def init_ui(self):
+        # cmap = pg.colormap.getFromMatplotlib('viridis')
+
         plot_item_intensity = pg.PlotItem()
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
+        # self.view_intensity.setColorMap(cmap)
         self.grid_a.addWidget(self.view_intensity,0,0)
         self.view_intensity.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_intensity.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-
         plot_item_comx = pg.PlotItem()
         self.view_comx = pg.ImageView(view=plot_item_comx)
+        # self.view_comx.setColorMap(cmap)
         self.grid_b.addWidget(self.view_comx,0,0)
         self.view_comx.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comx.view.getAxis('bottom').setLabel('Scan Position Cols')
 
         plot_item_comy = pg.PlotItem()
         self.view_comy = pg.ImageView(view=plot_item_comy)
+        # self.view_comy.setColorMap(cmap)
         self.grid_c.addWidget(self.view_comy,0,0)
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')
-
-
 
     def closeEvent(self, event):
         self.parent.start_timers()

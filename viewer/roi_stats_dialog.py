@@ -4,7 +4,7 @@ from PyQt5 import uic
 
 class RoiStatsDialog(QDialog):
     def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer'): # type: ignore # needed so annotations don't show warnings
-        super(RoiStatsDialog,self).__init__()
+        super(RoiStatsDialog, self).__init__()
         """
         Pop up QDialog for additional stats within an ROI.
 

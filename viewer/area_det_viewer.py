@@ -17,6 +17,7 @@ from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow #, analysis_window_process
+from scan_plan_dialog import ScanPlanDialog
 
 
 max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file
@@ -160,6 +161,8 @@ class PVA_Reader:
         if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
             self.first_scan_detected = True
             print(f"First Scan detected...")
+
+        max_val = np.iinfo(self.image.dtype).max
             # self.images_cache[:,:,:] = 0
             # self.positions_cache[:,:] = 0 #TODO: generalize for whatever scan positions we get
         
@@ -170,25 +173,19 @@ class PVA_Reader:
         # and overwrite if not
         if self.first_scan_detected:
             #TODO: Debug why starting cache causes missed frames 
-            self.cache_id = next(self.cache_id_gen)
-            # print(f"{self.cache_id=}")
-            self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-            # print(f"{self.attributes}")
-            
-            # print(f"{x_value=} , {y_value=}")
-            self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-            self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
-            # print(f" {self.cache_id=}")
+            if self.id_diff> 0:
+                for i in range(self.id_diff):
+                    self.cache_id = next(self.cache_id_gen)
+                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = max_val
+                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
+                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
+            else:
+                self.cache_id = next(self.cache_id_gen)
+                self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
+                self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
+                self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+            # TODO: Use thise actual positions to do calculations in analysis window
 
-            
-
-            # with open('pv_configs/output_cache.json','w',1) as output_json:
-            # current_time = time.time()
-            # if current_time % 10 < 1:
-            #     with open('pv_configs/output.txt', 'w') as f:
-            #         for pv in self.pva_cache:
-            #             f.write(f'{pv}\n')
-            
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:
@@ -200,14 +197,7 @@ class PVA_Reader:
             obj_dict = self.pva_object.get()
         else:
             return None
-
-        # attributes = {
-        #     attr["name"]: [val for val in attr.get("value", "")] for attr in obj_dict.get("attribute", {})
-        #     }
-        # for value in ["codec", "uniqueId", "uncompressedSize"]:
-        #     if value in self.pva_object:
-        #         attributes[value] = self.pva_object[value]
-        # self.attributes = attributes
+        
         attributes = {}
         for attr in obj_dict.get("attribute", []):
             name = attr['name']
@@ -243,11 +233,22 @@ class PVA_Reader:
                 # Check for missed frame starts here
                 current_array_id = self.pva_object['uniqueId']
                 if self.__last_array_id is not None: 
-                    id_diff = current_array_id - self.__last_array_id - 1
-                    self.frames_missed += id_diff if (id_diff > 0) else 0
+                    self.id_diff = current_array_id - self.__last_array_id - 1
+                    if (self.id_diff > 0):
+                        self.frames_missed += self.id_diff 
+                    else:
+                        self.id_diff = 0
                 self.__last_array_id = current_array_id
+                # Check for missed frame starts here
+                # current_array_id = self.pva_object['uniqueId']
+                # if self.__last_array_id is not None: 
+                #     id_diff = current_array_id - self.__last_array_id - 1
+                #     self.frames_missed += id_diff if (id_diff > 0) else 0
+                # self.__last_array_id = current_array_id
+
         except:
             self.frames_missed += 1
+            # return 1
             
     def start_channel_monitor(self):
         """
@@ -339,6 +340,8 @@ class ImageWindow(QMainWindow):
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
+        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        # self.image_view.setColorMap(cmap)
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
@@ -364,15 +367,20 @@ class ImageWindow(QMainWindow):
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
-        self.plotting_frequency.editingFinished.connect(self.start_timers)
-        self.max_setting_val.editingFinished.connect(self.update_min_max_setting)
-        self.min_setting_val.editingFinished.connect(self.update_min_max_setting)
+        self.plotting_frequency.valueChanged.connect(self.start_timers)
+        self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
         #TODO: make sure to clear this once window is closed
-        self.analysis_window = AnalysisWindow(parent=self)
-        self.analysis_window.show()
+        scd_dialog = ScanPlanDialog()
+        if scd_dialog.exec_():
+            print(f'{scd_dialog.x_positions}\n{scd_dialog.y_positions}\n{scd_dialog.download_loc}')
+            self.analysis_window = AnalysisWindow(parent=self, xpos_path=scd_dialog.x_positions, ypos_path=scd_dialog.y_positions,save_path=scd_dialog.download_loc)
+            self.analysis_window.show()
+            
+        
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
