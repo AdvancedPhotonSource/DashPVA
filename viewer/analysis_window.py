@@ -3,26 +3,11 @@ import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
 from PyQt5.QtCore import QTimer
 from PyQt5 import uic
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen
-from PyQt5.QtCore import Qt
 import numpy as np
-import matplotlib.pyplot as plt
-import copy
 import h5py
 from datetime import datetime
 import time
 from generators import rotation_cycle
-from label_with_axis import MyLabel
-
-
-
-# Global function so it can be called without needing to be within a class and get around
-# not being able to pass arguments to pyqt slots
-# def analysis_window_process(pipe, roi_pipe):
-#     app = QApplication(sys.argv)
-#     window = AnalysisWindow(pipe, roi_pipe)
-#     window.show()
-#     app.exec_()
 
 
 # Define the second window as a class
@@ -51,8 +36,16 @@ class AnalysisWindow(QMainWindow):
         self.roi_height.valueChanged.connect(self.roi_boxes_changed)
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
+        self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
         self.btn_reset.clicked.connect(self.reset_plot)
+    
         self.check_num_rois()
+    
+    def freeze_plotting_checked(self):
+        if self.chk_freeze.isChecked():
+                self.timer_plot.stop()
+        else:
+            self.timer_plot.start(int(1000/self.calc_freq.value()))
 
     def load_path(self):
         # TODO: These positions are references, use only when we miss frames.
@@ -100,8 +93,18 @@ class AnalysisWindow(QMainWindow):
                 'x_positions': self.x_positions,
                 'y_positions': self.y_positions
             }
+        # 
+        self.status_text.setText("Writing File...")
         #call this to write file
         self.create_hdf5_file(f"{self.save_path}/{formatted_time}data.h5", self.parent.reader.images_cache, scan_pos, self.parent.reader.metadata, self.parent.reader.attributes, self.intensity_matrix, self.com_x_matrix, self.com_y_matrix)
+        self.status_text.setText("File Written")
+        QTimer.singleShot(10000, self.check_if_running)
+        
+    def check_if_running(self):
+        if self.parent.reader.first_scan_detected:
+            self.status_text.setText("Scanning...")
+        else:
+            self.status_text.setText("Waiting for the first scan...")
 
     def reset_plot(self):
         self.parent.reader.first_scan_detected = False
@@ -159,18 +162,13 @@ class AnalysisWindow(QMainWindow):
             image_rois = self.parent.reader.images_cache[:,
                                                     self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
                                                     self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-            # time_start = time.time()
-            self.status_text.setText("Scanning...")
+            if self.call_times == 0:
+                self.status_text.setText("Scanning...")
             self.call_times += 1
-            # print(f"call_times = {self.call_times}")
             
             intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
             intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
             intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
-
-            # print(f"total intensity val calculated: {np.count_nonzero(intensity_values)}")
-            # x_positions = copy.deepcopy(self.pv_dict.get('x_pos',[]))
-            # y_positions = copy.deepcopy(self.pv_dict.get('y_pos',[]))
             
             # Instead of reading the scan positions from collector 
             # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
@@ -233,17 +231,17 @@ class AnalysisWindow(QMainWindow):
             # pixmap = QPixmap.fromImage(img)
             # self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
             # USING IMAGE VIEW:
-            if self.call_times == 10:
-                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True)
-                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False)
-                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False)
+            if self.call_times == 5:
+                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
+                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoHistogramRange=False)
+                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoHistogramRange=False)
 
                 self.view_comx.setLevels(0, self.roi_width.value())
                 self.view_comy.setLevels(0,self.roi_height.value())
             else:
-                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False)
-                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False)
-                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False)
+                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
          
                         
             # Normalize the com_x_matrix
@@ -303,7 +301,6 @@ class AnalysisWindow(QMainWindow):
 
     def init_ui(self):
         # cmap = pg.colormap.getFromMatplotlib('viridis')
-
         plot_item_intensity = pg.PlotItem()
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
         # self.view_intensity.setColorMap(cmap)

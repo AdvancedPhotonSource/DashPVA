@@ -151,7 +151,6 @@ class PVA_Reader:
         # else:
         #     self.pva_cache = self.pva_cache[1:]
         #     self.pva_cache.append(pv_copy)
-        # t1 = time.time()
         self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
@@ -161,12 +160,7 @@ class PVA_Reader:
         if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
             self.first_scan_detected = True
             print(f"First Scan detected...")
-
-        max_val = np.iinfo(self.image.dtype).max
-            # self.images_cache[:,:,:] = 0
-            # self.positions_cache[:,:] = 0 #TODO: generalize for whatever scan positions we get
-        
-            
+  
         #now start caching after the first scan is detected 
         # now scan pos recorded should match the prerecorded scan positions 
         # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
@@ -176,7 +170,7 @@ class PVA_Reader:
             if self.id_diff> 0:
                 for i in range(self.id_diff):
                     self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = max_val
+                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
                 self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
                 self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
             else:
@@ -218,6 +212,7 @@ class PVA_Reader:
         try:
             if self.pva_object is not None:
                 self.frames_received += 1
+                # Parses dimensions and reshapes array into image
                 if 'dimension' in self.pva_object:
                     self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
@@ -225,11 +220,10 @@ class PVA_Reader:
                     self.image= np.reshape(self.image, self.shape).T
                 else:
                     self.image = None
-
+                # Initialize Image and Positions Cache
                 if self.images_cache is None:
                     self.images_cache = np.zeros((max_cache_size, *self.shape))
                     self.positions_cache = np.zeros((max_cache_size,2)) # TODO: make useable for more metadata
-                
                 # Check for missed frame starts here
                 current_array_id = self.pva_object['uniqueId']
                 if self.__last_array_id is not None: 
@@ -327,20 +321,17 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
-        
-
         #for testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
-        
-
         # Adding widgets manually to have better control over them
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        # cmap = pg.colormap.getFromMatplotlib('viridis') # causes missed frames
+        # cmap = pg.colormap.get('viridis') # Causes Error
         # self.image_view.setColorMap(cmap)
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
@@ -373,10 +364,8 @@ class ImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
-        #TODO: make sure to clear this once window is closed
         scd_dialog = ScanPlanDialog()
         if scd_dialog.exec_():
-            print(f'{scd_dialog.x_positions}\n{scd_dialog.y_positions}\n{scd_dialog.download_loc}')
             self.analysis_window = AnalysisWindow(parent=self, xpos_path=scd_dialog.x_positions, ypos_path=scd_dialog.y_positions,save_path=scd_dialog.download_loc)
             self.analysis_window.show()
             
@@ -613,14 +602,16 @@ class ImageWindow(QMainWindow):
                         self.image_view.setImage(image, 
                                                  autoRange=False, 
                                                  autoLevels=False, 
-                                                 levels=(min_level, max_level)) 
-                        # self.image_view.imageItem.setRect(rect=coordinates)
+                                                 levels=(min_level, max_level),
+                                                 autoHistogramRange=False) 
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
                         self.first_plot = False
                     else:
-                        self.image_view.setImage(image, autoRange=False, autoLevels=False)
-                        # self.image_view.imageItem.setRect(rect=coordinates)
+                        self.image_view.setImage(image,
+                                                autoRange=False, 
+                                                autoLevels=False, 
+                                                autoHistogramRange=False)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
                                               y=np.arange(0,self.reader.shape[1]), 
