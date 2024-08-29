@@ -38,7 +38,6 @@ class AnalysisWindow(QMainWindow):
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
         self.btn_reset.clicked.connect(self.reset_plot)
-    
         self.check_num_rois()
     
     def freeze_plotting_checked(self):
@@ -53,6 +52,7 @@ class AnalysisWindow(QMainWindow):
         self.y_positions = np.load(self.ypos_path)
         self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
         self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
+
         self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
         self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
 
@@ -159,90 +159,97 @@ class AnalysisWindow(QMainWindow):
         if self.parent.reader.first_scan_detected == False:
             self.status_text.setText("Waiting for the first scan...")
         else:
-            image_rois = self.parent.reader.images_cache[:,
-                                                    self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
-                                                    self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-            if self.call_times == 0:
-                self.status_text.setText("Scanning...")
-            self.call_times += 1
-            
-            intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
-            intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
-            intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
-            
-            # Instead of reading the scan positions from collector 
-            # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
-            # and overwrite if not
-            # we had made sure in area_det_viewr that the starting scan position match
-            
-            
-            # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
-            # if (x_positions[0] == 0 ) and (y_positions[0] == 0 ):                
+            scan_id = self.parent.reader.scan_id
+            xpos_reader = self.parent.reader.position_cache[scan_id, 0]
+            ypos_reader = self.parent.reader.position_cache[scan_id, 1]
+            xpos_scan = self.x_positions[scan_id, 0]
+            ypos_scan = self.y_positions[scan_id, 1]
 
-            y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
+            if (xpos_reader/xpos_scan) < .05 and (ypos_reader/ypos_scan) < .05:
 
-            # Compute weighted sums
-            weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-            weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+                image_rois = self.parent.reader.images_cache[:,
+                                                        self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
+                                                        self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+                if self.call_times == 0:
+                    self.status_text.setText("Scanning...")
+                self.call_times += 1
+                
+                intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
+                intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
+                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
+                
+                # Instead of reading the scan positions from collector 
+                # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
+                # and overwrite if not
+                # we had made sure in area_det_viewr that the starting scan position match
+                
+                
+                # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
 
-            # Calculate COM
-            com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
-            com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
+                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
+
+                # Compute weighted sums
+                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+
+                # Calculate COM
+                com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
+                com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
+                
+                #filter out inf
+                com_x[com_x==np.nan] = 0 # time complexity = O(1)
+                com_y[com_y==np.nan] = 0 # time complexity = O(1)
+
+                #Two lines below don't work if unique positions are messed by incomplete x y positions 
+                self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+                self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
+                # gets the shape of the image to set the length of the axis
+                
+                self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+                self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+
+                # Populate the matrices using the indices
+                self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
+                self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
+                
+                # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
+                # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
+                # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
+                
+                # Normalize the data to the range [0, 65535]
+                # min_val = 0 # np.min(intensity_matrix) # Time Complexity = O(n)
+                # max_val = np.max(intensity_matrix) # Time Complexity = O(n)
+
+                # # Avoid division by zero if max_val equals min_val
+                # if max_val > min_val:
+                #     intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535 # Time Complexity = O(1)
+                # else:
+                #     intensity_matrix = np.zeros_like(intensity_matrix) # Time Complexity = O(n)  # If all values are the same, set to zero
+
+                # intensity_matrix = intensity_matrix.astype(np.uint16)
+                # print(f"intensity_matrix non-zeros: {np.count_nonzero(intensity_matrix)}")     
+                    
+                # Ensure data is contiguous for QImage
+                # USING QIMAGE:
+                # height, width = intensity_matrix.shape
+                # bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
+                
+                # img = QImage(intensity_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
+                # pixmap = QPixmap.fromImage(img)
+                # self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
+                # USING IMAGE VIEW:
+                if self.call_times == 5:
+                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
+                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoHistogramRange=False)
+                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+
+                    self.view_comx.setLevels(0, self.roi_width.value())
+                    self.view_comy.setLevels(0,self.roi_height.value())
+                else:
+                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             
-            #filter out inf
-            com_x[com_x==np.nan] = 0 # time complexity = O(1)
-            com_y[com_y==np.nan] = 0 # time complexity = O(1)
-
-            #Two lines below don't work if unique positions are messed by incomplete x y positions 
-            self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-            self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
-            # gets the shape of the image to set the length of the axis
-            
-            self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-            self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-
-            # Populate the matrices using the indices
-            self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
-            self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-            
-            # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
-            # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
-            # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
-            
-            # Normalize the data to the range [0, 65535]
-            # min_val = 0 # np.min(intensity_matrix) # Time Complexity = O(n)
-            # max_val = np.max(intensity_matrix) # Time Complexity = O(n)
-
-            # # Avoid division by zero if max_val equals min_val
-            # if max_val > min_val:
-            #     intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535 # Time Complexity = O(1)
-            # else:
-            #     intensity_matrix = np.zeros_like(intensity_matrix) # Time Complexity = O(n)  # If all values are the same, set to zero
-
-            # intensity_matrix = intensity_matrix.astype(np.uint16)
-            # print(f"intensity_matrix non-zeros: {np.count_nonzero(intensity_matrix)}")     
-                   
-            # Ensure data is contiguous for QImage
-            # USING QIMAGE:
-            # height, width = intensity_matrix.shape
-            # bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
-            
-            # img = QImage(intensity_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
-            # pixmap = QPixmap.fromImage(img)
-            # self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
-            # USING IMAGE VIEW:
-            if self.call_times == 5:
-                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoHistogramRange=False)
-
-                self.view_comx.setLevels(0, self.roi_width.value())
-                self.view_comy.setLevels(0,self.roi_height.value())
-            else:
-                self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-         
                         
             # Normalize the com_x_matrix
             # min_val = 0 # np.min(com_x_matrix) # Time Complexity = O(n)
@@ -298,6 +305,8 @@ class AnalysisWindow(QMainWindow):
                 # self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
             # else:
             #     self.roll_nums += 1
+            else:
+                self.parent.reader.image_cache[scan_id,:,:] = 0
 
     def init_ui(self):
         # cmap = pg.colormap.getFromMatplotlib('viridis')
