@@ -307,6 +307,7 @@ class AnalysisWindow(QMainWindow):
             #     self.roll_nums += 1
             else:
                 self.parent.reader.image_cache[scan_id,:,:] = 0
+                self.parent.reader.frames_missed += 1
 
     def init_ui(self):
         # cmap = pg.colormap.getFromMatplotlib('viridis')
