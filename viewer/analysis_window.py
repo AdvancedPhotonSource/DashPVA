@@ -159,20 +159,25 @@ class AnalysisWindow(QMainWindow):
         if self.parent.reader.first_scan_detected == False:
             self.status_text.setText("Waiting for the first scan...")
         else:
-            scan_id = self.parent.reader.scan_id
-            xpos_reader = self.parent.reader.position_cache[scan_id, 0]
-            ypos_reader = self.parent.reader.position_cache[scan_id, 1]
-            xpos_scan = self.x_positions[scan_id, 0]
-            ypos_scan = self.y_positions[scan_id, 1]
 
-            if (xpos_reader/xpos_scan) < .05 and (ypos_reader/ypos_scan) < .05:
+            if self.call_times == 0:
+                    self.status_text.setText("Scanning...")
+            self.call_times += 1
+            
+            scan_id = self.parent.reader.cache_id
+            xpos_reader = self.parent.reader.positions_cache[scan_id, 0]
+            ypos_reader = self.parent.reader.positions_cache[scan_id, 1]
+            xpos_scan = self.x_positions[scan_id]
+            ypos_scan = self.y_positions[scan_id]
 
+            # # print(f'xpos_reader: {xpos_reader}\nxpos_scan: {xpos_scan}')
+            # # print(f'\nypos_reader: {ypos_reader}\nypos_scan: {ypos_scan}\n')
+
+
+            if (np.abs((xpos_scan-xpos_reader)) < .05) and (np.abs((ypos_scan-ypos_reader)) < .05):
                 image_rois = self.parent.reader.images_cache[:,
                                                         self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
                                                         self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-                if self.call_times == 0:
-                    self.status_text.setText("Scanning...")
-                self.call_times += 1
                 
                 intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
                 intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
@@ -182,7 +187,6 @@ class AnalysisWindow(QMainWindow):
                 # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
                 # and overwrite if not
                 # we had made sure in area_det_viewr that the starting scan position match
-                
                 
                 # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
 
@@ -212,31 +216,6 @@ class AnalysisWindow(QMainWindow):
                 self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
                 self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
                 
-                # scan_range = int(np.sqrt(np.shape(image_rois)[0]))
-                # intensity_matrix = np.reshape(intensity_values, (scan_range,scan_range), order = "C")
-                # print(f"intensity_matrix non zeros: {np.count_nonzero(intensity_matrix)}")
-                
-                # Normalize the data to the range [0, 65535]
-                # min_val = 0 # np.min(intensity_matrix) # Time Complexity = O(n)
-                # max_val = np.max(intensity_matrix) # Time Complexity = O(n)
-
-                # # Avoid division by zero if max_val equals min_val
-                # if max_val > min_val:
-                #     intensity_matrix = ((intensity_matrix - min_val) / (max_val - min_val)) * 65535 # Time Complexity = O(1)
-                # else:
-                #     intensity_matrix = np.zeros_like(intensity_matrix) # Time Complexity = O(n)  # If all values are the same, set to zero
-
-                # intensity_matrix = intensity_matrix.astype(np.uint16)
-                # print(f"intensity_matrix non-zeros: {np.count_nonzero(intensity_matrix)}")     
-                    
-                # Ensure data is contiguous for QImage
-                # USING QIMAGE:
-                # height, width = intensity_matrix.shape
-                # bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
-                
-                # img = QImage(intensity_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
-                # pixmap = QPixmap.fromImage(img)
-                # self.intensity_matrix.setPixmap(pixmap.scaled(self.intensity_matrix.size(), aspectRatioMode=Qt.KeepAspectRatio))
                 # USING IMAGE VIEW:
                 if self.call_times == 5:
                     self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
@@ -249,64 +228,8 @@ class AnalysisWindow(QMainWindow):
                     self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
                     self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
                     self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            
-                        
-            # Normalize the com_x_matrix
-            # min_val = 0 # np.min(com_x_matrix) # Time Complexity = O(n)
-            # max_val = np.max(com_x_matrix) # Time Complexity = O(n)
-            # if max_val > min_val:
-            #     com_x_matrix = ((com_x_matrix - min_val) / (max_val - min_val)) * 65535
-            # else:
-            #     com_x_matrix = np.zeros_like(com_x_matrix) # Time Complexity = O(n)
-            # com_x_matrix = com_x_matrix.astype(np.uint16)
-
-            # USING QIMAGE
-            # # Create the QImage for com_x_matrix
-            # height, width = com_x_matrix.shape
-            # bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
-            # img = QImage(com_x_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
-            # pixmap = QPixmap.fromImage(img)
-            # self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=Qt.KeepAspectRatio))
-            # USING IMAGE VIEW:
-            
-
-            # Normalize the com_y_matrix
-            # min_val = 0 # np.min(com_y_matrix) # Time Complexity = O(n)
-            # max_val = np.max(com_y_matrix) # Time Complexity = O(n)
-            # if max_val > min_val:
-            #     com_y_matrix = ((com_y_matrix - min_val) / (max_val - min_val)) * 65535
-            # else:
-            #     com_y_matrix = np.zeros_like(com_y_matrix) # Time Complexity = O(n)
-            # com_y_matrix = com_y_matrix.astype(np.uint16)
-
-            # #USING QIMAGE
-            # # Create the QImage for com_y_matrix
-            # height, width = com_y_matrix.shape
-            # bytes_per_line = width * 2  # Since it's 16 bits (2 bytes per pixel)
-            # img = QImage(com_y_matrix.data, width, height, bytes_per_line, QImage.Format_Grayscale16)
-            # pixmap = QPixmap.fromImage(img)
-            # self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=Qt.KeepAspectRatio))
-            # USING IMAGE VIEW
-
-                # self.time_to_avg = np.append(self.time_to_avg, time.time()-time_start)
-                # print(f'50x50: {np.average(self.time_to_avg)}')
-                # print(f'100x100: {np.average(self.time_to_avg)}')
-                # print(f'200x200: {np.average(self.time_to_avg)}')
-                # print(f'400x400: {np.average(self.time_to_avg)}')
-
-                # height, width = com_x_matrix.shape
-                # img = QImage(com_x_matrix.data, width, height, width, QImage.Format_Grayscale8)
-                # pixmap = QPixmap.fromImage(img)
-                # self.center_of_mass_x.setPixmap(pixmap.scaled(self.center_of_mass_x.size(), aspectRatioMode=True))
-                
-                # height, width = com_y_matrix.shape
-                # img = QImage(com_y_matrix.data, width, height, width, QImage.Format_Grayscale8)
-                # pixmap = QPixmap.fromImage(img)
-                # self.center_of_mass_y.setPixmap(pixmap.scaled(self.center_of_mass_y.size(), aspectRatioMode=True))
-            # else:
-            #     self.roll_nums += 1
             else:
-                self.parent.reader.image_cache[scan_id,:,:] = 0
+                self.parent.reader.images_cache[scan_id,:,:] = 0
                 self.parent.reader.frames_missed += 1
 
     def init_ui(self):
