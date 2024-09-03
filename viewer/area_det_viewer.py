@@ -124,9 +124,9 @@ class PVA_Reader:
         self.pvs = {}
         self.metadata = {}
         self.num_rois = 0
+        self.cache_id = None
         self.cache_id_gen = rotation_cycle(0,max_cache_size)
         self.first_scan_detected = False
-
 
         if self.config_filepath != '':
             with open(self.config_filepath, 'r') as json_file:
@@ -178,6 +178,9 @@ class PVA_Reader:
                 self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
                 self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
                 self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+            # print(self.cache_id)
+            # print(self.positions_cache[self.cache_id])
+            
             # TODO: Use thise actual positions to do calculations in analysis window
 
     def parse_image_data_type(self):
@@ -368,9 +371,7 @@ class ImageWindow(QMainWindow):
         if scd_dialog.exec_():
             self.analysis_window = AnalysisWindow(parent=self, xpos_path=scd_dialog.x_positions, ypos_path=scd_dialog.y_positions,save_path=scd_dialog.download_loc)
             self.analysis_window.show()
-            
         
-
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
         self.timer_labels.start(int(1000/float(self.caching_frequency)))
@@ -583,11 +584,12 @@ class ImageWindow(QMainWindow):
         Processes the images based on the different settings in the main window.
         And shows the min/max pixel value within the entire image
         """
-        # print(self.reader.num_rois)
         if self.reader is not None:
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
+                # print(self.reader.cache_id)
+                # print(self.reader.positions_cache[self.reader.cache_id])
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)

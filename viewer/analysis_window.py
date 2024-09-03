@@ -8,6 +8,7 @@ import h5py
 from datetime import datetime
 import time
 from generators import rotation_cycle
+# from area_det_viewer import ImageWindow
 
 
 # Define the second window as a class
@@ -162,19 +163,27 @@ class AnalysisWindow(QMainWindow):
 
             if self.call_times == 0:
                     self.status_text.setText("Scanning...")
-            self.call_times += 1
             
-            scan_id = self.parent.reader.cache_id
-            xpos_reader = self.parent.reader.positions_cache[scan_id, 0]
-            ypos_reader = self.parent.reader.positions_cache[scan_id, 1]
-            xpos_scan = self.x_positions[scan_id]
-            ypos_scan = self.y_positions[scan_id]
+            if self.parent.reader.cache_id is not None:
+                scan_id = self.parent.reader.cache_id
+                xpos_det = self.parent.reader.positions_cache[scan_id, 0]
+                xpos_plan = self.x_positions[scan_id]
+                ypos_det = self.parent.reader.positions_cache[scan_id, 1]
+                ypos_plan = self.y_positions[scan_id]
 
-            # # print(f'xpos_reader: {xpos_reader}\nxpos_scan: {xpos_scan}')
-            # # print(f'\nypos_reader: {ypos_reader}\nypos_scan: {ypos_scan}\n')
+                # print(scan_id)
+                print(f'detector: {xpos_det},{ypos_det}')
+                # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
 
+            #TODO: There is a bug where positions_cache won't populate until image is complete and cause missed frames
+            # print(self.parent.reader.positions_cache[scan_id])
 
-            if (np.abs((xpos_scan-xpos_reader)) < .05) and (np.abs((ypos_scan-ypos_reader)) < .05):
+            # TODO: find a better way to check the scan positions
+            # TODO: make an exception for scan positon 0,0 
+            # positions are ints so trying with an offset of 1 max
+            if (np.abs((xpos_plan-xpos_det)) < 2) and (np.abs((ypos_plan-ypos_det)) < 2): 
+                self.call_times += 1
+
                 image_rois = self.parent.reader.images_cache[:,
                                                         self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
                                                         self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
@@ -186,9 +195,6 @@ class AnalysisWindow(QMainWindow):
                 # Instead of reading the scan positions from collector 
                 # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
                 # and overwrite if not
-                # we had made sure in area_det_viewr that the starting scan position match
-                
-                # print(f"x first pos: {x_positions[0]}, y first pos: {y_positions[0]}")
 
                 y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
 
@@ -263,18 +269,4 @@ class AnalysisWindow(QMainWindow):
 
 
 # if __name__ == '__main__':
-#     import multiprocessing as mp
-#     parent_pipe, child_pipe = mp.Pipe()
-#     p = mp.Process(target=analysis_window_process, args=(child_pipe,))
-    
-#     p.start()
-#     parent_pipe.send({1000:np.zeros((1024,1024))})
-#     try:
-#         while True:
-#             # Handling messages from the main process if necessary
-#             if parent_pipe.poll():
-#                 message = parent_pipe.recv()
-#                 if message == 'close':
-#                     break
-#     finally:
-#         p.join()
+
