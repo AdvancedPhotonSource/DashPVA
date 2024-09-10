@@ -333,9 +333,6 @@ class ImageWindow(QMainWindow):
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        # cmap = pg.colormap.getFromMatplotlib('viridis') # causes missed frames
-        # cmap = pg.colormap.get('viridis') # Causes Error
-        # self.image_view.setColorMap(cmap)
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
