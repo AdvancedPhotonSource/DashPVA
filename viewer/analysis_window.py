@@ -11,6 +11,20 @@ from generators import rotation_cycle
 # from area_det_viewer import ImageWindow
 
 class HDF5WriterThread(QThread):
+    """
+    A class that writes the image data to an HDF5 file using PyQt5.
+
+    Keyword Args:
+        file_written (pyqtSignal) -- A signal to indicate when the file is written.
+        filename (str) -- Filename of the saved image file.
+        images_cache (numpy.ndarray) -- A 3D numpy array that holds the images.
+        scan_pos (dict) -- A dictionary of x and y positions of the image.
+        metadata (dict) -- A dictionary of metadata.
+        attributes (dict) -- A dictionary of attributes.
+        intensity_values (numpy.ndarray) -- A 1D numpy array of intensity values.
+        com_x_matrix (numpy.ndarray) -- A 2D numpy array of center of mass x values.
+        com_y_matrix (numpy.ndarray) -- A 2D numpy array of center of mass y values.
+    """
     # Signal to notify when writing is done
     # Has to be class level so PyQt can distinguish between signals and class attributes
     file_written = pyqtSignal()  
@@ -27,6 +41,9 @@ class HDF5WriterThread(QThread):
         self.com_y_matrix = com_y_matrix
 
     def run(self):
+        """
+        This function runs the thread which creates and saves the HDF5 file.
+        """
         try:
             with h5py.File(self.filename, 'w') as h5file:
                 #data
@@ -56,7 +73,22 @@ class HDF5WriterThread(QThread):
 
 # Define the second window as a class
 class AnalysisWindow(QMainWindow):
-    def __init__(self, parent,xpos_path, ypos_path, save_path): # pipe, roi_pipe
+    """
+    A class that displays and handles user interaction with the analysis window.
+
+    Attributes:
+        status_text (QLabel): A GUI label that shows the status of the analysis.
+        parent (ImageWindow): The parent window object.
+        xpos_path (str): The path to the x-positions file.
+        ypos_path (str): The path to the y-positions file.
+        save_path (str): The path to where the HDF5 file will be saved.
+        timer_plot (QTimer): A timer to control the plot frequency.
+        call_times (int): Number of times the plot has been called.
+        intensity_matrix (numpy.ndarray): A 2D numpy array of intensity values.
+        com_x_matrix (numpy.ndarray): A 2D numpy array of center of mass x values.
+        com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
+    """
+    def __init__(self, parent,xpos_path, ypos_path, save_path): 
         super(AnalysisWindow, self).__init__()
         # self.parent : ImageWindow = parent
         self.parent = parent
@@ -85,12 +117,18 @@ class AnalysisWindow(QMainWindow):
         self.check_num_rois()
     
     def freeze_plotting_checked(self):
+        """
+        This function freezes the plot when the freeze plot checkbox is checked.
+        """
         if self.chk_freeze.isChecked():
                 self.timer_plot.stop()
         else:
             self.timer_plot.start(int(1000/self.calc_freq.value()))
 
     def load_path(self):
+        """
+        This function loads the path information for the HDF5 file and uses it to populate other variables.
+        """
         # TODO: These positions are references, use only when we miss frames.
         self.x_positions = np.load(self.xpos_path)
         self.y_positions = np.load(self.ypos_path)
@@ -130,12 +168,14 @@ class AnalysisWindow(QMainWindow):
     #         print(e)
          
     def save_hdf5(self):
+        """
+        This function creates and saves the data as an HDF5 file with a timestamp as the name.
+        """
         self.status_text.setText("Writing File...")
-        #time stamp for file name
-        # Get the current time as a timestamp
+        # Get the current time as a timestamp for file name
         dt = datetime.fromtimestamp(time.time())
         formatted_time = dt.strftime('%Y%m%d%H%M')
-        #put scan pos in dictionary 
+        # put scan pos in dictionary 
         scan_pos = {
                 'x_positions': self.x_positions,
                 'y_positions': self.y_positions
@@ -157,17 +197,26 @@ class AnalysisWindow(QMainWindow):
         # QTimer.singleShot(10000, self.check_if_running)
 
     def on_file_written(self):
+        """
+        This function is called when the file writing is done.
+        """
         print("Signal Received")
         self.status_text.setText("File Written")
         QTimer.singleShot(10000, self.check_if_running)
         
     def check_if_running(self):
+        """
+        This function checks if the image scanning is running and sets the the status label's text.
+        """
         if self.parent.reader.first_scan_detected:
             self.status_text.setText("Scanning...")
         else:
             self.status_text.setText("Waiting for the first scan...")
 
     def reset_plot(self):
+        """
+        This function resets the plot and clears all caches when the reset button is clicked.
+        """
         self.parent.reader.first_scan_detected = False
         self.status_text.setText("Waiting for the first scan...")
         self.view_intensity.clear()
@@ -182,12 +231,19 @@ class AnalysisWindow(QMainWindow):
         self.parent.start_timers()
 
     def check_num_rois(self):
-            num_rois =  self.parent.reader.num_rois
-            if num_rois > 0:
-                for i in range(num_rois):
-                    self.cbox_select_roi.addItem(f'ROI{i+1}')
+        """
+        This function is called when the class is initialized to populate the dropdown of available ROIs
+        """
+        num_rois =  self.parent.reader.num_rois
+        if num_rois > 0:
+            for i in range(num_rois):
+                self.cbox_select_roi.addItem(f'ROI{i+1}')
 
     def roi_selection_changed(self):
+        """
+        This function is called when the ROI is selected from the dropdown.
+        Changes the viewable roi to one of the preset variables that we chose to monitor.
+        """
         text = self.cbox_select_roi.currentText()
         if text.startswith('ROI'):
             x = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinX"]
@@ -206,6 +262,10 @@ class AnalysisWindow(QMainWindow):
             self.roi_height.setValue(h)
         
     def roi_boxes_changed(self):
+        """
+        This function is called when the ROI dimensions are changed.
+        Changes the viewable roi to the values within the the boxes.
+        """
         self.parent.roi_x = self.roi_x.value()
         self.parent.roi_y = self.roi_y.value()
         self.parent.roi_width = self.roi_width.value()
@@ -217,6 +277,10 @@ class AnalysisWindow(QMainWindow):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
     def plot_images(self):
+        """
+        Redraws plots based on rate entered in hz box.
+        Processes the images based on the different settings.
+        """
         if self.parent.reader.first_scan_detected == False:
             self.status_text.setText("Waiting for the first scan...")
         else:
@@ -235,13 +299,10 @@ class AnalysisWindow(QMainWindow):
                 # print(f'detector: {xpos_det},{ypos_det}')
                 # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
 
-            #TODO: There is a bug where positions_cache won't populate until image is complete and cause missed frames
-            # print(self.parent.reader.positions_cache[scan_id])
-
             # TODO: find a better way to check the scan positions
             # TODO: make an exception for scan positon 0,0 
             # positions are ints so trying with an offset of 1 max
-            if (np.abs((xpos_plan-xpos_det)) < 2) and (np.abs((ypos_plan-ypos_det)) < 2): 
+            if (np.abs((xpos_plan-xpos_det+1E-4)/(xpos_plan+1E-4)) < 0.1) and (np.abs((ypos_plan-ypos_det+1E-4)/(ypos_plan+1E-4)) < 0.1): 
                 self.call_times += 1
 
                 image_rois = self.parent.reader.images_cache[:,
@@ -251,33 +312,24 @@ class AnalysisWindow(QMainWindow):
                 intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
                 intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
                 intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
-                
-                # Instead of reading the scan positions from collector 
-                # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
-                # and overwrite if not
 
                 y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
 
                 # Compute weighted sums
                 weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
                 weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-
                 # Calculate COM
                 com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
                 com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
-                
                 #filter out inf
                 com_x[com_x==np.nan] = 0 # time complexity = O(1)
                 com_y[com_y==np.nan] = 0 # time complexity = O(1)
-
                 #Two lines below don't work if unique positions are messed by incomplete x y positions 
                 self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
                 self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
                 # gets the shape of the image to set the length of the axis
-                
                 self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
                 self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-
                 # Populate the matrices using the indices
                 self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
                 self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
@@ -299,6 +351,9 @@ class AnalysisWindow(QMainWindow):
                 self.parent.reader.frames_missed += 1
 
     def init_ui(self):
+        """
+        this function initializes the user interface with smaller ImageView classes and defining the axis.
+        """
         # cmap = pg.colormap.getFromMatplotlib('viridis')
         plot_item_intensity = pg.PlotItem()
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
@@ -327,6 +382,4 @@ class AnalysisWindow(QMainWindow):
         event.accept()
         super(AnalysisWindow, self).closeEvent(event)
 
-
-# if __name__ == '__main__':
 

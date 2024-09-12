@@ -27,6 +27,15 @@ rot_gen = rotation_cycle(1,5)
 class ConfigDialog(QDialog):
 
     def __init__(self, prefix='', c_address='', cache_freq=10):
+        """
+        Class that does initial setup for getting the pva prefix, collector address,
+        and the path to the json that stores the pvs that will be observed
+
+        Keyword Args:
+        prefix (str) -- used to populate the prefix for all pvas in PVAReader
+        c_address (str) -- used to populate the address for the collector channel in PVAReader
+        cache_freq (int) -- used to set the update frequency of ImageViewer
+        """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
@@ -35,23 +44,32 @@ class ConfigDialog(QDialog):
         self.collector_address = c_address
         self.pvs_path =  ''
         self.cache_frequency = cache_freq
-
+        # class can be prefilled with text
         self.init_ui()
 
-        self.btn_load.clicked.connect(self.open_file_dialog)
-        self.btn_edit.clicked.connect(self.open_file_dialog)
+        self.btn_load.clicked.connect(self.json_open_file_dialog)
+        self.btn_edit.clicked.connect(self.json_open_file_dialog)
         self.btn_new_config.clicked.connect(self.new_pv_setup)
         self.btn_edit_accept_reject.accepted.connect(self.edit_pv_setup)
         self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
 
     
     def init_ui(self):
+        """
+        function called which prefills text in the Line Editors
+        """
         self.le_pv_prefix.setText(self.prefix)
         self.le_collector.setText(self.collector_address)
         self.sb_collector_frequency.setValue(self.cache_frequency)
 
 
-    def open_file_dialog(self):
+    def json_open_file_dialog(self):
+        """
+        Function called when you want to get the file path to a json file.
+        is split between 2 buttons:
+        - file path for the config you wan't to load and monitor
+        - file path for a config you want to edit
+        """
         btn_sender = self.sender()
         sender_name = btn_sender.objectName()
         self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
@@ -62,15 +80,25 @@ class ConfigDialog(QDialog):
             self.le_edit_file_path.setText(self.pvs_path)
 
     def new_pv_setup(self):
+        """
+        Pops up a new window for setting up a new config within the ui
+        """
         self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
     def edit_pv_setup(self):
+        """
+        Pops up a new window for editting an already existing config
+        """
         if self.le_edit_file_path.text() != '':
             self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
         else:
             print('file path empty')
 
     def dialog_accepted(self):
+        """
+        Function called when the last Dialog Accept button is pressed.
+        Starts the ImageWindow process passing all filled out information to it and initializing it.
+        """
         self.prefix = self.le_pv_prefix.text()
         self.collector_address = self.le_collector.text()
         self.pvs_path = self.le_load_file_path.text()
@@ -97,10 +125,13 @@ class PVA_Reader:
     def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
         """
         Variables needed for monitoring a connection.
+        Provides connections and to broadcasted images and PVAs
         
         KeyWord Args:
         pva_prefix (str) -- The prefix of the specific detector that will be appended to the PVA channel name (default dp-ADSim)
         provider (protocol) -- The protocol that will be used when creating the channel (default pva.PVA)
+        collector_address (str) -- address to the collector server
+        config_filepath (str) -- file path to where the config json file is located
         """
         self.pva_prefix = pva_prefix        
         self.provider = provider
@@ -135,7 +166,6 @@ class PVA_Reader:
         
     def pva_callbackSuccess(self, pv):
         """
-        Desc:
         Function is called every time a PV change is monitored.
         Makes sure we only keep queue of 1000 PV objects in memory 
         and before caching then processes incoming pv. 
