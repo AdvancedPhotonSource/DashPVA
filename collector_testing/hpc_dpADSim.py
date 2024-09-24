@@ -56,7 +56,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
     # Associate metadata
     # Returns true on success, false on definite failure, none on failure/try another
     def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
-        self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
+        # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
             self.logger.error(f'Metadata channel {mdChannel} not found in current metadata map')
             return False
@@ -86,8 +86,6 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
         
-        # if 'tags' in mdObject and mdObject['tags']:
-            # Use previous setup with pva.NtAttribute if tags are available
         if diff <= self.timestampTolerance:
             # We can associate metadata with frame
             # Create an NtAttribute object with the desired metadata
@@ -100,7 +98,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             # del self.currentMetadataMap[mdChannel]
             return True
         elif frameTimestamp > mdTimestamp2:
-            # This metadata is too old, keep it appending until new one is found (the if logic above)
+            # This metadata is old, but we want it until new one is found (the logic above)
             nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
             # Append the NtAttribute object to frameAttributes
             frameAttributes.append(nt_attribute)
@@ -173,11 +171,12 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            metadataQueue.get_nowait()
+            # TODO: Check if where the metadataQueue.get_nowait() is placed has any effect on output frames issues we've been having
+            # metadataQueue.get_nowait()
             while True:
                 # if metadataChannel not in self.currentMetadataMap:
                 try:
-                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
+                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0) #might need to be replaced with metadataQueue.get_nowait()
                 except pva.QueueEmpty as ex:
                     # No metadata in the queue, we failed
                     # associationFailed = True 
