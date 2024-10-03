@@ -11,7 +11,7 @@ from epics import caget
 from epics import camonitor
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy, QLabel, QFormLayout, QWidget, QFrame
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
 from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
@@ -183,19 +183,20 @@ class PVA_Reader:
             y_value = self.attributes.get('6idb1:m33.RBV')[0]['value']
             print(x_value)
             print(y_value,'\n')
-            #need to avoid hard coding the initial scan position 
+            #need to avoid hard coding the initial scan position
+            # TODO: make it so that starting pv has a tolerance for when it's detected
+            # similar to check in analysis windows 
             if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
                 self.first_scan_detected = True
                 print(f"First Scan detected...")
     
             if self.first_scan_detected:
-                #TODO: Debug why starting cache causes missed frames 
                 if self.id_diff> 0:
                     for i in range(self.id_diff):
                         self.cache_id = next(self.cache_id_gen)
                     self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
-                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
+                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN 
+                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
                 else:
                     self.cache_id = next(self.cache_id_gen)
                     self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
@@ -223,7 +224,7 @@ class PVA_Reader:
         for value in ["codec", "uniqueId", "uncompressedSize"]:
             if value in self.pva_object:
                 attributes[value] = self.pva_object[value]
-
+        
         self.attributes = attributes
 
     def pva_to_image(self):
@@ -255,13 +256,6 @@ class PVA_Reader:
                     else:
                         self.id_diff = 0
                 self.last_array_id = current_array_id
-                # Check for missed frame starts here
-                # current_array_id = self.pva_object['uniqueId']
-                # if self.last_array_id is not None: 
-                #     id_diff = current_array_id - self.last_array_id - 1
-                #     self.frames_missed += id_diff if (id_diff > 0) else 0
-                # self.last_array_id = current_array_id
-
         except:
             self.frames_missed += 1
             # return 1
@@ -329,7 +323,7 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.caching_frequency = cache_frequency #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
+        self.caching_frequency = cache_frequency
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -500,7 +494,6 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
-            # TODO: Pass it a timer so it doesn't create a new one every time
             self.stats_dialog[text] = RoiStatsDialog(parent=self, stats_text=text, timer=self.timer_labels)
             self.stats_dialog[text].show()
     

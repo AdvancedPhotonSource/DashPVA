@@ -59,6 +59,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
             self.logger.error(f'Metadata channel {mdChannel} not found in current metadata map')
+            print(f'Metadata channel {mdChannel} not found in current metadata map')
+
             return False
 
         mdObject = self.currentMetadataMap[mdChannel]
@@ -85,34 +87,41 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             return False
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
+
+        # Attach Metadata No Matter What
+        nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
+        frameAttributes.append(nt_attribute)
+        self.nMetadataProcessed += 1
+        return True
         
-        if diff <= self.timestampTolerance:
-            # We can associate metadata with frame
-            # Create an NtAttribute object with the desired metadata
-            nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
-            # Append the NtAttribute object to frameAttributes
-            frameAttributes.append(nt_attribute)
-            # frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
-            # self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
-            self.nMetadataProcessed += 1 
-            # del self.currentMetadataMap[mdChannel]
-            return True
-        elif frameTimestamp > mdTimestamp2:
-            # This metadata is old, but we want it until new one is found (the logic above)
-            nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
-            # Append the NtAttribute object to frameAttributes
-            frameAttributes.append(nt_attribute)
-            # self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-            self.nMetadataProcessed += 1 
-            # del self.currentMetadataMap[mdChannel]
-            return True
-        else:
-            # This metadata is newer than the frame
-            # Association failed, but keep metadata for the next frame
-            associationFailed = True 
-            # self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-            self.logger.debug('ERROR')
-            return False
+        # if diff <= self.timestampTolerance:
+        #     # We can associate metadata with frame
+        #     # Create an NtAttribute object with the desired metadata
+        #     nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
+        #     # Append the NtAttribute object to frameAttributes
+        #     frameAttributes.append(nt_attribute)
+        #     # frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
+        #     # self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
+        #     self.nMetadataProcessed += 1 
+        #     # del self.currentMetadataMap[mdChannel]
+        #     return True
+        # elif frameTimestamp > mdTimestamp2:
+        #     # This metadata is old, but we want it until new one is found (the logic above)
+        #     nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
+        #     # Append the NtAttribute object to frameAttributes
+        #     frameAttributes.append(nt_attribute)
+        #     # self.logger.debug(f'Keeping old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+        #     self.nMetadataProcessed += 1 
+        #     # del self.currentMetadataMap[mdChannel]
+        #     return True
+        # else:
+        #     # This metadata is newer than the frame
+        #     # Association failed, but keep metadata for the next frame
+        #     associationFailed = True 
+        #     # self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
+        #     self.logger.debug('ERROR')
+        #     return False
+
         # else:
         #     # Use metadata_dict approach if tags are not available
             # if diff <= self.timestampTolerance:
@@ -171,7 +180,6 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            # TODO: Check if where the metadataQueue.get_nowait() is placed has any effect on output frames issues we've been having
             # metadataQueue.get_nowait()
             while True:
                 # if metadataChannel not in self.currentMetadataMap:
@@ -226,6 +234,9 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
         self.processingTime += (t1-t0)
+        # print(f"t0: {t0}")
+        # print(f"t1: {t1}")
+        # print(f"process time: {t1-t0}")
         return pvObject
 
     # Reset statistics for user processor

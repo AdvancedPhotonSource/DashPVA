@@ -138,35 +138,6 @@ class AnalysisWindow(QMainWindow):
 
         self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
         self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
-
-    # # Changed to be a thread
-    # def create_hdf5_file(self, filename, images_cache, scan_pos, metadata, attributes, intensity_values, com_x_matrix, com_y_matrix):
-    #     try:
-    #         with h5py.File(filename, 'w') as h5file:
-    #             #data
-    #             h5file.create_group('/data')
-    #             h5file.create_dataset('/data/images', data=images_cache)
-
-    #             #scan pos
-    #             h5file.create_group('/data/scan_pos')
-    #             h5file.create_dataset('/data/scan_pos/x_positions', data=scan_pos['x_positions'])
-    #             h5file.create_dataset('/data/scan_pos/y_positions', data=scan_pos['y_positions'])
-
-    #             #save all metadata and attributes too. Expecting dictionaries
-    #             h5file.create_group('/metadata')
-    #             for key, value in metadata.items():
-    #                 h5file['/metadata'].attrs[key] = value
-    #             h5file.create_group('/attributes')
-    #             for key, value in attributes.items():
-    #                 h5file['/attributes'].attrs[key] = value
-
-    #             #Analysis data 
-    #             h5file.create_group('/analysis')
-    #             h5file.create_dataset('/analysis/total_intensity', data=intensity_values)
-    #             h5file.create_dataset('/analysis/com_x', data=com_x_matrix)
-    #             h5file.create_dataset('/analysis/com_y', data=com_y_matrix)
-    #     except Exception as e:
-    #         print(e)
          
     def save_hdf5(self):
         """
@@ -192,10 +163,6 @@ class AnalysisWindow(QMainWindow):
             self.com_y_matrix)
         self.hdf5_writer_thread.file_written.connect(self.on_file_written)
         self.hdf5_writer_thread.start()
-        # # call this to write file
-        # self.create_hdf5_file(f"{self.save_path}/{formatted_time}data.h5", self.parent.reader.images_cache, scan_pos, self.parent.reader.metadata, self.parent.reader.attributes, self.intensity_matrix, self.com_x_matrix, self.com_y_matrix)
-        # self.status_text.setText("File Written")
-        # QTimer.singleShot(10000, self.check_if_running)
 
     def on_file_written(self):
         """
@@ -224,7 +191,7 @@ class AnalysisWindow(QMainWindow):
         self.view_comx.clear()
         self.view_comy.clear()
         self.call_times = 0
-        self.parent.reader.images_cache = None# [:,:,:] = 0 
+        self.parent.reader.images_cache = None # [:,:,:] = 0 
         # Done because caching should be done from scratch
         self.parent.reader.frames_received = 0
         self.parent.reader.frames_missed = 0
@@ -303,10 +270,6 @@ class AnalysisWindow(QMainWindow):
                 x1, x2 = self.x_positions[0], self.x_positions[1]
                 y1, y2 = self.y_positions[0], self.y_positions[30]
 
-                # print(((np.abs((xpos_plan-xpos_det+1E-4)/(xpos_plan+1E-4)) < 0.1) and (np.abs((ypos_plan-ypos_det+1E-4)/(ypos_plan+1E-4)) < 0.1)))
-                # print((np.abs(x2-x1) * 0.2) ,  (np.abs(y2-y1) * 0.2))
-                # print((np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2)))
- 
             if ((np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2))): 
                 self.call_times += 1
 

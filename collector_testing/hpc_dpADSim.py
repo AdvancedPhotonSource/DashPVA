@@ -113,32 +113,6 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             # self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
             self.logger.debug('ERROR')
             return False
-        # else:
-        #     # Use metadata_dict approach if tags are not available
-            # if diff <= self.timestampTolerance:
-            #     metadata_dict = {
-            #         'name': mdChannel,
-            #         'value': str(mdValue),
-            #         'tags': [],  
-            #         'descriptor': '' 
-            #     }
-            #     frameAttributes.append(metadata_dict)
-            #     self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
-            #     self.nMetadataProcessed += 1 
-            #     del self.currentMetadataMap[mdChannel]
-            #     return True
-        #     elif frameTimestamp > mdTimestamp2:
-        #         # This metadata is too old, discard it and try next one
-        #         self.nMetadataDiscarded += 1 
-        #         del self.currentMetadataMap[mdChannel]
-        #         self.logger.debug(f'Discarding old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-        #         return None
-        #     else:
-        #         # This metadata is newer than the frame
-        #         # Association failed, but keep metadata for the next frame
-        #         associationFailed = True 
-        #         self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-        #         return False
         
     # Process monitor update
     def process(self, pvObject):
@@ -171,7 +145,6 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            # TODO: Check if where the metadataQueue.get_nowait() is placed has any effect on output frames issues we've been having
             # metadataQueue.get_nowait()
             while True:
                 # if metadataChannel not in self.currentMetadataMap:
