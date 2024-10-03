@@ -5,6 +5,12 @@ import time
 previous_data = None
 last_print_time = time.time()
 
+total_intensities = []
+metadata0_list = []
+
+import matplotlib.pyplot as plt
+
+
 def monitor_callback(data):
     global previous_data, last_print_time
     
@@ -17,6 +23,8 @@ def monitor_callback(data):
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
         image_data = data['value'][0]['ushortValue']
+        total_intensities.append(np.sum(image_data))
+        print(f"appending image total intensity {np.sum(image_data)}")
 
         print(f"Image data length: {len(image_data)}")
 
@@ -31,6 +39,9 @@ def monitor_callback(data):
         print("\nMetadata:")
         for channel, value in metadata.items():
             print(f"{channel}: {value}")
+            if channel == "6idb1:m27.RBV":
+                print(f"appending {value[0]['value']}")
+                metadata0_list.append(value[0]['value'])
 
         if previous_data is not None:
             images_equal = (image_data == previous_data).all()
@@ -45,6 +56,7 @@ def monitor_callback(data):
             # previous_data = data['value'][0]['uintValue']
             previous_data = data['value'][0]['ushortValue']
             print('data recorded!')
+        
 
 # collector_channel = pva.Channel("pvapy:image", pva.PVA)
 collector_channel = pva.Channel("collector:1:output", pva.PVA)
@@ -55,5 +67,10 @@ collector_channel.startMonitor()
 try:
     while True:
         time.sleep(1)
+        print(f"{total_intensities}, {metadata0_list}")
+        # if len(total_intensities) > 0:
+        plt.figure()
+        plt.plot(np.array(metadata0_list),np.array(total_intensities))
+        plt.show()
 except KeyboardInterrupt:
     collector_channel.stopMonitor()
