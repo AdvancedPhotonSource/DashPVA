@@ -53,32 +53,9 @@ class HpcAdMetadataProcessor(AdImageProcessor):
 
     # Associate metadata
     # Returns true on success, false on definite failure, none on failure/try another
-    def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
-        mdObject = self.currentMetadataMap[mdChannel]
-        mdTimestamp = TimeUtility.getTimeStampAsFloat(mdObject['timeStamp'])
-        mdTimestamp2 = mdTimestamp+self.metadataTimestampOffset
-        mdValue = mdObject['value']
-        diff = abs(frameTimestamp-mdTimestamp2)
-        self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-        if diff <= self.timestampTolerance:
-            # We can associate metadata with frame
-            frameAttributes.append(pva.NtAttribute(mdChannel, pva.PvFloat(mdValue)))
-            self.logger.debug(f'Associating frame id {frameId} with metadata {mdChannel} value of {mdValue}')
-            self.nMetadataProcessed += 1 
-            del self.currentMetadataMap[mdChannel]
-            return True
-        elif frameTimestamp > mdTimestamp2:
-            # This metadata is too old, discard it and try next one
-            self.nMetadataDiscarded += 1 
-            del self.currentMetadataMap[mdChannel]
-            self.logger.debug(f'Discarding old metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-            return None
-        else:
-            # This metadata is newer than the frame
-            # Association failed, but keep metadata for the next frame
-            associationFailed = True 
-            self.logger.debug(f'Keeping new metadata {mdChannel} value of {mdValue} with timestamp {mdTimestamp}')
-            return False
+    def performAnalysis(self, mdChannel, frameId, frameTimestamp, frameAttributes):
+        pass
+        
         
     # Process monitor update
     def process(self, pvObject):

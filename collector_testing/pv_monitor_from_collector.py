@@ -24,6 +24,7 @@ def monitor_callback(data):
         # image_data = data['value'][0]['uintValue']
         image_data = data['value'][0]['ushortValue']
         total_intensities.append(np.sum(image_data))
+        print(np.size(image_data))
         print(f"appending image total intensity {np.sum(image_data)}")
 
         print(f"Image data length: {len(image_data)}")
