@@ -175,15 +175,13 @@ class PVA_Reader:
         """
         self.pva_object = pv
         self.parse_pva_ndattributes()
-        print(self.attributes)
         self.parse_image_data_type()
         self.pva_to_image()
 
         if self.collector_address != '':
             x_value = self.attributes.get('x')[0]['value']
             y_value = self.attributes.get('y')[0]['value']
-            print(x_value)
-            print(y_value,'\n')
+           
             #need to avoid hard coding the initial scan position
             # TODO: make it so that starting pv has a tolerance for when it's detected
             # similar to check in analysis windows 
