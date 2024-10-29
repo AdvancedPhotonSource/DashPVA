@@ -88,6 +88,7 @@ class AnalysisWindow(QMainWindow):
         com_x_matrix (numpy.ndarray): A 2D numpy array of center of mass x values.
         com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
     """
+    
     def __init__(self, parent,xpos_path, ypos_path, save_path): 
         super(AnalysisWindow, self).__init__()
         # self.parent : ImageWindow = parent

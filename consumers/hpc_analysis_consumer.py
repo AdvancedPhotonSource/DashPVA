@@ -35,7 +35,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
         self.processingTime = 0
 
-        # PVObject vars needed for caching and analysis
+        # PVObject vars needed for caching
         self.MAX_CACHE_SIZE = 900
         self.pvobject_cache = None    
         self.positions_cache = None
@@ -45,7 +45,14 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.attributes = {}
         self.cache_id = 0
         self.id_diff = 0
-        self.cache_id_gen = rotation_cycle(0,self.MAX_CACHE_SIZE)  
+        self.cache_id_gen = rotation_cycle(0,self.MAX_CACHE_SIZE)
+        self.first_scan_detected = False  
+
+        # Vars used for Analysis
+        self.xpos_path = "xpos_path"
+        self.ypos_path = "ypos_path"
+        self.save_path = "save_path"
+        self.load_path()
 
         # The last object time
         self.lastFrameTimestamp = 0
@@ -116,10 +123,76 @@ class HpcAnalysisProcessor(AdImageProcessor):
             pass
             # self.frames_missed += 1
 
-    def performAnalysis(self):
-        pass
+    def load_path(self):
+        """
+        This function loads the path information for the HDF5 file and uses it to populate other variables.
+        """
+        # TODO: These positions are references, use only when we miss frames.
+        self.x_positions = np.load(self.xpos_path)
+        self.y_positions = np.load(self.ypos_path)
+    
+        self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
+        self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
 
-    # Process monitor update
+        self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
+        self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
+
+    def process_analysis_objects(self, pvObject):
+        """
+        
+        """
+        if self.cache_id is not None:
+            xpos_det = self.positions_cache[self.cache_id, 0]
+            xpos_plan = self.x_positions[self.cache_id]
+            ypos_det = self.positions_cache[self.cache_id, 1]
+            ypos_plan = self.y_positions[self.cache_id]
+
+            # print(f'scan id: {self.cache_id}')
+            # print(f'detector: {xpos_det},{ypos_det}')
+            # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
+
+            x1, x2 = self.x_positions[0], self.x_positions[1]
+            y1, y2 = self.y_positions[0], self.y_positions[30]
+
+        if ((np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2))): 
+            self.call_times += 1
+
+            image_rois = self.images_cache[:,
+                                            self.roi_y:self.roi_y + self.roi_height,
+                                            self.roi_x:self.roi_x + self.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+            
+            intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
+            intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
+            intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
+
+            y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
+
+            # Compute weighted sums
+            weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+            weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
+            # Calculate COM
+            com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
+            com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
+            #filter out inf
+            com_x[com_x==np.nan] = 0 # time complexity = O(1)
+            com_y[com_y==np.nan] = 0 # time complexity = O(1)
+            #Two lines below don't work if unique positions are messed by incomplete x y positions 
+            self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+            self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
+            # gets the shape of the image to set the length of the axis
+            self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+            self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
+            # Populate the matrices using the indices
+            self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
+            self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
+            
+            #TODO: Create pv objects out of the matrices and append them to the original pvobject
+            
+
+
+        
+
+    ########################################## Process monitor update ####################################################
     def process(self, pvObject):
         t0 = time.time()
         frameId = pvObject['uniqueId']

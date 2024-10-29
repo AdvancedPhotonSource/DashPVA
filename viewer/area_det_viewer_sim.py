@@ -71,7 +71,7 @@ class ConfigDialog(QDialog):
         """
         btn_sender = self.sender()
         sender_name = btn_sender.objectName()
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
+        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json)')
 
         if sender_name.endswith('load'):
             self.le_load_file_path.setText(self.pvs_path)
