@@ -144,7 +144,6 @@ class PVA_Reader:
         self.shape = (0,0)
         self.attributes = {}
         self.timestamp = None
-        # self.pva_cache = []
         self.images_cache = None
         self.positions_cache = None
         self.last_array_id = None
@@ -179,12 +178,11 @@ class PVA_Reader:
         self.pva_to_image()
 
         if self.collector_address != '':
+            # TODO: make so key/value that is detected can be defined in setup dialog rather than hard coded
             x_value = self.attributes.get('x')[0]['value']
             y_value = self.attributes.get('y')[0]['value']
            
-            #need to avoid hard coding the initial scan position
-            # TODO: make it so that starting pv has a tolerance for when it's detected
-            # similar to check in analysis windows 
+            # TODO: make it so that starting pv has a tolerance for when it's detected similar to check in analysis windows 
             if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
                 self.first_scan_detected = True
                 print(f"First Scan detected...")
@@ -289,10 +287,10 @@ class PVA_Reader:
 
     def get_pva_objects(self):
         """Returns entire cached list of PVA Objects"""
-        return self.pva_cache
+        return self.images_cache
 
     def get_last_pva_object(self):
-        return self.pva_cache[-1]
+        return self.images_cache[-1]
 
     def get_frames_missed(self):
         return self.frames_missed
@@ -397,10 +395,9 @@ class ImageWindow(QMainWindow):
         the prefix which was typed in. 
         """
         try:
-            prefix = self.pv_prefix.text()
             # a double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(pva_prefix=prefix, collector_address=self._collector_address, config_filepath=self._file_path)
+                self.reader = PVA_Reader(pva_prefix=self._prefix, collector_address=self._collector_address, config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
                 if self.reader.channel.get():
                     self.start_timers()
@@ -418,7 +415,8 @@ class ImageWindow(QMainWindow):
             self.start_roi_monitors()
             self.add_rois()
         except:
-            print('Failed to Connect')
+            
+            print(f'Failed to Connect to {self._prefix} or {self._collector_address}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader

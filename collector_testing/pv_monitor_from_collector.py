@@ -25,6 +25,7 @@ def monitor_callback(data):
         image_data = data['value'][0]['ushortValue']
         total_intensities.append(np.sum(image_data))
         print(np.size(image_data))
+    
         print(f"appending image total intensity {np.sum(image_data)}")
 
         print(f"Image data length: {len(image_data)}")
@@ -36,13 +37,14 @@ def monitor_callback(data):
                 name = attr['name']
                 value = attr['value']
                 metadata[name] = value
+            metadata["uniqueId"] = data["uniqueId"]
 
         print("\nMetadata:")
         for channel, value in metadata.items():
             print(f"{channel}: {value}")
-            if channel == "6idb1:m27.RBV":
-                print(f"appending {value[0]['value']}")
-                metadata0_list.append(value[0]['value'])
+            # if channel == "6idb1:m27.RBV":
+            #     print(f"appending {value[0]['value']}")
+            #     metadata0_list.append(value[0]['value'])
 
         if previous_data is not None:
             images_equal = (image_data == previous_data).all()
@@ -67,11 +69,11 @@ collector_channel.startMonitor()
 
 try:
     while True:
-        time.sleep(1)
-        print(f"{total_intensities}, {metadata0_list}")
+        time.sleep(0.1)
+        # print(f"{total_intensities}, {metadata0_list}")
         # if len(total_intensities) > 0:
-        plt.figure()
-        plt.plot(np.array(metadata0_list),np.array(total_intensities))
-        plt.show()
+        # plt.figure()
+        # plt.plot(np.array(metadata0_list),np.array(total_intensities))
+        # plt.show()
 except KeyboardInterrupt:
     collector_channel.stopMonitor()
