@@ -2,31 +2,23 @@ import time
 import copy
 import numpy as np
 import pvaccess as pva
+from pvaccess import PvObject, USHORT, INT
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 #custom imports
+import sys
+sys.path.append('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer')
 from viewer.generators import rotation_cycle
+
 # import logging
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
 class HpcAnalysisProcessor(AdImageProcessor):
 
-    # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = 0.001
-
-    # Offset that will be applied to metadata timestamp before comparing it with
-    # the image timestamp
-    DEFAULT_METADATA_TIMESTAMP_OFFSET = .001
-
     def __init__(self, configDict={}):
         AdImageProcessor.__init__(self, configDict)
-        # Configuration
-        self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
-        # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
-        self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset', self.DEFAULT_METADATA_TIMESTAMP_OFFSET))
-        # self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
 
         # Statistics
         self.nFramesProcessed = 0 # Number of images associated with metadata
@@ -35,9 +27,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
         self.processingTime = 0
 
+        self.configure(configDict)
+
         # PVObject vars needed for caching
-        self.MAX_CACHE_SIZE = 900
-        self.pvobject_cache = None    
+        self.images_cache = None    
         self.positions_cache = None
         self.image = None
         self.shape = (0,0)
@@ -46,30 +39,29 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.cache_id = 0
         self.id_diff = 0
         self.cache_id_gen = rotation_cycle(0,self.MAX_CACHE_SIZE)
-        self.first_scan_detected = False  
-
-        # Vars used for Analysis
-        self.xpos_path = "xpos_path"
-        self.ypos_path = "ypos_path"
-        self.save_path = "save_path"
-        self.load_path()
-
+        self.first_scan_detected = False 
+        self.last_frame_id = None 
+        self.call_times = 0
+        # Configure Processor Settings
         # The last object time
         self.lastFrameTimestamp = 0
-
-        self.logger.debug(f'Created HpcAdMetadataProcessor')
+        self.roi_x = 0
+        self.roi_y = 0
+        self.roi_height = 50
+        self.roi_width = 50
+        # self.logger.debug(f'Created HpcAnalysisProcessor')
         # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
       
-
     # Configure user processor
     def configure(self, configDict):
-        self.logger.debug(f'Configuration update: {configDict}')
-        if 'timestampTolerance' in configDict:
-            self.timestampTolerance = float(configDict.get('timestampTolerance'))
-            self.logger.debug(f'Updated timestamp tolerance: {self.timestampTolerance} seconds')
-        if 'metadataTimestampOffset' in configDict:
-            self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset'))
-            self.logger.debug(f'Updated metadata timestamp offset: {self.metadataTimestampOffset} seconds')
+        # TODO: Use Configdict to get all these parameters.
+        self.MAX_CACHE_SIZE = 900
+        # Vars used for Analysis
+        self.xpos_path = "/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/xpos.npy"
+        self.ypos_path = "/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/ypos.npy"
+        # self.save_path = "save_path"
+        self.load_path()
+        
 
     ########################################################################################################################
     ####################### Porting Code From Original Area Detector View and Analysis Views ###############################
@@ -141,6 +133,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         
         """
+        print("I am in the analysis consumer")
         if self.cache_id is not None:
             xpos_det = self.positions_cache[self.cache_id, 0]
             xpos_plan = self.x_positions[self.cache_id]
@@ -153,13 +146,23 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
             x1, x2 = self.x_positions[0], self.x_positions[1]
             y1, y2 = self.y_positions[0], self.y_positions[30]
+            print(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
+            #self.logger.debug(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
 
-        if ((np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2))): 
+
+        # (np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2)))
+        if True: 
+            
             self.call_times += 1
+            if self.call_times % 5 == 0:
+                print("I am in the analysis Consumer\n")
 
             image_rois = self.images_cache[:,
                                             self.roi_y:self.roi_y + self.roi_height,
                                             self.roi_x:self.roi_x + self.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+            #self.logger.debug(f'image roi shape: {image_rois.shape}')
+            print(f'image roi shape: {image_rois.shape}\n')
+
             
             intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
             intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
@@ -185,12 +188,40 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # Populate the matrices using the indices
             self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
             self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-            
-            #TODO: Create pv objects out of the matrices and append them to the original pvobject
-            
+
+            print("about to append the analysis\n")
+            print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
 
+            
+            #TODO: Create pv object out of the matrices and append them to the original pvobject
+            analysis_object_fields = {"Analysis":{"Intensity": [USHORT]}}
+            pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
+            pvObject.set({'Analysis':{"Intensity":self.intensity_matrix.ravel().astype(np.uint16)}})
+            #  PvObject(
+            #                             {
+            #                             "intensity": self.intensity_matrix.ravel(),
+            #                             "comX": self.com_x_matrix.ravel(),
+            #                             "comY": self.com_y_matrix.ravel(),
+            #                             "shape": self.intensity_matrix.shape # can be any of their shape as all matrices should have the same dimensions
+            #                             })
+            return pvObject
+
+    def add_field_to_pvobject(self, pv_obj, new_fields):
+        # Get the existing structure and data
+        current_structure = pv_obj.getStructureDict()
+        current_data = pv_obj.get()
         
+        # Merge current structure with new fields
+        updated_structure = {**current_structure, **new_fields}
+        
+        # Create a new PvObject with updated structure
+        updated_pvObject = PvObject(updated_structure)
+        
+        # Set original data to the updated PvObject
+        updated_pvObject.set(current_data)
+        
+        return updated_pvObject
 
     ########################################## Process monitor update ####################################################
     def process(self, pvObject):
@@ -200,11 +231,11 @@ class HpcAnalysisProcessor(AdImageProcessor):
         nDims = len(dims)
         # checking for required keys
         if not nDims:
-            self.logger.debug(f'Frame id {frameId} contains an empty image.')
+            # self.logger.debug(f'Frame id {frameId} contains an empty image.')
             return pvObject
 
         if 'timeStamp' not in pvObject:
-            self.logger.error(f'Frame id {frameId} does not have field "timeStamp"')
+            # self.logger.error(f'Frame id {frameId} does not have field "timeStamp"')
             return pvObject
         
         self.parse_pva_ndattributes(pvObject)
@@ -216,8 +247,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             self.id_diff = frameId - self.last_frame_id - 1
         self.last_frame_id = frameId
 
-        # TODO: Need to find a way to make it so that server side key can be changed
-        # Look into --processor-args flag in the command line options
+        # TODO: USE --processor-args flag in the command line options to pass a config dict and get these values instead
         x_value = self.attributes.get('x')[0]['value']
         y_value = self.attributes.get('y')[0]['value']
         
@@ -238,15 +268,18 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
                 self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
                 self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+            
+            pvObject = self.process_analysis_objects(pvObject)
 
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
-        self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
+        #self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
                        
         # self.updateOutputChannel(pvObject) # check what this does in comparison to just returning
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
         self.processingTime += (t1-t0)
+        self.updateOutputChannel(pvObject)
         return pvObject
 
     # Reset statistics for user processor

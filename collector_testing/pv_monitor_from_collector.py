@@ -23,6 +23,7 @@ def monitor_callback(data):
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
         image_data = data['value'][0]['ushortValue']
+        print(data.get())
         total_intensities.append(np.sum(image_data))
         print(np.size(image_data))
     
@@ -61,8 +62,8 @@ def monitor_callback(data):
             print('data recorded!')
         
 
-# collector_channel = pva.Channel("pvapy:image", pva.PVA)
-collector_channel = pva.Channel("collector:1:output", pva.PVA)
+collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
+# collector_channel = pva.Channel("collector:1:output", pva.PVA)
 # collector_channel = pva.Channel("dp-ADSim:Pva1:Image", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
