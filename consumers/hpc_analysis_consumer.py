@@ -129,7 +129,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
         self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
 
-    def process_analysis_objects(self, pvObject):
+    def process_analysis_objects(self, pvObject=None,frameAttributes=None):
         """
         
         """
@@ -197,13 +197,21 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
             # TODO: Create pv object out of the matrices and append them to the original pvobject
-            current_fields = pvObject.getStructureDict()
-            analysis_object = PvObject({"Analysis":{"Intensity": [DOUBLE]}}, {"Analysis": {"Intensity":self.intensity_matrix}})
-            # WHY ISN'T THIS WORKING? IT WORKS ON ON THE PVOBJECT THAT IS TAKEN AS INPUT TO THE FUNCTION
-            analysis_object_fields = analysis_object.getStuctureDict()
-            updated_fields = {**current_fields, **updated_fields}
-            print(updated_fields)
-            #analysis_object_fields = pva.NtNdArray(analysis_object_fields.getStructureDict())
+            analysis_object = PvObject({'value':{"Intensity": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel()}})
+            pvAttr = pva.NtAttribute('Analysis', analysis_object)
+
+            frameAttributes.append(pvAttr)
+
+            ############### Failure 4, it fails to use a call a function that is available to PvObjects so it throws errors
+            # current_fields = pvObject.getStructureDict()
+            # analysis_object = PvObject({"Analysis":{"Intensity": [DOUBLE]}}, {"Analysis": {"Intensity":self.intensity_matrix.ravel()}})
+            # # WHY ISN'T THIS WORKING? IT WORKS ON ON THE PVOBJECT THAT IS TAKEN AS INPUT TO THE FUNCTION
+            # analysis_object_fields = analysis_object.getStuctureDict()
+            # updated_fields = {**current_fields, **updated_fields}
+            # print(updated_fields)
+            # analysis_object_fields = pva.NtNdArray(analysis_object_fields.getStructureDict())
+
+            ############### Failure 2 and 3 trying to update it with and without a funciton that did code below
 
             # # Get the existing structure and data
             # current_structure = pvObject.getStructureDict()
@@ -223,7 +231,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # print(pvObject.getSturctureDict())
             # pvObject.set({"Analysis":{"Intensity": self.intensity_matrix.ravel()}})
 
-            #Failed attempt to get analysis working: it can't access attributes that aren't there
+            ###############Failed attempt to get analysis working: it can't access attributes that aren't there
             # pvObject.setPvObject({'intensity': self.intensity_matrix.ravel(), 'comX': self.com_x_matrix, 'comY': self.com_y_matrix})
 
             
@@ -275,17 +283,20 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
                 self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
             
-            self.process_analysis_objects(pvObject)
+            # self.process_analysis_objects(pvObject=pvObject)
+            frameAttributes = pvObject['attribute']
+            self.process_analysis_objects(frameAttributes=frameAttributes)
+            pvObject['attribute'] = frameAttributes
 
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         #self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
                        
         # self.updateOutputChannel(pvObject) # check what this does in comparison to just returning
+        self.updateOutputChannel(pvObject)
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
         self.processingTime += (t1-t0)
-        self.updateOutputChannel(pvObject)
         return pvObject
 
     # Reset statistics for user processor
