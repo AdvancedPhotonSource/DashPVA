@@ -2,7 +2,7 @@ import time
 import copy
 import numpy as np
 import pvaccess as pva
-from pvaccess import PvObject, USHORT, INT
+from pvaccess import PvObject, USHORT, INT, DOUBLE
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
@@ -189,37 +189,55 @@ class HpcAnalysisProcessor(AdImageProcessor):
             self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
             self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
             
-            print(f"intensity matrix: {self.intensity_matrix}\n")
-            print(f"comx matrix: {self.com_x_matrix}\n")
-            print(f"comy matrix: {self.com_y_matrix}")
+            # print(f"intensity matrix: {self.intensity_matrix}\n")
+            # print(f"comx matrix: {self.com_x_matrix}\n")
+            # print(f"comy matrix: {self.com_y_matrix}")
 
             # print("about to append the analysis\n")
             # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
-
+            # TODO: Create pv object out of the matrices and append them to the original pvobject
+            analysis_object_fields = {"Analysis":{"Intensity": [DOUBLE]}}
+            # Get the existing structure and data
+            current_structure = pvObject.getStructureDict()
+            current_data = pvObject.get()
             
-            #TODO: Create pv object out of the matrices and append them to the original pvobject
-            # analysis_object_fields = {"Analysis":{"Intensity": [USHORT]}}
+            # Merge current structure with new fields
+            updated_structure = {**current_structure, **analysis_object_fields}
+            
+            # Create a new PvObject with updated structure
+            updated_pvObject = PvObject(updated_structure)
+            print(updated_pvObject)
+            
+            # Set original data to the updated PvObject
+            updated_pvObject.set(current_data)
+            
             # pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
-            # pvObject.set({"Analysis":{"Intensity": self.intensity_matrix.ravel().astype(np.uint16)}})
-            
-            return pvObject
+            # print(pvObject.getSturctureDict())
+            # pvObject.set({"Analysis":{"Intensity": self.intensity_matrix.ravel()}})
 
-    def add_field_to_pvobject(self, pv_obj, new_fields):
-        # Get the existing structure and data
-        current_structure = pv_obj.getStructureDict()
-        current_data = pv_obj.get()
+            #Failed attempt to get analysis working: it can't access attributes that aren't there
+            # pvObject.setPvObject({'intensity': self.intensity_matrix.ravel(), 'comX': self.com_x_matrix, 'comY': self.com_y_matrix})
+
+            
+            return updated_pvObject
+
+    # def add_field_to_pvobject(self, pv_obj, new_fields):
+    #     # Get the existing structure and data
+    #     current_structure = pv_obj.getStructureDict()
+    #     current_data = pv_obj.get()
         
-        # Merge current structure with new fields
-        updated_structure = {**current_structure, **new_fields}
+    #     # Merge current structure with new fields
+    #     updated_structure = {**current_structure, **new_fields}
         
-        # Create a new PvObject with updated structure
-        updated_pvObject = PvObject(updated_structure)
+    #     # Create a new PvObject with updated structure
+    #     updated_pvObject = PvObject(updated_structure)
+    #     print(updated_pvObject.getStructureDict())
         
-        # Set original data to the updated PvObject
-        updated_pvObject.set(current_data)
+    #     # Set original data to the updated PvObject
+    #     # updated_pvObject.set(current_data)
         
-        return updated_pvObject
+    #     return updated_pvObject
 
     ########################################## Process monitor update ####################################################
     def process(self, pvObject):
