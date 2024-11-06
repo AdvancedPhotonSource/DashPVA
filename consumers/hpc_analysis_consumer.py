@@ -197,20 +197,27 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
             # TODO: Create pv object out of the matrices and append them to the original pvobject
-            analysis_object_fields = {"Analysis":{"Intensity": [DOUBLE]}}
-            # Get the existing structure and data
-            current_structure = pvObject.getStructureDict()
-            current_data = pvObject.get()
+            current_fields = pvObject.getStructureDict()
+            analysis_object = PvObject({"Analysis":{"Intensity": [DOUBLE]}}, {"Analysis": {"Intensity":self.intensity_matrix}})
+            # WHY ISN'T THIS WORKING? IT WORKS ON ON THE PVOBJECT THAT IS TAKEN AS INPUT TO THE FUNCTION
+            analysis_object_fields = analysis_object.getStuctureDict()
+            updated_fields = {**current_fields, **updated_fields}
+            print(updated_fields)
+            #analysis_object_fields = pva.NtNdArray(analysis_object_fields.getStructureDict())
+
+            # # Get the existing structure and data
+            # current_structure = pvObject.getStructureDict()
+            # current_data = pvObject.get()
             
-            # Merge current structure with new fields
-            updated_structure = {**current_structure, **analysis_object_fields}
+            # # Merge current structure with new fields
+            # updated_structure = {**current_structure, **analysis_object_fields}
             
-            # Create a new PvObject with updated structure
-            updated_pvObject = PvObject(updated_structure)
-            print(updated_pvObject)
+            # # Create a new PvObject with updated structure
+            # updated_pvObject = PvObject(updated_structure)
+            # print(updated_pvObject)
             
-            # Set original data to the updated PvObject
-            updated_pvObject.set(current_data)
+            # # Set original data to the updated PvObject
+            # updated_pvObject.set(current_data)
             
             # pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
             # print(pvObject.getSturctureDict())
@@ -220,24 +227,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # pvObject.setPvObject({'intensity': self.intensity_matrix.ravel(), 'comX': self.com_x_matrix, 'comY': self.com_y_matrix})
 
             
-            return updated_pvObject
-
-    # def add_field_to_pvobject(self, pv_obj, new_fields):
-    #     # Get the existing structure and data
-    #     current_structure = pv_obj.getStructureDict()
-    #     current_data = pv_obj.get()
-        
-    #     # Merge current structure with new fields
-    #     updated_structure = {**current_structure, **new_fields}
-        
-    #     # Create a new PvObject with updated structure
-    #     updated_pvObject = PvObject(updated_structure)
-    #     print(updated_pvObject.getStructureDict())
-        
-    #     # Set original data to the updated PvObject
-    #     # updated_pvObject.set(current_data)
-        
-    #     return updated_pvObject
+            # return updated_pvObject
 
     ########################################## Process monitor update ####################################################
     def process(self, pvObject):
@@ -285,7 +275,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
                 self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
             
-            pvObject = self.process_analysis_objects(pvObject)
+            self.process_analysis_objects(pvObject)
 
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
