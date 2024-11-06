@@ -134,19 +134,19 @@ class HpcAnalysisProcessor(AdImageProcessor):
         
         """
         print("I am in the analysis consumer")
-        if self.cache_id is not None:
-            xpos_det = self.positions_cache[self.cache_id, 0]
-            xpos_plan = self.x_positions[self.cache_id]
-            ypos_det = self.positions_cache[self.cache_id, 1]
-            ypos_plan = self.y_positions[self.cache_id]
+        # if self.cache_id is not None:
+        #     xpos_det = self.positions_cache[self.cache_id, 0]
+        #     xpos_plan = self.x_positions[self.cache_id]
+        #     ypos_det = self.positions_cache[self.cache_id, 1]
+        #     ypos_plan = self.y_positions[self.cache_id]
 
-            # print(f'scan id: {self.cache_id}')
-            # print(f'detector: {xpos_det},{ypos_det}')
-            # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
+        #     # print(f'scan id: {self.cache_id}')
+        #     # print(f'detector: {xpos_det},{ypos_det}')
+        #     # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
 
-            x1, x2 = self.x_positions[0], self.x_positions[1]
-            y1, y2 = self.y_positions[0], self.y_positions[30]
-            print(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
+        #     x1, x2 = self.x_positions[0], self.x_positions[1]
+        #     y1, y2 = self.y_positions[0], self.y_positions[30]
+        #     print(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
             #self.logger.debug(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
 
 
@@ -154,14 +154,14 @@ class HpcAnalysisProcessor(AdImageProcessor):
         if True: 
             
             self.call_times += 1
-            if self.call_times % 5 == 0:
-                print("I am in the analysis Consumer\n")
+            # if self.call_times % 5 == 0:
+            #     print("I am in the analysis Consumer\n")
 
             image_rois = self.images_cache[:,
                                             self.roi_y:self.roi_y + self.roi_height,
                                             self.roi_x:self.roi_x + self.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
             #self.logger.debug(f'image roi shape: {image_rois.shape}')
-            print(f'image roi shape: {image_rois.shape}\n')
+            # print(f'image roi shape: {image_rois.shape}\n')
 
             
             intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
@@ -188,23 +188,21 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # Populate the matrices using the indices
             self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
             self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
+            
+            print(f"intensity matrix: {self.intensity_matrix}\n")
+            print(f"comx matrix: {self.com_x_matrix}\n")
+            print(f"comy matrix: {self.com_y_matrix}")
 
-            print("about to append the analysis\n")
-            print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
+            # print("about to append the analysis\n")
+            # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
 
             
             #TODO: Create pv object out of the matrices and append them to the original pvobject
-            analysis_object_fields = {"Analysis":{"Intensity": [USHORT]}}
-            pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
-            pvObject.set({'Analysis':{"Intensity":self.intensity_matrix.ravel().astype(np.uint16)}})
-            #  PvObject(
-            #                             {
-            #                             "intensity": self.intensity_matrix.ravel(),
-            #                             "comX": self.com_x_matrix.ravel(),
-            #                             "comY": self.com_y_matrix.ravel(),
-            #                             "shape": self.intensity_matrix.shape # can be any of their shape as all matrices should have the same dimensions
-            #                             })
+            # analysis_object_fields = {"Analysis":{"Intensity": [USHORT]}}
+            # pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
+            # pvObject.set({"Analysis":{"Intensity": self.intensity_matrix.ravel().astype(np.uint16)}})
+            
             return pvObject
 
     def add_field_to_pvobject(self, pv_obj, new_fields):
