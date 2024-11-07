@@ -133,7 +133,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         
         """
-        print("I am in the analysis consumer")
+        # print("I am in the analysis consumer")
         # if self.cache_id is not None:
         #     xpos_det = self.positions_cache[self.cache_id, 0]
         #     xpos_plan = self.x_positions[self.cache_id]
@@ -197,7 +197,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
             # TODO: Create pv object out of the matrices and append them to the original pvobject
-            analysis_object = PvObject({'value':{"Intensity": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel()}})
+            analysis_object = PvObject({'value':{"Intensity": [DOUBLE], "ComX": [DOUBLE], "ComY": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel(), "ComX": self.com_x_matrix.ravel(), "ComY": self.com_y_matrix.ravel()}})
             pvAttr = pva.NtAttribute('Analysis', analysis_object)
 
             frameAttributes.append(pvAttr)
@@ -234,7 +234,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
             ###############Failed attempt to get analysis working: it can't access attributes that aren't there
             # pvObject.setPvObject({'intensity': self.intensity_matrix.ravel(), 'comX': self.com_x_matrix, 'comY': self.com_y_matrix})
 
-            
             # return updated_pvObject
 
     ########################################## Process monitor update ####################################################
