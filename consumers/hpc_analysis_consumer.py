@@ -129,11 +129,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
         self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
 
-    def process_analysis_objects(self, pvObject=None,frameAttributes=None):
+    def process_analysis_objects(self, frameAttributes=None):
         """
         
         """
-        # print("I am in the analysis consumer")
         # if self.cache_id is not None:
         #     xpos_det = self.positions_cache[self.cache_id, 0]
         #     xpos_plan = self.x_positions[self.cache_id]
@@ -146,24 +145,16 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
         #     x1, x2 = self.x_positions[0], self.x_positions[1]
         #     y1, y2 = self.y_positions[0], self.y_positions[30]
-        #     print(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
-            #self.logger.debug(f'xpos length: {len(self.x_positions)} ypos length: {len(self.y_indices)}\n')
 
 
         # (np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2)))
         if True: 
             
             self.call_times += 1
-            # if self.call_times % 5 == 0:
-            #     print("I am in the analysis Consumer\n")
-
             image_rois = self.images_cache[:,
                                             self.roi_y:self.roi_y + self.roi_height,
                                             self.roi_x:self.roi_x + self.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-            #self.logger.debug(f'image roi shape: {image_rois.shape}')
-            # print(f'image roi shape: {image_rois.shape}\n')
 
-            
             intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
             intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
             intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
@@ -188,53 +179,12 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # Populate the matrices using the indices
             self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
             self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-            
-            # print(f"intensity matrix: {self.intensity_matrix}\n")
-            # print(f"comx matrix: {self.com_x_matrix}\n")
-            # print(f"comy matrix: {self.com_y_matrix}")
-
-            # print("about to append the analysis\n")
-            # print(f"intensity matrix shape: {self.intensity_matrix.shape}\n")
 
             # TODO: Create pv object out of the matrices and append them to the original pvobject
             analysis_object = PvObject({'value':{"Intensity": [DOUBLE], "ComX": [DOUBLE], "ComY": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel(), "ComX": self.com_x_matrix.ravel(), "ComY": self.com_y_matrix.ravel()}})
             pvAttr = pva.NtAttribute('Analysis', analysis_object)
 
             frameAttributes.append(pvAttr)
-
-            ############### Failure 4, it fails to use a call a function that is available to PvObjects so it throws errors
-            # current_fields = pvObject.getStructureDict()
-            # analysis_object = PvObject({"Analysis":{"Intensity": [DOUBLE]}}, {"Analysis": {"Intensity":self.intensity_matrix.ravel()}})
-            # # WHY ISN'T THIS WORKING? IT WORKS ON ON THE PVOBJECT THAT IS TAKEN AS INPUT TO THE FUNCTION
-            # analysis_object_fields = analysis_object.getStuctureDict()
-            # updated_fields = {**current_fields, **updated_fields}
-            # print(updated_fields)
-            # analysis_object_fields = pva.NtNdArray(analysis_object_fields.getStructureDict())
-
-            ############### Failure 2 and 3 trying to update it with and without a funciton that did code below
-
-            # # Get the existing structure and data
-            # current_structure = pvObject.getStructureDict()
-            # current_data = pvObject.get()
-            
-            # # Merge current structure with new fields
-            # updated_structure = {**current_structure, **analysis_object_fields}
-            
-            # # Create a new PvObject with updated structure
-            # updated_pvObject = PvObject(updated_structure)
-            # print(updated_pvObject)
-            
-            # # Set original data to the updated PvObject
-            # updated_pvObject.set(current_data)
-            
-            # pvObject = self.add_field_to_pvobject(pvObject, analysis_object_fields)
-            # print(pvObject.getSturctureDict())
-            # pvObject.set({"Analysis":{"Intensity": self.intensity_matrix.ravel()}})
-
-            ###############Failed attempt to get analysis working: it can't access attributes that aren't there
-            # pvObject.setPvObject({'intensity': self.intensity_matrix.ravel(), 'comX': self.com_x_matrix, 'comY': self.com_y_matrix})
-
-            # return updated_pvObject
 
     ########################################## Process monitor update ####################################################
     def process(self, pvObject):
