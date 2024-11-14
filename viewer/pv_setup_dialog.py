@@ -29,7 +29,7 @@ class PVSetupDialog(QDialog):
         if self.file_mode == 'w':
             return
         with open(self.path, "r") as config_json:
-            self.config_dict = json.load(config_json)
+            self.config_dict: dict = json.load(config_json)
             for key, value in self.config_dict.items():
                 # set the label part of the form widget
                 label = QLabel(key + ':')

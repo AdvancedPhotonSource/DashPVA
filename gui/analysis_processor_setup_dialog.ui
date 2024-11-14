@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QDialogButtonBox" name="buttonBox">
+  <widget class="QDialogButtonBox" name="btn_accept_reject">
    <property name="geometry">
     <rect>
      <x>110</x>
@@ -244,7 +244,7 @@ QPushButton::pressed {
  <resources/>
  <connections>
   <connection>
-   <sender>buttonBox</sender>
+   <sender>btn_accept_reject</sender>
    <signal>accepted()</signal>
    <receiver>Dialog</receiver>
    <slot>accept()</slot>
@@ -260,7 +260,7 @@ QPushButton::pressed {
    </hints>
   </connection>
   <connection>
-   <sender>buttonBox</sender>
+   <sender>btn_accept_reject</sender>
    <signal>rejected()</signal>
    <receiver>Dialog</receiver>
    <slot>reject()</slot>

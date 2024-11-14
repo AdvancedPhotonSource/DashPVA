@@ -1,6 +1,6 @@
 import sys
 import pyqtgraph as pg
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
+from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 from PyQt5 import uic
 import numpy as np

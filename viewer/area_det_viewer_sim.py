@@ -25,7 +25,7 @@ rot_gen = rotation_cycle(1,5)
                 
 class ConfigDialog(QDialog):
 
-    def __init__(self, c_address='', cache_freq=10):
+    def __init__(self):
         """
         Class that does initial setup for getting the pva prefix, collector address,
         and the path to the json that stores the pvs that will be observed
@@ -39,44 +39,40 @@ class ConfigDialog(QDialog):
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.prefix = self.le_pv_prefix.text()
-        self.collector_address = c_address
-        self.pvs_path =  ''
-        self.cache_frequency = cache_freq
+        self.input_channel = ""
+        self.roi_config =  ""
         # class can be prefilled with text
         self.init_ui()
 
-        self.btn_load.clicked.connect(self.json_open_file_dialog)
-        self.btn_edit.clicked.connect(self.json_open_file_dialog)
-        self.btn_new_config.clicked.connect(self.new_pv_setup)
-        self.btn_edit_accept_reject.accepted.connect(self.edit_pv_setup)
-        self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
+        # self.btn_browse.clicked.connect(self.json_open_file_dialog)
+        # self.btn_edit.clicked.connect(self.json_open_file_dialog)
+        self.btn_create.clicked.connect(self.new_pv_setup)
+        self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
     
     def init_ui(self):
         """
         function called which prefills text in the Line Editors
         """
-        self.le_pv_prefix.setText(self.prefix)
-        self.le_collector.setText(self.collector_address)
-        self.sb_collector_frequency.setValue(self.cache_frequency)
+        self.le_input_channel.setText(self.le_input_channel.text())
+        self.le_roi_config.setText(self.le_roi_config.text())
 
 
-    def json_open_file_dialog(self):
-        """
-        Function called when you want to get the file path to a json file.
-        is split between 2 buttons:
-        - file path for the config you wan't to load and monitor
-        - file path for a config you want to edit
-        """
-        btn_sender = self.sender()
-        sender_name = btn_sender.objectName()
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json)')
+    # def json_open_file_dialog(self):
+    #     """
+    #     Function called when you want to get the file path to a json file.
+    #     is split between 2 buttons:
+    #     - file path for the config you wan't to load and monitor
+    #     - file path for a config you want to edit
+    #     """
+    #     btn_sender = self.sender()
+    #     sender_name = btn_sender.objectName()
+    #     self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json)')
 
-        if sender_name.endswith('load'):
-            self.le_load_file_path.setText(self.pvs_path)
-        else:
-            self.le_edit_file_path.setText(self.pvs_path)
+    #     if sender_name.endswith('load'):
+    #         self.le_load_file_path.setText(self.pvs_path)
+    #     else:
+    #         self.le_edit_file_path.setText(self.pvs_path)
 
     def new_pv_setup(self):
         """
@@ -98,30 +94,21 @@ class ConfigDialog(QDialog):
         Function called when the last Dialog Accept button is pressed.
         Starts the ImageWindow process passing all filled out information to it and initializing it.
         """
-        self.prefix = self.le_pv_prefix.text()
-        self.collector_address = self.le_collector.text()
-        self.pvs_path = self.le_load_file_path.text()
-        self.cache_frequency = self.sb_collector_frequency.value()
-        if osp.isfile(self.pvs_path) ^ (self.pvs_path == ''):
-            if self.cache_frequency > 0 and self.collector_address != '':
-                self.image_viewer = ImageWindow(prefix=self.prefix,
-                                                collector_address=self.collector_address,
-                                                file_path=self.pvs_path,
-                                                cache_frequency=self.cache_frequency) 
-            else:
-                self.image_viewer = ImageWindow(prefix=self.prefix,
-                                                collector_address=self.collector_address,
-                                                file_path=self.pvs_path,) 
+        self.input_channel = self.le_input_channel.text()
+        self.roi_config = self.le_roi_config.text()
+        if osp.isfile(self.roi_config) or (self.roi_config == ''):
+            self.image_viewer = ImageWindow(input_channel=self.input_channel,
+                                            file_path=self.roi_config,) 
         else:
             print('File Path Doesn\'t Exitst')  
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
-            self.new_dialog = ConfigDialog(prefix=self.prefix, c_address=self.collector_address, cache_freq=self.cache_frequency)
+            self.new_dialog = ConfigDialog()
             self.new_dialog.show()    
 
 
 class PVA_Reader:
 
-    def __init__(self, pva_prefix='s6lambda1', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, roi_config_filepath: str = 'pv_configs/PVs.json'):
         """
         Variables needed for monitoring a connection.
         Provides connections and to broadcasted images and PVAs
@@ -132,20 +119,18 @@ class PVA_Reader:
         collector_address (str) -- address to the collector server
         config_filepath (str) -- file path to where the config json file is located
         """
-        self.pva_prefix = pva_prefix        
+        self.input_channel = input_channel        
         self.provider = provider
-        self.collector_address = collector_address
-        self.config_filepath = config_filepath
-        self.pva_address = self.pva_prefix + ':Pva1:Image' if self.collector_address == "" else self.collector_address
-        self.channel = pva.Channel(self.pva_address, self.provider)
+        self.roi_config_filepath = roi_config_filepath
+        self.channel = pva.Channel(self.input_channel, self.provider)
         # variables that will store pva data
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
         self.attributes = {}
         self.timestamp = None
-        self.images_cache = None
-        self.positions_cache = None
+        # self.images_cache = None
+        # self.positions_cache = None
         self.last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
@@ -153,13 +138,13 @@ class PVA_Reader:
         self.pvs = {}
         self.metadata = {}
         self.num_rois = 0
-        self.cache_id = None
+        # self.cache_id = None
         self.id_diff = 0
-        self.cache_id_gen = rotation_cycle(0,max_cache_size)
+        # self.cache_id_gen = rotation_cycle(0,max_cache_size)
         self.first_scan_detected = False
 
-        if self.config_filepath != '':
-            with open(self.config_filepath, 'r') as json_file:
+        if self.roi_config_filepath != '':
+            with open(self.roi_config_filepath, 'r') as json_file:
                 # loads the pvs in the json file into a python dictionary
                 self.pvs = json.load(json_file)
         
@@ -173,57 +158,22 @@ class PVA_Reader:
         pv (PVObject) -- Received by channel Monitor
         """
         self.pva_object = pv
-        self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
+        self.parse_pva_attributes()
 
-        if self.collector_address != '':
-            # TODO: make so key/value that is detected can be defined in setup dialog rather than hard coded
-            x_value = self.attributes.get('x')[0]['value']
-            y_value = self.attributes.get('y')[0]['value']
-           
-            # TODO: make it so that starting pv has a tolerance for when it's detected similar to check in analysis windows 
-            if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
-                self.first_scan_detected = True
-                print(f"First Scan detected...")
-    
-            if self.first_scan_detected:
-                if self.id_diff> 0:
-                    for i in range(self.id_diff):
-                        self.cache_id = next(self.cache_id_gen)
-                    self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN 
-                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
-                else:
-                    self.cache_id = next(self.cache_id_gen)
-                    self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-                    self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-                    self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+        
 
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:
             self.data_type = list(self.pva_object['value'][0].keys())[0]
     
-    def parse_pva_ndattributes(self):
+    def parse_pva_attributes(self):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
         if self.pva_object is not None:
-            obj_dict = self.pva_object.get()
-        else:
-            return None
-        
-        attributes = {}
-        for attr in obj_dict.get("attribute", []):
-            name = attr['name']
-            value = attr['value']
-            attributes[name] = value
-
-        for value in ["codec", "uniqueId", "uncompressedSize"]:
-            if value in self.pva_object:
-                attributes[value] = self.pva_object[value]
-        
-        self.attributes = attributes
-
+            self.attributes: dict = self.pva_object.get().get("attribute", {})
+            
     def pva_to_image(self):
         """
         Parses through the PVA Object to retrieve the size and use that to shape incoming image.
@@ -269,6 +219,7 @@ class PVA_Reader:
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
+        self.pva_prefix = self.input_channel.split(":")[0]
         if self.pvs and self.pvs is not None:
             try:
                 for key in self.pvs:
@@ -304,7 +255,7 @@ class PVA_Reader:
 
 class ImageWindow(QMainWindow):
 
-    def __init__(self, prefix='s6lambda1', collector_address='', file_path='', cache_frequency=100): 
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path='', cache_frequency=100): 
         """
         This is the Main Window that first pops up and allows a user to type 
         a detector prefix in and connect to it. It does things like allow one 
@@ -325,9 +276,8 @@ class ImageWindow(QMainWindow):
         self.rois = []
         self.stats_dialog = {}
         self.stats_data = {}
-        self._prefix = prefix
-        self.pv_prefix.setText(self._prefix)
-        self._collector_address = collector_address
+        self._input_channel = input_channel
+        self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -397,7 +347,7 @@ class ImageWindow(QMainWindow):
         try:
             # a double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(pva_prefix=self._prefix, collector_address=self._collector_address, config_filepath=self._file_path)
+                self.reader = PVA_Reader(input_channel=self._input_channel, roi_config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
                 if self.reader.channel.get():
                     self.start_timers()
@@ -405,7 +355,7 @@ class ImageWindow(QMainWindow):
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                self.reader = PVA_Reader(pva_prefix=self._prefix, collector_address=self._collector_address, config_filepath=self._file_path)
+                self.reader = PVA_Reader(input_channel=self._input_channel, roi_config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
                 if self.reader.channel.get():
                     self.start_timers()
@@ -416,7 +366,7 @@ class ImageWindow(QMainWindow):
             self.add_rois()
         except:
             
-            print(f'Failed to Connect to {self._prefix} or {self._collector_address}')
+            print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader
@@ -644,7 +594,7 @@ class ImageWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = ConfigDialog(c_address='collector:1:output')
+    window = ConfigDialog()
     window.show()
 
     sys.exit(app.exec_())
