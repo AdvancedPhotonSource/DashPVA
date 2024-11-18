@@ -129,19 +129,20 @@ class PVA_Reader:
         self.shape = (0,0)
         self.attributes = {}
         self.timestamp = None
-        # self.images_cache = None
-        # self.positions_cache = None
+        self.data_type = None
+        # variables used for later logic
+        # # self.images_cache = None
+        # # self.positions_cache = None
         self.last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
-        self.data_type = None
         self.pvs = {}
         self.metadata = {}
         self.num_rois = 0
         # self.cache_id = None
         self.id_diff = 0
         # self.cache_id_gen = rotation_cycle(0,max_cache_size)
-        self.first_scan_detected = False
+        # self.first_scan_detected = False
 
         if self.roi_config_filepath != '':
             with open(self.roi_config_filepath, 'r') as json_file:
@@ -161,6 +162,8 @@ class PVA_Reader:
         self.parse_image_data_type()
         self.pva_to_image()
         self.parse_pva_attributes()
+        # print(f"missed: {self.frames_missed}")
+        # print(f"received: {self.frames_received}")
 
         
 
@@ -204,6 +207,7 @@ class PVA_Reader:
                         self.id_diff = 0
                 self.last_array_id = current_array_id
         except:
+            #print("I am in pva to image exception")
             self.frames_missed += 1
             # return 1
             

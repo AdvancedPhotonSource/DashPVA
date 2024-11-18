@@ -99,7 +99,7 @@ class AnalysisWindow(QMainWindow):
         self.xpos_path = xpos_path
         self.ypos_path = ypos_path
         self.save_path = save_path
-        self.load_path()
+        # self.load_path()
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
@@ -126,19 +126,19 @@ class AnalysisWindow(QMainWindow):
         else:
             self.timer_plot.start(int(1000/self.calc_freq.value()))
 
-    def load_path(self):
-        """
-        This function loads the path information for the HDF5 file and uses it to populate other variables.
-        """
-        # TODO: These positions are references, use only when we miss frames.
-        self.x_positions = np.load(self.xpos_path)
-        self.y_positions = np.load(self.ypos_path)
+    # def load_path(self):
+    #     """
+    #     This function loads the path information for the HDF5 file and uses it to populate other variables.
+    #     """
+    #     # TODO: These positions are references, use only when we miss frames.
+    #     self.x_positions = np.load(self.xpos_path)
+    #     self.y_positions = np.load(self.ypos_path)
     
-        self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
-        self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
+    #     self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
+    #     self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
 
-        self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
-        self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
+    #     self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
+    #     self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
          
     def save_hdf5(self):
         """
@@ -250,74 +250,36 @@ class AnalysisWindow(QMainWindow):
         Redraws plots based on rate entered in hz box.
         Processes the images based on the different settings.
         """
-        if self.parent.reader.first_scan_detected == False:
-            self.status_text.setText("Waiting for the first scan...")
+        # if self.parent.reader.first_scan_detected == False:
+        #     self.status_text.setText("Waiting for the first scan...")
+        # else:
+        self.call_times += 1
+        analysis_attributes = self.parent.reader.attributes[-1]
+        #print(analysis_attributes)
+        intensity = analysis_attributes["value"][0]["value"].get("Intensity",[])
+        com_x = analysis_attributes["value"][0]["value"].get("ComX",[])
+        com_y = analysis_attributes["value"][0]["value"].get("ComY",[])
+        # print(intensity)
+        size = int(np.sqrt(len(intensity)))
+        intensity_matrix = np.reshape(intensity, (size, size))
+        com_x_matrix = np.reshape(com_x,(size, size))
+        com_y_matrix = np.reshape(com_y,(size, size))
+
+        # USING IMAGE VIEW:
+        if self.call_times == 5:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+
+            self.view_comx.setLevels(0, self.roi_width.value())
+            self.view_comy.setLevels(0,self.roi_height.value())
         else:
-
-            if self.call_times == 0:
-                    self.status_text.setText("Scanning...")
-            
-            if self.parent.reader.cache_id is not None:
-                scan_id = self.parent.reader.cache_id
-                xpos_det = self.parent.reader.positions_cache[scan_id, 0]
-                xpos_plan = self.x_positions[scan_id]
-                ypos_det = self.parent.reader.positions_cache[scan_id, 1]
-                ypos_plan = self.y_positions[scan_id]
-
-                # print(f'scan id: {scan_id}')
-                # print(f'detector: {xpos_det},{ypos_det}')
-                # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
-
-                x1, x2 = self.x_positions[0], self.x_positions[1]
-                y1, y2 = self.y_positions[0], self.y_positions[30]
-
-            if ((np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2))): 
-                self.call_times += 1
-
-                image_rois = self.parent.reader.images_cache[:,
-                                                        self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
-                                                        self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-                
-                intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
-                intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
-                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
-
-                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
-
-                # Compute weighted sums
-                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-                # Calculate COM
-                com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
-                com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
-                #filter out inf
-                com_x[com_x==np.nan] = 0 # time complexity = O(1)
-                com_y[com_y==np.nan] = 0 # time complexity = O(1)
-                #Two lines below don't work if unique positions are messed by incomplete x y positions 
-                self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
-                # gets the shape of the image to set the length of the axis
-                self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                # Populate the matrices using the indices
-                self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
-                self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-                
-                # USING IMAGE VIEW:
-                if self.call_times == 5:
-                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoHistogramRange=False)
-
-                    self.view_comx.setLevels(0, self.roi_width.value())
-                    self.view_comy.setLevels(0,self.roi_height.value())
-                else:
-                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            else:
-                self.parent.reader.images_cache[scan_id,:,:] = 0
-                self.parent.reader.frames_missed += 1
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            # else:
+            #     self.parent.reader.images_cache[scan_id,:,:] = 0
+            #     self.parent.reader.frames_missed += 1
 
     def init_ui(self):
         """
