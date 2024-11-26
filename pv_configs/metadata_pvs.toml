@@ -1,0 +1,39 @@
+#Section used specifically for Metadata Pvs
+[metadata]
+
+[metadata.pva]
+
+[metadata.ca]
+x = "x"
+y = "y"
+
+# Section specifically for ROI PVs
+[rois]
+
+[rois.ROI1]
+MinX = "dp-ADSim:ROI1:MinX"
+MinY = "dp-ADSim:ROI1:MinY"
+SizeX = "dp-ADSim:ROI1:SizeX"
+SizeY = "dp-ADSim:ROI1:SizeY"
+
+[rois.ROI2]
+MinX = "dp-ADSim:ROI2:MinX"
+MinY = "dp-ADSim:ROI2:MinY"
+SizeX = "dp-ADSim:ROI2:SizeX"
+SizeY = "dp-ADSim:ROI2:SizeY"
+
+[rois.ROI3]
+MinX = "dp-ADSim:ROI3:MinX"
+MinY = "dp-ADSim:ROI3:MinY"
+SizeX = "dp-ADSim:ROI3:SizeX"
+SizeY = "dp-ADSim:ROI3:SizeY"
+
+[rois.ROI4]
+MinX = "dp-ADSim:ROI4:MinX"
+MinY = "dp-ADSim:ROI4:MinY"
+SizeX = "dp-ADSim:ROI4:SizeX"
+SizeY = "dp-ADSim:ROI4:SizeY"
+
+
+
+[stats]

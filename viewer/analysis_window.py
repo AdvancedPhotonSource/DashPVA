@@ -248,11 +248,8 @@ class AnalysisWindow(QMainWindow):
     def plot_images(self):
         """
         Redraws plots based on rate entered in hz box.
-        Processes the images based on the different settings.
         """
-        # if self.parent.reader.first_scan_detected == False:
-        #     self.status_text.setText("Waiting for the first scan...")
-        # else:
+
         self.call_times += 1
         analysis_attributes = self.parent.reader.attributes[-1]
         #print(analysis_attributes)
@@ -277,9 +274,6 @@ class AnalysisWindow(QMainWindow):
             self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            # else:
-            #     self.parent.reader.images_cache[scan_id,:,:] = 0
-            #     self.parent.reader.frames_missed += 1
 
     def init_ui(self):
         """
