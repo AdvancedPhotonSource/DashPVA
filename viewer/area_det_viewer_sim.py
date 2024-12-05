@@ -1,13 +1,13 @@
 import sys
-import json
-import copy
+import toml
+# import copy
 import time
 import numpy as np
 import os.path as osp
 import pvaccess as pva
 import pyqtgraph as pg
 from PyQt5 import uic
-from epics import caget
+# from epics import caget
 from epics import camonitor
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
@@ -22,7 +22,8 @@ from scan_plan_dialog import ScanPlanDialog
 
 max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file 
 rot_gen = rotation_cycle(1,5)         
-                
+
+
 class ConfigDialog(QDialog):
 
     def __init__(self):
@@ -43,13 +44,13 @@ class ConfigDialog(QDialog):
         self.roi_config =  ""
         # class can be prefilled with text
         self.init_ui()
-
-        # 233self.btn_browse.clicked.connect(self.browse_file_dialog)
+        
+        # Connecting signasl to 
         # self.btn_edit.clicked.connect(self.json_open_file_dialog)
+        self.btn_browse.clicked.connect(self.browse_file_dialog)
         self.btn_create.clicked.connect(self.new_pv_setup)
         self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
-    
     def init_ui(self):
         """
         function called which prefills text in the Line Editors
@@ -57,18 +58,16 @@ class ConfigDialog(QDialog):
         self.le_input_channel.setText(self.le_input_channel.text())
         self.le_roi_config.setText(self.le_roi_config.text())
 
-
     def browse_file_dialog(self):
         """
-        Function called when you want to get the file path to a json file.
+        Function called when you want to get the file path to a toml file.
         is split between 2 buttons:
         - file path for the config you wan't to load and monitor
         - file path for a config you want to edit
         """
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json)')
+        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
 
         self.le_roi_config.setText(self.pvs_path)
-
 
     def new_pv_setup(self):
         """
@@ -104,7 +103,7 @@ class ConfigDialog(QDialog):
 
 class PVA_Reader:
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, roi_config_filepath: str = 'pv_configs/PVs.json'):
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
         """
         Variables needed for monitoring a connection.
         Provides connections and to broadcasted images and PVAs
@@ -117,29 +116,35 @@ class PVA_Reader:
         """
         self.input_channel = input_channel        
         self.provider = provider
-        self.roi_config_filepath = roi_config_filepath
+        self.config_filepath = config_filepath
         self.channel = pva.Channel(self.input_channel, self.provider)
+        self.pva_prefix = "dp-ADSim" # input_channel.split(":")[0]
         # variables that will store pva data
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
-        self.attributes = {}
+        self.attributes = []
         self.timestamp = None
         self.data_type = None
+        # variables used for parsing analysis PV
+        self.analysis_index = None
+        self.analyis_exists = True
         # variables used for later logic
         self.last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
-        self.pvs = {}
-        self.metadata = {}
-        self.num_rois = 0
         self.id_diff = 0
+        # variables used for ROI and Stats PVs
+        self.rois = {}
+        self.stats = {}
 
-        if self.roi_config_filepath != '':
-            with open(self.roi_config_filepath, 'r') as json_file:
+        if self.config_filepath != '':
+            with open(self.config_filepath, 'r') as toml_file:
                 # loads the pvs in the json file into a python dictionary
-                self.pvs = json.load(json_file)
-        
+                pvs:dict = toml.load(toml_file)
+                self.stats: dict = pvs["stats"]
+                # print(self.stats)
+
     def pva_callbackSuccess(self, pv):
         """
         Function is called every time a PV change is monitored.
@@ -152,8 +157,12 @@ class PVA_Reader:
         self.pva_object = pv
         self.parse_image_data_type()
         self.pva_to_image()
-        self.parse_pva_attributes()        
-
+        self.parse_pva_attributes()
+        self.parse_roi_pvs()
+        if (self.analysis_index is None) and (self.analyis_exists): #go in with the assumption analysis exists, is changed to false otherwise
+            self.analysis_index = self.locate_analysis_index()
+            # print(self.analysis_index)
+              
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:
@@ -162,7 +171,32 @@ class PVA_Reader:
     def parse_pva_attributes(self):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
         if self.pva_object is not None:
-            self.attributes: dict = self.pva_object.get().get("attribute", {})
+            self.attributes: list = self.pva_object.get().get("attribute", [])
+    
+    def locate_analysis_index(self):
+        if self.attributes:
+            for i in range(len(self.attributes)):
+                attr_pv: dict = self.attributes[i]
+                if attr_pv.get("name", "") == "Analysis":
+                    return i
+            else:
+                self.analyis_exists = False
+                return None
+            
+    def parse_roi_pvs(self):
+        if self.attributes:
+            for i in range(len(self.attributes)):
+                attr_pv: dict = self.attributes[i]
+                attr_name:str = attr_pv.get("name", "")
+                if "ROI" in attr_name:
+                    name_components = attr_name.split(":")
+                    prefix = name_components[0]
+                    roi_key = name_components[1]
+                    pv_key = name_components[2]
+                    pv_value = attr_pv["value"][0]["value"]
+                    # can't append simply by using 2 keys in a row, there must be a value to call to then add to
+                    # then adds the key to the inner dictionary with update
+                    self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
             
     def pva_to_image(self):
         """
@@ -205,17 +239,6 @@ class PVA_Reader:
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
-        self.pva_prefix = self.input_channel.split(":")[0]
-        if self.pvs and self.pvs is not None:
-            try:
-                for key in self.pvs:
-                    if f'{self.pvs[key]}'.startswith('ROI'):
-                        metadata_name = f'{self.pva_prefix}:{self.pvs[key]}'
-                        self.metadata[metadata_name] = caget(metadata_name)
-                        if not(f'{self.pvs[key]}'.startswith(f'ROI{self.num_rois}')):
-                            self.num_rois += 1                        
-            except:
-                print('Failed to connect to PV ROIs/Stats')
         
     def stop_channel_monitor(self):
         """Stops all monitorg and callback functions from continuing"""
@@ -270,6 +293,7 @@ class ImageWindow(QMainWindow):
         self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
+        self.timer_plot.timeout.connect(self.update_rois)
         #for testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
@@ -340,7 +364,7 @@ class ImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVA_Reader(
                                         input_channel=self._input_channel, 
-                                        roi_config_filepath=self._file_path
+                                        config_filepath=self._file_path
                                         )
                 self.reader.start_channel_monitor()
             else:
@@ -349,7 +373,7 @@ class ImageWindow(QMainWindow):
                 del self.reader
                 self.reader = PVA_Reader(
                                         input_channel=self._input_channel, 
-                                        roi_config_filepath=self._file_path
+                                        config_filepath=self._file_path
                                         )
                 self.reader.start_channel_monitor()
             
@@ -357,10 +381,8 @@ class ImageWindow(QMainWindow):
             if self.reader.channel.get():
                 self.start_timers()
             self.start_stats_monitors()
-            self.start_roi_monitors()
             self.add_rois()
         except:
-            
             print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
@@ -381,45 +403,16 @@ class ImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
-    def start_roi_monitors(self):
-        """Monitors used for changing the shape/location of ROIS Live."""
-        try:
-            if self.reader.pvs and self.reader.pvs is not None:
-                for key in self.reader.pvs:
-                    if f'{self.reader.pvs[key]}'.startswith('ROI'):
-                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}',
-                                      callback=self.roi_ca_callback)
-        except:
-            print('Failed to Connect to ROI CA Monitors')
-
     def start_stats_monitors(self):
         """Monitors used to update Stats values."""
         try:
-            if self.reader.pvs and self.reader.pvs is not None:
-                for key in self.reader.pvs:
-                    if f'{self.reader.pvs[key]}'.startswith('Stats'):
-                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}', 
-                                      callback=self.stats_ca_callback)
+            if self.reader.stats:
+                for stat in self.reader.stats.keys():
+                    for pv in self.reader.stats[stat].keys():
+                        name = f"{self.reader.stats[stat][pv]}"
+                        camonitor(pvname=name, callback=self.stats_ca_callback)
         except:
             print("Failed to Connect to Stats CA Monitors")
-    
-    def roi_ca_callback(self, pvname, value, **kwargs):
-        """
-        Manipulates ROIs live whenever a change is made in the EPICS software
-        then loops through the list of cached ROIs and updates their position/size.
-        
-        KeyWord Args:
-        pvname -- The name of the specific ROI PV that's been updated
-        value -- The new value sent by the monitor for the PV
-        **kwargs -- a catch all for the other values sent by the monitor
-        """
-        self.reader.metadata[pvname] = value
-        prefix = self.reader.pva_prefix
-        for i, roi in enumerate(self.rois):
-            roi.setPos(pos=self.reader.metadata[f'{prefix}:ROI{i+1}:MinX'], 
-                       y=self.reader.metadata[f'{prefix}:ROI{i+1}:MinY'])
-            roi.setSize(size=(self.reader.metadata[f'{prefix}:ROI{i+1}:SizeX'], 
-                              self.reader.metadata[f'{prefix}:ROI{i+1}:SizeY']))
 
     def stats_ca_callback(self, pvname, value, **kwargs):
         """
@@ -483,16 +476,31 @@ class ImageWindow(QMainWindow):
         ROI3 -- Green (4CBB17)
         ROI4 -- Pink (ff00ff)
         """
-        self.roi_colors = ['ff0000', '0000ff', '4CBB17', 'ff00ff']
-        for i in range(self.reader.num_rois):
-            roi = pg.ROI(pos=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinX'],
-                               self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinY']],
-                         size=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeX'], 
-                              self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeY']],
+        roi_colors = ['ff0000', '0000ff', '4CBB17', 'ff00ff']
+        for i, roi in enumerate(self.reader.rois.keys()):
+            x = self.reader.rois[roi].get("MinX", 0)
+            y = self.reader.rois[roi].get("MinY", 0)
+            width = self.reader.rois[roi].get("SizeX", 0)
+            height = self.reader.rois[roi].get("SizeY", 0)
+            roi = pg.ROI(pos=[x,y],
+                         size=[width, height],
                          movable=False,
-                         pen=pg.mkPen(self.roi_colors[i]))
+                         pen=pg.mkPen(roi_colors[i]))
             self.rois.append(roi)
             self.image_view.addItem(roi)
+
+    def update_rois(self):
+        """
+        Manipulates ROIs live whenever a change is made in the EPICS software
+        then loops through the list of cached ROIs and updates their position/size.
+        """
+        for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
+            x_pos = self.reader.rois[roi_key].get("MinX",0)
+            y_pos = self.reader.rois[roi_key].get("MinY",0)
+            width = self.reader.rois[roi_key].get("SizeX",0)
+            height = self.reader.rois[roi_key].get("SizeY",0)
+            roi.setPos(pos=x_pos, y=y_pos)
+            roi.setSize(size=(width, height))
     
     def update_mouse_pos(self, pos):
         """
@@ -547,7 +555,7 @@ class ImageWindow(QMainWindow):
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
                     height, width = image.shape[:2]
-                    coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
+                    # coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
                             min_level = np.log(min_level + 1)
@@ -587,7 +595,7 @@ class ImageWindow(QMainWindow):
         Keyword Args:
         event -- close event sent by main window
         """
-        del self.stats_dialog # otherwise memory piles up
+        del self.stats_dialog # otherwise dialogs stay in memory
         super(ImageWindow,self).closeEvent(event)
 
 

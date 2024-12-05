@@ -3,6 +3,7 @@ import subprocess
 import threading
 import os
 import signal
+import toml
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtWidgets import QFileDialog, QDialog
 from PyQt5.QtCore import pyqtSignal, QObject
@@ -42,15 +43,16 @@ class PVASetupDialog(QDialog):
         self.workers = {}
 
         # Sim Server Tab
-        self.buttonBrowse_metadata.clicked.connect(self.browse_metadata_config_sim)
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
-        # Split Consumers Tab
-        self.buttonRunSplitConsumers.clicked.connect(self.run_split_consumers)
-        self.buttonStopSplitConsumers.clicked.connect(self.stop_split_consumers)
+        # Associator Consumers Tab
+        self.buttonBrowseMetadataAssociator.clicked.connect(self.browse_metadata_config_associator)
+        self.buttonRunAssociatorConsumers.clicked.connect(self.run_associator_consumers)
+        self.buttonStopAssociatorConsumers.clicked.connect(self.stop_associator_consumers)
 
         # Collector Tab
+        self.buttonBrowseMetadataCollector.clicked.connect(self.browse_metadata_config_collector)
         self.buttonRunCollector.clicked.connect(self.run_collector)
         self.buttonStopCollector.clicked.connect(self.stop_collector)
 
@@ -65,20 +67,20 @@ class PVASetupDialog(QDialog):
             self.lineEditProcessorFileSim.setText(file_name)
 
     def browse_metadata_config_sim(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'JSON Files (*.json)')
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigSim.setText(file_name)
 
-    # Browse functions for Split Consumers
-    def browse_processor_file_split(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Split Consumers Processor File', '', 'Python Files (*.py)')
+    # Browse functions for AssociatorConsumers
+    def browse_processor_file_associator(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Associator Consumers Processor File', '', 'Python Files (*.py)')
         if file_name:
-            self.lineEditProcessorFileSplit.setText(file_name)
+            self.lineEditProcessorFileAssociator.setText(file_name)
 
-    def browse_metadata_config_split(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'JSON Files (*.json)')
+    def browse_metadata_config_associator(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
-            self.lineEditMetadataConfigSplit.setText(file_name)
+            self.lineEditMetadataConfigAssociator.setText(file_name)
 
     # Browse functions for Collector
     def browse_processor_file_collector(self):
@@ -87,7 +89,7 @@ class PVASetupDialog(QDialog):
             self.lineEditProcessorFileCollector.setText(file_name)
 
     def browse_metadata_config_collector(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'JSON Files (*.json)')
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select ROI Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigCollector.setText(file_name)
 
@@ -98,9 +100,51 @@ class PVASetupDialog(QDialog):
             self.lineEditProcessorFileAnalysis.setText(file_name)
 
     def browse_metadata_config_analysis(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'JSON Files (*.json)')
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigAnalysis.setText(file_name)
+
+    def parse_toml(self, path) -> dict: 
+        with open(path, 'r') as f:
+            toml_data: dict = toml.load(f)
+        return toml_data
+    
+    def parse_metadata_channels(self, metadata_config_path) -> str:
+        pv_config = self.parse_toml(path=metadata_config_path)
+        metadata_config : dict = pv_config.get("metadata", {})
+        
+        if metadata_config and metadata_config is not None:
+            ca = metadata_config.get("ca", {})
+            pva = metadata_config.get("pva", {})
+            ca_pvs = ""
+            pva_pvs = ""
+            if ca:
+                for value in list(ca.values()):
+                    ca_pvs += f"ca://{value},"
+            if pva:
+                for value in list(pva.values()):
+                    pva_pvs += f"pva://{value},"
+            
+        all_pvs = ca_pvs.strip(',') if not(pva_pvs) else ca_pvs + pva_pvs.strip(',')
+        return all_pvs
+
+    def parse_roi_channels(self, roi_config_path) -> str:
+        pv_config = self.parse_toml(roi_config_path)
+        roi_config: dict = pv_config.get("rois", {})
+        #num_rois = len(roi_config)
+        roi_pvs = ""
+
+        if roi_config and roi_config is not None:
+            for roi in roi_config.keys():
+                roi_specific_pvs: dict = roi_config.get(roi, {})
+                if roi_specific_pvs:
+                    for pv in roi_specific_pvs.keys():
+                        pv_channel = roi_specific_pvs.get(pv, "")
+                        if pv_channel:
+                            roi_pvs += f"ca://{pv_channel},"
+
+        roi_pvs = roi_pvs.strip(',')
+        return roi_pvs
 
     # Run and Stop functions for Sim Server
     def run_sim_server(self):
@@ -118,15 +162,13 @@ class PVASetupDialog(QDialog):
             '-dt', self.comboBoxDt.currentText(),
             '-nf', str(self.spinBoxNf.value()),
             '-rt', str(self.spinBoxRt.value()),
-            '-mpv', self.lineEditMpv.text(),
             '-rp', str(self.spinBoxRp.value())
         ]
 
-        # Add metadata config file if specified
-        metadata_config = self.lineEditMetadataConfigSim.text()
-        if metadata_config:
-            cmd.extend(['--metadata-config', metadata_config])
-
+        metadata_output_pvs = self.lineEditMpv.text()
+        if metadata_output_pvs:
+            cmd.extend(['-mpv', metadata_output_pvs])
+        
         try:
             process = subprocess.Popen(
                 cmd,
@@ -163,31 +205,32 @@ class PVASetupDialog(QDialog):
             self.labelStatusSimServer.setText('Process ID: Not running')
             self.textEditSimServerOutput.appendPlainText('Sim Server stopped.')
 
-    # Run and Stop functions for Split Consumers
-    def run_split_consumers(self):
-        if 'split_consumers' in self.processes:
-            QtWidgets.QMessageBox.warning(self, 'Warning', 'Split Consumers are already running.')
+    # Run and Stop functions for Associator Consumers
+    def run_associator_consumers(self):
+        if 'associator_consumers' in self.processes:
+            QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
 
         cmd = [
             'pvapy-hpc-consumer',
-            '--input-channel', self.lineEditInputChannelSplit.text(),
-            '--control-channel', self.lineEditControlChannelSplit.text(),
-            '--status-channel', self.lineEditStatusChannelSplit.text(),
-            '--output-channel', self.lineEditOutputChannelSplit.text(),
-            '--processor-file', self.lineEditProcessorFileSplit.text(),
-            '--processor-class', self.lineEditProcessorClassSplit.text(),
-            '--report-period', str(self.spinBoxReportPeriodSplit.value()),
-            '--server-queue-size', str(self.spinBoxServerQueueSizeSplit.value()),
-            '--n-consumers', str(self.spinBoxNConsumersSplit.value()),
-            '--distributor-updates', str(self.spinBoxDistributorUpdatesSplit.value()),
-            '--metadata-channels', self.lineEditMetadataChannelsSplit.text()
+            '--input-channel', self.lineEditInputChannelAssociator.text(),
+            '--control-channel', self.lineEditControlChannelAssociator.text(),
+            '--status-channel', self.lineEditStatusChannelAssociator.text(),
+            '--output-channel', self.lineEditOutputChannelAssociator.text(),
+            '--processor-file', self.lineEditProcessorFileAssociator.text(),
+            '--processor-class', self.lineEditProcessorClassAssociator.text(),
+            '--report-period', str(self.spinBoxReportPeriodAssociator.value()),
+            '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
+            '--n-consumers', str(self.spinBoxNConsumersAssociator.value()),
+            '--distributor-updates', str(self.spinBoxDistributorUpdatesAssociator.value()),
         ]
 
         # Add metadata config file if specified
-        metadata_config = self.lineEditMetadataConfigSplit.text()
-        if metadata_config:
-            cmd.extend(['--metadata-config', metadata_config])
+        config_path = self.lineEditMetadataConfigAssociator.text()
+        if config_path:
+            metadata_config = self.parse_metadata_channels(config_path)
+            if metadata_config:
+                cmd.extend(['--metadata-channels', metadata_config])
 
         try:
             process = subprocess.Popen(
@@ -197,33 +240,33 @@ class PVASetupDialog(QDialog):
                 preexec_fn=os.setsid,
                 universal_newlines=True
             )
-            self.processes['split_consumers'] = process
+            self.processes['associator_consumers'] = process
 
             # Start thread to read output
             worker = Worker(process)
-            worker.output_signal.connect(self.textEditSplitConsumersOutput.appendPlainText)
+            worker.output_signal.connect(self.textEditAssociatorConsumersOutput.appendPlainText)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()
-            self.workers['split_consumers'] = (worker, thread)
+            self.workers['associator_consumers'] = (worker, thread)
 
             # Update button states and status label
-            self.buttonRunSplitConsumers.setEnabled(False)
-            self.buttonStopSplitConsumers.setEnabled(True)
-            self.labelStatusSplitConsumers.setText(f'Process ID: {process.pid}')
+            self.buttonRunAssociatorConsumers.setEnabled(False)
+            self.buttonStopAssociatorConsumers.setEnabled(True)
+            self.labelStatusAssociatorConsumers.setText(f'Process ID: {process.pid}')
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Split Consumers: {str(e)}')
+            QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Associator Consumers: {str(e)}')
 
-    def stop_split_consumers(self):
-        if 'split_consumers' in self.processes:
-            self.workers['split_consumers'][0].stop()
-            self.processes['split_consumers'].wait()
-            del self.processes['split_consumers']
-            del self.workers['split_consumers']
-            self.buttonRunSplitConsumers.setEnabled(True)
-            self.buttonStopSplitConsumers.setEnabled(False)
-            self.labelStatusSplitConsumers.setText('Process ID: Not running')
-            self.textEditSplitConsumersOutput.appendPlainText('Split Consumers stopped.')
+    def stop_associator_consumers(self):
+        if 'associator_consumers' in self.processes:
+            self.workers['associator_consumers'][0].stop()
+            self.processes['associator_consumers'].wait()
+            del self.processes['associator_consumers']
+            del self.workers['associator_consumers']
+            self.buttonRunAssociatorConsumers.setEnabled(True)
+            self.buttonStopAssociatorConsumers.setEnabled(False)
+            self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
+            self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
 
     # Run and Stop functions for Collector
     def run_collector(self):
@@ -247,9 +290,11 @@ class PVASetupDialog(QDialog):
         ]
 
         # Add metadata config file if specified
-        metadata_config = self.lineEditMetadataConfigCollector.text()
-        if metadata_config:
-            cmd.extend(['--metadata-config', metadata_config])
+        config_path = self.lineEditMetadataConfigCollector.text()
+        if config_path:
+            metadata_config = self.parse_roi_channels(config_path)
+            if metadata_config:
+                cmd.extend(['--metadata-channels', metadata_config])
 
         try:
             process = subprocess.Popen(

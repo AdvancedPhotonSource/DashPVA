@@ -1,39 +1,57 @@
+
 #Section used specifically for Metadata Pvs
 [metadata]
 
-[metadata.pva]
+    [metadata.ca]
+    x = "x"
+    y = "y"
 
-[metadata.ca]
-x = "x"
-y = "y"
+    [metadata.pva]
 
 # Section specifically for ROI PVs
 [rois]
 
-[rois.ROI1]
-MinX = "dp-ADSim:ROI1:MinX"
-MinY = "dp-ADSim:ROI1:MinY"
-SizeX = "dp-ADSim:ROI1:SizeX"
-SizeY = "dp-ADSim:ROI1:SizeY"
+    [rois.ROI1]
+    MinX = "dp-ADSim:ROI1:MinX"
+    MinY = "dp-ADSim:ROI1:MinY"
+    SizeX = "dp-ADSim:ROI1:SizeX"
+    SizeY = "dp-ADSim:ROI1:SizeY"
 
-[rois.ROI2]
-MinX = "dp-ADSim:ROI2:MinX"
-MinY = "dp-ADSim:ROI2:MinY"
-SizeX = "dp-ADSim:ROI2:SizeX"
-SizeY = "dp-ADSim:ROI2:SizeY"
+    [rois.ROI2]
+    MinX = "dp-ADSim:ROI2:MinX"
+    MinY = "dp-ADSim:ROI2:MinY"
+    SizeX = "dp-ADSim:ROI2:SizeX"
+    SizeY = "dp-ADSim:ROI2:SizeY"
 
-[rois.ROI3]
-MinX = "dp-ADSim:ROI3:MinX"
-MinY = "dp-ADSim:ROI3:MinY"
-SizeX = "dp-ADSim:ROI3:SizeX"
-SizeY = "dp-ADSim:ROI3:SizeY"
+    [rois.ROI3]
+    MinX = "dp-ADSim:ROI3:MinX"
+    MinY = "dp-ADSim:ROI3:MinY"
+    SizeX = "dp-ADSim:ROI3:SizeX"
+    SizeY = "dp-ADSim:ROI3:SizeY"
 
-[rois.ROI4]
-MinX = "dp-ADSim:ROI4:MinX"
-MinY = "dp-ADSim:ROI4:MinY"
-SizeX = "dp-ADSim:ROI4:SizeX"
-SizeY = "dp-ADSim:ROI4:SizeY"
-
+    [rois.ROI4]
+    MinX = "dp-ADSim:ROI4:MinX"
+    MinY = "dp-ADSim:ROI4:MinY"
+    SizeX = "dp-ADSim:ROI4:SizeX"
+    SizeY = "dp-ADSim:ROI4:SizeY"
 
 
 [stats]
+    [stats.Stats1]
+    Total = "dp-ADSim:Stats1:Total_RBV"
+    Min = "dp-ADSim:Stats1:MinValue_RBV"
+    Max = "dp-ADSim:Stats1:MaxValue_RBV"
+    Sigma = "dp-ADSim:Stats1:Sigma_RBV"
+    Mean = "dp-ADSim:Stats1:MeanValue_RBV"
+
+    [stats.Stats2]
+    Total = "dp-ADSim:Stats2:Total_RBV"
+    Min = "dp-ADSim:Stats2:MinValue_RBV"
+    Max = "dp-ADSim:Stats2:MaxValue_RBV"
+    Sigma = "dp-ADSim:Stats2:Sigma_RBV"
+    Mean = "dp-ADSim:Stats2:MeanValue_RBV"
+
+
+[analysis]
+axis1 = "x"
+axis2 = "y"

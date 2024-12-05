@@ -99,6 +99,7 @@ class AnalysisWindow(QMainWindow):
         self.xpos_path = xpos_path
         self.ypos_path = ypos_path
         self.save_path = save_path
+        self.analysis_index = self.parent.reader.analysis_index
         # self.load_path()
 
         self.timer_plot= QTimer()
@@ -250,30 +251,32 @@ class AnalysisWindow(QMainWindow):
         Redraws plots based on rate entered in hz box.
         """
 
-        self.call_times += 1
-        analysis_attributes = self.parent.reader.attributes[-1]
-        #print(analysis_attributes)
-        intensity = analysis_attributes["value"][0]["value"].get("Intensity",[])
-        com_x = analysis_attributes["value"][0]["value"].get("ComX",[])
-        com_y = analysis_attributes["value"][0]["value"].get("ComY",[])
-        # print(intensity)
-        size = int(np.sqrt(len(intensity)))
-        intensity_matrix = np.reshape(intensity, (size, size))
-        com_x_matrix = np.reshape(com_x,(size, size))
-        com_y_matrix = np.reshape(com_y,(size, size))
+        if self.analysis_index is not None:
 
-        # USING IMAGE VIEW:
-        if self.call_times == 5:
-            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+            self.call_times += 1
+            analysis_attributes = self.parent.reader.attributes[self.analysis_index]
+            #print(analysis_attributes)
+            intensity = analysis_attributes["value"][0]["value"].get("Intensity",[])
+            com_x = analysis_attributes["value"][0]["value"].get("ComX",[])
+            com_y = analysis_attributes["value"][0]["value"].get("ComY",[])
+            # print(intensity)
+            size = int(np.sqrt(len(intensity)))
+            intensity_matrix = np.reshape(intensity, (size, size))
+            com_x_matrix = np.reshape(com_x,(size, size))
+            com_y_matrix = np.reshape(com_y,(size, size))
 
-            self.view_comx.setLevels(0, self.roi_width.value())
-            self.view_comy.setLevels(0,self.roi_height.value())
-        else:
-            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            # USING IMAGE VIEW:
+            if self.call_times == 5:
+                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
+                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
+                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+
+                self.view_comx.setLevels(0, self.roi_width.value())
+                self.view_comy.setLevels(0,self.roi_height.value())
+            else:
+                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
 
     def init_ui(self):
         """
