@@ -1,268 +1,206 @@
 import time
-import copy
 import numpy as np
 import pvaccess as pva
-from pvaccess import PvObject, USHORT, INT, DOUBLE
+from pvaccess import PvObject, DOUBLE
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
-#custom imports
 import sys
-sys.path.append('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer')
-from viewer.generators import rotation_cycle
-
-# import logging
 
 # Example AD Metadata Processor for the streaming framework
-# Updates image attributes with values from metadata channels
+# This updated version processes one frame at a time.
 class HpcAnalysisProcessor(AdImageProcessor):
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
+        super(HpcAnalysisProcessor, self).__init__(configDict)
 
         # Statistics
-        self.nFramesProcessed = 0 # Number of images associated with metadata
-        self.nFrameErrors = 0 # Number of images that could not be associated with metadata
-        self.nMetadataProcessed = 0 # Number of metadata values associated with images
-        self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
+        self.nFramesProcessed = 0
+        self.nFrameErrors = 0
+        self.nMetadataProcessed = 0
+        self.nMetadataDiscarded = 0
         self.processingTime = 0
 
+        # Configuration parameters
         self.configure(configDict)
 
-        # PVObject vars needed for caching
-        self.images_cache = None    
-        self.positions_cache = None
-        self.image = None
-        self.shape = (0,0)
-        self.data_type = None
-        self.attributes = {}
-        self.cache_id = 0
-        self.id_diff = 0
-        self.cache_id_gen = rotation_cycle(0,self.MAX_CACHE_SIZE)
-        self.first_scan_detected = False 
-        self.last_frame_id = None 
-        self.call_times = 0
-        # Configure Processor Settings
-        # The last object time
-        self.lastFrameTimestamp = 0
+        # Image and ROI settings
+        # These can be changed to suit your analysis needs
         self.roi_x = 0
         self.roi_y = 0
-        self.roi_height = 50
         self.roi_width = 50
-        # self.logger.debug(f'Created HpcAnalysisProcessor')
-        # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
-      
-    # Configure user processor
-    def configure(self, configDict):
-        # TODO: Use Configdict to get all these parameters.
-        self.MAX_CACHE_SIZE = 900
-        # Vars used for Analysis
-        self.xpos_path = "/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/xpos.npy"
-        self.ypos_path = "/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/ypos.npy"
-        # self.save_path = "save_path"
-        self.load_path()
-        
+        self.roi_height = 50
 
-    ########################################################################################################################
-    ####################### Porting Code From Original Area Detector View and Analysis Views ###############################
-    ########################################################################################################################
+        # The last processed frame's timestamp
+        self.lastFrameTimestamp = 0
+
+        # Dictionary to store attributes from the current frame
+        self.attributes = {}
+
+    def configure(self, configDict):
+        """
+        Configure user-defined settings from configDict if needed.
+        For now, just use defaults or hard-coded values.
+        """
+        # In this simplified version, we no longer rely on preloaded positions.
+        pass
+
     def parse_image_data_type(self, pva_object):
-        """Parse through a PVA Object to store the incoming datatype."""
+        """
+        Parse the PVA Object to determine the incoming datatype of the image.
+        """
         if pva_object is not None:
             self.data_type = list(pva_object['value'][0].keys())[0]
-    
+
     def parse_pva_ndattributes(self, pva_object):
-        """Convert a pva object to python dict and parses attributes into a separate dict."""
-        if pva_object is not None:
-            obj_dict = pva_object.get()
-        else:
-            return None
-        
+        """
+        Parse the NDAttributes from the PVA Object into a python dict.
+        Store attributes in self.attributes for easy reference.
+        """
+        if pva_object is None:
+            return
+        obj_dict = pva_object.get()
         attributes = {}
         for attr in obj_dict.get("attribute", []):
             name = attr['name']
             value = attr['value']
             attributes[name] = value
 
-        for value in ["codec", "uniqueId", "uncompressedSize"]:
-            if value in pva_object:
-                attributes[value] = pva_object[value]
-        
+        # Include additional values commonly found at top-level for completeness.
+        for value_key in ["codec", "uniqueId", "uncompressedSize"]:
+            if value_key in pva_object:
+                attributes[value_key] = pva_object[value_key]
+
         self.attributes = attributes
 
     def pva_to_image(self, pva_object):
         """
-        Parses through the PVA Object to retrieve the size and use that to shape incoming image.
-        Then immedately check if that PVA Object is next image or if we missed a frame in between.
+        Convert the PVA Object to a NumPy array representing the image.
+        Apply correct shaping and transpose if needed.
         """
-        try:
-            if pva_object is not None:
-                # self.frames_received += 1
-                # Parses dimensions and reshapes array into image
-                if 'dimension' in pva_object:
-                    self.shape = tuple([dim['size'] for dim in pva_object['dimension']])
-                    self.image = np.array(pva_object['value'][0][self.data_type])
-                    # reshapes but also transposes image so it is viewed correctly
-                    self.image= np.reshape(self.image, self.shape).T
-                else:
-                    self.image = None
-                # Initialize Image and Positions Cache
-                if self.images_cache is None:
-                    self.images_cache = np.zeros((self.MAX_CACHE_SIZE, *self.shape))
-                    self.positions_cache = np.zeros((self.MAX_CACHE_SIZE,2)) # TODO: make useable for more metadata
-                
-        except:
-            pass
-            # self.frames_missed += 1
+        self.image = None
+        if pva_object is not None and 'dimension' in pva_object:
+            dims = pva_object['dimension']
+            shape = tuple([dim['size'] for dim in dims])
+            raw_data = np.array(pva_object['value'][0][self.data_type])
+            # Reshape and transpose if necessary to get correct orientation
+            self.image = np.reshape(raw_data, shape).T
 
-    def load_path(self):
-        """
-        This function loads the path information for the HDF5 file and uses it to populate other variables.
-        """
-        # TODO: These positions are references, use only when we miss frames.
-        self.x_positions = np.load(self.xpos_path)
-        self.y_positions = np.load(self.ypos_path)
-    
-        self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
-        self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
-
-        self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
-        self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
-
-    def process_analysis_objects(self, frameAttributes=None):
-        """
-        
-        """
-        # if self.cache_id is not None:
-        #     xpos_det = self.positions_cache[self.cache_id, 0]
-        #     xpos_plan = self.x_positions[self.cache_id]
-        #     ypos_det = self.positions_cache[self.cache_id, 1]
-        #     ypos_plan = self.y_positions[self.cache_id]
-
-        #     # print(f'scan id: {self.cache_id}')
-        #     # print(f'detector: {xpos_det},{ypos_det}')
-        #     # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
-
-        #     x1, x2 = self.x_positions[0], self.x_positions[1]
-        #     y1, y2 = self.y_positions[0], self.y_positions[30]
-
-
-        # (np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2)))
-        if True: 
-            
-            self.call_times += 1
-            image_rois = self.images_cache[:,
-                                            self.roi_y:self.roi_y + self.roi_height,
-                                            self.roi_x:self.roi_x + self.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
-
-            intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
-            intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
-            intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
-
-            y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
-
-            # Compute weighted sums
-            weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-            weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-            # Calculate COM
-            com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
-            com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
-            #filter out inf
-            com_x[com_x==np.nan] = 0 # time complexity = O(1)
-            com_y[com_y==np.nan] = 0 # time complexity = O(1)
-            #Two lines below don't work if unique positions are messed by incomplete x y positions 
-            self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-            self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
-            # gets the shape of the image to set the length of the axis
-            self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-            self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-            # Populate the matrices using the indices
-            self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
-            self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-
-            # TODO: Create pv object out of the matrices and append them to the original pvobject
-            analysis_object = PvObject({'value':{"Intensity": [DOUBLE], "ComX": [DOUBLE], "ComY": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel(), "ComX": self.com_x_matrix.ravel(), "ComY": self.com_y_matrix.ravel()}})
-            pvAttr = pva.NtAttribute('Analysis', analysis_object)
-
-            frameAttributes.append(pvAttr)
-
-    ########################################## Process monitor update ####################################################
     def process(self, pvObject):
+        """
+        Process each incoming frame individually.
+        Steps:
+          1. Parse attributes and image data.
+          2. Compute ROI-based intensity and center-of-mass (COM).
+          3. Get current frame's X, Y from attributes.
+          4. Append these analysis results as an NtAttribute to the pvObject.
+        """
         t0 = time.time()
+
+        # Retrieve frame id
         frameId = pvObject['uniqueId']
         dims = pvObject['dimension']
         nDims = len(dims)
-        # checking for required keys
         if not nDims:
-            # self.logger.debug(f'Frame id {frameId} contains an empty image.')
+            # Frame has no image data
             return pvObject
 
         if 'timeStamp' not in pvObject:
-            # self.logger.error(f'Frame id {frameId} does not have field "timeStamp"')
+            # No timestamp, just return the object
             return pvObject
-        
+
+        # Parse attributes and image type
         self.parse_pva_ndattributes(pvObject)
         self.parse_image_data_type(pvObject)
         self.pva_to_image(pvObject)
 
-        # Check for missed frame starts here:
-        if self.last_frame_id is not None: 
-            self.id_diff = frameId - self.last_frame_id - 1
-        self.last_frame_id = frameId
+        if self.image is None:
+            # If we cannot form the image, skip analysis
+            return pvObject
 
-        # TODO: USE --processor-args flag in the command line options to pass a config dict and get these values instead
-        x_value = self.attributes.get('x')[0]['value']
-        y_value = self.attributes.get('y')[0]['value']
-        
-        # TODO: make it so that starting pv has a tolerance for when it's detected similar to check in analysis portions
-        if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
-            self.first_scan_detected = True
-            print(f"First Scan detected...")
+        # Extract X, Y positions from attributes as they come in
+        # The original code accessed x,y as: attributes.get('x')[0]['value']
+        # Adjust as needed depending on attribute structure.
+        x_attr = self.attributes.get('x', None)
+        y_attr = self.attributes.get('y', None)
+        if x_attr and y_attr:
+            x_value = x_attr[0]['value'] if isinstance(x_attr, list) else 0.0
+            y_value = y_attr[0]['value'] if isinstance(y_attr, list) else 0.0
+        else:
+            # Default to 0 if attributes not found
+            x_value = 0.0
+            y_value = 0.0
 
-        if self.first_scan_detected:
-            if self.id_diff> 0:
-                for i in range(self.id_diff):
-                    self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN 
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
-            else:
-                self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-                self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-                self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
-            
-            # self.process_analysis_objects(pvObject=pvObject)
-            frameAttributes = pvObject['attribute']
-            self.process_analysis_objects(frameAttributes=frameAttributes)
-            pvObject['attribute'] = frameAttributes
+        # Extract Region of Interest (ROI) from the image
+        roi = self.image[self.roi_y:self.roi_y+self.roi_height,
+                         self.roi_x:self.roi_x+self.roi_width]
 
+        # Compute intensity (sum of ROI pixels)
+        intensity = np.sum(roi)
 
+        # Compute center-of-mass (COM)
+        # To avoid division by zero, check intensity
+        if intensity <= 0:
+            com_x = 0.0
+            com_y = 0.0
+        else:
+            y_coords, x_coords = np.indices(roi.shape)
+            weighted_sum_x = np.sum(roi * x_coords)
+            weighted_sum_y = np.sum(roi * y_coords)
+            com_x = weighted_sum_x / intensity
+            com_y = weighted_sum_y / intensity
+
+        # Now create a PvObject with the analysis results
+        # We will send out a single data point (X, Y, Intensity, ComX, ComY)
+        analysis_object = PvObject({'X': DOUBLE, 'Y': DOUBLE,
+                                    'Intensity': DOUBLE, 'ComX': DOUBLE, 'ComY': DOUBLE},
+                                   {'X': float(x_value),
+                                    'Y': float(y_value),
+                                    'Intensity': float(intensity),
+                                    'ComX': float(com_x),
+                                    'ComY': float(com_y)})
+
+        # Create an NtAttribute to hold this analysis data
+        pvAttr = pva.NtAttribute('Analysis', analysis_object)
+
+        # Append this attribute to the frame's attribute list
+        frameAttributes = pvObject['attribute']
+        frameAttributes.append(pvAttr)
+        pvObject['attribute'] = frameAttributes
+
+        # Update stats
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
-        #self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
-                       
-        # self.updateOutputChannel(pvObject) # check what this does in comparison to just returning
-        self.updateOutputChannel(pvObject)
         self.lastFrameTimestamp = frameTimestamp
+        self.nFramesProcessed += 1
+
+        # Update output channel if needed
+        self.updateOutputChannel(pvObject)
+
+        # Update processing time
         t1 = time.time()
-        self.processingTime += (t1-t0)
+        self.processingTime += (t1 - t0)
+
         return pvObject
 
-    # Reset statistics for user processor
     def resetStats(self):
+        """
+        Reset processor statistics.
+        """
         self.nFramesProcessed = 0 
         self.nFrameErrors = 0 
         self.nMetadataProcessed = 0 
         self.nMetadataDiscarded = 0 
         self.processingTime = 0
 
-    # Retrieve statistics for user processor
     def getStats(self):
+        """
+        Get current statistics of processing.
+        """
         processedFrameRate = 0
         frameErrorRate = 0
         if self.processingTime > 0:
-            processedFrameRate = self.nFramesProcessed/self.processingTime
-            frameErrorRate = self.nFrameErrors/self.processingTime
+            processedFrameRate = self.nFramesProcessed / self.processingTime
+            frameErrorRate = self.nFrameErrors / self.processingTime
         return { 
             'nFramesProcessed' : self.nFramesProcessed,
             'nFrameErrors' : self.nFrameErrors,
@@ -273,8 +211,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
             'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
         }
 
-    # Define PVA types for different stats variables
     def getStatsPvaTypes(self):
+        """
+        Define PVA types for different stats variables.
+        """
         return { 
             'nFramesProcessed' : pva.UINT,
             'nFrameErrors' : pva.UINT,
