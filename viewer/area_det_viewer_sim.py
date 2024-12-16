@@ -134,15 +134,16 @@ class PVA_Reader:
         self.frames_missed = 0
         self.frames_received = 0
         self.id_diff = 0
-        # variables used for ROI and Stats PVs
+        # variables used for ROI and Stats PVs from config
+        self.config = {}
         self.rois = {}
         self.stats = {}
 
         if self.config_filepath != '':
             with open(self.config_filepath, 'r') as toml_file:
                 # loads the pvs in the json file into a python dictionary
-                pvs:dict = toml.load(toml_file)
-                self.stats: dict = pvs["stats"]
+                self.config:dict = toml.load(toml_file)
+                self.stats: dict = self.config["stats"]
                 # print(self.stats)
 
     def pva_callbackSuccess(self, pv):
@@ -245,12 +246,12 @@ class PVA_Reader:
         self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
 
-    def get_pva_objects(self):
-        """Returns entire cached list of PVA Objects"""
-        return self.images_cache
+    # def get_pva_objects(self):
+    #     """Returns entire cached list of PVA Objects"""
+    #     return self.images_cache
 
-    def get_last_pva_object(self):
-        return self.images_cache[-1]
+    # def get_last_pva_object(self):
+    #     return self.images_cache[-1]
 
     def get_frames_missed(self):
         return self.frames_missed
@@ -264,7 +265,7 @@ class PVA_Reader:
 
 class ImageWindow(QMainWindow):
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path='', cache_frequency=100): 
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
         This is the Main Window that first pops up and allows a user to type 
         a detector prefix in and connect to it. It does things like allow one 
@@ -280,7 +281,6 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.caching_frequency = cache_frequency
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -334,19 +334,12 @@ class ImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def open_analysis_window_clicked(self):
-        scd_dialog = ScanPlanDialog()
-        if scd_dialog.exec_():
-            self.analysis_window = AnalysisWindow(
-                                                parent=self, 
-                                                xpos_path=scd_dialog.x_positions, 
-                                                ypos_path=scd_dialog.y_positions,
-                                                save_path=scd_dialog.download_loc
-                                                )
-            self.analysis_window.show()
+        self.analysis_window = AnalysisWindow(parent=self)
+        self.analysis_window.show()
         
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
-        self.timer_labels.start(int(1000/float(self.caching_frequency)))
+        self.timer_labels.start(int(1000/100))
         self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
 
     def stop_timers(self):
@@ -362,19 +355,15 @@ class ImageWindow(QMainWindow):
         try:
             # a double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(
-                                        input_channel=self._input_channel, 
-                                        config_filepath=self._file_path
-                                        )
+                self.reader = PVA_Reader(input_channel=self._input_channel, 
+                                         config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                self.reader = PVA_Reader(
-                                        input_channel=self._input_channel, 
-                                        config_filepath=self._file_path
-                                        )
+                self.reader = PVA_Reader(input_channel=self._input_channel, 
+                                         config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
             
             # additional functions that aren't affected by whether the PVA reader is None or not
@@ -429,11 +418,9 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
-            self.stats_dialog[text] = RoiStatsDialog(
-                                                    parent=self, 
-                                                    stats_text=text, 
-                                                    timer=self.timer_labels
-                                                    )
+            self.stats_dialog[text] = RoiStatsDialog(parent=self, 
+                                                     stats_text=text, 
+                                                     timer=self.timer_labels)
             self.stats_dialog[text].show()
     
     def show_rois_checked(self):

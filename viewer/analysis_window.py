@@ -89,35 +89,42 @@ class AnalysisWindow(QMainWindow):
         com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
     """
     
-    def __init__(self, parent,xpos_path, ypos_path, save_path): 
+    def __init__(self, parent): 
         super(AnalysisWindow, self).__init__()
-        # self.parent : ImageWindow = parent
         self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
-        self.init_ui()
-        self.xpos_path = xpos_path
-        self.ypos_path = ypos_path
-        self.save_path = save_path
+        self.xpos_path = None
+        self.ypos_path = None
+        self.save_path = None
+        self.view_comx = None
+        self.view_comy = None
+        self.view_intensity = None
         self.analysis_index = self.parent.reader.analysis_index
         # self.load_path()
+
+        #configuration
+        # TODO: load config separately using the filepath provided by the parent
+        # so it can be edited and still be loaded
+        self.config: dict = self.parent.reader.config
+        self.check_num_rois()
+        self.configure_plots()
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
         self.timer_plot.start(int(1000/self.calc_freq.value()))
         self.call_times = 0
 
-        self.btn_create_hdf5.clicked.connect(self.save_hdf5)
-        self.roi_x.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_y.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_width.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_height.valueChanged.connect(self.roi_boxes_changed)
+        # self.btn_create_hdf5.clicked.connect(self.save_hdf5)
+        # self.roi_x.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_y.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_width.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_height.valueChanged.connect(self.roi_boxes_changed)
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
         self.btn_reset.clicked.connect(self.reset_plot)
-        self.check_num_rois()
-    
+
     def freeze_plotting_checked(self):
         """
         This function freezes the plot when the freeze plot checkbox is checked.
@@ -141,38 +148,36 @@ class AnalysisWindow(QMainWindow):
     #     self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
     #     self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
          
-    def save_hdf5(self):
-        """
-        This function creates and saves the data as an HDF5 file with a timestamp as the name.
-        """
-        self.status_text.setText("Writing File...")
-        # Get the current time as a timestamp for file name
-        dt = datetime.fromtimestamp(time.time())
-        formatted_time = dt.strftime('%Y%m%d%H%M')
-        # put scan pos in dictionary 
-        scan_pos = {
-                'x_positions': self.x_positions,
-                'y_positions': self.y_positions
-            }
-        # start writer thread
-        self.hdf5_writer_thread = HDF5WriterThread(
-            f"{self.save_path}/{formatted_time}data.h5",
-            self.parent.reader.images_cache, scan_pos, 
-            self.parent.reader.metadata, 
-            self.parent.reader.attributes, 
-            self.intensity_matrix, 
-            self.com_x_matrix, 
-            self.com_y_matrix)
-        self.hdf5_writer_thread.file_written.connect(self.on_file_written)
-        self.hdf5_writer_thread.start()
+    # def save_hdf5(self):
+    #     """
+    #     This function creates and saves the data as an HDF5 file with a timestamp as the name.
+    #     """
+    #     self.status_text.setText("Writing File...")
+    #     # Get the current time as a timestamp for file name
+    #     dt = datetime.fromtimestamp(time.time())
+    #     formatted_time = dt.strftime('%Y%m%d%H%M')
+    #     # put scan pos in dictionary 
+    #     scan_pos = {'x_positions': self.x_positions,
+    #                 'y_positions': self.y_positions}
+    #     # start writer thread
+    #     self.hdf5_writer_thread = HDF5WriterThread(
+    #         f"{self.save_path}/{formatted_time}data.h5",
+    #         self.parent.reader.images_cache, scan_pos, 
+    #         self.parent.reader.metadata, 
+    #         self.parent.reader.attributes, 
+    #         self.intensity_matrix, 
+    #         self.com_x_matrix, 
+    #         self.com_y_matrix)
+    #     self.hdf5_writer_thread.file_written.connect(self.on_file_written)
+    #     self.hdf5_writer_thread.start()
 
-    def on_file_written(self):
-        """
-        This function is called when the file writing is done.
-        """
-        print("Signal Received")
-        self.status_text.setText("File Written")
-        QTimer.singleShot(10000, self.check_if_running)
+    # def on_file_written(self):
+    #     """
+    #     This function is called when the file writing is done.
+    #     """
+    #     print("Signal Received")
+    #     self.status_text.setText("File Written")
+    #     QTimer.singleShot(10000, self.check_if_running)
         
     def check_if_running(self):
         """
@@ -193,7 +198,7 @@ class AnalysisWindow(QMainWindow):
         self.view_comx.clear()
         self.view_comy.clear()
         self.call_times = 0
-        self.parent.reader.images_cache = None # [:,:,:] = 0 
+        # self.parent.reader.images_cache = None # [:,:,:] = 0 
         # Done because caching should be done from scratch
         self.parent.reader.frames_received = 0
         self.parent.reader.frames_missed = 0
@@ -204,7 +209,7 @@ class AnalysisWindow(QMainWindow):
         """
         This function is called when the class is initialized to populate the dropdown of available ROIs
         """
-        num_rois =  self.parent.reader.num_rois
+        num_rois =  len(self.config.get('rois'))
         if num_rois > 0:
             for i in range(num_rois):
                 self.cbox_select_roi.addItem(f'ROI{i+1}')
@@ -231,20 +236,42 @@ class AnalysisWindow(QMainWindow):
             self.roi_width.setValue(w)
             self.roi_height.setValue(h)
         
-    def roi_boxes_changed(self):
-        """
-        This function is called when the ROI dimensions are changed.
-        Changes the viewable roi to the values within the the boxes.
-        """
-        self.parent.roi_x = self.roi_x.value()
-        self.parent.roi_y = self.roi_y.value()
-        self.parent.roi_width = self.roi_width.value()
-        self.parent.roi_height = self.roi_height.value()
-        self.cbox_select_roi.setCurrentIndex(0)
-        self.call_times = 0
+    # def roi_boxes_changed(self):
+    #     """
+    #     This function is called when the ROI dimensions are changed.
+    #     Changes the viewable roi to the values within the the boxes.
+    #     """
+    #     self.parent.roi_x = self.roi_x.value()
+    #     self.parent.roi_y = self.roi_y.value()
+    #     self.parent.roi_width = self.roi_width.value()
+    #     self.parent.roi_height = self.roi_height.value()
+    #     self.cbox_select_roi.setCurrentIndex(0)
+    #     self.call_times = 0
         
     def frequency_changed(self):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
+
+    def update_vectorized_image(self, intensity, com_x, com_y):
+        size = int(np.sqrt(len(intensity)))
+        intensity_matrix = np.reshape(intensity, (size, size))
+        com_x_matrix = np.reshape(com_x,(size, size))
+        com_y_matrix = np.reshape(com_y,(size, size))
+
+        # USING IMAGE VIEW:
+
+        if self.call_times == 5:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+
+            self.view_comx.setLevels(0, self.roi_width.value())
+            self.view_comy.setLevels(0,self.roi_height.value())
+        else:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+
+
 
     def plot_images(self):
         """
@@ -259,50 +286,86 @@ class AnalysisWindow(QMainWindow):
             intensity = analysis_attributes["value"][0]["value"].get("Intensity",[])
             com_x = analysis_attributes["value"][0]["value"].get("ComX",[])
             com_y = analysis_attributes["value"][0]["value"].get("ComY",[])
+            axis1 = analysis_attributes["value"][0]["value"].get("Axis1",0.0)
+            axis2 = analysis_attributes["value"][0]["value"].get("Axis2",0.0)
+
             # print(intensity)
-            size = int(np.sqrt(len(intensity)))
-            intensity_matrix = np.reshape(intensity, (size, size))
-            com_x_matrix = np.reshape(com_x,(size, size))
-            com_y_matrix = np.reshape(com_y,(size, size))
+            if self.consumer_type == "vectorized":
+                self.update_vectorized_image(intensity=intensity, com_x=com_x,com_y=com_y,)
 
-            # USING IMAGE VIEW:
-            if self.call_times == 5:
-                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
 
-                self.view_comx.setLevels(0, self.roi_width.value())
-                self.view_comy.setLevels(0,self.roi_height.value())
-            else:
-                self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+    def init_scatter_plot(self):
+        self.plot_intensity = pg.PlotWidget()
+        self.plot_comx = pg.PlotWidget()
+        self.plot_comy = pg.PlotWidget()
 
-    def init_ui(self):
-        """
-        this function initializes the user interface with smaller ImageView classes and defining the axis.
-        """
-        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        scatter_item_intensity = pg.ScatterPlotItem()
+        scatter_item_comx = pg.ScatterPlotItem()
+        scatter_item_comy = pg.ScatterPlotItem()
+
+        # image_item_intensity = pg.ImageItem()
+        # image_item_comx = pg.ImageItem()
+        # image_item_comy = pg.ImageItem()
+
+        self.x_data = []
+        self.y_data = []
+
+
+        self.plot_intensity.addItem(scatter_item_intensity)
+        # self.plot_intensity.addItem(image_item_intensity)
+        self.grid_a.addWidget(self.plot_intensity,0,0)
+        self.plot_intensity.setLabel('bottom', 'Motor Position X' )
+        self.plot_intensity.setLabel('left', 'Motor Posistion Y')
+
+        self.plot_comx.addItem(scatter_item_comx)
+        # self.plot_comx.addItem(image_item_comx)
+        self.grid_b.addWidget(self.plot_comx,0,0)
+        self.plot_comx.setLabel('bottom', 'Motor Position X' )
+        self.plot_comx.setLabel('left', 'Motor Posistion Y')
+
+        self.plot_comy.addItem(scatter_item_comy)
+        # self.plot_comy.addItem(image_item_comy)
+        self.grid_c.addWidget(self.plot_comy,0,0)
+        self.plot_comy.setLabel('bottom', 'Motor Position X' )
+        self.plot_comy.setLabel('left', 'Motor Posistion Y')
+
+    def init_image_view(self): 
         plot_item_intensity = pg.PlotItem()
+        plot_item_comx = pg.PlotItem()
+        plot_item_comy = pg.PlotItem()
+
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
-        # self.view_intensity.setColorMap(cmap)
         self.grid_a.addWidget(self.view_intensity,0,0)
         self.view_intensity.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_intensity.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        plot_item_comx = pg.PlotItem()
         self.view_comx = pg.ImageView(view=plot_item_comx)
-        # self.view_comx.setColorMap(cmap)
         self.grid_b.addWidget(self.view_comx,0,0)
         self.view_comx.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comx.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        plot_item_comy = pg.PlotItem()
         self.view_comy = pg.ImageView(view=plot_item_comy)
-        # self.view_comy.setColorMap(cmap)
         self.grid_c.addWidget(self.view_comy,0,0)
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')
+
+    def configure_plots(self):
+        """
+        this function initializes the user interface with smaller ImageView classes and defining the axis.
+        """
+        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        self.consumer_type = self.config.get("ConsumerType", "")
+        if self.consumer_type == "spontaneous":
+            self.init_scatter_plot()
+        elif self.consumer_type == "vectorized":
+            self.init_image_view()
+        else:
+            #TODO: replace with w/ a message box
+            print("Config Not Set Up Correctly")
+
+        
+    
+
 
     def closeEvent(self, event):
         self.parent.start_timers()
