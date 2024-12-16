@@ -1,3 +1,4 @@
+ConsumerType = "spontaneous"
 
 #Section used specifically for Metadata Pvs
 [metadata]
@@ -53,5 +54,5 @@
 
 
 [analysis]
-axis1 = "x"
-axis2 = "y"
+Axis1 = "x"
+Axis2 = "y"

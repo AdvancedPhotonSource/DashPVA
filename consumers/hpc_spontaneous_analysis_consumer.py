@@ -78,13 +78,18 @@ class HpcAnalysisProcessor(AdImageProcessor):
         Convert the PVA Object to a NumPy array representing the image.
         Apply correct shaping and transpose if needed.
         """
-        self.image = None
-        if pva_object is not None and 'dimension' in pva_object:
-            dims = pva_object['dimension']
-            shape = tuple([dim['size'] for dim in dims])
-            raw_data = np.array(pva_object['value'][0][self.data_type])
-            # Reshape and transpose if necessary to get correct orientation
-            self.image = np.reshape(raw_data, shape).T
+        try:
+
+            self.image = None
+            if pva_object is not None and 'dimension' in pva_object:
+                dims = pva_object['dimension']
+                shape = tuple([dim['size'] for dim in dims])
+                raw_data = np.array(pva_object['value'][0][self.data_type])
+                # Reshape and transpose if necessary to get correct orientation
+                self.image = np.reshape(raw_data, shape).T
+        except:
+            print("error parsing images")
+                    
 
     def process(self, pvObject):
         """
@@ -123,9 +128,9 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # Adjust as needed depending on attribute structure.
         x_attr = self.attributes.get('x', None)
         y_attr = self.attributes.get('y', None)
-        if x_attr and y_attr:
-            x_value = x_attr[0]['value'] if isinstance(x_attr, list) else 0.0
-            y_value = y_attr[0]['value'] if isinstance(y_attr, list) else 0.0
+        if x_attr is not None and y_attr is not None:
+            x_value = x_attr[0]['value'] if isinstance(x_attr, tuple) else 0.0
+            y_value = y_attr[0]['value'] if isinstance(y_attr, tuple) else 0.0
         else:
             # Default to 0 if attributes not found
             x_value = 0.0
@@ -152,13 +157,13 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
         # Now create a PvObject with the analysis results
         # We will send out a single data point (X, Y, Intensity, ComX, ComY)
-        analysis_object = PvObject({'X': DOUBLE, 'Y': DOUBLE,
-                                    'Intensity': DOUBLE, 'ComX': DOUBLE, 'ComY': DOUBLE},
-                                   {'X': float(x_value),
-                                    'Y': float(y_value),
+        analysis_object = PvObject({'value':{'Axis1': DOUBLE, 'Axis2': DOUBLE,
+                                    'Intensity': DOUBLE, 'ComX': DOUBLE, 'ComY': DOUBLE}},
+                                   {'value':{'Axis1': float(x_value),
+                                    'Axis2': float(y_value),
                                     'Intensity': float(intensity),
                                     'ComX': float(com_x),
-                                    'ComY': float(com_y)})
+                                    'ComY': float(com_y)}})
 
         # Create an NtAttribute to hold this analysis data
         pvAttr = pva.NtAttribute('Analysis', analysis_object)

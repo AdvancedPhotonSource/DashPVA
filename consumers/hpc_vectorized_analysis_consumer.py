@@ -2,7 +2,7 @@ import time
 import copy
 import numpy as np
 import pvaccess as pva
-from pvaccess import PvObject, USHORT, INT, DOUBLE
+from pvaccess import PvObject, DOUBLE
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
@@ -62,10 +62,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # self.save_path = "save_path"
         self.load_path()
         
-
-    ########################################################################################################################
     ####################### Porting Code From Original Area Detector View and Analysis Views ###############################
-    ########################################################################################################################
+    
     def parse_image_data_type(self, pva_object):
         """Parse through a PVA Object to store the incoming datatype."""
         if pva_object is not None:
@@ -73,11 +71,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
     
     def parse_pva_ndattributes(self, pva_object):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
-        if pva_object is not None:
-            obj_dict = pva_object.get()
-        else:
-            return None
-        
+        if pva_object is None:
+            return
+
+        obj_dict = pva_object.get()
         attributes = {}
         for attr in obj_dict.get("attribute", []):
             name = attr['name']
@@ -89,6 +86,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 attributes[value] = pva_object[value]
         
         self.attributes = attributes
+        
+        
 
     def pva_to_image(self, pva_object):
         """
@@ -97,7 +96,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         try:
             if pva_object is not None:
-                # self.frames_received += 1
                 # Parses dimensions and reshapes array into image
                 if 'dimension' in pva_object:
                     self.shape = tuple([dim['size'] for dim in pva_object['dimension']])
@@ -110,10 +108,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 if self.images_cache is None:
                     self.images_cache = np.zeros((self.MAX_CACHE_SIZE, *self.shape))
                     self.positions_cache = np.zeros((self.MAX_CACHE_SIZE,2)) # TODO: make useable for more metadata
-                
         except:
             pass
-            # self.frames_missed += 1
 
     def load_path(self):
         """
@@ -181,12 +177,21 @@ class HpcAnalysisProcessor(AdImageProcessor):
             self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
 
             # TODO: Create pv object out of the matrices and append them to the original pvobject
-            analysis_object = PvObject({'value':{"Intensity": [DOUBLE], "ComX": [DOUBLE], "ComY": [DOUBLE]}}, {'value':{"Intensity":self.intensity_matrix.ravel(), "ComX": self.com_x_matrix.ravel(), "ComY": self.com_y_matrix.ravel()}})
+            analysis_object = PvObject({'value':{
+                                            "Intensity": [DOUBLE],
+                                            "ComX": [DOUBLE], 
+                                            "ComY": [DOUBLE]}}, 
+                                        {'value':{
+                                            "Intensity":self.intensity_matrix.ravel(), 
+                                            "ComX": self.com_x_matrix.ravel(), 
+                                            "ComY": self.com_y_matrix.ravel()}})
+            
             pvAttr = pva.NtAttribute('Analysis', analysis_object)
 
             frameAttributes.append(pvAttr)
 
     ########################################## Process monitor update ####################################################
+
     def process(self, pvObject):
         t0 = time.time()
         frameId = pvObject['uniqueId']
@@ -220,7 +225,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             print(f"First Scan detected...")
 
         if self.first_scan_detected:
-            if self.id_diff> 0:
+            if self.id_diff > 0:
                 for i in range(self.id_diff):
                     self.cache_id = next(self.cache_id_gen)
                 self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
@@ -236,7 +241,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
             frameAttributes = pvObject['attribute']
             self.process_analysis_objects(frameAttributes=frameAttributes)
             pvObject['attribute'] = frameAttributes
-
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         #self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
