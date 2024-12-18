@@ -128,7 +128,8 @@ class PVA_Reader:
         self.data_type = None
         # variables used for parsing analysis PV
         self.analysis_index = None
-        self.analyis_exists = True
+        self.analysis_exists = True
+        self.analysis_attributes = {}
         # variables used for later logic
         self.last_array_id = None
         self.frames_missed = 0
@@ -144,6 +145,12 @@ class PVA_Reader:
                 # loads the pvs in the json file into a python dictionary
                 self.config:dict = toml.load(toml_file)
                 self.stats: dict = self.config["stats"]
+                if self.config["ConsumerType"] == "spontaneous":
+                    self.analysis_cache_dict = {"Intensity": [],
+                                                "ComX": [],
+                                                "ComY": [],
+                                                "Axis1": [],
+                                                "Axis2":[]} 
                 # print(self.stats)
 
     def pva_callbackSuccess(self, pv):
@@ -160,9 +167,19 @@ class PVA_Reader:
         self.pva_to_image()
         self.parse_pva_attributes()
         self.parse_roi_pvs()
-        if (self.analysis_index is None) and (self.analyis_exists): #go in with the assumption analysis exists, is changed to false otherwise
+        if (self.analysis_index is None) and (self.analysis_exists): #go in with the assumption analysis exists, is changed to false otherwise
             self.analysis_index = self.locate_analysis_index()
             # print(self.analysis_index)
+        if self.analysis_exists:
+            self.analysis_attributes = self.attributes[self.analysis_index]
+            if self.config["ConsumerType"] == "spontaneous":
+                self.analysis_cache_dict["Intensity"].append(self.analysis_attributes["value"][0]["value"].get("Intensity",0.0))
+                self.analysis_cache_dict["ComX"].append(self.analysis_attributes["value"][0]["value"].get("ComX",0.0))
+                self.analysis_cache_dict["ComY"].append(self.analysis_attributes["value"][0]["value"].get("ComY",0.0))
+                self.analysis_cache_dict["Axis1"].append(self.analysis_attributes["value"][0]["value"].get("Axis1",0.0))
+                self.analysis_cache_dict["Axis2"].append(self.analysis_attributes["value"][0]["value"].get("Axis2",0.0))
+            
+
               
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -181,7 +198,7 @@ class PVA_Reader:
                 if attr_pv.get("name", "") == "Analysis":
                     return i
             else:
-                self.analyis_exists = False
+                self.analysis_exists = False
                 return None
             
     def parse_roi_pvs(self):

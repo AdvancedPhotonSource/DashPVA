@@ -83,7 +83,7 @@ class AnalysisWindow(QMainWindow):
         ypos_path (str): The path to the y-positions file.
         save_path (str): The path to where the HDF5 file will be saved.
         timer_plot (QTimer): A timer to control the plot frequency.
-        call_times (int): Number of times the plot has been called.
+        update_counter (int): Number of times the plot has been called.
         intensity_matrix (numpy.ndarray): A 2D numpy array of intensity values.
         com_x_matrix (numpy.ndarray): A 2D numpy array of center of mass x values.
         com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
@@ -109,11 +109,13 @@ class AnalysisWindow(QMainWindow):
         self.config: dict = self.parent.reader.config
         self.check_num_rois()
         self.configure_plots()
+        
+        self.update_counter = 0
+        self.max_updates = 10
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
         self.timer_plot.start(int(1000/self.calc_freq.value()))
-        self.call_times = 0
 
         # self.btn_create_hdf5.clicked.connect(self.save_hdf5)
         # self.roi_x.valueChanged.connect(self.roi_boxes_changed)
@@ -124,6 +126,8 @@ class AnalysisWindow(QMainWindow):
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
         self.btn_reset.clicked.connect(self.reset_plot)
+        self.sbox_intensity_min.valueChanged.connect(self.intensity_min_max_changed)
+        self.sbox_intensity_max.valueChanged.connect(self.intensity_min_max_changed)
 
     def freeze_plotting_checked(self):
         """
@@ -197,7 +201,7 @@ class AnalysisWindow(QMainWindow):
         self.view_intensity.clear()
         self.view_comx.clear()
         self.view_comy.clear()
-        self.call_times = 0
+        self.update_counter = 0
         # self.parent.reader.images_cache = None # [:,:,:] = 0 
         # Done because caching should be done from scratch
         self.parent.reader.frames_received = 0
@@ -246,10 +250,19 @@ class AnalysisWindow(QMainWindow):
     #     self.parent.roi_width = self.roi_width.value()
     #     self.parent.roi_height = self.roi_height.value()
     #     self.cbox_select_roi.setCurrentIndex(0)
-    #     self.call_times = 0
+    #     self.update_counter = 0
         
     def frequency_changed(self):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
+
+    def intensity_min_max_changed(self):
+        self.min_intensity = self.sbox_intensity_min.value()
+        self.max_intensity = self.sbox_intensity_max.value()
+
+        if self.config['ConsumerType'] == 'spontaneous':
+            self.plot_images()
+        if self.config['ConsumerType'] == 'vectorized':
+            self.view_intensity.setLevels(self.min_intensity, self.max_intensity)
 
     def update_vectorized_image(self, intensity, com_x, com_y):
         size = int(np.sqrt(len(intensity)))
@@ -258,21 +271,44 @@ class AnalysisWindow(QMainWindow):
         com_y_matrix = np.reshape(com_y,(size, size))
 
         # USING IMAGE VIEW:
+        if self.update_counter == self.max_updates:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_intensity,self.max_intensity), autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_comx,self.max_comx), autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_comy,self.max_comy), autoHistogramRange=False)
 
-        if self.call_times == 5:
-            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoHistogramRange=False)
-
-            self.view_comx.setLevels(0, self.roi_width.value())
-            self.view_comy.setLevels(0,self.roi_height.value())
+            self.sbox_intensity_max.setValue(self.max_intensity)
+            self.sbox_comx_max.setValue(self.max_intensity)
+            self.sbox_comy_max.setValue(self.max_intensity)
         else:
             self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
 
+    
+    def update_spontaneous_image(self, intensity, com_x, com_y, axis1, axis2):
+
+        intensity = np.array(intensity)
+        com_x = np.array(com_x)
+        com_y = np.array(com_y)
+        axis1 = np.array(axis1)
+        axis2 = np.array(axis2)
 
 
+        # filter_intensity = (intensity >= self.min_intensity) & (intensity <= self.max_intensity)
+
+        intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) # intensity[filter_intensity]
+        # axis1_filtered = axis1[filter_intensity]
+        # axis2_filtered = axis2[filter_intensity]
+
+        norm_intensity_colors = (intensity_filtered - self.min_intensity) / (self.max_intensity - self.min_intensity)
+    
+            
+        cmap = pg.colormap.get("viridis.csv")
+        brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
+        # spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x,y,brush, in zip(axis1_filtered, axis2_filtered, brushes)]
+        spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x,y,brush, in zip(axis1, axis2, brushes)]
+
+        self.scatter_item_intensity.setData(spots)
     def plot_images(self):
         """
         Redraws plots based on rate entered in hz box.
@@ -280,54 +316,82 @@ class AnalysisWindow(QMainWindow):
 
         if self.analysis_index is not None:
 
-            self.call_times += 1
-            analysis_attributes = self.parent.reader.attributes[self.analysis_index]
+            self.update_counter += 1
+            # TODO: test if this line can be assigned once and use update on its own
+            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
             #print(analysis_attributes)
-            intensity = analysis_attributes["value"][0]["value"].get("Intensity",[])
-            com_x = analysis_attributes["value"][0]["value"].get("ComX",[])
-            com_y = analysis_attributes["value"][0]["value"].get("ComY",[])
-            axis1 = analysis_attributes["value"][0]["value"].get("Axis1",0.0)
-            axis2 = analysis_attributes["value"][0]["value"].get("Axis2",0.0)
+            if self.consumer_type == "vectorized":
+                intensity = self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)
+                com_x = self.analysis_attributes["value"][0]["value"].get("ComX",0.0)
+                com_y = self.analysis_attributes["value"][0]["value"].get("ComY",0.0)
+            elif self.consumer_type == "spontaneous":
+                intensity = self.analysis_attributes["Intensity"]
+                com_x = self.analysis_attributes["ComX"]
+                com_y = self.analysis_attributes["ComY"]
+                axis1 = self.analysis_attributes["Axis1"]
+                axis2= self.analysis_attributes["Axis2"]
+                
+
+            if self.update_counter == 1:
+                self.min_intensity = 0
+                self.max_intensity = np.max(intensity)
+                self.sbox_intensity_max.setValue(self.max_intensity)
+
+                self.min_comx = 0
+                self.max_comx = np.max(com_x)
+                self.sbox_comx_max.setValue(self.max_comx)
+
+                self.min_comy = 0
+                self.max_comy = np.max(com_y)
+                self.sbox_comy_max.setValue(self.max_comy)
 
             # print(intensity)
             if self.consumer_type == "vectorized":
-                self.update_vectorized_image(intensity=intensity, com_x=com_x,com_y=com_y,)
+                self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
+            elif self.consumer_type == "spontaneous":
+                self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, axis1=axis1, axis2=axis2)  
 
 
     def init_scatter_plot(self):
+        self.scatter_item_intensity = pg.ScatterPlotItem()
+        self.scatter_item_comx = pg.ScatterPlotItem()
+        self.scatter_item_comy = pg.ScatterPlotItem()
+
         self.plot_intensity = pg.PlotWidget()
         self.plot_comx = pg.PlotWidget()
         self.plot_comy = pg.PlotWidget()
-
-        scatter_item_intensity = pg.ScatterPlotItem()
-        scatter_item_comx = pg.ScatterPlotItem()
-        scatter_item_comy = pg.ScatterPlotItem()
 
         # image_item_intensity = pg.ImageItem()
         # image_item_comx = pg.ImageItem()
         # image_item_comy = pg.ImageItem()
 
-        self.x_data = []
-        self.y_data = []
+        # self.axis1_data = []
+        # self.axis2_data = []
+        # self.intensity_data = []
+        # self.comx_data = []
+        # self.comy_data = []
+        # self.norm_intensity = [] # based off self.intensity_data
 
-
-        self.plot_intensity.addItem(scatter_item_intensity)
+        self.plot_intensity.addItem(self.scatter_item_intensity)
         # self.plot_intensity.addItem(image_item_intensity)
         self.grid_a.addWidget(self.plot_intensity,0,0)
         self.plot_intensity.setLabel('bottom', 'Motor Position X' )
         self.plot_intensity.setLabel('left', 'Motor Posistion Y')
+        self.plot_intensity.invertY(True)
 
-        self.plot_comx.addItem(scatter_item_comx)
+        self.plot_comx.addItem(self.scatter_item_comx)
         # self.plot_comx.addItem(image_item_comx)
         self.grid_b.addWidget(self.plot_comx,0,0)
         self.plot_comx.setLabel('bottom', 'Motor Position X' )
         self.plot_comx.setLabel('left', 'Motor Posistion Y')
+        self.plot_comx.invertY(True)
 
-        self.plot_comy.addItem(scatter_item_comy)
+        self.plot_comy.addItem(self.scatter_item_comy)
         # self.plot_comy.addItem(image_item_comy)
         self.grid_c.addWidget(self.plot_comy,0,0)
         self.plot_comy.setLabel('bottom', 'Motor Position X' )
         self.plot_comy.setLabel('left', 'Motor Posistion Y')
+        self.plot_comy.invertY(True)
 
     def init_image_view(self): 
         plot_item_intensity = pg.PlotItem()
@@ -335,16 +399,17 @@ class AnalysisWindow(QMainWindow):
         plot_item_comy = pg.PlotItem()
 
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
+        self.view_comx = pg.ImageView(view=plot_item_comx)
+        self.view_comy = pg.ImageView(view=plot_item_comy)
+
         self.grid_a.addWidget(self.view_intensity,0,0)
         self.view_intensity.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_intensity.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        self.view_comx = pg.ImageView(view=plot_item_comx)
         self.grid_b.addWidget(self.view_comx,0,0)
         self.view_comx.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comx.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        self.view_comy = pg.ImageView(view=plot_item_comy)
         self.grid_c.addWidget(self.view_comy,0,0)
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')

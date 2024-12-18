@@ -1,6 +1,7 @@
+# Required Setup
 ConsumerType = "spontaneous"
 
-#Section used specifically for Metadata Pvs
+# Section used specifically for Metadata Pvs
 [metadata]
 
     [metadata.ca]
@@ -38,21 +39,22 @@ ConsumerType = "spontaneous"
 
 
 [stats]
-    [stats.Stats1]
-    Total = "dp-ADSim:Stats1:Total_RBV"
-    Min = "dp-ADSim:Stats1:MinValue_RBV"
-    Max = "dp-ADSim:Stats1:MaxValue_RBV"
-    Sigma = "dp-ADSim:Stats1:Sigma_RBV"
-    Mean = "dp-ADSim:Stats1:MeanValue_RBV"
+    # [stats.Stats1]
+    # Total = "dp-ADSim:Stats1:Total_RBV"
+    # Min = "dp-ADSim:Stats1:MinValue_RBV"
+    # Max = "dp-ADSim:Stats1:MaxValue_RBV"
+    # Sigma = "dp-ADSim:Stats1:Sigma_RBV"
+    # Mean = "dp-ADSim:Stats1:MeanValue_RBV"
 
-    [stats.Stats2]
-    Total = "dp-ADSim:Stats2:Total_RBV"
-    Min = "dp-ADSim:Stats2:MinValue_RBV"
-    Max = "dp-ADSim:Stats2:MaxValue_RBV"
-    Sigma = "dp-ADSim:Stats2:Sigma_RBV"
-    Mean = "dp-ADSim:Stats2:MeanValue_RBV"
+    # [stats.Stats2]
+    # Total = "dp-ADSim:Stats2:Total_RBV"
+    # Min = "dp-ADSim:Stats2:MinValue_RBV"
+    # Max = "dp-ADSim:Stats2:MaxValue_RBV"
+    # Sigma = "dp-ADSim:Stats2:Sigma_RBV"
+    # Mean = "dp-ADSim:Stats2:MeanValue_RBV"
 
 
 [analysis]
+# For use in the analysis server, not on the client side.
 Axis1 = "x"
 Axis2 = "y"
