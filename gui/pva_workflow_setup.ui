@@ -22,7 +22,7 @@
       </font>
      </property>
      <property name="currentIndex">
-      <number>2</number>
+      <number>1</number>
      </property>
      <widget class="QWidget" name="simServerTab">
       <attribute name="title">
@@ -47,7 +47,7 @@
             <number>86400</number>
            </property>
            <property name="value">
-            <number>7200</number>
+            <number>28800</number>
            </property>
           </widget>
          </item>

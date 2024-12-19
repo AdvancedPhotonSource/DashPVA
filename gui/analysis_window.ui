@@ -92,6 +92,9 @@
     </widget>
    </widget>
    <widget class="QComboBox" name="cbox_select_roi">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -107,6 +110,9 @@
     </item>
    </widget>
    <widget class="QPushButton" name="btn_reset">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -162,6 +168,9 @@
     </property>
    </widget>
    <widget class="QPushButton" name="btn_create_hdf5">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
     <property name="geometry">
      <rect>
       <x>180</x>
@@ -175,6 +184,9 @@
     </property>
    </widget>
    <widget class="QCheckBox" name="chk_freeze">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
     <property name="geometry">
      <rect>
       <x>910</x>

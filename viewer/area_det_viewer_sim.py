@@ -17,7 +17,7 @@ from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow #, analysis_window_process
-from scan_plan_dialog import ScanPlanDialog
+# from scan_plan_dialog import ScanPlanDialog
 
 
 max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file 
@@ -335,11 +335,11 @@ class ImageWindow(QMainWindow):
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
+        self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
-        self.log_image.clicked.connect(self.update_image)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
@@ -349,23 +349,28 @@ class ImageWindow(QMainWindow):
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
+        self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
-    def open_analysis_window_clicked(self):
-        self.analysis_window = AnalysisWindow(parent=self)
-        self.analysis_window.show()
-        
+    def update_pv_prefix(self):
+        self._input_channel = self.pv_prefix.text()
+
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
         self.timer_labels.start(int(1000/100))
-        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+        self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self):
         """Stops the updating of Main Window Labels"""
         self.timer_plot.stop()
         self.timer_labels.stop()
+
+    def open_analysis_window_clicked(self):
+        if self.reader.image is not None:
+            self.analysis_window = AnalysisWindow(parent=self)
+            self.analysis_window.show()
 
     def start_live_view_clicked(self):
         """
@@ -591,8 +596,8 @@ class ImageWindow(QMainWindow):
     
     def update_min_max_setting(self):
         """Updates the levels for the pixel values you want to see in the ImageViewer"""
-        min = float(self.min_setting_val.text())
-        max = float(self.max_setting_val.text())
+        min = self.min_setting_val.value()
+        max = self.max_setting_val.value()
         self.image_view.setLevels(min, max)
     
     def closeEvent(self, event):
