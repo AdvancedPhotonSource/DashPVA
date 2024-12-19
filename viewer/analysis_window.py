@@ -94,24 +94,25 @@ class AnalysisWindow(QMainWindow):
         self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
+        # TODO: load config separately using the filepath provided by the parent
+        self.config: dict = self.parent.reader.config
+        self.consumer_type = self.config.get("ConsumerType", "")
         self.xpos_path = None
         self.ypos_path = None
         self.save_path = None
         self.view_comx = None
         self.view_comy = None
         self.view_intensity = None
-        self.analysis_index = self.parent.reader.analysis_index
-        # self.load_path()
-
-        #configuration
-        # TODO: load config separately using the filepath provided by the parent
-        # so it can be edited and still be loaded
-        self.config: dict = self.parent.reader.config
-        self.check_num_rois()
-        self.configure_plots()
-        
         self.update_counter = 0
         self.max_updates = 10
+        self.analysis_index = self.parent.reader.analysis_index
+        if self.analysis_index is not None:
+            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
+        else:
+            self.analysis_attributes = {}
+
+        self.check_num_rois()
+        self.configure_plots()
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
@@ -125,9 +126,13 @@ class AnalysisWindow(QMainWindow):
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
-        self.btn_reset.clicked.connect(self.reset_plot)
-        self.sbox_intensity_min.valueChanged.connect(self.intensity_min_max_changed)
-        self.sbox_intensity_max.valueChanged.connect(self.intensity_min_max_changed)
+        # self.btn_reset.clicked.connect(self.reset_plot)
+        self.sbox_intensity_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_intensity_max.valueChanged.connect(self.min_max_changed)
+        self.sbox_comx_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_comx_max.valueChanged.connect(self.min_max_changed)
+        self.sbox_comy_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_comy_max.valueChanged.connect(self.min_max_changed)
 
     def freeze_plotting_checked(self):
         """
@@ -255,14 +260,20 @@ class AnalysisWindow(QMainWindow):
     def frequency_changed(self):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
-    def intensity_min_max_changed(self):
+    def min_max_changed(self):
         self.min_intensity = self.sbox_intensity_min.value()
         self.max_intensity = self.sbox_intensity_max.value()
+        self.min_comx = self.sbox_comx_min.value()
+        self.max_comx = self.sbox_comx_max.value()
+        self.min_comy = self.sbox_comy_min.value()
+        self.max_comy = self.sbox_comy_max.value()
 
         if self.config['ConsumerType'] == 'spontaneous':
             self.plot_images()
         if self.config['ConsumerType'] == 'vectorized':
             self.view_intensity.setLevels(self.min_intensity, self.max_intensity)
+            self.view_comx.setLevels(self.min_comx, self.max_comx)
+            self.view_comy.setLevels(self.min_comy, self.max_comy)
 
     def update_vectorized_image(self, intensity, com_x, com_y):
         size = int(np.sqrt(len(intensity)))
@@ -277,8 +288,8 @@ class AnalysisWindow(QMainWindow):
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_comy,self.max_comy), autoHistogramRange=False)
 
             self.sbox_intensity_max.setValue(self.max_intensity)
-            self.sbox_comx_max.setValue(self.max_intensity)
-            self.sbox_comy_max.setValue(self.max_intensity)
+            self.sbox_comx_max.setValue(self.max_comx)
+            self.sbox_comy_max.setValue(self.max_comy)
         else:
             self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
@@ -293,22 +304,30 @@ class AnalysisWindow(QMainWindow):
         axis1 = np.array(axis1)
         axis2 = np.array(axis2)
 
-
-        # filter_intensity = (intensity >= self.min_intensity) & (intensity <= self.max_intensity)
-
-        intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) # intensity[filter_intensity]
-        # axis1_filtered = axis1[filter_intensity]
-        # axis2_filtered = axis2[filter_intensity]
-
+        # sets instead of no dots appearing if points are ourside fo min and max, clips them to be min and max values
+        intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) 
+        comx_filtered = np.clip(com_x, self.min_comx, self.max_comx)
+        comy_filtered = np.clip(com_y, self.min_comy, self.max_comy)
+        # normalization of data points based on min and max
         norm_intensity_colors = (intensity_filtered - self.min_intensity) / (self.max_intensity - self.min_intensity)
+        norm_comx_colors = (comx_filtered - self.min_comx) / (self.max_comx - self.min_comx)
+        norm_comy_colors = (comy_filtered - self.min_comy) / (self.max_comy - self.min_comy)
     
-            
         cmap = pg.colormap.get("viridis.csv")
-        brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
-        # spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x,y,brush, in zip(axis1_filtered, axis2_filtered, brushes)]
-        spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x,y,brush, in zip(axis1, axis2, brushes)]
 
-        self.scatter_item_intensity.setData(spots)
+        # creating data for intensity plot
+        intensity_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
+        intensity_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, intensity_brushes)]
+        # creating data for com_x plot
+        comx_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comx_colors]
+        comx_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comx_brushes)]
+        # creating data for com_y plot
+        comy_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comy_colors]
+        comy_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comy_brushes)]
+
+        self.scatter_item_intensity.setData(intensity_spots)
+        self.scatter_item_comx.setData(comx_spots)
+        self.scatter_item_comy.setData(comy_spots)
     def plot_images(self):
         """
         Redraws plots based on rate entered in hz box.
@@ -318,9 +337,9 @@ class AnalysisWindow(QMainWindow):
 
             self.update_counter += 1
             # TODO: test if this line can be assigned once and use update on its own
-            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
             #print(analysis_attributes)
             if self.consumer_type == "vectorized":
+                self.analysis_attributes = self.parent.reader.attributes[self.analysis_index] 
                 intensity = self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)
                 com_x = self.analysis_attributes["value"][0]["value"].get("ComX",0.0)
                 com_y = self.analysis_attributes["value"][0]["value"].get("ComY",0.0)
@@ -419,7 +438,6 @@ class AnalysisWindow(QMainWindow):
         this function initializes the user interface with smaller ImageView classes and defining the axis.
         """
         # cmap = pg.colormap.getFromMatplotlib('viridis')
-        self.consumer_type = self.config.get("ConsumerType", "")
         if self.consumer_type == "spontaneous":
             self.init_scatter_plot()
         elif self.consumer_type == "vectorized":

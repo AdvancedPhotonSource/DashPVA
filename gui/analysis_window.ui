@@ -278,7 +278,7 @@
      <double>-9999.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>9999.000000000000000</double>
+     <double>9999999997.000000000000000</double>
     </property>
    </widget>
    <widget class="QDoubleSpinBox" name="sbox_comx_min">
@@ -294,7 +294,7 @@
      <double>-9999.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>9999.000000000000000</double>
+     <double>9999999997.000000000000000</double>
     </property>
    </widget>
    <widget class="QDoubleSpinBox" name="sbox_comy_min">
@@ -310,7 +310,7 @@
      <double>-9999.000000000000000</double>
     </property>
     <property name="maximum">
-     <double>9999.000000000000000</double>
+     <double>9999999997.000000000000000</double>
     </property>
    </widget>
    <widget class="QDoubleSpinBox" name="sbox_intensity_max">

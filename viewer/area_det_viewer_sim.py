@@ -184,7 +184,10 @@ class PVA_Reader:
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:
-            self.data_type = list(self.pva_object['value'][0].keys())[0]
+            try:
+                self.data_type = list(self.pva_object['value'][0].keys())[0]
+            except:
+                self.data_type = "could not detect"
     
     def parse_pva_attributes(self):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
