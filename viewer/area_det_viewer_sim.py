@@ -118,11 +118,12 @@ class PVA_Reader:
         self.provider = provider
         self.config_filepath = config_filepath
         self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = "dp-ADSim" # input_channel.split(":")[0]
+        self.pva_prefix = "dp-ADSim"
         # variables that will store pva data
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
+        self.pixel_sort_order = 'C'
         self.attributes = []
         self.timestamp = None
         self.data_type = None
@@ -232,7 +233,7 @@ class PVA_Reader:
                     self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # reshapes but also transposes image so it is viewed correctly
-                    self.image= np.reshape(self.image, self.shape).T
+                    self.image= np.reshape(self.image, self.shape, order=self.pixel_sort_order).T if self.chk_transpose.isChecked() else np.reshape(self.image, self.shape, order=self.pixel_sort_order)
                 else:
                     self.image = None
                 # Check for missed frame starts here

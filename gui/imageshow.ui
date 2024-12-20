@@ -208,9 +208,9 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>0</y>
+           <y>-267</y>
            <width>335</width>
-           <height>1591</height>
+           <height>1751</height>
           </rect>
          </property>
          <widget class="QGroupBox" name="group_box_stats">
@@ -834,7 +834,7 @@ QPushButton:pressed {
             <x>10</x>
             <y>510</y>
             <width>321</width>
-            <height>291</height>
+            <height>451</height>
            </rect>
           </property>
           <property name="sizePolicy">
@@ -856,8 +856,8 @@ QPushButton:pressed {
             <rect>
              <x>10</x>
              <y>30</y>
-             <width>301</width>
-             <height>251</height>
+             <width>303</width>
+             <height>260</height>
             </rect>
            </property>
            <layout class="QFormLayout" name="image_layout">
@@ -1098,6 +1098,22 @@ QPushButton:pressed {
               </property>
              </widget>
             </item>
+            <item row="5" column="0">
+             <widget class="QCheckBox" name="display_rois">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Show Rois</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
             <item row="5" column="1">
              <widget class="QPushButton" name="rotate90degCCW">
               <property name="minimumSize">
@@ -1134,20 +1150,74 @@ QPushButton::pressed {
               </property>
              </widget>
             </item>
-            <item row="5" column="0">
-             <widget class="QCheckBox" name="display_rois">
-              <property name="minimumSize">
+           </layout>
+          </widget>
+          <widget class="QWidget" name="gridLayoutWidget_2">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>310</y>
+             <width>301</width>
+             <height>131</height>
+            </rect>
+           </property>
+           <layout class="QGridLayout" name="glayout_pixel_sorting">
+            <item row="0" column="0">
+             <widget class="QGroupBox" name="group_box_pixel_sorting">
+              <property name="maximumSize">
                <size>
-                <width>0</width>
-                <height>30</height>
+                <width>16777215</width>
+                <height>120</height>
                </size>
               </property>
-              <property name="text">
-               <string>Show Rois</string>
+              <property name="title">
+               <string>Pixel Sorting</string>
               </property>
-              <property name="checked">
-               <bool>true</bool>
-              </property>
+              <widget class="QWidget" name="formLayoutWidget_7">
+               <property name="geometry">
+                <rect>
+                 <x>0</x>
+                 <y>20</y>
+                 <width>301</width>
+                 <height>101</height>
+                </rect>
+               </property>
+               <layout class="QFormLayout" name="flayout_pixel_sorting">
+                <item row="1" column="0">
+                 <widget class="QCheckBox" name="chk_transpose">
+                  <property name="maximumSize">
+                   <size>
+                    <width>161</width>
+                    <height>16777215</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>Transpose Image</string>
+                  </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item row="0" column="0">
+                 <widget class="QRadioButton" name="rbtn_C">
+                  <property name="text">
+                   <string>C</string>
+                  </property>
+                  <property name="checked">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item row="0" column="1">
+                 <widget class="QRadioButton" name="rbtn_F">
+                  <property name="text">
+                   <string>Fortran</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
              </widget>
             </item>
            </layout>
@@ -1157,7 +1227,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>810</y>
+            <y>970</y>
             <width>321</width>
             <height>631</height>
            </rect>
@@ -1521,7 +1591,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>1460</y>
+            <y>1610</y>
             <width>321</width>
             <height>121</height>
            </rect>
@@ -1563,7 +1633,7 @@ QPushButton::pressed {
         <property name="maximumSize">
          <size>
           <width>16777215</width>
-          <height>16777215</height>
+          <height>70</height>
          </size>
         </property>
         <property name="font">
@@ -1573,6 +1643,9 @@ QPushButton::pressed {
         </property>
         <property name="title">
          <string>Connection</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
         </property>
         <widget class="QWidget" name="formLayoutWidget_5">
          <property name="geometry">
