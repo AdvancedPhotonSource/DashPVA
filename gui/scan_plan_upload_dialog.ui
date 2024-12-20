@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>scan_plan_upload_dialog</class>
+ <widget class="QDialog" name="scan_plan_upload_dialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>453</width>
+    <height>367</height>
+   </rect>
+  </property>
+  <property name="font">
+   <font>
+    <pointsize>12</pointsize>
+   </font>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  <widget class="QDialogButtonBox" name="btn_accept_reject">
+   <property name="geometry">
+    <rect>
+     <x>140</x>
+     <y>320</y>
+     <width>171</width>
+     <height>41</height>
+    </rect>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+   </property>
+  </widget>
+  <widget class="QGroupBox" name="gb_upload">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>30</y>
+     <width>431</width>
+     <height>181</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>Upload Scan Plan</string>
+   </property>
+   <widget class="QLabel" name="lbl_xpos">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>30</y>
+      <width>101</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>X positions:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="lbl_ypos">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>110</y>
+      <width>101</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Y positions:</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="le_xpos_path">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>50</y>
+      <width>281</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/xpos.npy</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="le_ypos_path">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>130</y>
+      <width>281</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/ypos.npy</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="btn_xpos">
+    <property name="geometry">
+     <rect>
+      <x>320</x>
+      <y>50</y>
+      <width>101</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Browse</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="btn_ypos">
+    <property name="geometry">
+     <rect>
+      <x>320</x>
+      <y>130</y>
+      <width>101</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Browse</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QGroupBox" name="gb_download">
+   <property name="geometry">
+    <rect>
+     <x>9</x>
+     <y>230</y>
+     <width>431</width>
+     <height>71</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>Download File Location</string>
+   </property>
+   <widget class="QLineEdit" name="le_download">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>30</y>
+      <width>281</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="btn_download">
+    <property name="geometry">
+     <rect>
+      <x>319</x>
+      <y>30</y>
+      <width>101</width>
+      <height>36</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Browse</string>
+    </property>
+   </widget>
+  </widget>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>btn_accept_reject</sender>
+   <signal>rejected()</signal>
+   <receiver>scan_plan_upload_dialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

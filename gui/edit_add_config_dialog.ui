@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>401</width>
-    <height>451</height>
+    <width>402</width>
+    <height>660</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,10 +17,15 @@
    <property name="geometry">
     <rect>
      <x>220</x>
-     <y>410</y>
+     <y>620</y>
      <width>171</width>
      <height>32</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
    </property>
    <property name="orientation">
     <enum>Qt::Horizontal</enum>
@@ -32,11 +37,16 @@
   <widget class="QLineEdit" name="le_key_name">
    <property name="geometry">
     <rect>
-     <x>40</x>
+     <x>30</x>
      <y>40</y>
-     <width>331</width>
+     <width>341</width>
      <height>41</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
    </property>
    <property name="styleSheet">
     <string notr="true">border:1px solid black;
@@ -46,11 +56,16 @@ border-radius:3;</string>
   <widget class="QLineEdit" name="le_item_info">
    <property name="geometry">
     <rect>
-     <x>40</x>
+     <x>30</x>
      <y>120</y>
-     <width>331</width>
+     <width>341</width>
      <height>41</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
    </property>
    <property name="styleSheet">
     <string notr="true">border:1px solid black;
@@ -60,11 +75,16 @@ border-radius:3;</string>
   <widget class="QLabel" name="lbl_key_name">
    <property name="geometry">
     <rect>
-     <x>30</x>
+     <x>20</x>
      <y>20</y>
-     <width>91</width>
+     <width>121</width>
      <height>16</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
    </property>
    <property name="text">
     <string>PV Key/Name:</string>
@@ -73,11 +93,16 @@ border-radius:3;</string>
   <widget class="QLabel" name="lbl_item_info">
    <property name="geometry">
     <rect>
-     <x>30</x>
+     <x>20</x>
      <y>100</y>
-     <width>91</width>
+     <width>111</width>
      <height>21</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
    </property>
    <property name="text">
     <string>PV Item/Info:</string>
@@ -92,6 +117,11 @@ border-radius:3;</string>
      <height>31</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
+   </property>
    <property name="text">
     <string>Add</string>
    </property>
@@ -99,26 +129,67 @@ border-radius:3;</string>
   <widget class="QPushButton" name="btn_delete">
    <property name="geometry">
     <rect>
-     <x>99</x>
+     <x>90</x>
      <y>180</y>
      <width>91</width>
      <height>31</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
+   </property>
    <property name="text">
     <string>Delete</string>
    </property>
   </widget>
-  <widget class="QWidget" name="verticalLayoutWidget">
+  <widget class="QScrollArea" name="scroll_area">
    <property name="geometry">
     <rect>
-     <x>9</x>
-     <y>229</y>
+     <x>20</x>
+     <y>220</y>
      <width>381</width>
-     <height>161</height>
+     <height>389</height>
     </rect>
    </property>
-   <layout class="QVBoxLayout" name="vlayout_pvs"/>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="verticalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOn</enum>
+   </property>
+   <property name="horizontalScrollBarPolicy">
+    <enum>Qt::ScrollBarAlwaysOff</enum>
+   </property>
+   <property name="widgetResizable">
+    <bool>true</bool>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+   </property>
+   <widget class="QWidget" name="scrollAreaWidgetContents">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>0</y>
+      <width>365</width>
+      <height>387</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+   </widget>
   </widget>
  </widget>
  <resources/>
