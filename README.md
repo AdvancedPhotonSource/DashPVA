@@ -11,4 +11,4 @@ DashPVA enables distributed analysis and real-time image streaming using PvaPy a
 - **Integration with PvaPy**: Leverages PvaPy to access process variables efficiently.
 
 ## Getting Started
-Follow the instructions in the `RUN_INSTRUCTIONS.md` for setup and usage.
+Follow the instructions in the [RUN_INSTRUCTIONS.md](RUN_INSTRUCTIONS.md) for setup and usage.
