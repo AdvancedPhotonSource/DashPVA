@@ -123,7 +123,8 @@ class PVA_Reader:
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
-        self.pixel_sort_order = 'C'
+        self.pixel_ordering = 'C'
+        self.image_is_transposed = True
         self.attributes = []
         self.timestamp = None
         self.data_type = None
@@ -177,11 +178,10 @@ class PVA_Reader:
                 self.analysis_cache_dict["Intensity"].append(self.analysis_attributes["value"][0]["value"].get("Intensity",0.0))
                 self.analysis_cache_dict["ComX"].append(self.analysis_attributes["value"][0]["value"].get("ComX",0.0))
                 self.analysis_cache_dict["ComY"].append(self.analysis_attributes["value"][0]["value"].get("ComY",0.0))
+                #TODO: replace axis 1 and axis 2 with "Position" and make item a dict with key being axis1val and axis2 val with item (axis1val, axis2val)
                 self.analysis_cache_dict["Axis1"].append(self.analysis_attributes["value"][0]["value"].get("Axis1",0.0))
                 self.analysis_cache_dict["Axis2"].append(self.analysis_attributes["value"][0]["value"].get("Axis2",0.0))
             
-
-              
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:
@@ -233,7 +233,7 @@ class PVA_Reader:
                     self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # reshapes but also transposes image so it is viewed correctly
-                    self.image= np.reshape(self.image, self.shape, order=self.pixel_sort_order).T if self.chk_transpose.isChecked() else np.reshape(self.image, self.shape, order=self.pixel_sort_order)
+                    self.image = np.reshape(self.image, self.shape, order=self.pixel_ordering).T if self.image_is_transposed else np.reshape(self.image, self.shape, order=self.pixel_ordering)
                 else:
                     self.image = None
                 # Check for missed frame starts here
@@ -246,6 +246,7 @@ class PVA_Reader:
                         self.id_diff = 0
                 self.last_array_id = current_array_id
         except:
+            print("failed process image")
             self.frames_missed += 1
             # return 1
             
@@ -266,13 +267,6 @@ class PVA_Reader:
         """Stops all monitorg and callback functions from continuing"""
         self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
-
-    # def get_pva_objects(self):
-    #     """Returns entire cached list of PVA Objects"""
-    #     return self.images_cache
-
-    # def get_last_pva_object(self):
-    #     return self.images_cache[-1]
 
     def get_frames_missed(self):
         return self.frames_missed
@@ -340,13 +334,15 @@ class ImageWindow(QMainWindow):
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
-        self.rotate90degCCW.clicked.connect(self.rotation_count)
-        self.log_image.clicked.connect(self.reset_first_plot)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
         self.btn_Stats4.clicked.connect(self.stats_button_clicked)
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
+        self.rbtn_C.clicked.connect(self.c_ordering_clicked)
+        self.rbtn_F.clicked.connect(self.f_ordering_clicked)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
+        self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
@@ -355,8 +351,7 @@ class ImageWindow(QMainWindow):
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
-    def update_pv_prefix(self):
-        self._input_channel = self.pv_prefix.text()
+    
 
     def start_timers(self):
         """Timer speeds for updating labels and plotting"""
@@ -367,6 +362,14 @@ class ImageWindow(QMainWindow):
         """Stops the updating of Main Window Labels"""
         self.timer_plot.stop()
         self.timer_labels.stop()
+
+    def c_ordering_clicked(self):
+        if self.reader is not None:
+            self.reader.pixel_ordering = 'C'
+
+    def f_ordering_clicked(self):
+        if self.reader is not None:
+            self.reader.pixel_ordering = 'F'
 
     def open_analysis_window_clicked(self):
         if self.reader.image is not None:
@@ -470,6 +473,13 @@ class ImageWindow(QMainWindow):
                 self.timer_plot.stop()
             else:
                 self.start_timers()
+    
+    def transpose_image_checked(self):
+        if self.reader is not None:
+            if self.chk_transpose.isChecked():
+                self.reader.image_is_transposed = True
+            else: 
+                self.reader.image_is_transposed = False
 
     def reset_first_plot(self):
         self.first_plot = True
@@ -501,6 +511,9 @@ class ImageWindow(QMainWindow):
                          pen=pg.mkPen(roi_colors[i]))
             self.rois.append(roi)
             self.image_view.addItem(roi)
+    
+    def update_pv_prefix(self):
+        self._input_channel = self.pv_prefix.text()
 
     def update_rois(self):
         """

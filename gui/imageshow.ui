@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1360</width>
+    <width>1368</width>
     <height>926</height>
    </rect>
   </property>
@@ -208,7 +208,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-267</y>
+           <y>-283</y>
            <width>335</width>
            <height>1751</height>
           </rect>
@@ -834,7 +834,7 @@ QPushButton:pressed {
             <x>10</x>
             <y>510</y>
             <width>321</width>
-            <height>451</height>
+            <height>371</height>
            </rect>
           </property>
           <property name="sizePolicy">
@@ -856,8 +856,8 @@ QPushButton:pressed {
             <rect>
              <x>10</x>
              <y>30</y>
-             <width>303</width>
-             <height>260</height>
+             <width>301</width>
+             <height>331</height>
             </rect>
            </property>
            <layout class="QFormLayout" name="image_layout">
@@ -865,7 +865,7 @@ QPushButton:pressed {
              <enum>QLayout::SetDefaultConstraint</enum>
             </property>
             <property name="labelAlignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
             </property>
             <property name="formAlignment">
              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
@@ -1099,6 +1099,22 @@ QPushButton:pressed {
              </widget>
             </item>
             <item row="5" column="0">
+             <widget class="QCheckBox" name="chk_transpose">
+              <property name="maximumSize">
+               <size>
+                <width>161</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Transpose Image</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
              <widget class="QCheckBox" name="display_rois">
               <property name="minimumSize">
                <size>
@@ -1114,7 +1130,28 @@ QPushButton:pressed {
               </property>
              </widget>
             </item>
-            <item row="5" column="1">
+            <item row="6" column="1">
+             <layout class="QHBoxLayout" name="horizontalLayout_2">
+              <item>
+               <widget class="QRadioButton" name="rbtn_C">
+                <property name="text">
+                 <string>C</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QRadioButton" name="rbtn_F">
+                <property name="text">
+                 <string>Fortran</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item row="7" column="0">
              <widget class="QPushButton" name="rotate90degCCW">
               <property name="minimumSize">
                <size>
@@ -1150,74 +1187,11 @@ QPushButton::pressed {
               </property>
              </widget>
             </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="gridLayoutWidget_2">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>310</y>
-             <width>301</width>
-             <height>131</height>
-            </rect>
-           </property>
-           <layout class="QGridLayout" name="glayout_pixel_sorting">
-            <item row="0" column="0">
-             <widget class="QGroupBox" name="group_box_pixel_sorting">
-              <property name="maximumSize">
-               <size>
-                <width>16777215</width>
-                <height>120</height>
-               </size>
+            <item row="6" column="0">
+             <widget class="QLabel" name="label">
+              <property name="text">
+               <string>Image Pixel Order:</string>
               </property>
-              <property name="title">
-               <string>Pixel Sorting</string>
-              </property>
-              <widget class="QWidget" name="formLayoutWidget_7">
-               <property name="geometry">
-                <rect>
-                 <x>0</x>
-                 <y>20</y>
-                 <width>301</width>
-                 <height>101</height>
-                </rect>
-               </property>
-               <layout class="QFormLayout" name="flayout_pixel_sorting">
-                <item row="1" column="0">
-                 <widget class="QCheckBox" name="chk_transpose">
-                  <property name="maximumSize">
-                   <size>
-                    <width>161</width>
-                    <height>16777215</height>
-                   </size>
-                  </property>
-                  <property name="text">
-                   <string>Transpose Image</string>
-                  </property>
-                  <property name="checked">
-                   <bool>true</bool>
-                  </property>
-                 </widget>
-                </item>
-                <item row="0" column="0">
-                 <widget class="QRadioButton" name="rbtn_C">
-                  <property name="text">
-                   <string>C</string>
-                  </property>
-                  <property name="checked">
-                   <bool>true</bool>
-                  </property>
-                 </widget>
-                </item>
-                <item row="0" column="1">
-                 <widget class="QRadioButton" name="rbtn_F">
-                  <property name="text">
-                   <string>Fortran</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </widget>
              </widget>
             </item>
            </layout>
@@ -1227,7 +1201,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>970</y>
+            <y>890</y>
             <width>321</width>
             <height>631</height>
            </rect>
@@ -1591,7 +1565,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>1610</y>
+            <y>1530</y>
             <width>321</width>
             <height>121</height>
            </rect>

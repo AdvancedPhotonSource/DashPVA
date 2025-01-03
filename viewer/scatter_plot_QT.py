@@ -33,9 +33,8 @@ class ImageWindow(QtWidgets.QMainWindow):
         # Create a ScatterPlotItem
         self.scatter_plot = pg.ScatterPlotItem()
         self.plot.addItem(self.scatter_plot)
-
         # Create a ColorBarItem
-        cmap = pg.colormap.get('viridis')
+        cmap = pg.colormap.get('viridis.csv')
         self.colorbar = pg.ColorBarItem(values=(0, 1), colorMap=cmap, label='Intensity')
         self.colorbar.setImageItem(self.image_item)  # Link to the ImageItem
 
@@ -86,7 +85,7 @@ class ImageWindow(QtWidgets.QMainWindow):
         norm_colors = (colors_array - colors_array.min()) / (colors_array.max() - colors_array.min())
 
         # Get colormap
-        cmap = pg.colormap.get('viridis')
+        cmap = pg.colormap.get('viridis.csv')
 
         # Map normalized colors to brushes
         brushes = [pg.mkBrush(cmap.map(c, mode='qcolor')) for c in norm_colors]
