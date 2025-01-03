@@ -11,7 +11,7 @@ from epics import caget
 from epics import camonitor
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy, QLabel, QFormLayout, QWidget, QFrame
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
 from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
@@ -20,13 +20,12 @@ from analysis_window import AnalysisWindow #, analysis_window_process
 from scan_plan_dialog import ScanPlanDialog
 
 
-max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file
+max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file 
 rot_gen = rotation_cycle(1,5)         
                 
-# timer_for_roi_change = time.time()
 class ConfigDialog(QDialog):
 
-    def __init__(self, prefix='', c_address='', cache_freq=10):
+    def __init__(self, c_address='', cache_freq=10):
         """
         Class that does initial setup for getting the pva prefix, collector address,
         and the path to the json that stores the pvs that will be observed
@@ -40,7 +39,7 @@ class ConfigDialog(QDialog):
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.prefix = prefix
+        self.prefix = self.le_pv_prefix.text()
         self.collector_address = c_address
         self.pvs_path =  ''
         self.cache_frequency = cache_freq
@@ -122,7 +121,7 @@ class ConfigDialog(QDialog):
 
 class PVA_Reader:
 
-    def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
+    def __init__(self, pva_prefix='s6lambda1', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
         """
         Variables needed for monitoring a connection.
         Provides connections and to broadcasted images and PVAs
@@ -148,7 +147,7 @@ class PVA_Reader:
         # self.pva_cache = []
         self.images_cache = None
         self.positions_cache = None
-        self.__last_array_id = None
+        self.last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
         self.data_type = None
@@ -156,6 +155,7 @@ class PVA_Reader:
         self.metadata = {}
         self.num_rois = 0
         self.cache_id = None
+        self.id_diff = 0
         self.cache_id_gen = rotation_cycle(0,max_cache_size)
         self.first_scan_detected = False
 
@@ -174,44 +174,34 @@ class PVA_Reader:
         pv (PVObject) -- Received by channel Monitor
         """
         self.pva_object = pv
-        # Create a deep copy of pv before appending
-        # pv_copy = copy.deepcopy(pv)
-        # if len(self.pva_cache) < 100: 
-        #     self.pva_cache.append(pv_copy)
-        # else:
-        #     self.pva_cache = self.pva_cache[1:]
-        #     self.pva_cache.append(pv_copy)
         self.parse_pva_ndattributes()
         self.parse_image_data_type()
         self.pva_to_image()
-        x_value = self.attributes.get('x')[0]['value']
-        y_value = self.attributes.get('y')[0]['value']
-        #need to avoid hard coding the initial scan position 
-        if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
-            self.first_scan_detected = True
-            print(f"First Scan detected...")
-  
-        #now start caching after the first scan is detected 
-        # now scan pos recorded should match the prerecorded scan positions 
-        # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
-        # and overwrite if not
-        if self.first_scan_detected:
-            #TODO: Debug why starting cache causes missed frames 
-            if self.id_diff> 0:
-                for i in range(self.id_diff):
+
+        if self.collector_address != '':
+            x_value = self.attributes.get('6idb1:m34.RBV')[0]['value']
+            y_value = self.attributes.get('6idb1:m33.RBV')[0]['value']
+            print(x_value)
+            print(y_value,'\n')
+            #need to avoid hard coding the initial scan position
+            # TODO: make it so that starting pv has a tolerance for when it's detected
+            # similar to check in analysis windows 
+            if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
+                self.first_scan_detected = True
+                print(f"First Scan detected...")
+    
+            if self.first_scan_detected:
+                if self.id_diff> 0:
+                    for i in range(self.id_diff):
+                        self.cache_id = next(self.cache_id_gen)
+                    self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
+                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN 
+                    self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
+                else:
                     self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
-            else:
-                self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-                self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-                self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
-            # print(self.cache_id)
-            # print(self.positions_cache[self.cache_id])
-            
-            # TODO: Use thise actual positions to do calculations in analysis window
+                    self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
+                    self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
+                    self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
 
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
@@ -234,7 +224,7 @@ class PVA_Reader:
         for value in ["codec", "uniqueId", "uncompressedSize"]:
             if value in self.pva_object:
                 attributes[value] = self.pva_object[value]
-
+        
         self.attributes = attributes
 
     def pva_to_image(self):
@@ -259,20 +249,13 @@ class PVA_Reader:
                     self.positions_cache = np.zeros((max_cache_size,2)) # TODO: make useable for more metadata
                 # Check for missed frame starts here
                 current_array_id = self.pva_object['uniqueId']
-                if self.__last_array_id is not None: 
-                    self.id_diff = current_array_id - self.__last_array_id - 1
+                if self.last_array_id is not None: 
+                    self.id_diff = current_array_id - self.last_array_id - 1
                     if (self.id_diff > 0):
                         self.frames_missed += self.id_diff 
                     else:
                         self.id_diff = 0
-                self.__last_array_id = current_array_id
-                # Check for missed frame starts here
-                # current_array_id = self.pva_object['uniqueId']
-                # if self.__last_array_id is not None: 
-                #     id_diff = current_array_id - self.__last_array_id - 1
-                #     self.frames_missed += id_diff if (id_diff > 0) else 0
-                # self.__last_array_id = current_array_id
-
+                self.last_array_id = current_array_id
         except:
             self.frames_missed += 1
             # return 1
@@ -324,7 +307,7 @@ class PVA_Reader:
 
 class ImageWindow(QMainWindow):
 
-    def __init__(self, prefix='dp-ADSim', collector_address='', file_path='', cache_frequency=100): 
+    def __init__(self, prefix='s6lambda1', collector_address='', file_path='', cache_frequency=100): 
         """
         This is the Main Window that first pops up and allows a user to type 
         a detector prefix in and connect to it. It does things like allow one 
@@ -340,7 +323,7 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.caching_frequency = cache_frequency #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
+        self.caching_frequency = cache_frequency
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -511,7 +494,6 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
-            # TODO: Pass it a timer so it doesn't create a new one every time
             self.stats_dialog[text] = RoiStatsDialog(parent=self, stats_text=text, timer=self.timer_labels)
             self.stats_dialog[text].show()
     
@@ -615,13 +597,10 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                # print(self.reader.cache_id)
-                # print(self.reader.positions_cache[self.reader.cache_id])
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
                     height, width = image.shape[:2]
-                    # print(image.shape[:2])
                     coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
@@ -668,7 +647,7 @@ class ImageWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = ConfigDialog(prefix='dp-ADSim', c_address='collector:1:output')
+    window = ConfigDialog(c_address='collector:1:output')
     window.show()
 
     sys.exit(app.exec_())

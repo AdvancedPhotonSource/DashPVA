@@ -7,19 +7,19 @@
     <x>0</x>
     <y>0</y>
     <width>470</width>
-    <height>624</height>
+    <height>388</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QGroupBox" name="gb_load">
+  <widget class="QGroupBox" name="gbox_roi_info">
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>320</y>
+     <y>140</y>
      <width>451</width>
-     <height>81</height>
+     <height>161</height>
     </rect>
    </property>
    <property name="font">
@@ -28,14 +28,14 @@
     </font>
    </property>
    <property name="title">
-    <string>Load Config</string>
+    <string>Optional Setup</string>
    </property>
-   <widget class="QLineEdit" name="le_load_file_path">
+   <widget class="QLineEdit" name="le_roi_config">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>30</y>
-      <width>311</width>
+      <y>60</y>
+      <width>431</width>
       <height>41</height>
      </rect>
     </property>
@@ -51,17 +51,30 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/pv_configs/test_pvs.json</string>
+     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/pv_configs/metadata_pvs.toml</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="btn_load">
+   <widget class="QPushButton" name="btn_browse">
     <property name="geometry">
      <rect>
-      <x>340</x>
-      <y>30</y>
-      <width>101</width>
+      <x>360</x>
+      <y>110</y>
+      <width>80</width>
       <height>41</height>
      </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton{
+font: 11pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius: 3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
     </property>
     <property name="text">
      <string>Browse</string>
@@ -70,93 +83,69 @@ border-radius:3;
      <bool>false</bool>
     </property>
    </widget>
-  </widget>
-  <widget class="QGroupBox" name="gb_create_edit">
-   <property name="geometry">
-    <rect>
-     <x>10</x>
-     <y>420</y>
-     <width>451</width>
-     <height>131</height>
-    </rect>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
-   <property name="title">
-    <string>Create/Edit Config</string>
-   </property>
-   <widget class="QPushButton" name="btn_new_config">
+   <widget class="QPushButton" name="btn_create">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>80</y>
-      <width>101</width>
+      <y>110</y>
+      <width>80</width>
       <height>41</height>
      </rect>
-    </property>
-    <property name="text">
-     <string>New Config</string>
-    </property>
-   </widget>
-   <widget class="QLineEdit" name="le_edit_file_path">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>30</y>
-      <width>311</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">border:1px solid black;
-border-radius:3;
-
-</string>
+     <string notr="true">QPushButton{
+font: 11pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius: 3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
+    </property>
+    <property name="text">
+     <string>Create</string>
     </property>
    </widget>
    <widget class="QPushButton" name="btn_edit">
     <property name="geometry">
      <rect>
-      <x>340</x>
-      <y>30</y>
-      <width>101</width>
+      <x>270</x>
+      <y>110</y>
+      <width>80</width>
       <height>41</height>
      </rect>
     </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton{
+font: 11pt &quot;Sans Serif&quot;;
+border: 1px solid #8f8f91;
+border-radius: 3px;
+background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
+}
+QPushButton::pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
+}</string>
+    </property>
     <property name="text">
-     <string>Browse</string>
+     <string>Edit</string>
     </property>
    </widget>
-   <widget class="QDialogButtonBox" name="btn_edit_accept_reject">
+   <widget class="QLabel" name="lbl_roi_config">
     <property name="geometry">
      <rect>
-      <x>270</x>
-      <y>80</y>
-      <width>171</width>
-      <height>51</height>
+      <x>10</x>
+      <y>34</y>
+      <width>161</width>
+      <height>21</height>
      </rect>
     </property>
-    <property name="minimumSize">
-     <size>
-      <width>0</width>
-      <height>0</height>
-     </size>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>14</pointsize>
-     </font>
-    </property>
-    <property name="standardButtons">
-     <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+    <property name="text">
+     <string>ROI JSON Config</string>
     </property>
    </widget>
   </widget>
@@ -166,7 +155,7 @@ border-radius:3;
      <x>10</x>
      <y>10</y>
      <width>451</width>
-     <height>291</height>
+     <height>111</height>
     </rect>
    </property>
    <property name="font">
@@ -175,9 +164,9 @@ border-radius:3;
     </font>
    </property>
    <property name="title">
-    <string>Viewer Setup</string>
+    <string>Required Setup</string>
    </property>
-   <widget class="QLineEdit" name="le_pv_prefix">
+   <widget class="QLineEdit" name="le_input_channel">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -197,37 +186,15 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>dp-ADSim</string>
+     <string>analysis:1:output</string>
     </property>
    </widget>
-   <widget class="QLineEdit" name="le_collector">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>150</y>
-      <width>421</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">border:1px solid black;
-border-radius:3;</string>
-    </property>
-    <property name="text">
-     <string>collector:1:output</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="lbl_pva_prefix">
+   <widget class="QLabel" name="lbl_input_channel">
     <property name="geometry">
      <rect>
       <x>10</x>
       <y>30</y>
-      <width>81</width>
+      <width>261</width>
       <height>21</height>
      </rect>
     </property>
@@ -237,57 +204,15 @@ border-radius:3;</string>
      </font>
     </property>
     <property name="text">
-     <string>PVA Prefix</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="lbl_collector">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>120</y>
-      <width>171</width>
-      <height>16</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Collector (Optional)</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="lbl_collector_frequency">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>210</y>
-      <width>421</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Collector Frequency (Mandatory with Collector)</string>
-    </property>
-   </widget>
-   <widget class="QSpinBox" name="sb_collector_frequency">
-    <property name="geometry">
-     <rect>
-      <x>12</x>
-      <y>240</y>
-      <width>411</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="maximum">
-     <number>999999999</number>
-    </property>
-    <property name="value">
-     <number>10</number>
+     <string>Input Channel</string>
     </property>
    </widget>
   </widget>
-  <widget class="QDialogButtonBox" name="btn_setup_accept_reject">
+  <widget class="QDialogButtonBox" name="btn_accept_reject">
    <property name="geometry">
     <rect>
-     <x>140</x>
-     <y>570</y>
+     <x>130</x>
+     <y>330</y>
      <width>181</width>
      <height>51</height>
     </rect>
@@ -303,18 +228,16 @@ border-radius:3;</string>
   </widget>
  </widget>
  <tabstops>
-  <tabstop>le_pv_prefix</tabstop>
-  <tabstop>le_collector</tabstop>
-  <tabstop>btn_load</tabstop>
-  <tabstop>le_load_file_path</tabstop>
+  <tabstop>le_input_channel</tabstop>
+  <tabstop>btn_browse</tabstop>
+  <tabstop>le_roi_config</tabstop>
   <tabstop>btn_edit</tabstop>
-  <tabstop>le_edit_file_path</tabstop>
-  <tabstop>btn_new_config</tabstop>
+  <tabstop>btn_create</tabstop>
  </tabstops>
  <resources/>
  <connections>
   <connection>
-   <sender>btn_setup_accept_reject</sender>
+   <sender>btn_accept_reject</sender>
    <signal>accepted()</signal>
    <receiver>pv_config_dialog</receiver>
    <slot>accept()</slot>
@@ -330,7 +253,7 @@ border-radius:3;</string>
    </hints>
   </connection>
   <connection>
-   <sender>btn_setup_accept_reject</sender>
+   <sender>btn_accept_reject</sender>
    <signal>rejected()</signal>
    <receiver>pv_config_dialog</receiver>
    <slot>reject()</slot>

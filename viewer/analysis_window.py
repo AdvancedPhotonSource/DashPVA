@@ -1,6 +1,6 @@
 import sys
 import pyqtgraph as pg
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
+from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 from PyQt5 import uic
 import numpy as np
@@ -83,39 +83,57 @@ class AnalysisWindow(QMainWindow):
         ypos_path (str): The path to the y-positions file.
         save_path (str): The path to where the HDF5 file will be saved.
         timer_plot (QTimer): A timer to control the plot frequency.
-        call_times (int): Number of times the plot has been called.
+        update_counter (int): Number of times the plot has been called.
         intensity_matrix (numpy.ndarray): A 2D numpy array of intensity values.
         com_x_matrix (numpy.ndarray): A 2D numpy array of center of mass x values.
         com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
     """
-    def __init__(self, parent,xpos_path, ypos_path, save_path): 
+    
+    def __init__(self, parent): 
         super(AnalysisWindow, self).__init__()
-        # self.parent : ImageWindow = parent
         self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
         self.setWindowTitle('Analysis Window')
-        self.init_ui()
-        self.xpos_path = xpos_path
-        self.ypos_path = ypos_path
-        self.save_path = save_path
-        self.load_path()
+        # TODO: load config separately using the filepath provided by the parent
+        self.config: dict = self.parent.reader.config
+        self.consumer_type = self.config.get("ConsumerType", "")
+        self.xpos_path = None
+        self.ypos_path = None
+        self.save_path = None
+        self.view_comx = None
+        self.view_comy = None
+        self.view_intensity = None
+        self.update_counter = 0
+        self.max_updates = 10
+        self.analysis_index = self.parent.reader.analysis_index
+        if self.analysis_index is not None:
+            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
+        else:
+            self.analysis_attributes = {}
+
+        self.check_num_rois()
+        self.configure_plots()
 
         self.timer_plot= QTimer()
         self.timer_plot.timeout.connect(self.plot_images)
         self.timer_plot.start(int(1000/self.calc_freq.value()))
-        self.call_times = 0
 
-        self.btn_create_hdf5.clicked.connect(self.save_hdf5)
-        self.roi_x.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_y.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_width.valueChanged.connect(self.roi_boxes_changed)
-        self.roi_height.valueChanged.connect(self.roi_boxes_changed)
+        # self.btn_create_hdf5.clicked.connect(self.save_hdf5)
+        # self.roi_x.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_y.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_width.valueChanged.connect(self.roi_boxes_changed)
+        # self.roi_height.valueChanged.connect(self.roi_boxes_changed)
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
-        self.btn_reset.clicked.connect(self.reset_plot)
-        self.check_num_rois()
-    
+        # self.btn_reset.clicked.connect(self.reset_plot)
+        self.sbox_intensity_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_intensity_max.valueChanged.connect(self.min_max_changed)
+        self.sbox_comx_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_comx_max.valueChanged.connect(self.min_max_changed)
+        self.sbox_comy_min.valueChanged.connect(self.min_max_changed)
+        self.sbox_comy_max.valueChanged.connect(self.min_max_changed)
+
     def freeze_plotting_checked(self):
         """
         This function freezes the plot when the freeze plot checkbox is checked.
@@ -125,84 +143,50 @@ class AnalysisWindow(QMainWindow):
         else:
             self.timer_plot.start(int(1000/self.calc_freq.value()))
 
-    def load_path(self):
-        """
-        This function loads the path information for the HDF5 file and uses it to populate other variables.
-        """
-        # TODO: These positions are references, use only when we miss frames.
-        self.x_positions = np.load(self.xpos_path)
-        self.y_positions = np.load(self.ypos_path)
-        self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
-        self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
+    # def load_path(self):
+    #     """
+    #     This function loads the path information for the HDF5 file and uses it to populate other variables.
+    #     """
+    #     # TODO: These positions are references, use only when we miss frames.
+    #     self.x_positions = np.load(self.xpos_path)
+    #     self.y_positions = np.load(self.ypos_path)
+    
+    #     self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
+    #     self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
 
-        self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
-        self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
-
-    # # Changed to be a thread
-    # def create_hdf5_file(self, filename, images_cache, scan_pos, metadata, attributes, intensity_values, com_x_matrix, com_y_matrix):
-    #     try:
-    #         with h5py.File(filename, 'w') as h5file:
-    #             #data
-    #             h5file.create_group('/data')
-    #             h5file.create_dataset('/data/images', data=images_cache)
-
-    #             #scan pos
-    #             h5file.create_group('/data/scan_pos')
-    #             h5file.create_dataset('/data/scan_pos/x_positions', data=scan_pos['x_positions'])
-    #             h5file.create_dataset('/data/scan_pos/y_positions', data=scan_pos['y_positions'])
-
-    #             #save all metadata and attributes too. Expecting dictionaries
-    #             h5file.create_group('/metadata')
-    #             for key, value in metadata.items():
-    #                 h5file['/metadata'].attrs[key] = value
-    #             h5file.create_group('/attributes')
-    #             for key, value in attributes.items():
-    #                 h5file['/attributes'].attrs[key] = value
-
-    #             #Analysis data 
-    #             h5file.create_group('/analysis')
-    #             h5file.create_dataset('/analysis/total_intensity', data=intensity_values)
-    #             h5file.create_dataset('/analysis/com_x', data=com_x_matrix)
-    #             h5file.create_dataset('/analysis/com_y', data=com_y_matrix)
-    #     except Exception as e:
-    #         print(e)
+    #     self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
+    #     self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
          
-    def save_hdf5(self):
-        """
-        This function creates and saves the data as an HDF5 file with a timestamp as the name.
-        """
-        self.status_text.setText("Writing File...")
-        # Get the current time as a timestamp for file name
-        dt = datetime.fromtimestamp(time.time())
-        formatted_time = dt.strftime('%Y%m%d%H%M')
-        # put scan pos in dictionary 
-        scan_pos = {
-                'x_positions': self.x_positions,
-                'y_positions': self.y_positions
-            }
-        # start writer thread
-        self.hdf5_writer_thread = HDF5WriterThread(
-            f"{self.save_path}/{formatted_time}data.h5",
-            self.parent.reader.images_cache, scan_pos, 
-            self.parent.reader.metadata, 
-            self.parent.reader.attributes, 
-            self.intensity_matrix, 
-            self.com_x_matrix, 
-            self.com_y_matrix)
-        self.hdf5_writer_thread.file_written.connect(self.on_file_written)
-        self.hdf5_writer_thread.start()
-        # # call this to write file
-        # self.create_hdf5_file(f"{self.save_path}/{formatted_time}data.h5", self.parent.reader.images_cache, scan_pos, self.parent.reader.metadata, self.parent.reader.attributes, self.intensity_matrix, self.com_x_matrix, self.com_y_matrix)
-        # self.status_text.setText("File Written")
-        # QTimer.singleShot(10000, self.check_if_running)
+    # def save_hdf5(self):
+    #     """
+    #     This function creates and saves the data as an HDF5 file with a timestamp as the name.
+    #     """
+    #     self.status_text.setText("Writing File...")
+    #     # Get the current time as a timestamp for file name
+    #     dt = datetime.fromtimestamp(time.time())
+    #     formatted_time = dt.strftime('%Y%m%d%H%M')
+    #     # put scan pos in dictionary 
+    #     scan_pos = {'x_positions': self.x_positions,
+    #                 'y_positions': self.y_positions}
+    #     # start writer thread
+    #     self.hdf5_writer_thread = HDF5WriterThread(
+    #         f"{self.save_path}/{formatted_time}data.h5",
+    #         self.parent.reader.images_cache, scan_pos, 
+    #         self.parent.reader.metadata, 
+    #         self.parent.reader.attributes, 
+    #         self.intensity_matrix, 
+    #         self.com_x_matrix, 
+    #         self.com_y_matrix)
+    #     self.hdf5_writer_thread.file_written.connect(self.on_file_written)
+    #     self.hdf5_writer_thread.start()
 
-    def on_file_written(self):
-        """
-        This function is called when the file writing is done.
-        """
-        print("Signal Received")
-        self.status_text.setText("File Written")
-        QTimer.singleShot(10000, self.check_if_running)
+    # def on_file_written(self):
+    #     """
+    #     This function is called when the file writing is done.
+    #     """
+    #     print("Signal Received")
+    #     self.status_text.setText("File Written")
+    #     QTimer.singleShot(10000, self.check_if_running)
         
     def check_if_running(self):
         """
@@ -222,8 +206,8 @@ class AnalysisWindow(QMainWindow):
         self.view_intensity.clear()
         self.view_comx.clear()
         self.view_comy.clear()
-        self.call_times = 0
-        self.parent.reader.images_cache = None# [:,:,:] = 0 
+        self.update_counter = 0
+        # self.parent.reader.images_cache = None # [:,:,:] = 0 
         # Done because caching should be done from scratch
         self.parent.reader.frames_received = 0
         self.parent.reader.frames_missed = 0
@@ -234,7 +218,7 @@ class AnalysisWindow(QMainWindow):
         """
         This function is called when the class is initialized to populate the dropdown of available ROIs
         """
-        num_rois =  self.parent.reader.num_rois
+        num_rois =  len(self.config.get('rois'))
         if num_rois > 0:
             for i in range(num_rois):
                 self.cbox_select_roi.addItem(f'ROI{i+1}')
@@ -261,120 +245,210 @@ class AnalysisWindow(QMainWindow):
             self.roi_width.setValue(w)
             self.roi_height.setValue(h)
         
-    def roi_boxes_changed(self):
-        """
-        This function is called when the ROI dimensions are changed.
-        Changes the viewable roi to the values within the the boxes.
-        """
-        self.parent.roi_x = self.roi_x.value()
-        self.parent.roi_y = self.roi_y.value()
-        self.parent.roi_width = self.roi_width.value()
-        self.parent.roi_height = self.roi_height.value()
-        self.cbox_select_roi.setCurrentIndex(0)
-        self.call_times = 0
+    # def roi_boxes_changed(self):
+    #     """
+    #     This function is called when the ROI dimensions are changed.
+    #     Changes the viewable roi to the values within the the boxes.
+    #     """
+    #     self.parent.roi_x = self.roi_x.value()
+    #     self.parent.roi_y = self.roi_y.value()
+    #     self.parent.roi_width = self.roi_width.value()
+    #     self.parent.roi_height = self.roi_height.value()
+    #     self.cbox_select_roi.setCurrentIndex(0)
+    #     self.update_counter = 0
         
     def frequency_changed(self):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
+    def min_max_changed(self):
+        self.min_intensity = self.sbox_intensity_min.value()
+        self.max_intensity = self.sbox_intensity_max.value()
+        self.min_comx = self.sbox_comx_min.value()
+        self.max_comx = self.sbox_comx_max.value()
+        self.min_comy = self.sbox_comy_min.value()
+        self.max_comy = self.sbox_comy_max.value()
+
+        if self.config['ConsumerType'] == 'spontaneous':
+            self.plot_images()
+        if self.config['ConsumerType'] == 'vectorized':
+            self.view_intensity.setLevels(self.min_intensity, self.max_intensity)
+            self.view_comx.setLevels(self.min_comx, self.max_comx)
+            self.view_comy.setLevels(self.min_comy, self.max_comy)
+
+    def update_vectorized_image(self, intensity, com_x, com_y):
+        size = int(np.sqrt(len(intensity)))
+        intensity_matrix = np.reshape(intensity, (size, size))
+        com_x_matrix = np.reshape(com_x,(size, size))
+        com_y_matrix = np.reshape(com_y,(size, size))
+
+        # USING IMAGE VIEW:
+        if self.update_counter == self.max_updates:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_intensity,self.max_intensity), autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_comx,self.max_comx), autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, levels=(self.min_comy,self.max_comy), autoHistogramRange=False)
+
+            self.sbox_intensity_max.setValue(self.max_intensity)
+            self.sbox_comx_max.setValue(self.max_comx)
+            self.sbox_comy_max.setValue(self.max_comy)
+        else:
+            self.view_intensity.setImage(img=intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+            self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
+
+    
+    def update_spontaneous_image(self, intensity, com_x, com_y, axis1, axis2):
+
+        intensity = np.array(intensity)
+        com_x = np.array(com_x)
+        com_y = np.array(com_y)
+        axis1 = np.array(axis1)
+        axis2 = np.array(axis2)
+
+        # sets instead of no dots appearing if points are ourside fo min and max, clips them to be min and max values
+        intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) 
+        comx_filtered = np.clip(com_x, self.min_comx, self.max_comx)
+        comy_filtered = np.clip(com_y, self.min_comy, self.max_comy)
+        # normalization of data points based on min and max
+        norm_intensity_colors = (intensity_filtered - self.min_intensity) / (self.max_intensity - self.min_intensity)
+        norm_comx_colors = (comx_filtered - self.min_comx) / (self.max_comx - self.min_comx)
+        norm_comy_colors = (comy_filtered - self.min_comy) / (self.max_comy - self.min_comy)
+    
+        cmap = pg.colormap.get("viridis.csv")
+
+        # creating data for intensity plot
+        intensity_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
+        intensity_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, intensity_brushes)]
+        # creating data for com_x plot
+        comx_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comx_colors]
+        comx_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comx_brushes)]
+        # creating data for com_y plot
+        comy_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comy_colors]
+        comy_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comy_brushes)]
+
+        self.scatter_item_intensity.setData(intensity_spots)
+        self.scatter_item_comx.setData(comx_spots)
+        self.scatter_item_comy.setData(comy_spots)
     def plot_images(self):
         """
         Redraws plots based on rate entered in hz box.
-        Processes the images based on the different settings.
         """
-        if self.parent.reader.first_scan_detected == False:
-            self.status_text.setText("Waiting for the first scan...")
-        else:
 
-            if self.call_times == 0:
-                    self.status_text.setText("Scanning...")
-            
-            if self.parent.reader.cache_id is not None:
-                scan_id = self.parent.reader.cache_id
-                xpos_det = self.parent.reader.positions_cache[scan_id, 0]
-                xpos_plan = self.x_positions[scan_id]
-                ypos_det = self.parent.reader.positions_cache[scan_id, 1]
-                ypos_plan = self.y_positions[scan_id]
+        if self.analysis_index is not None:
 
-                # print(scan_id)
-                # print(f'detector: {xpos_det},{ypos_det}')
-                # print(f'scan plan: {xpos_plan},{ypos_plan}\n')
-
-            # TODO: find a better way to check the scan positions
-            # TODO: make an exception for scan positon 0,0 
-            # positions are ints so trying with an offset of 1 max
-            if (np.abs((xpos_plan-xpos_det+1E-4)/(xpos_plan+1E-4)) < 0.1) and (np.abs((ypos_plan-ypos_det+1E-4)/(ypos_plan+1E-4)) < 0.1): 
-                self.call_times += 1
-
-                image_rois = self.parent.reader.images_cache[:,
-                                                        self.parent.roi_y:self.parent.roi_y + self.parent.roi_height,
-                                                        self.parent.roi_x:self.parent.roi_x + self.parent.roi_width]# self.pv_dict.get('rois', [[]]) # Time Complexity = O(n)
+            self.update_counter += 1
+            # TODO: test if this line can be assigned once and use update on its own
+            #print(analysis_attributes)
+            if self.consumer_type == "vectorized":
+                self.analysis_attributes = self.parent.reader.attributes[self.analysis_index] 
+                intensity = self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)
+                com_x = self.analysis_attributes["value"][0]["value"].get("ComX",0.0)
+                com_y = self.analysis_attributes["value"][0]["value"].get("ComY",0.0)
+            elif self.consumer_type == "spontaneous":
+                intensity = self.analysis_attributes["Intensity"]
+                com_x = self.analysis_attributes["ComX"]
+                com_y = self.analysis_attributes["ComY"]
+                axis1 = self.analysis_attributes["Axis1"]
+                axis2= self.analysis_attributes["Axis2"]
                 
-                intensity_values = np.sum(image_rois, axis=(1, 2)) # Time Complexity = O(n)
-                intensity_values_non_zeros = intensity_values # removed deep copy of intensity values as memory was cleared with every function call
-                intensity_values_non_zeros[intensity_values_non_zeros==0] = 1E-6 # time complexity = O(1)
 
-                y_coords, x_coords = np.indices((np.shape(image_rois)[1], np.shape(image_rois)[2])) # Time Complexity = 0(n)
+            if self.update_counter == 1:
+                self.min_intensity = 0
+                self.max_intensity = np.max(intensity)
+                self.sbox_intensity_max.setValue(self.max_intensity)
 
-                # Compute weighted sums
-                weighted_sum_y = np.sum(image_rois[:, :, :] * y_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-                weighted_sum_x = np.sum(image_rois[:, :, :] * x_coords[np.newaxis, :, :], axis=(1, 2)) # Time Complexity O(n)
-                # Calculate COM
-                com_y = weighted_sum_y / intensity_values_non_zeros # time complexity = O(1)
-                com_x = weighted_sum_x / intensity_values_non_zeros # time complexity = O(1)
-                #filter out inf
-                com_x[com_x==np.nan] = 0 # time complexity = O(1)
-                com_y[com_y==np.nan] = 0 # time complexity = O(1)
-                #Two lines below don't work if unique positions are messed by incomplete x y positions 
-                self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
-                # gets the shape of the image to set the length of the axis
-                self.com_x_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                self.com_y_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
-                # Populate the matrices using the indices
-                self.com_x_matrix[self.y_indices, self.x_indices] = com_x # Time Complexity = O(1)
-                self.com_y_matrix[self.y_indices, self.x_indices] = com_y # Time Complexity = O(1)
-                
-                # USING IMAGE VIEW:
-                if self.call_times == 5:
-                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=True, autoHistogramRange=False)
-                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoHistogramRange=False)
-                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoHistogramRange=False)
+                self.min_comx = 0
+                self.max_comx = np.max(com_x)
+                self.sbox_comx_max.setValue(self.max_comx)
 
-                    self.view_comx.setLevels(0, self.roi_width.value())
-                    self.view_comy.setLevels(0,self.roi_height.value())
-                else:
-                    self.view_intensity.setImage(img=self.intensity_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                    self.view_comx.setImage(img=self.com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-                    self.view_comy.setImage(img=self.com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
-            else:
-                self.parent.reader.images_cache[scan_id,:,:] = 0
-                self.parent.reader.frames_missed += 1
+                self.min_comy = 0
+                self.max_comy = np.max(com_y)
+                self.sbox_comy_max.setValue(self.max_comy)
 
-    def init_ui(self):
-        """
-        this function initializes the user interface with smaller ImageView classes and defining the axis.
-        """
-        # cmap = pg.colormap.getFromMatplotlib('viridis')
+            # print(intensity)
+            if self.consumer_type == "vectorized":
+                self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
+            elif self.consumer_type == "spontaneous":
+                self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, axis1=axis1, axis2=axis2)  
+
+
+    def init_scatter_plot(self):
+        self.scatter_item_intensity = pg.ScatterPlotItem()
+        self.scatter_item_comx = pg.ScatterPlotItem()
+        self.scatter_item_comy = pg.ScatterPlotItem()
+
+        self.plot_intensity = pg.PlotWidget()
+        self.plot_comx = pg.PlotWidget()
+        self.plot_comy = pg.PlotWidget()
+
+        # image_item_intensity = pg.ImageItem()
+        # image_item_comx = pg.ImageItem()
+        # image_item_comy = pg.ImageItem()
+
+        # self.axis1_data = []
+        # self.axis2_data = []
+        # self.intensity_data = []
+        # self.comx_data = []
+        # self.comy_data = []
+        # self.norm_intensity = [] # based off self.intensity_data
+
+        self.plot_intensity.addItem(self.scatter_item_intensity)
+        # self.plot_intensity.addItem(image_item_intensity)
+        self.grid_a.addWidget(self.plot_intensity,0,0)
+        self.plot_intensity.setLabel('bottom', 'Motor Position X' )
+        self.plot_intensity.setLabel('left', 'Motor Posistion Y')
+        self.plot_intensity.invertY(True)
+
+        self.plot_comx.addItem(self.scatter_item_comx)
+        # self.plot_comx.addItem(image_item_comx)
+        self.grid_b.addWidget(self.plot_comx,0,0)
+        self.plot_comx.setLabel('bottom', 'Motor Position X' )
+        self.plot_comx.setLabel('left', 'Motor Posistion Y')
+        self.plot_comx.invertY(True)
+
+        self.plot_comy.addItem(self.scatter_item_comy)
+        # self.plot_comy.addItem(image_item_comy)
+        self.grid_c.addWidget(self.plot_comy,0,0)
+        self.plot_comy.setLabel('bottom', 'Motor Position X' )
+        self.plot_comy.setLabel('left', 'Motor Posistion Y')
+        self.plot_comy.invertY(True)
+
+    def init_image_view(self): 
         plot_item_intensity = pg.PlotItem()
+        plot_item_comx = pg.PlotItem()
+        plot_item_comy = pg.PlotItem()
+
         self.view_intensity = pg.ImageView(view=plot_item_intensity)
-        # self.view_intensity.setColorMap(cmap)
+        self.view_comx = pg.ImageView(view=plot_item_comx)
+        self.view_comy = pg.ImageView(view=plot_item_comy)
+
         self.grid_a.addWidget(self.view_intensity,0,0)
         self.view_intensity.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_intensity.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        plot_item_comx = pg.PlotItem()
-        self.view_comx = pg.ImageView(view=plot_item_comx)
-        # self.view_comx.setColorMap(cmap)
         self.grid_b.addWidget(self.view_comx,0,0)
         self.view_comx.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comx.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-        plot_item_comy = pg.PlotItem()
-        self.view_comy = pg.ImageView(view=plot_item_comy)
-        # self.view_comy.setColorMap(cmap)
         self.grid_c.addWidget(self.view_comy,0,0)
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')
+
+    def configure_plots(self):
+        """
+        this function initializes the user interface with smaller ImageView classes and defining the axis.
+        """
+        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        if self.consumer_type == "spontaneous":
+            self.init_scatter_plot()
+        elif self.consumer_type == "vectorized":
+            self.init_image_view()
+        else:
+            #TODO: replace with w/ a message box
+            print("Config Not Set Up Correctly")
+
+        
+    
+
 
     def closeEvent(self, event):
         self.parent.start_timers()

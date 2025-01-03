@@ -1,10 +1,3 @@
-collector_testing/__pycache__/hpc_dpADSim.cpython-37.pyc
-viewer/__pycache__/analysis_window.cpython-37.pyc
-viewer/__pycache__/area_det_viewer.cpython-37.pyc
-viewer/__pycache__/generators.cpython-37.pyc
-viewer/__pycache__/label_with_axis.cpython-37.pyc
-viewer/__pycache__/pv_setup_dialog.cpython-37.pyc
-viewer/__pycache__/roi_stats_dialog.cpython-37.pyc
-viewer/__pycache__/ROI_stats_dialog.cpython-37.pyc
-viewer/__pycache__/scan_plan_dialog.cpython-37.pyc
-viewer/__pycache__/analysis_window.cpython-37.pyc
+*.npy
+*.loglogin
+*.cpython*
