@@ -126,7 +126,7 @@ class AnalysisWindow(QMainWindow):
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
-        # self.btn_reset.clicked.connect(self.reset_plot)
+        self.btn_reset.clicked.connect(self.reset_plot)
         self.sbox_intensity_min.valueChanged.connect(self.min_max_changed)
         self.sbox_intensity_max.valueChanged.connect(self.min_max_changed)
         self.sbox_comx_min.valueChanged.connect(self.min_max_changed)
@@ -201,17 +201,31 @@ class AnalysisWindow(QMainWindow):
         """
         This function resets the plot and clears all caches when the reset button is clicked.
         """
-        self.parent.reader.first_scan_detected = False
-        self.status_text.setText("Waiting for the first scan...")
-        self.view_intensity.clear()
-        self.view_comx.clear()
-        self.view_comy.clear()
+        # self.status_text.setText("Waiting for the first scan...")
+        if self.consumer_type == "vectorized":
+            self.view_intensity.clear()
+            self.view_comx.clear()
+            self.view_comy.clear()
+        else:
+            self.scatter_item_intensity.clear()
+            self.scatter_item_comx.clear()
+            self.scatter_item_comy.clear()
+            # self.plot_intensity.clear()
+            # self.plot_comx.clear()
+            # self.plot_comy.clear()
+            self.parent.reader.analysis_cache_dict.update({"Intensity": []})
+            self.parent.reader.analysis_cache_dict.update({"ComX": []})
+            self.parent.reader.analysis_cache_dict.update({"Comy": []})
+            self.parent.reader.analysis_cache_dict.update({"Axis1": []})
+            self.parent.reader.analysis_cache_dict.update({"Axis2": []}) 
+
+        self.timer_plot.start()
         self.update_counter = 0
-        # self.parent.reader.images_cache = None # [:,:,:] = 0 
         # Done because caching should be done from scratch
+        # self.parent.reader.first_scan_detected = False
         self.parent.reader.frames_received = 0
         self.parent.reader.frames_missed = 0
-        self.parent.reader.cache_id_gen = rotation_cycle(0,len(self.x_positions))
+        # self.parent.reader.cache_id_gen = rotation_cycle(0,len(self.x_positions))
         self.parent.start_timers()
 
     def check_num_rois(self):
@@ -295,14 +309,14 @@ class AnalysisWindow(QMainWindow):
             self.view_comx.setImage(img=com_x_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
 
-    
+        
     def update_spontaneous_image(self, intensity, com_x, com_y, axis1, axis2):
-
         intensity = np.array(intensity)
         com_x = np.array(com_x)
         com_y = np.array(com_y)
         axis1 = np.array(axis1)
         axis2 = np.array(axis2)
+        # print(intensity[0])
 
         # sets instead of no dots appearing if points are ourside fo min and max, clips them to be min and max values
         intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) 
@@ -328,6 +342,7 @@ class AnalysisWindow(QMainWindow):
         self.scatter_item_intensity.setData(intensity_spots)
         self.scatter_item_comx.setData(comx_spots)
         self.scatter_item_comy.setData(comy_spots)
+
     def plot_images(self):
         """
         Redraws plots based on rate entered in hz box.
@@ -350,25 +365,25 @@ class AnalysisWindow(QMainWindow):
                 axis1 = self.analysis_attributes["Axis1"]
                 axis2= self.analysis_attributes["Axis2"]
                 
+            if len(intensity):
+                if self.update_counter == 1:
+                    self.min_intensity = 0
+                    self.max_intensity = np.max(intensity)
+                    self.sbox_intensity_max.setValue(self.max_intensity)
 
-            if self.update_counter == 1:
-                self.min_intensity = 0
-                self.max_intensity = np.max(intensity)
-                self.sbox_intensity_max.setValue(self.max_intensity)
+                    self.min_comx = 0
+                    self.max_comx = np.max(com_x)
+                    self.sbox_comx_max.setValue(self.max_comx)
 
-                self.min_comx = 0
-                self.max_comx = np.max(com_x)
-                self.sbox_comx_max.setValue(self.max_comx)
+                    self.min_comy = 0
+                    self.max_comy = np.max(com_y)
+                    self.sbox_comy_max.setValue(self.max_comy)
 
-                self.min_comy = 0
-                self.max_comy = np.max(com_y)
-                self.sbox_comy_max.setValue(self.max_comy)
-
-            # print(intensity)
-            if self.consumer_type == "vectorized":
-                self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
-            elif self.consumer_type == "spontaneous":
-                self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, axis1=axis1, axis2=axis2)  
+                # print(intensity)
+                if self.consumer_type == "vectorized":
+                    self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
+                elif self.consumer_type == "spontaneous":
+                    self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, axis1=axis1, axis2=axis2)  
 
 
     def init_scatter_plot(self):

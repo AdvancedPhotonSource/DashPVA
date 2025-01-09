@@ -144,10 +144,11 @@ class PVA_Reader:
 
         if self.config_filepath != '':
             with open(self.config_filepath, 'r') as toml_file:
-                # loads the pvs in the json file into a python dictionary
+                # loads the pvs in the toml file into a python dictionary
                 self.config:dict = toml.load(toml_file)
                 self.stats: dict = self.config["stats"]
                 if self.config["ConsumerType"] == "spontaneous":
+                    # TODO: change to dictionaries that store postions as keys and pv as value
                     self.analysis_cache_dict = {"Intensity": [],
                                                 "ComX": [],
                                                 "ComY": [],
