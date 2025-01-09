@@ -512,9 +512,7 @@ class ImageWindow(QMainWindow):
                          pen=pg.mkPen(roi_colors[i]))
             self.rois.append(roi)
             self.image_view.addItem(roi)
-    
-    def update_pv_prefix(self):
-        self._input_channel = self.pv_prefix.text()
+            roi.sigRegionChanged.connect(self.update_roi_region)
 
     def update_rois(self):
         """
@@ -528,6 +526,12 @@ class ImageWindow(QMainWindow):
             height = self.reader.rois[roi_key].get("SizeY",0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
+    
+    def update_roi_region(self):
+        self.image_view.update()
+
+    def update_pv_prefix(self):
+        self._input_channel = self.pv_prefix.text()
     
     def update_mouse_pos(self, pos):
         """
