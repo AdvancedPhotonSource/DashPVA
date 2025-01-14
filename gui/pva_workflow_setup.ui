@@ -22,7 +22,7 @@
       </font>
      </property>
      <property name="currentIndex">
-      <number>1</number>
+      <number>3</number>
      </property>
      <widget class="QWidget" name="simServerTab">
       <attribute name="title">
@@ -543,7 +543,7 @@
             <number>10000</number>
            </property>
            <property name="value">
-            <number>10</number>
+            <number>500</number>
            </property>
           </widget>
          </item>
@@ -585,7 +585,7 @@
          <item row="7" column="1">
           <widget class="QLineEdit" name="lineEditProcessorClassCollector">
            <property name="text">
-            <string>HpcPassthroughProcessor</string>
+            <string>HpcAdMetadataProcessor</string>
            </property>
           </widget>
          </item>
@@ -702,7 +702,7 @@
          <item row="6" column="1">
           <widget class="QLineEdit" name="lineEditProcessorFileCollector">
            <property name="text">
-            <string>collectors/hpc_passthrough_processor.py</string>
+            <string>consumers/hpc_metadata_consumer.py</string>
            </property>
           </widget>
          </item>

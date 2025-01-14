@@ -149,12 +149,10 @@ class PVA_Reader:
                 self.stats: dict = self.config["stats"]
                 if self.config["ConsumerType"] == "spontaneous":
                     # TODO: change to dictionaries that store postions as keys and pv as value
-                    self.analysis_cache_dict = {"Intensity": [],
-                                                "ComX": [],
-                                                "ComY": [],
-                                                "Axis1": [],
-                                                "Axis2":[]} 
-                # print(self.stats)
+                    self.analysis_cache_dict = {"Intensity": {},
+                                                "ComX": {},
+                                                "ComY": {},
+                                                "Position": {}} 
 
     def pva_callbackSuccess(self, pv):
         """
@@ -176,13 +174,14 @@ class PVA_Reader:
         if self.analysis_exists:
             self.analysis_attributes = self.attributes[self.analysis_index]
             if self.config["ConsumerType"] == "spontaneous":
-                self.analysis_cache_dict["Intensity"].append(self.analysis_attributes["value"][0]["value"].get("Intensity",0.0))
-                self.analysis_cache_dict["ComX"].append(self.analysis_attributes["value"][0]["value"].get("ComX",0.0))
-                self.analysis_cache_dict["ComY"].append(self.analysis_attributes["value"][0]["value"].get("ComY",0.0))
-                #TODO: replace axis 1 and axis 2 with "Position" and make item a dict with key being axis1val and axis2 val with item (axis1val, axis2val)
-                self.analysis_cache_dict["Axis1"].append(self.analysis_attributes["value"][0]["value"].get("Axis1",0.0))
-                self.analysis_cache_dict["Axis2"].append(self.analysis_attributes["value"][0]["value"].get("Axis2",0.0))
-            
+                # turns axis1 and axis2 into a tuple
+                incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1",0.0), self.analysis_attributes["value"][0]["value"].get("Axis2",0.0))
+                # use a tuple as a key so that we can check if there is a repeat position
+                self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)})
+                self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX",0.0)})
+                self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY",0.0)})
+                # double storing of the postion, will find out if needed
+                self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
     def parse_image_data_type(self):
         """Parse through a PVA Object to store the incoming datatype."""
         if self.pva_object is not None:

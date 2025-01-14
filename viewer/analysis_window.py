@@ -210,22 +210,16 @@ class AnalysisWindow(QMainWindow):
             self.scatter_item_intensity.clear()
             self.scatter_item_comx.clear()
             self.scatter_item_comy.clear()
-            # self.plot_intensity.clear()
-            # self.plot_comx.clear()
-            # self.plot_comy.clear()
-            self.parent.reader.analysis_cache_dict.update({"Intensity": []})
-            self.parent.reader.analysis_cache_dict.update({"ComX": []})
-            self.parent.reader.analysis_cache_dict.update({"Comy": []})
-            self.parent.reader.analysis_cache_dict.update({"Axis1": []})
-            self.parent.reader.analysis_cache_dict.update({"Axis2": []}) 
+            self.parent.reader.analysis_cache_dict.update({"Intensity": {}})
+            self.parent.reader.analysis_cache_dict.update({"ComX": {}})
+            self.parent.reader.analysis_cache_dict.update({"Comy": {}})
+            self.parent.reader.analysis_cache_dict.update({"Position": {}})
 
         self.timer_plot.start()
         self.update_counter = 0
         # Done because caching should be done from scratch
-        # self.parent.reader.first_scan_detected = False
         self.parent.reader.frames_received = 0
         self.parent.reader.frames_missed = 0
-        # self.parent.reader.cache_id_gen = rotation_cycle(0,len(self.x_positions))
         self.parent.start_timers()
 
     def check_num_rois(self):
@@ -310,12 +304,13 @@ class AnalysisWindow(QMainWindow):
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
 
         
-    def update_spontaneous_image(self, intensity, com_x, com_y, axis1, axis2):
+    def update_spontaneous_image(self, intensity, com_x, com_y, position):
         intensity = np.array(intensity)
         com_x = np.array(com_x)
         com_y = np.array(com_y)
-        axis1 = np.array(axis1)
-        axis2 = np.array(axis2)
+        position = np.array(position)
+        # axis1 = np.array(axis1)
+        # axis2 = np.array(axis2)
         # print(intensity[0])
 
         # sets instead of no dots appearing if points are ourside fo min and max, clips them to be min and max values
@@ -331,13 +326,13 @@ class AnalysisWindow(QMainWindow):
 
         # creating data for intensity plot
         intensity_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
-        intensity_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, intensity_brushes)]
+        intensity_spots = [{'pos':pos, 'brush': brush, 'size':10, 'symbol': 's'} for pos, brush in zip(position, intensity_brushes)]
         # creating data for com_x plot
         comx_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comx_colors]
-        comx_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comx_brushes)]
+        comx_spots = [{'pos':pos, 'brush': brush, 'size':10, 'symbol': 's'} for pos, brush in zip(position, comx_brushes)]
         # creating data for com_y plot
         comy_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_comy_colors]
-        comy_spots = [{'pos':(x,y), 'brush': brush, 'size':10, 'symbol': 's'} for x, y, brush, in zip(axis1, axis2, comy_brushes)]
+        comy_spots = [{'pos':pos, 'brush': brush, 'size':10, 'symbol': 's'} for pos, brush in zip(position, comy_brushes)]
 
         self.scatter_item_intensity.setData(intensity_spots)
         self.scatter_item_comx.setData(comx_spots)
@@ -359,11 +354,11 @@ class AnalysisWindow(QMainWindow):
                 com_x = self.analysis_attributes["value"][0]["value"].get("ComX",0.0)
                 com_y = self.analysis_attributes["value"][0]["value"].get("ComY",0.0)
             elif self.consumer_type == "spontaneous":
-                intensity = self.analysis_attributes["Intensity"]
-                com_x = self.analysis_attributes["ComX"]
-                com_y = self.analysis_attributes["ComY"]
-                axis1 = self.analysis_attributes["Axis1"]
-                axis2= self.analysis_attributes["Axis2"]
+                intensity = list(self.analysis_attributes["Intensity"].values())
+                com_x = list(self.analysis_attributes["ComX"].values())
+                com_y = list(self.analysis_attributes["ComY"].values())
+                position = list(self.analysis_attributes["Position"].values())
+                # axis2 = self.analysis_attributes["Axis2"]
                 
             if len(intensity):
                 if self.update_counter == 1:
@@ -383,8 +378,7 @@ class AnalysisWindow(QMainWindow):
                 if self.consumer_type == "vectorized":
                     self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
                 elif self.consumer_type == "spontaneous":
-                    self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, axis1=axis1, axis2=axis2)  
-
+                    self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, position=position)  
 
     def init_scatter_plot(self):
         self.scatter_item_intensity = pg.ScatterPlotItem()
@@ -395,33 +389,19 @@ class AnalysisWindow(QMainWindow):
         self.plot_comx = pg.PlotWidget()
         self.plot_comy = pg.PlotWidget()
 
-        # image_item_intensity = pg.ImageItem()
-        # image_item_comx = pg.ImageItem()
-        # image_item_comy = pg.ImageItem()
-
-        # self.axis1_data = []
-        # self.axis2_data = []
-        # self.intensity_data = []
-        # self.comx_data = []
-        # self.comy_data = []
-        # self.norm_intensity = [] # based off self.intensity_data
-
         self.plot_intensity.addItem(self.scatter_item_intensity)
-        # self.plot_intensity.addItem(image_item_intensity)
         self.grid_a.addWidget(self.plot_intensity,0,0)
         self.plot_intensity.setLabel('bottom', 'Motor Position X' )
         self.plot_intensity.setLabel('left', 'Motor Posistion Y')
         self.plot_intensity.invertY(True)
 
         self.plot_comx.addItem(self.scatter_item_comx)
-        # self.plot_comx.addItem(image_item_comx)
         self.grid_b.addWidget(self.plot_comx,0,0)
         self.plot_comx.setLabel('bottom', 'Motor Position X' )
         self.plot_comx.setLabel('left', 'Motor Posistion Y')
         self.plot_comx.invertY(True)
 
         self.plot_comy.addItem(self.scatter_item_comy)
-        # self.plot_comy.addItem(image_item_comy)
         self.grid_c.addWidget(self.plot_comy,0,0)
         self.plot_comy.setLabel('bottom', 'Motor Position X' )
         self.plot_comy.setLabel('left', 'Motor Posistion Y')
