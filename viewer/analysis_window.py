@@ -74,22 +74,34 @@ class HDF5WriterThread(QThread):
 # Define the second window as a class
 class AnalysisWindow(QMainWindow):
     """
-    A class that displays and handles user interaction with the analysis window.
+    Main analysis window for visualizing and interacting with data.
 
     Attributes:
-        status_text (QLabel): A GUI label that shows the status of the analysis.
-        parent (ImageWindow): The parent window object.
-        xpos_path (str): The path to the x-positions file.
-        ypos_path (str): The path to the y-positions file.
-        save_path (str): The path to where the HDF5 file will be saved.
-        timer_plot (QTimer): A timer to control the plot frequency.
-        update_counter (int): Number of times the plot has been called.
-        intensity_matrix (numpy.ndarray): A 2D numpy array of intensity values.
-        com_x_matrix (numpy.ndarray): A 2D numpy array of center of mass x values.
-        com_y_matrix (numpy.ndarray): A 2D numpy array of center of mass y values.
+        parent (ImageWindow): Parent window object that contains image data and configurations.
+        config (dict): Configuration settings from the parent.
+        xpos_path (str): Path to the x-positions file.
+        ypos_path (str): Path to the y-positions file.
+        save_path (str): Path for saving HDF5 files.
+        view_comx (pyqtgraph.ImageView): Image view for x center-of-mass if consumer type is vectorized.
+        view_comy (pyqtgraph.ImageView): Image view for y center-of-mass if consumer type is vectorized.
+        view_intensity (pyqtgraph.ImageView): Image view for intensity if consumer type is vectorized.
+        plot_comx (pg.PlotWidget): Plot widget for x center-of-mass if consumer type is spontaneous.
+        plot_comy (pg.PlotWidget): Plot widget for y center-of-mass if consumer type is spontaneous.
+        plot_intensity (pg.PlotWidget): Plot widget for intensity if consumer type is spontaneous.
+        update_counter (int): Counter for updates to plotting data.
+        max_updates (int): Maximum number of updates allowed.
+        analysis_index (int): Index for identifying analysis data from metadata.
+        analysis_attributes (dict): Dictionary containing analysis attributes.
+        timer_plot (QTimer): Timer for triggering plot updates.
     """
     
     def __init__(self, parent): 
+        """
+        Initializes the analysis window with parent and UI settings.
+
+        Args:
+            parent (ImageWindow): The parent window containing image and ROI data.
+        """
         super(AnalysisWindow, self).__init__()
         self.parent = parent
         uic.loadUi('gui/analysis_window.ui', self)
@@ -103,6 +115,9 @@ class AnalysisWindow(QMainWindow):
         self.view_comx = None
         self.view_comy = None
         self.view_intensity = None
+        self.plot_intensity = None
+        self.plot_comx = None
+        self.plot_comy = None
         self.update_counter = 0
         self.max_updates = 10
         self.analysis_index = self.parent.reader.analysis_index
@@ -134,14 +149,7 @@ class AnalysisWindow(QMainWindow):
         self.sbox_comy_min.valueChanged.connect(self.min_max_changed)
         self.sbox_comy_max.valueChanged.connect(self.min_max_changed)
 
-    def freeze_plotting_checked(self):
-        """
-        This function freezes the plot when the freeze plot checkbox is checked.
-        """
-        if self.chk_freeze.isChecked():
-                self.timer_plot.stop()
-        else:
-            self.timer_plot.start(int(1000/self.calc_freq.value()))
+
 
     # def load_path(self):
     #     """
@@ -187,7 +195,29 @@ class AnalysisWindow(QMainWindow):
     #     print("Signal Received")
     #     self.status_text.setText("File Written")
     #     QTimer.singleShot(10000, self.check_if_running)
-        
+
+    def configure_plots(self):
+        """
+        Configures the plotting interface based on the consumer type.
+        """
+        # cmap = pg.colormap.getFromMatplotlib('viridis')
+        if self.consumer_type == "spontaneous":
+            self.init_scatter_plot()
+        elif self.consumer_type == "vectorized":
+            self.init_image_view()
+        else:
+            #TODO: replace with w/ a message box
+            print("Config Not Set Up Correctly")
+
+    def freeze_plotting_checked(self):
+        """
+        This function freezes the plot when the freeze plot checkbox is checked.
+        """
+        if self.chk_freeze.isChecked():
+                self.timer_plot.stop()
+        else:
+            self.timer_plot.start(int(1000/self.calc_freq.value()))
+
     def check_if_running(self):
         """
         This function checks if the image scanning is running and sets the the status label's text.
@@ -224,7 +254,7 @@ class AnalysisWindow(QMainWindow):
 
     def check_num_rois(self):
         """
-        This function is called when the class is initialized to populate the dropdown of available ROIs
+        Populates the dropdown menu with the number of available ROIs.
         """
         num_rois =  len(self.config.get('rois'))
         if num_rois > 0:
@@ -233,8 +263,7 @@ class AnalysisWindow(QMainWindow):
 
     def roi_selection_changed(self):
         """
-        This function is called when the ROI is selected from the dropdown.
-        Changes the viewable roi to one of the preset variables that we chose to monitor.
+        Updates the ROI selection based on the user's choice in the dropdown.
         """
         text = self.cbox_select_roi.currentText()
         if text.startswith('ROI'):
@@ -266,9 +295,15 @@ class AnalysisWindow(QMainWindow):
     #     self.update_counter = 0
         
     def frequency_changed(self):
+        """
+        Adjusts the plot update frequency when the frequency spin box value changes.
+        """
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
     def min_max_changed(self):
+        """
+        Updates the min and max values for intensity and center-of-mass image views/plots.
+        """
         self.min_intensity = self.sbox_intensity_min.value()
         self.max_intensity = self.sbox_intensity_max.value()
         self.min_comx = self.sbox_comx_min.value()
@@ -284,6 +319,14 @@ class AnalysisWindow(QMainWindow):
             self.view_comy.setLevels(self.min_comy, self.max_comy)
 
     def update_vectorized_image(self, intensity, com_x, com_y):
+        """
+        Updates the vectorized image views with intensity and center-of-mass data.
+
+        Args:
+            intensity (numpy.ndarray): Array representing intensity values.
+            com_x (numpy.ndarray): Array representing center-of-mass x-values.
+            com_y (numpy.ndarray): Array representing center-of-mass y-values.
+        """
         size = int(np.sqrt(len(intensity)))
         intensity_matrix = np.reshape(intensity, (size, size))
         com_x_matrix = np.reshape(com_x,(size, size))
@@ -305,6 +348,15 @@ class AnalysisWindow(QMainWindow):
 
         
     def update_spontaneous_image(self, intensity, com_x, com_y, position):
+        """
+        Updates the scatter plots for spontaneous data.
+
+        Args:
+            intensity (list): List of intensity values.
+            com_x (list): List of center-of-mass x-values.
+            com_y (list): List of center-of-mass y-values.
+            position (list): List of positions corresponding to the values.
+        """
         intensity = np.array(intensity)
         com_x = np.array(com_x)
         com_y = np.array(com_y)
@@ -340,7 +392,7 @@ class AnalysisWindow(QMainWindow):
 
     def plot_images(self):
         """
-        Redraws plots based on rate entered in hz box.
+        Redraws plots based on the configured frequency.
         """
 
         if self.analysis_index is not None:
@@ -381,6 +433,10 @@ class AnalysisWindow(QMainWindow):
                     self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, position=position)  
 
     def init_scatter_plot(self):
+        """
+        Initializes scatter plots for intensity, com_x, and com_y data.
+        called only if consumer type is spontaneous
+        """
         self.scatter_item_intensity = pg.ScatterPlotItem()
         self.scatter_item_comx = pg.ScatterPlotItem()
         self.scatter_item_comy = pg.ScatterPlotItem()
@@ -408,6 +464,10 @@ class AnalysisWindow(QMainWindow):
         self.plot_comy.invertY(True)
 
     def init_image_view(self): 
+        """
+        Initializes Image Views for intensity, com_x, and com_y data.
+        called only if cosumer type is vectorized
+        """
         plot_item_intensity = pg.PlotItem()
         plot_item_comx = pg.PlotItem()
         plot_item_comy = pg.PlotItem()
@@ -428,24 +488,15 @@ class AnalysisWindow(QMainWindow):
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')
 
-    def configure_plots(self):
-        """
-        this function initializes the user interface with smaller ImageView classes and defining the axis.
-        """
-        # cmap = pg.colormap.getFromMatplotlib('viridis')
-        if self.consumer_type == "spontaneous":
-            self.init_scatter_plot()
-        elif self.consumer_type == "vectorized":
-            self.init_image_view()
-        else:
-            #TODO: replace with w/ a message box
-            print("Config Not Set Up Correctly")
-
-        
-    
 
 
     def closeEvent(self, event):
+        """
+        Handles cleanup operations when the analysis window is closed.
+
+        Args:
+            event (QCloseEvent): The close event triggered when the window is closed.
+        """
         self.parent.start_timers()
         del self.parent.analysis_window
         event.accept()

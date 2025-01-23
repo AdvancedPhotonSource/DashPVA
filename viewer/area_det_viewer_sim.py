@@ -16,11 +16,10 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 from generators import rotation_cycle
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
-from analysis_window import AnalysisWindow #, analysis_window_process
-# from scan_plan_dialog import ScanPlanDialog
+from analysis_window import AnalysisWindow 
 
 
-max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file 
+max_cache_size = 900 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
 
 
@@ -31,10 +30,9 @@ class ConfigDialog(QDialog):
         Class that does initial setup for getting the pva prefix, collector address,
         and the path to the json that stores the pvs that will be observed
 
-        Keyword Args:
-        prefix (str) -- used to populate the prefix for all pvas in PVAReader
-        c_address (str) -- used to populate the address for the collector channel in PVAReader
-        cache_freq (int) -- used to set the update frequency of ImageViewer
+        Attributes:
+            input_channel (str): Input channel for PVA.
+            roi_config (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
@@ -53,17 +51,14 @@ class ConfigDialog(QDialog):
 
     def init_ui(self):
         """
-        function called which prefills text in the Line Editors
+        Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
         self.le_roi_config.setText(self.le_roi_config.text())
 
     def browse_file_dialog(self):
         """
-        Function called when you want to get the file path to a toml file.
-        is split between 2 buttons:
-        - file path for the config you wan't to load and monitor
-        - file path for a config you want to edit
+        Opens a file dialog to select the path to a TOML configuration file.
         """
         self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
 
@@ -71,13 +66,13 @@ class ConfigDialog(QDialog):
 
     def new_pv_setup(self):
         """
-        Pops up a new window for setting up a new config within the ui
+        Opens a new window for setting up a new PV configuration within the UI.
         """
         self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
     def edit_pv_setup(self):
         """
-        Pops up a new window for editting an already existing config
+        Opens a window for editing an existing PV configuration.
         """
         if self.le_edit_file_path.text() != '':
             self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
@@ -86,8 +81,8 @@ class ConfigDialog(QDialog):
 
     def dialog_accepted(self):
         """
-        Function called when the last Dialog Accept button is pressed.
-        Starts the ImageWindow process passing all filled out information to it and initializing it.
+        Handles the final step when the dialog's accept button is pressed.
+        Starts the ImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
         self.roi_config = self.le_roi_config.text()
@@ -105,14 +100,12 @@ class PVA_Reader:
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
         """
-        Variables needed for monitoring a connection.
-        Provides connections and to broadcasted images and PVAs
-        
-        KeyWord Args:
-        pva_prefix (str) -- The prefix of the specific detector that will be appended to the PVA channel name (default dp-ADSim)
-        provider (protocol) -- The protocol that will be used when creating the channel (default pva.PVA)
-        collector_address (str) -- address to the collector server
-        config_filepath (str) -- file path to where the config json file is located
+        Initializes the PVA Reader for monitoring connections and handling image data.
+
+        Args:
+            input_channel (str): Input channel for the PVA connection.
+            provider (protocol): The protocol for the PVA channel.
+            config_filepath (str): File path to the configuration TOML file.
         """
         self.input_channel = input_channel        
         self.provider = provider
@@ -156,12 +149,10 @@ class PVA_Reader:
 
     def pva_callbackSuccess(self, pv):
         """
-        Function is called every time a PV change is monitored.
-        Makes sure we only keep queue of 1000 PV objects in memory 
-        and before caching then processes incoming pv. 
-        
-        KeyWord Args:
-        pv (PvaObject) -- Received by channel Monitor
+        Callback for handling monitored PV changes.
+
+        Args:
+            pv (PvaObject): The PV object received by the channel monitor.
         """
         self.pva_object = pv
         self.parse_image_data_type()
@@ -182,8 +173,11 @@ class PVA_Reader:
                 self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY",0.0)})
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+                
     def parse_image_data_type(self):
-        """Parse through a PVA Object to store the incoming datatype."""
+        """
+        Parses the PVA Object to determine the incoming data type.
+        """
         if self.pva_object is not None:
             try:
                 self.data_type = list(self.pva_object['value'][0].keys())[0]
@@ -191,11 +185,19 @@ class PVA_Reader:
                 self.data_type = "could not detect"
     
     def parse_pva_attributes(self):
-        """Convert a pva object to python dict and parses attributes into a separate dict."""
+        """
+        Converts the PVA object to a Python dictionary and extracts its attributes.
+        """
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
     
     def locate_analysis_index(self):
+        """
+        Locates the index of the analysis attribute in the PVA attributes.
+
+        Returns:
+            int: The index of the analysis attribute or None if not found.
+        """
         if self.attributes:
             for i in range(len(self.attributes)):
                 attr_pv: dict = self.attributes[i]
@@ -206,6 +208,9 @@ class PVA_Reader:
                 return None
             
     def parse_roi_pvs(self):
+        """
+        Parses attributes to extract ROI-specific PV information.
+        """
         if self.attributes:
             for i in range(len(self.attributes)):
                 attr_pv: dict = self.attributes[i]
@@ -222,8 +227,7 @@ class PVA_Reader:
             
     def pva_to_image(self):
         """
-        Parses through the PVA Object to retrieve the size and use that to shape incoming image.
-        Then immedately check if that PVA Object is next image or if we missed a frame in between.
+        Converts the PVA Object to an image array and determines if a frame was missed.
         """
         try:
             if self.pva_object is not None:
@@ -252,29 +256,43 @@ class PVA_Reader:
             
     def start_channel_monitor(self):
         """
-        Calls the PVA subscribe function of the pvaccess module to 
-        provide a callback function to process any incoming PV Objects. 
-
-        After that it starts the channel Monitor and it goes through each 
-        item stored in the metadata PVs dict to retrieve ROI information 
-        using epics caget as monitoring them is not consistent at the start.
-        (this can be changed with the collector running)
+        Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
         
     def stop_channel_monitor(self):
-        """Stops all monitorg and callback functions from continuing"""
+        """
+        Stops all monitoring and callback functions.
+        """
         self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
 
     def get_frames_missed(self):
+        """
+        Returns the number of frames missed.
+
+        Returns:
+            int: The number of missed frames.
+        """
         return self.frames_missed
 
     def get_pva_image(self):
+        """
+        Returns the current PVA image.
+
+        Returns:
+            numpy.ndarray: The current image array.
+        """
         return self.image
     
     def get_attributes_dict(self):
+        """
+        Returns the attributes of the current PVA object.
+
+        Returns:
+            list: The attributes of the current PVA object.
+        """
         return self.attributes
 
 
@@ -282,11 +300,11 @@ class ImageWindow(QMainWindow):
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
-        This is the Main Window that first pops up and allows a user to type 
-        a detector prefix in and connect to it. It does things like allow one 
-        to view and manipulate the incoming image, change the color scheme, and 
-        view ROIs. In addtion to this it can also show multiple stats about the 
-        connection, the images shown, and specific ROIs.
+        Initializes the main window for real-time image visualization and manipulation.
+
+        Args:
+            input_channel (str): The PVA input channel for the detector.
+            file_path (str): The file path for loading configuration.
         """
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
@@ -351,35 +369,49 @@ class ImageWindow(QMainWindow):
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
-    
-
     def start_timers(self):
-        """Timer speeds for updating labels and plotting"""
+        """
+        Starts timers for updating labels and plotting at specified frequencies.
+        """
         self.timer_labels.start(int(1000/100))
         self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self):
-        """Stops the updating of Main Window Labels"""
+        """
+        Stops the updating of main window labels and plots.
+        """
         self.timer_plot.stop()
         self.timer_labels.stop()
 
     def c_ordering_clicked(self):
+        """
+        Sets the pixel ordering to C style.
+        """
         if self.reader is not None:
             self.reader.pixel_ordering = 'C'
 
     def f_ordering_clicked(self):
+        """
+        Sets the pixel ordering to Fortran style.
+        """
         if self.reader is not None:
             self.reader.pixel_ordering = 'F'
 
     def open_analysis_window_clicked(self):
-        if self.reader.image is not None:
-            self.analysis_window = AnalysisWindow(parent=self)
-            self.analysis_window.show()
+        """
+        Opens the analysis window if the reader and image are initialized.
+        """
+        if self.reader is not None:
+            if self.reader.image is not None:
+                self.analysis_window = AnalysisWindow(parent=self)
+                self.analysis_window.show()
 
     def start_live_view_clicked(self):
         """
-        Goes through and tries to initialize the connections to the PVA channel using
-        the prefix which was typed in. 
+        Initializes the connections to the PVA channel using the provided prefix.
+        
+        This method ensures that any existing connections are cleared and re-initialized.
+        Also starts monitoring the stats and adds ROIs to the viewer.
         """
         try:
             # a double check to make sure there isn't a connection already when starting
@@ -410,7 +442,11 @@ class ImageWindow(QMainWindow):
             self.is_connected.setText('Disconnected')
         
     def stop_live_view_clicked(self):
-        """Clears the connection for the PVA channel and any active monitors."""
+        """
+        Clears the connection for the PVA channel and stops all active monitors.
+
+        This method also updates the UI to reflect the disconnected state.
+        """
         if self.reader is not None:
             self.reader.stop_channel_monitor()
             self.stop_timers()
@@ -422,7 +458,12 @@ class ImageWindow(QMainWindow):
             self.is_connected.setText('Disconnected')
 
     def start_stats_monitors(self):
-        """Monitors used to update Stats values."""
+        """
+        Initializes monitors for updating stats values.
+
+        This method uses `camonitor` to observe changes in the stats PVs and update
+        them in the UI accordingly.
+        """
         try:
             if self.reader.stats:
                 for stat in self.reader.stats.keys():
@@ -434,16 +475,21 @@ class ImageWindow(QMainWindow):
 
     def stats_ca_callback(self, pvname, value, **kwargs):
         """
-        Updates the Stats PV Value.
-        
-        KeyWord Args:
-        pvname -- The name of the specific Stat PV that's been updated.
-        value -- The new value sent by the monitor for the PV.
-        **kwargs -- a catch all for the other values sent by the monitor."""
+        Updates the stats PV value based on changes observed by `camonitor`.
+
+        Args:
+            pvname (str): The name of the specific Stat PV that has been updated.
+            value: The new value sent by the monitor for the PV.
+            **kwargs: Additional keyword arguments sent by the monitor.
+        """
         self.stats_data[pvname] = value
         
     def stats_button_clicked(self):
-        """Creates a pop up dialog specifically for the stat that you want to view."""
+        """
+        Creates a popup dialog for viewing the stats of a specific button.
+
+        This method identifies the button pressed and opens the corresponding stats dialog.
+        """
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
@@ -453,7 +499,9 @@ class ImageWindow(QMainWindow):
             self.stats_dialog[text].show()
     
     def show_rois_checked(self):
-        """Shows/Hides ROIs depending on checked state."""
+        """
+        Toggles visibility of ROIs based on the checked state of the display checkbox.
+        """
         if self.reader is not None:
             if self.display_rois.isChecked():
                 for roi in self.rois:
@@ -464,8 +512,8 @@ class ImageWindow(QMainWindow):
 
     def freeze_image_checked(self):
         """
-        Freezes/Unfreezes plot depending on checked state
-        without stopping collection of PVA Objects.
+        Toggles freezing/unfreezing of the plot based on the checked state
+        without stopping the collection of PVA objects.
         """
         if self.reader is not None:
             if self.freeze_image.isChecked():
@@ -475,6 +523,9 @@ class ImageWindow(QMainWindow):
                 self.start_timers()
     
     def transpose_image_checked(self):
+        """
+        Toggles whether the image data is transposed based on the checkbox state.
+        """
         if self.reader is not None:
             if self.chk_transpose.isChecked():
                 self.reader.image_is_transposed = True
@@ -482,22 +533,26 @@ class ImageWindow(QMainWindow):
                 self.reader.image_is_transposed = False
 
     def reset_first_plot(self):
+        """
+        Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
+        """
         self.first_plot = True
 
     def rotation_count(self):
-        """Used to cycle image rotation number between 1 - 4."""
+        """
+        Cycles the image rotation number between 1 and 4.
+        """
         self.rot_num = next(rot_gen)
 
     def add_rois(self):
         """
-        Takes the number of ROIs detected earlier from pvs dict and 
-        adds them to the image viewer and color codes them.
+        Adds ROIs to the image viewer and assigns them color codes.
 
         Color Codes:
-        ROI1 -- Red (ff0000)
-        ROI2 -- Blue (0000ff)
-        ROI3 -- Green (4CBB17)
-        ROI4 -- Pink (ff00ff)
+            ROI1 -- Red (#ff0000)
+            ROI2 -- Blue (#0000ff)
+            ROI3 -- Green (#4CBB17)
+            ROI4 -- Pink (#ff00ff)
         """
         roi_colors = ['ff0000', '0000ff', '4CBB17', 'ff00ff']
         for i, roi in enumerate(self.reader.rois.keys()):
@@ -515,8 +570,9 @@ class ImageWindow(QMainWindow):
 
     def update_rois(self):
         """
-        Manipulates ROIs live whenever a change is made in the EPICS software
-        then loops through the list of cached ROIs and updates their position/size.
+        Updates the positions and sizes of ROIs based on changes from the EPICS software.
+
+        Loops through the cached ROIs and adjusts their parameters accordingly.
         """
         for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
             x_pos = self.reader.rois[roi_key].get("MinX",0)
@@ -527,18 +583,23 @@ class ImageWindow(QMainWindow):
             roi.setSize(size=(width, height))
     
     def update_roi_region(self):
+        """
+        Forces the image viewer to refresh when an ROI region changes.
+        """
         self.image_view.update()
 
     def update_pv_prefix(self):
+        """
+        Updates the input channel prefix based on the value entered in the prefix field.
+        """
         self._input_channel = self.pv_prefix.text()
     
     def update_mouse_pos(self, pos):
         """
-        Receives mouse position signal inside the ImageViewer and maps it 
-        to a QPointer on the image to receive pixel value where the mouse is.
+        Maps the mouse position in the Image Viewer to the corresponding pixel value.
 
-        KeyWord Args:
-        pos -- position event sent by mouse moving
+        Args:
+            pos (QPointF): Position event sent by the mouse moving.
         """
         if pos is not None:
             if self.reader is not None:
@@ -554,7 +615,9 @@ class ImageWindow(QMainWindow):
                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
 
     def update_labels(self):
-        """Updates labels based on connection and cached data"""
+        """
+        Updates the UI labels with current connection and cached data.
+        """
         provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
         is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
         self.provider_name.setText(provider_name)
@@ -573,9 +636,10 @@ class ImageWindow(QMainWindow):
 
     def update_image(self):
         """
-        Redraws plots based on rate entered in main window.
-        Processes the images based on the different settings in the main window.
-        And shows the min/max pixel value within the entire image
+        Redraws plots based on the configured update rate.
+
+        Processes the image data according to main window settings, such as rotation
+        and log transformations. Also sets initial min/max pixel values in the UI.
         """
         if self.reader is not None:
             self.call_id_plot +=1
@@ -613,17 +677,19 @@ class ImageWindow(QMainWindow):
                 self.max_px_val.setText(f"{max_level:.2f}")
     
     def update_min_max_setting(self):
-        """Updates the levels for the pixel values you want to see in the ImageViewer"""
+        """
+        Updates the min/max pixel levels in the Image Viewer based on UI settings.
+        """
         min = self.min_setting_val.value()
         max = self.max_setting_val.value()
         self.image_view.setLevels(min, max)
     
     def closeEvent(self, event):
         """
-        Altered close event to delete stat dialogs as well when main window closes
-        
-        Keyword Args:
-        event -- close event sent by main window
+        Custom close event to clean up resources, including stat dialogs.
+
+        Args:
+            event (QCloseEvent): The close event triggered when the main window is closed.
         """
         del self.stats_dialog # otherwise dialogs stay in memory
         super(ImageWindow,self).closeEvent(event)

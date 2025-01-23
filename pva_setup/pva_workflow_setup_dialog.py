@@ -9,6 +9,14 @@ from PyQt5.QtWidgets import QFileDialog, QDialog
 from PyQt5.QtCore import pyqtSignal, QObject
 
 class Worker(QObject):
+    """
+    Worker class to manage subprocess output and communicate it back to the main thread.
+
+    Attributes:
+        output_signal (pyqtSignal): Signal to emit the output of the subprocess.
+        process (subprocess.Popen): The process being managed.
+        _running (bool): Flag to indicate if the worker should continue running.
+    """
     output_signal = pyqtSignal(str)
 
     def __init__(self, process):
@@ -17,6 +25,9 @@ class Worker(QObject):
         self._running = True
 
     def run(self):
+        """
+        Continuously reads output from the subprocess and emits it via the output_signal.
+        """
         while self._running:
             output = self.process.stdout.readline()
             if output:
@@ -26,6 +37,9 @@ class Worker(QObject):
                 break
 
     def stop(self):
+        """
+        Stops the worker and terminates the subprocess.
+        """
         self._running = False
         try:
             # Terminate the process group
@@ -34,6 +48,13 @@ class Worker(QObject):
             pass
 
 class PVASetupDialog(QDialog):
+    """
+    Dialog for setting up and managing the PVA workflow.
+
+    Attributes:
+        processes (dict): Dictionary to store active subprocesses.
+        workers (dict): Dictionary to store Worker instances and their threads.
+    """
     def __init__(self, parent=None):
         super(PVASetupDialog, self).__init__(parent)
         uic.loadUi('gui/pva_workflow_setup.ui', self)
@@ -60,56 +81,81 @@ class PVASetupDialog(QDialog):
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
-    # Browse functions for Sim Server
-    def browse_processor_file_sim(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Sim Server Processor File', '', 'Python Files (*.py)')
-        if file_name:
-            self.lineEditProcessorFileSim.setText(file_name)
-
-    def browse_metadata_config_sim(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
-        if file_name:
-            self.lineEditMetadataConfigSim.setText(file_name)
-
     # Browse functions for AssociatorConsumers
     def browse_processor_file_associator(self):
+        """
+        Opens a file dialog to select the processor file for the Associator Consumer.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Associator Consumers Processor File', '', 'Python Files (*.py)')
         if file_name:
             self.lineEditProcessorFileAssociator.setText(file_name)
 
     def browse_metadata_config_associator(self):
+        """
+        Opens a file dialog to select the metadata configuration file for the Associator Consumer.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigAssociator.setText(file_name)
 
     # Browse functions for Collector
     def browse_processor_file_collector(self):
+        """
+        Opens a file dialog to select the processor file for the Collector.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Collector Processor File', '', 'Python Files (*.py)')
         if file_name:
             self.lineEditProcessorFileCollector.setText(file_name)
 
     def browse_metadata_config_collector(self):
+        """
+        Opens a file dialog to select the metadata configuration file for the Collector.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select ROI Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigCollector.setText(file_name)
 
     # Browse functions for Analysis Consumer
     def browse_processor_file_analysis(self):
+        """
+        Opens a file dialog to select the processor file for the Analysis Consumer.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Analysis Consumer Processor File', '', 'Python Files (*.py)')
         if file_name:
             self.lineEditProcessorFileAnalysis.setText(file_name)
 
     def browse_metadata_config_analysis(self):
+        """
+        Opens a file dialog to select the metadata configuration file for the Associator Consumer.
+        """
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditMetadataConfigAnalysis.setText(file_name)
 
     def parse_toml(self, path) -> dict: 
+        """
+        Parses a TOML file and returns its contents as a dictionary.
+
+        Args:
+            path (str): Path to the TOML file.
+
+        Returns:
+            dict: Parsed TOML data.
+        """
         with open(path, 'r') as f:
             toml_data: dict = toml.load(f)
         return toml_data
     
     def parse_metadata_channels(self, metadata_config_path) -> str:
+        """
+        Parses metadata channels from a TOML configuration file.
+
+        Args:
+            metadata_config_path (str): Path to the configuration file stores metadata channels.
+
+        Returns:
+            str: Comma-separated list of CA and PVA channels.
+        """
         pv_config = self.parse_toml(path=metadata_config_path)
         metadata_config : dict = pv_config.get("metadata", {})
         
@@ -129,6 +175,15 @@ class PVASetupDialog(QDialog):
         return all_pvs
 
     def parse_roi_channels(self, roi_config_path) -> str:
+        """
+        Parses roi channels from a TOML configuration file.
+
+        Args:
+            roi_config_path (str): Path to the configuration file that stores roi channels.
+
+        Returns:
+            str: Comma-separated list of ROI channels.
+        """
         pv_config = self.parse_toml(roi_config_path)
         roi_config: dict = pv_config.get("rois", {})
         #num_rois = len(roi_config)
@@ -148,6 +203,11 @@ class PVASetupDialog(QDialog):
 
     # Run and Stop functions for Sim Server
     def run_sim_server(self):
+        """
+        Starts the Sim Server subprocess using the configured parameters.
+
+        Displays warnings if the server is already running and updates the UI with the process status.
+        """
         if 'sim_server' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
             return
@@ -195,6 +255,11 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Sim Server: {str(e)}')
 
     def stop_sim_server(self):
+        """
+        Stops the Sim Server subprocess and cleans up resources.
+
+        Updates the UI to reflect the stopped state.
+        """
         if 'sim_server' in self.processes:
             self.workers['sim_server'][0].stop()
             self.processes['sim_server'].wait()
@@ -207,6 +272,11 @@ class PVASetupDialog(QDialog):
 
     # Run and Stop functions for Associator Consumers
     def run_associator_consumers(self):
+        """
+        Starts the Associator subprocess using the configured parameters.
+
+        Displays warnings if the Consumer is already running and updates the UI with the process status.
+        """
         if 'associator_consumers' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
@@ -258,6 +328,11 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Associator Consumers: {str(e)}')
 
     def stop_associator_consumers(self):
+        """
+        Stops the Associator subprocess and cleans up resources.
+
+        Updates the UI to reflect the stopped state.
+        """
         if 'associator_consumers' in self.processes:
             self.workers['associator_consumers'][0].stop()
             self.processes['associator_consumers'].wait()
@@ -270,6 +345,11 @@ class PVASetupDialog(QDialog):
 
     # Run and Stop functions for Collector
     def run_collector(self):
+        """
+        Starts the Collector subprocess using the configured parameters.
+
+        Displays warnings if the Collector is already running and updates the UI with the process status.
+        """
         if 'collector' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Collector is already running.')
             return
@@ -322,6 +402,11 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Collector: {str(e)}')
 
     def stop_collector(self):
+        """
+        Stops the Collector subprocess and cleans up resources.
+
+        Updates the UI to reflect the stopped state.
+        """
         if 'collector' in self.processes:
             self.workers['collector'][0].stop()
             self.processes['collector'].wait()
@@ -334,6 +419,11 @@ class PVASetupDialog(QDialog):
 
     # Run and Stop functions for Analysis Consumer
     def run_analysis_consumer(self):
+        """
+        Starts the Analysis subprocess using the configured parameters.
+
+        Displays warnings if the Consumer is already running and updates the UI with the process status.
+        """
         if 'analysis_consumer' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Analysis Consumer is already running.')
             return
@@ -381,6 +471,11 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Analysis Consumer: {str(e)}')
 
     def stop_analysis_consumer(self):
+        """
+        Stops the Analysis subprocess and cleans up resources.
+
+        Updates the UI to reflect the stopped state.
+        """
         if 'analysis_consumer' in self.processes:
             self.workers['analysis_consumer'][0].stop()
             self.processes['analysis_consumer'].wait()
@@ -392,7 +487,12 @@ class PVASetupDialog(QDialog):
             self.textEditAnalysisConsumerOutput.appendPlainText('Analysis Consumer stopped.')
 
     def closeEvent(self, event):
-        # Terminate all processes when the dialog is closed
+        """
+        Handles the dialog close event by terminating all active subprocesses.
+
+        Args:
+            event (QCloseEvent): The close event triggered when the dialog is closed.
+        """
         for key in list(self.processes.keys()):
             self.workers[key][0].stop()
             self.processes[key].wait()
