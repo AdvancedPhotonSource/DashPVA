@@ -166,11 +166,12 @@ class PVA_Reader:
             self.analysis_attributes = self.attributes[self.analysis_index]
             if self.config["ConsumerType"] == "spontaneous":
                 # turns axis1 and axis2 into a tuple
-                incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1",0.0), self.analysis_attributes["value"][0]["value"].get("Axis2",0.0))
+                incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
+                                  self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
                 # use a tuple as a key so that we can check if there is a repeat position
-                self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)})
-                self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX",0.0)})
-                self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY",0.0)})
+                self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
+                self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
+                self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
                 
@@ -333,7 +334,6 @@ class ImageWindow(QMainWindow):
         self.roi_width = 50
         self.roi_height = 50
         # Adding widgets manually to have better control over them
-        # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
         self.viewer_layout.addWidget(self.image_view,1,1)
@@ -414,7 +414,7 @@ class ImageWindow(QMainWindow):
         Also starts monitoring the stats and adds ROIs to the viewer.
         """
         try:
-            # a double check to make sure there isn't a connection already when starting
+            # A double check to make sure there isn't a connection already when starting
             if self.reader is None:
                 self.reader = PVA_Reader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
@@ -427,7 +427,7 @@ class ImageWindow(QMainWindow):
                                          config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
             
-            # additional functions that aren't affected by whether the PVA reader is None or not
+            # Additional functions that aren't affected by whether the PVA reader is None or not
             if self.reader.channel.get():
                 self.start_timers()
             self.start_stats_monitors()

@@ -7,8 +7,6 @@ import numpy as np
 import h5py
 from datetime import datetime
 import time
-from generators import rotation_cycle
-# from area_det_viewer import ImageWindow
 
 class HDF5WriterThread(QThread):
     """
@@ -361,9 +359,6 @@ class AnalysisWindow(QMainWindow):
         com_x = np.array(com_x)
         com_y = np.array(com_y)
         position = np.array(position)
-        # axis1 = np.array(axis1)
-        # axis2 = np.array(axis2)
-        # print(intensity[0])
 
         # sets instead of no dots appearing if points are ourside fo min and max, clips them to be min and max values
         intensity_filtered = np.clip(intensity, self.min_intensity, self.max_intensity) 
@@ -399,7 +394,6 @@ class AnalysisWindow(QMainWindow):
 
             self.update_counter += 1
             # TODO: test if this line can be assigned once and use update on its own
-            #print(analysis_attributes)
             if self.consumer_type == "vectorized":
                 self.analysis_attributes = self.parent.reader.attributes[self.analysis_index] 
                 intensity = self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)
@@ -410,7 +404,6 @@ class AnalysisWindow(QMainWindow):
                 com_x = list(self.analysis_attributes["ComX"].values())
                 com_y = list(self.analysis_attributes["ComY"].values())
                 position = list(self.analysis_attributes["Position"].values())
-                # axis2 = self.analysis_attributes["Axis2"]
                 
             if len(intensity):
                 if self.update_counter == 1:
