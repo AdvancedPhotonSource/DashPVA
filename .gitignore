@@ -1,3 +1,5 @@
 *.npy
 *.loglogin
 *.cpython*
+visualization_learning
+collector_tests
