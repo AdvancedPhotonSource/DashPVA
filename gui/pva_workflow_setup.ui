@@ -22,7 +22,7 @@
       </font>
      </property>
      <property name="currentIndex">
-      <number>3</number>
+      <number>1</number>
      </property>
      <widget class="QWidget" name="simServerTab">
       <attribute name="title">
@@ -167,7 +167,7 @@
          <item row="8" column="1">
           <widget class="QLineEdit" name="lineEditProcessorFileSim">
            <property name="text">
-            <string>collector_testing/ad_sim_server_modified.py</string>
+            <string>consumers/ad_sim_server_modified.py</string>
            </property>
           </widget>
          </item>
@@ -681,7 +681,7 @@
             <number>1000000</number>
            </property>
            <property name="value">
-            <number>500</number>
+            <number>10</number>
            </property>
           </widget>
          </item>
@@ -874,7 +874,7 @@
          <item row="4" column="1">
           <widget class="QLineEdit" name="lineEditProcessorFileAnalysis">
            <property name="text">
-            <string>consumers/hpc_analysis_consumer.py</string>
+            <string>consumers/hpc_x_analysis_consumer.py</string>
            </property>
           </widget>
          </item>
