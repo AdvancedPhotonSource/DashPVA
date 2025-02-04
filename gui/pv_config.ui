@@ -145,7 +145,7 @@ QPushButton::pressed {
      </rect>
     </property>
     <property name="text">
-     <string>ROI JSON Config</string>
+     <string>ROI Toml Config</string>
     </property>
    </widget>
   </widget>

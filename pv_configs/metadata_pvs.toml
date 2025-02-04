@@ -39,22 +39,92 @@ ConsumerType = "spontaneous"
 
 
 [stats]
-    # [stats.Stats1]
-    # Total = "dp-ADSim:Stats1:Total_RBV"
-    # Min = "dp-ADSim:Stats1:MinValue_RBV"
-    # Max = "dp-ADSim:Stats1:MaxValue_RBV"
-    # Sigma = "dp-ADSim:Stats1:Sigma_RBV"
-    # Mean = "dp-ADSim:Stats1:MeanValue_RBV"
 
-    # [stats.Stats2]
-    # Total = "dp-ADSim:Stats2:Total_RBV"
-    # Min = "dp-ADSim:Stats2:MinValue_RBV"
-    # Max = "dp-ADSim:Stats2:MaxValue_RBV"
-    # Sigma = "dp-ADSim:Stats2:Sigma_RBV"
-    # Mean = "dp-ADSim:Stats2:MeanValue_RBV"
+    [stats.Stats4]
+    Total = "dp-ADSim:Stats4:Total_RBV"
+    Min = "dp-ADSim:Stats4:MinValue_RBV"
+    Max = "dp-ADSim:Stats4:MaxValue_RBV"
+    Sigma = "dp-ADSim:Stats4:Sigma_RBV"
+    Mean = "dp-ADSim:Stats4:MeanValue_RBV"
 
-
-[analysis]
 # For use in the analysis server, not on the client side.
-Axis1 = "x"
-Axis2 = "y"
+[analysis]
+    # substitute with real PVs that are also in Metadata
+    Axis1 = "x" 
+    Axis2 = "y"
+
+[HKL]
+
+    [HKL.SampleCircleAxis1]
+    PVName = "6idb1:m28.RBV"
+    AxisNumber = 1
+    SpecMotorName = "Mu"
+    DirectionAxis = "x+"
+    Position = 0.0
+
+    [HKL.SampleCircleAxis2]
+    PVName = "6idb1:m17.RBV"
+    AxisNumber = 2
+    SpecMotorName = "Eta"
+    DirectionAxis = "z-"
+    Position = 10.74625
+
+    
+    [HKL.SampleCircleAxis3]
+    PVName = "6idb1:m19.RBV"
+    AxisNumber = 3
+    SpecMotorName = "Chi"
+    DirectionAxis = "y+"
+    Position = 90.14
+
+    [HKL.SampleCircleAxis4]
+    PVName = "6idb1:m20.RBV"
+    AxisNumber = 4
+    SpecMotorName = "Phi"
+    DirectionAxis = "z-"
+    Position = 0.0
+
+    [HKL.DetectorCircleAxis1]
+    PVName = "6idb1:m29.RBV"
+    AxisNumber = 1
+    SpecMotorName = "Nu"
+    DirectionAxis = "x+"
+    Position = 0.0
+
+    [HKL.DetectorCircleAxis2]
+    PVName = "6idb1:m18.RBV"
+    AxisNumber = 2
+    SpecMotorName = "Delta"
+    DirectionAxis = "z-"
+    Position = 25.035125
+
+    [HKL.UBMatrix]
+    PVName = "6idb:spec:UB_matrix"
+    Value = [1,0,0,0,1,0,0,0,1]
+
+    [HKL.Energy]
+    PVName = "6idb:spec:Energy"
+    Value = 11.212 # keV Kilo Electron Volts
+
+    [HKL.PrimaryBeamDirection]
+    AxisNumber1 = 0
+    AxisNumber2 = 1
+    AxisNumber3 = 0
+
+    [HKL.InplaneReferenceDirection]
+    AxisNumber1 = 0
+    AxisNumber2 = 1
+    AxisNumber3 = 0
+
+    [HKL.SampleSurfaceNormalDirection]
+    AxisNumber1 = 0
+    AxisNumber2 = 0
+    AxisNumber3 = 1
+
+    [HKL.DetectorSetup]
+    PixelDirection1 = "z-"
+    PixelDirection2 = "x+"
+    CenterChannelPixel = [237, 95]
+    Size = [83.764, 33.54]
+    Distance = 900.644
+    Units = "mm"

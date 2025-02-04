@@ -6,6 +6,7 @@ import numpy as np
 import os.path as osp
 import pvaccess as pva
 import pyqtgraph as pg
+import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor
@@ -139,7 +140,7 @@ class PVA_Reader:
             with open(self.config_filepath, 'r') as toml_file:
                 # loads the pvs in the toml file into a python dictionary
                 self.config:dict = toml.load(toml_file)
-                self.stats: dict = self.config["stats"]
+                self.stats:dict = self.config["stats"]
                 if self.config["ConsumerType"] == "spontaneous":
                     # TODO: change to dictionaries that store postions as keys and pv as value
                     self.analysis_cache_dict = {"Intensity": {},
@@ -325,14 +326,17 @@ class ImageWindow(QMainWindow):
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
+        # self.timer_rsm = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
-        #for testing ROIs being sent from analysis window
+        # self.timer_rsm.timeout.connect(self.update_rsm)
+        # For testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+        
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
@@ -375,6 +379,8 @@ class ImageWindow(QMainWindow):
         """
         self.timer_labels.start(int(1000/100))
         self.timer_plot.start(int(1000/self.plotting_frequency.value()))
+        # if self.hkl_data:
+        #     self.timer_rsm.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self):
         """
@@ -382,6 +388,8 @@ class ImageWindow(QMainWindow):
         """
         self.timer_plot.stop()
         self.timer_labels.stop()
+        # if self.hkl_data:
+        #     self.timer_rsm.stop()
 
     def c_ordering_clicked(self):
         """
@@ -408,7 +416,7 @@ class ImageWindow(QMainWindow):
 
     def start_live_view_clicked(self):
         """
-        Initializes the connections to the PVA channel using the provided prefix.
+        Initializes the connections to the PVA channel using the provided Channel Name.
         
         This method ensures that any existing connections are cleared and re-initialized.
         Also starts monitoring the stats and adds ROIs to the viewer.
@@ -419,6 +427,7 @@ class ImageWindow(QMainWindow):
                 self.reader = PVA_Reader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
+
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
@@ -426,12 +435,16 @@ class ImageWindow(QMainWindow):
                 self.reader = PVA_Reader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
-            
+
             # Additional functions that aren't affected by whether the PVA reader is None or not
-            if self.reader.channel.get():
+            if self.reader is not None:
+                self.start_stats_monitors()
+                self.add_rois()
+                self.init_hkl()
+                self.qx, self.qy, self.qz = self.create_rsm() 
                 self.start_timers()
-            self.start_stats_monitors()
-            self.add_rois()
+
+                # print(self.qx, self.qy, self.qz)
         except:
             print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()
@@ -517,8 +530,7 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             if self.freeze_image.isChecked():
-                self.timer_labels.stop()
-                self.timer_plot.stop()
+                self.stop_timers()
             else:
                 self.start_timers()
     
@@ -568,6 +580,68 @@ class ImageWindow(QMainWindow):
             self.image_view.addItem(roi)
             roi.sigRegionChanged.connect(self.update_roi_region)
 
+    def init_hkl(self):
+        if "HKL" in self.reader.config:
+            self.hkl_data = self.reader.config["HKL"]
+            # Get everything for the sample circles
+            sample_circle_keys = [key for key in list(self.hkl_data.keys()) if key.startswith('SampleCircle')]
+            self.sample_circle_directions = []
+            self.sample_cirlce_names = []
+            self.sample_circle_positions = []
+            for sample_circle in sample_circle_keys:
+                self.sample_circle_directions.append(self.hkl_data[sample_circle]['DirectionAxis'])
+                self.sample_cirlce_names.append(self.hkl_data[sample_circle]['SpecMotorName'])
+                # temporary simulated data until we get the beamline up and running
+                self.sample_circle_positions.append(self.hkl_data[sample_circle]['Position'])
+            # Get everything for the detector circles
+            det_circle_keys = [key for key in list(self.hkl_data.keys()) if key.startswith('DetectorCircle')]
+            self.det_circle_directions = []
+            self.det_cirlce_names = []
+            self.det_circle_positions = []
+            for det_circle in det_circle_keys:
+                self.det_circle_directions.append(self.hkl_data[det_circle]['DirectionAxis'])
+                self.det_cirlce_names.append(self.hkl_data[det_circle]['SpecMotorName'])
+                # temporary simulated data until we get the beamline up and running
+                self.det_circle_positions.append(self.hkl_data[det_circle]['Position'])
+            # Primary Beam Direction
+            self.primary_beam_directions= [self.hkl_data['PrimaryBeamDirection'][axis] for axis in self.hkl_data['PrimaryBeamDirection'].keys()]
+            # Inplane Reference Direction
+            self.inplane_beam_direction = [self.hkl_data['InplaneReferenceDirection'][axis] for axis in self.hkl_data['InplaneReferenceDirection'].keys()]
+            # Sample Surface Normal Direction
+            self.sample_surface_normal_direction = [self.hkl_data['SampleSurfaceNormalDirection'][axis] for axis in self.hkl_data['SampleSurfaceNormalDirection'].keys()]
+            # Class for the conversion of angular coordinates to momentum space 
+            self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
+                                                    self.det_circle_directions, 
+                                                    self.primary_beam_directions)
+            # UB Matrix
+            self.ub_matrix = self.hkl_data['UBMatrix']['Value']
+            self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
+            # Energy
+            self.energy = self.hkl_data['Energy']['Value']
+
+    def create_rsm(self):
+        hxrd  = xu.HXRD(self.inplane_beam_direction, self.sample_surface_normal_direction, en=self.energy, qconv=self.q_conv)
+        if self.stats_data:
+            if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data and f"{self.reader.pva_prefix}:Stats4:MaxValue_RBV" in self.stats_data:
+                roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                pixel_dir1 = self.hkl_data['DetectorSetup']['PixelDirection1']
+                pixel_dir2 = self.hkl_data['DetectorSetup']['PixelDirection2']
+                cch1 = self.hkl_data['DetectorSetup']['CenterChannelPixel'][0]
+                cch2 = self.hkl_data['DetectorSetup']['CenterChannelPixel'][1]
+                nch1 = self.reader.shape[0]
+                nch2 = self.reader.shape[1]
+                pixel_width1 = self.hkl_data['DetectorSetup']['Size'][0] / nch1
+                pixel_width2 = self.hkl_data['DetectorSetup']['Size'][1] / nch2
+                distance = self.hkl_data['DetectorSetup']['Distance']
+
+                hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                    Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, pwidth2=pixel_width2,
+                                    distance=distance, roi=roi)
+                #used temporarily until we have a way to read pvs from detector directly or add it to metadata
+                angles = [*self.sample_circle_positions, *self.det_circle_positions]
+
+                return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+
     def update_rois(self):
         """
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
@@ -613,6 +687,10 @@ class ImageWindow(QMainWindow):
                     img_data = np.rot90(img_data, k = self.rot_num)
                     if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                       if self.hkl_data:
+                        self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
+                        self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
+                        self.mouse_l.setText(f'{self.qx[int(x)][int(y)]}')
 
     def update_labels(self):
         """
@@ -633,6 +711,9 @@ class ImageWindow(QMainWindow):
         self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
         self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+
+    def update_rsm(self):
+        self.qx, self.qy, self.qz = self.create_rsm()
 
     def update_image(self):
         """

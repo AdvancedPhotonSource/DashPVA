@@ -208,9 +208,9 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-283</y>
+           <y>0</y>
            <width>335</width>
-           <height>1751</height>
+           <height>1851</height>
           </rect>
          </property>
          <widget class="QGroupBox" name="group_box_stats">
@@ -621,7 +621,7 @@ QPushButton:pressed {
             <x>10</x>
             <y>330</y>
             <width>321</width>
-            <height>171</height>
+            <height>311</height>
            </rect>
           </property>
           <property name="sizePolicy">
@@ -650,7 +650,7 @@ QPushButton:pressed {
              <x>10</x>
              <y>30</y>
              <width>301</width>
-             <height>131</height>
+             <height>271</height>
             </rect>
            </property>
            <layout class="QFormLayout" name="mouse_pos_layout">
@@ -677,7 +677,13 @@ QPushButton:pressed {
               <property name="minimumSize">
                <size>
                 <width>30</width>
-                <height>16</height>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
                </size>
               </property>
               <property name="font">
@@ -731,7 +737,13 @@ QPushButton:pressed {
               <property name="minimumSize">
                <size>
                 <width>30</width>
-                <height>16</height>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
                </size>
               </property>
               <property name="font">
@@ -782,6 +794,18 @@ QPushButton:pressed {
             </item>
             <item row="2" column="0">
              <widget class="QLabel" name="mouse_lbl_px">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
               <property name="font">
                <font>
                 <pointsize>12</pointsize>
@@ -798,7 +822,7 @@ QPushButton:pressed {
             <item row="2" column="1">
              <widget class="QLabel" name="mouse_px_val">
               <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
@@ -825,6 +849,120 @@ QPushButton:pressed {
               </property>
              </widget>
             </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="mouse_lbl_h">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>H:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QLabel" name="mouse_h">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::Box</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Sunken</enum>
+              </property>
+              <property name="text">
+               <string>0.0</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="mouse_lbl_k">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>K:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QLabel" name="mouse_k">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::Box</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Sunken</enum>
+              </property>
+              <property name="text">
+               <string>0.0</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0">
+             <widget class="QLabel" name="mouse_lbl_l">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="sizeIncrement">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>L:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QLabel" name="mouse_l">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>30</height>
+               </size>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::Box</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Sunken</enum>
+              </property>
+              <property name="text">
+               <string>0.0</string>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
          </widget>
@@ -832,7 +970,7 @@ QPushButton:pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>510</y>
+            <y>690</y>
             <width>321</width>
             <height>371</height>
            </rect>
@@ -856,7 +994,7 @@ QPushButton:pressed {
             <rect>
              <x>10</x>
              <y>30</y>
-             <width>301</width>
+             <width>304</width>
              <height>331</height>
             </rect>
            </property>
@@ -1201,7 +1339,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>890</y>
+            <y>1070</y>
             <width>321</width>
             <height>631</height>
            </rect>
@@ -1565,7 +1703,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>1530</y>
+            <y>1710</y>
             <width>321</width>
             <height>121</height>
            </rect>
