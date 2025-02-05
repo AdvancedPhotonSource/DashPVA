@@ -453,12 +453,12 @@ class TiffZoomFileGenerator(FrameGenerator):
         try:
             with Image.open(tiff_path) as img:
                 self.base_image = fabio.open(tiff_path).data
-                plt.figure(figsize=(6, 6))
-                plt.imshow(self.base_image, cmap='gray', vmin=self.base_image.min(), vmax=self.base_image.max())
-                plt.title('Base Image')
-                plt.axis('off')
-                plt.savefig('debug_zoomed_framesbase_image.png')
-                plt.close()
+                # plt.figure(figsize=(6, 6))
+                # plt.imshow(self.base_image, cmap='gray', vmin=self.base_image.min(), vmax=self.base_image.max())
+                # plt.title('Base Image')
+                # plt.axis('off')
+                # plt.savefig('debug_zoomed_framesbase_image.png')
+                # plt.close()
                 print(f"Loaded TIFF image with shape: {self.base_image.shape}, dtype: {self.base_image.dtype}")
         except Exception as e:
             raise RuntimeError(f"Error loading TIFF file '{tiff_path}': {e}")
@@ -529,17 +529,17 @@ class TiffZoomFileGenerator(FrameGenerator):
             zoomed = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LANCZOS4)
             # zoomed = cropped
             # Save debug frame if needed (using matplotlib to correctly save the image without altering its type)
-            if frameId < 20:
-                output_dir = 'debug_zoomed_frames'
-                os.makedirs(output_dir, exist_ok=True)
-                filename = os.path.join(output_dir, f'frame_{frameId}.png')
-                plt.figure(figsize=(6, 6))
-                plt.imshow(zoomed, cmap='gray', vmin=zoomed.min(), vmax=zoomed.max())
-                plt.title(f'Frame {frameId} - Zoom Factor: {zoom_factor}')
-                plt.axis('off')
-                plt.savefig(filename)
-                plt.close()
-                print(f"Saved debug zoomed frame to {filename}")
+            # if frameId < 20:
+            #     output_dir = 'debug_zoomed_frames'
+            #     os.makedirs(output_dir, exist_ok=True)
+            #     filename = os.path.join(output_dir, f'frame_{frameId}.png')
+            #     plt.figure(figsize=(6, 6))
+            #     plt.imshow(zoomed, cmap='gray', vmin=zoomed.min(), vmax=zoomed.max())
+            #     plt.title(f'Frame {frameId} - Zoom Factor: {zoom_factor}')
+            #     plt.axis('off')
+            #     plt.savefig(filename)
+            #     plt.close()
+            #     print(f"Saved debug zoomed frame to {filename}")
 
             return zoomed  # Return the image in its original data format
 
