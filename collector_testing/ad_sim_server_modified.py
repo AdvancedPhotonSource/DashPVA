@@ -15,6 +15,8 @@ import os.path
 import ctypes.util
 import numpy as np
 import scipy.fft as fft
+import cv2
+import matplotlib.pyplot as plt
 # HDF5 is optional
 try:
     import h5py as h5
@@ -42,6 +44,20 @@ from pvapy.utility.adImageUtility import AdImageUtility
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.intWithUnits import IntWithUnits
 __version__ = pva.__version__
+
+# At the top of the file, set up logging if not already done
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# # Optionally, add a handler if one is not already added:
+# if not logger.hasHandlers():
+#     ch = logging.StreamHandler()
+#     ch.setLevel(logging.DEBUG)
+#     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#     ch.setFormatter(formatter)
+#     logger.addHandler(ch)
+
+from PIL import Image
 
 class FrameGenerator:
     ''' Base frame generator class. '''
@@ -423,6 +439,118 @@ class NumpyRandomGenerator(FrameGenerator):
         print(f'Generated frame shape: {self.frames[0].shape}')
         print(f'Range of generated values: [{mn},{mx}]')
 
+class TiffZoomFileGenerator(FrameGenerator):
+    """
+    A frame generator that loads a TIFF file and, on each call,
+    returns the same image with a dynamic zoom applied.
+    The zoom is centered at (1030, 990) and oscillates smoothly
+    (sinusoidally) over a 5-second period.
+    """
+    def __init__(self, tiff_path, fps=10, zoom_center=(1030, 990), zoom_period=5, base_zoom=1.0, zoom_amplitude=0.5):
+        super().__init__()
+        if not fabio:
+            raise ImportError("fabio is required for TiffZoomFileGenerator")
+        try:
+            with Image.open(tiff_path) as img:
+                self.base_image = fabio.open(tiff_path).data
+                plt.figure(figsize=(6, 6))
+                plt.imshow(self.base_image, cmap='gray', vmin=self.base_image.min(), vmax=self.base_image.max())
+                plt.title('Base Image')
+                plt.axis('off')
+                plt.savefig('debug_zoomed_framesbase_image.png')
+                plt.close()
+                print(f"Loaded TIFF image with shape: {self.base_image.shape}, dtype: {self.base_image.dtype}")
+        except Exception as e:
+            raise RuntimeError(f"Error loading TIFF file '{tiff_path}': {e}")
+
+        self.zoom_center = zoom_center
+        self.zoom_period = zoom_period         # total period (in seconds) of a full zoom-in/out cycle
+        self.base_zoom = base_zoom             # nominal zoom factor (1.0 = no zoom)
+        self.zoom_amplitude = zoom_amplitude   # amplitude of zoom oscillation (+/- 0.5, for example)
+        self.start_time = time.time()
+        self.fps = fps
+        self.frames_per_cycle = int(self.zoom_period * self.fps)
+
+        # Set frame info – the generator produces an endless sequence.
+        self.nInputFrames = float('inf')
+        self.rows, self.cols = self.base_image.shape
+        self.dtype = self.base_image.dtype
+        self.colorMode = 0
+        self.compressorName = None
+
+    def getUncompressedFrameSize(self):
+        return self.rows * self.cols * self.base_image.itemsize
+
+    def getCompressedFrameSize(self):
+        # Adjust if you have compression
+        return self.getUncompressedFrameSize()
+
+    def getFrameData(self, frameId):
+        try:
+            # Calculate elapsed time
+            current_time = time.time()
+            elapsed_time = current_time - self.start_time
+
+            # Calculate the current zoom factor using a sinusoidal function.
+            # (Removed the special case for frameId==0 to allow continuous oscillation.)
+            zoom_factor = self.base_zoom + self.zoom_amplitude * np.sin(2 * np.pi * elapsed_time / self.zoom_period)
+
+            # Uncomment the following if you want to bypass processing exactly at 1.0
+            # if zoom_factor == 1.0:
+            #     return self.base_image.copy()
+
+            # Get image dimensions and zoom center
+            h, w = self.base_image.shape
+            cx, cy = self.zoom_center
+
+            # Compute the new cropped window size based on zoom factor.
+            # For zoom in (zoom_factor > 1) the crop region is smaller.
+            # For zoom out (zoom_factor < 1) the crop region is larger.
+            new_w = int(w / zoom_factor)
+            new_h = int(h / zoom_factor)
+
+            # Calculate cropping coordinates. With the current logic,
+            # if new_w or new_h exceed the image dimensions (as happens when zooming out),
+            # the cropping will just return the full image.
+            x1 = max(cx - new_w // 2, 0)
+            y1 = max(cy - new_h // 2, 0)
+            x2 = min(x1 + new_w, w)
+            y2 = min(y1 + new_h, h)
+
+            # Crop the image
+            cropped = self.base_image[y1:y2, x1:x2]
+
+            # Fallback if cropped region is empty
+            if cropped.size == 0 or cropped.shape[0] == 0 or cropped.shape[1] == 0:
+                print(f"Cropped image is empty or has invalid dimensions for frameId {frameId}. Using original image.")
+                return self.base_image.copy()
+
+            # Resize back to original size without interpolation
+            zoomed = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LANCZOS4)
+            # zoomed = cropped
+            # Save debug frame if needed (using matplotlib to correctly save the image without altering its type)
+            if frameId < 20:
+                output_dir = 'debug_zoomed_frames'
+                os.makedirs(output_dir, exist_ok=True)
+                filename = os.path.join(output_dir, f'frame_{frameId}.png')
+                plt.figure(figsize=(6, 6))
+                plt.imshow(zoomed, cmap='gray', vmin=zoomed.min(), vmax=zoomed.max())
+                plt.title(f'Frame {frameId} - Zoom Factor: {zoom_factor}')
+                plt.axis('off')
+                plt.savefig(filename)
+                plt.close()
+                print(f"Saved debug zoomed frame to {filename}")
+
+            return zoomed  # Return the image in its original data format
+
+        except Exception as e:
+            print(f"Error generating frame {frameId}: {e}")
+            return self.base_image.copy()  # Fallback to original image
+
+    def getFrameInfo(self):
+        # Return the frame generator metadata expected by the ADSIM server.
+        return (self.nInputFrames, self.rows, self.cols, self.colorMode, self.dtype, self.compressorName)
+
 class AdSimServer:
     ''' AD Sim Server class. '''
 
@@ -455,14 +583,18 @@ class AdSimServer:
         self.nFrames = nFrames
         self.configFile = None
         self.colorMode = colorMode
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        ch.setFormatter(formatter)
-        self.logger.addHandler(ch)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(logging.DEBUG)
+        if not self.logger.hasHandlers():
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.DEBUG)
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            ch.setFormatter(formatter)
+            self.logger.addHandler(ch)
         self.nscans = int(np.round(np.sqrt(nFrames),decimals=0))
+        self.framerate = frameRate  
         self.nx = nx
         self.ny = ny
         self.x_positions, self.y_positions = self.generate_raster_scan_positions(size=self.nscans)
@@ -486,6 +618,8 @@ class AdSimServer:
             ext = f.split('.')[-1]
             if ext in allowedHdfExtensions:
                 self.frameGeneratorList.append(HdfFileGenerator(f, hdfDataset, hdfCompressionMode))
+            elif ext.lower() in ['tif', 'tiff']:
+                self.frameGeneratorList.append(TiffZoomFileGenerator(f, fps=self.framerate, zoom_center=(999+13,1026-13), zoom_period=10, zoom_amplitude=0.5))
             elif ext not in allowedNpExtensions:
                 fabioFG = FabIOFileGenerator(f, self.configFile)
                 if fabioFG.isLoaded():
@@ -552,6 +686,14 @@ class AdSimServer:
         self.screenInitialized = False
         self.disableCurses = disableCurses
 
+        # Ensure that self.cols and self.rows are set correctly
+        if self.nInputFrames > 0:
+            self.cols = self.frameGeneratorList[0].cols
+            self.rows = self.frameGeneratorList[0].rows
+        else:
+            self.cols = nx  # Default to nx if no frames are available
+            self.rows = ny  # Default to ny if no frames are available
+
     def setupCurses(self):
         screen = None
         if not self.disableCurses:
@@ -613,25 +755,6 @@ class AdSimServer:
                 mPvObject = pva.PvObject(self.METADATA_TYPE_DICT)
                 self.pvaServer.addRecord(mPv, mPvObject, None)
     
-    # def scan_gen(self, size=(1024,1024)):
-    #     for i in range(size[0]):
-    #         if i % 2 == 0:  # Even rows
-    #             for j in range(size[1]):
-    #                 yield i, j
-    #         else:  # Odd rows
-    #             for j in range(size[1]-1, -1, -1):  # Reverse iteration for odd rows
-    #                 yield i, j
-    
-    # def scan_gen(self):
-    #     size = 1024
-    #     for i in range(size):
-    #         if i % 2 == 0:  # Even rows
-    #             for j in range(size):
-    #                 yield i, j
-    #         else:  # Odd rows
-    #             for j in range(size-1, -1, -1):  # Reverse iteration for odd rows
-    #                 yield i, j
-    
     def generate_raster_scan_positions(self, size): #TODO: x and y have different range. 
         x_positions = np.zeros(shape=(size,size), dtype=np.int8)
         y_positions = np.zeros(shape=(size,size), dtype=np.int8)
@@ -649,20 +772,6 @@ class AdSimServer:
         for i in range(len(xpos)): #xpos and ypos must have same dimensions
             yield xpos[i], ypos[i]
             
-    # def getMetadataValueDict(self):
-    #     """Testing Generator """
-    #     metadataValueDict = {}
-    #     try:
-    #         value = next(self.scan_gen_instance)  #generator instance
-    #     except StopIteration:
-    #         self.scan_gen_instance = self.scan_gen()  # Reinitialize 
-    #         value = next(self.scan_gen_instance)
-            
-    #     # self.logger.debug(f'metadata val: {value} ')
-    #     for index, mPv in enumerate(self.metadataPvs):
-    #         # value = random.uniform(0,1)
-    #         metadataValueDict[mPv] = value[index]
-    #     return metadataValueDict
     def getMetadataValueDict(self):
         metadataValueDict = {}
         try:
@@ -674,9 +783,7 @@ class AdSimServer:
             self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)  # Reinitialize generator
             self.current_scan_position = next(self.scan_gen_instance)
             value = self.current_scan_position
-        # print(f'metadata val: {value} ')
         
-            
         for index, mPv in enumerate(self.metadataPvs):
             metadataValueDict[mPv] = value[index]
         return metadataValueDict
@@ -726,18 +833,38 @@ class AdSimServer:
         while not self.isDone:
             for fg in self.frameGeneratorList:
                 nInputFrames, ny, nx, colorMode, dtype, compressorName = fg.getFrameInfo()
-                for fgFrameId in range(0,nInputFrames):
-                    if self.isDone or (self.nInputFrames > 0 and frameId >= self.nInputFrames):
-                        break
-                    frameData = fg.getFrameData(fgFrameId)
-                    if frameData is None:
-                        break
-                    if self.colorMode == AdImageUtility.COLOR_MODE_MONO:
-                        ntnda = AdImageUtility.generateNtNdArray2D(frameId, frameData, nx, ny, dtype, compressorName, extraFieldsPvObject)
-                    else:
-                        ntnda = AdImageUtility.generateNtNdArray(frameId, frameData, nx, ny, self.colorMode, dtype, compressorName, extraFieldsPvObject)
-                    self.addFrameToCache(frameId, ntnda)
-                    frameId += 1
+                if np.isinf(nInputFrames):
+                    fgFrameId = 0
+                    while not self.isDone:
+                        if self.nInputFrames > 0 and frameId >= self.nInputFrames:
+                            break
+                        frameData = fg.getFrameData(frameId)
+                        if frameData is None:
+                            break
+                        # Generate the frame
+                        if self.colorMode == AdImageUtility.COLOR_MODE_MONO:
+                            ntnda = AdImageUtility.generateNtNdArray2D(
+                                frameId, frameData, nx, ny, dtype, compressorName, extraFieldsPvObject)
+                        else:
+                            ntnda = AdImageUtility.generateNtNdArray(
+                                frameId, frameData, nx, ny, self.colorMode, dtype, compressorName, extraFieldsPvObject)
+                        self.addFrameToCache(frameId, ntnda)
+                        frameId += 1
+                else:
+                    for fgFrameId in range(0, nInputFrames):
+                        if self.isDone or (self.nInputFrames > 0 and frameId >= self.nInputFrames):
+                            break
+                        frameData = fg.getFrameData(fgFrameId)
+                        if frameData is None:
+                            break
+                        if self.colorMode == AdImageUtility.COLOR_MODE_MONO:
+                            ntnda = AdImageUtility.generateNtNdArray2D(
+                                frameId, frameData, nx, ny, dtype, compressorName, extraFieldsPvObject)
+                        else:
+                            ntnda = AdImageUtility.generateNtNdArray(
+                                frameId, frameData, nx, ny, self.colorMode, dtype, compressorName, extraFieldsPvObject)
+                        self.addFrameToCache(frameId, ntnda)
+                        frameId += 1
             if self.isDone or not self.usingQueue or frameData is None or (self.nInputFrames > 0 and frameId >= self.nInputFrames):
                 # All frames are in cache or we cannot generate any more data
                 break
@@ -855,28 +982,28 @@ def main():
     parser = argparse.ArgumentParser(description='PvaPy Area Detector Simulator')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument('-id', '--input-directory', type=str, dest='input_directory', default=None, help='Directory containing input files to be streamed; if input directory or input file are not provided, random images will be generated')
-    parser.add_argument('-if', '--input-file', type=str, dest='input_file', default=None, help='Input file to be streamed; if input directory or input file are not provided, random images will be generated')
+    parser.add_argument('-if', '--input-file', type=str, dest='input_file', default=None, help='Input TIFF file to be streamed; if input directory or input file are not provided, random images will be generated')
     parser.add_argument('-mm', '--mmap-mode', action='store_true', dest='mmap_mode', default=False, help='Use NumPy memory map to load the specified input file. This flag typically results in faster startup and lower memory usage for large files.')
     parser.add_argument('-hds', '--hdf-dataset', dest='hdf_dataset', default=None, help='HDF5 dataset path. This option must be specified if HDF5 files are used as input, but otherwise it is ignored.')
     parser.add_argument('-hcm', '--hdf-compression-mode', dest='hdf_compression_mode', default=False, action='store_true', help='Use compressed data from HDF5 file. By default, data will be uncompressed before streaming it.')
-    parser.add_argument('-cfg', '--config-file', type=str, dest='config_file', default=None, help='yaml config file for raw binary data (must include for binary data), header_offset, between_frames (space between images), width, height, n_images, datatype')
-    parser.add_argument('-fps', '--frame-rate', type=float, dest='frame_rate', default=20, help='Frames per second (default: 20 fps)')
-    parser.add_argument('-nx', '--n-x-pixels', type=int, dest='n_x_pixels', default=256, help='Number of pixels in x dimension (default: 256 pixels; does not apply if input file file is given)')
-    parser.add_argument('-ny', '--n-y-pixels', type=int, dest='n_y_pixels', default=256, help='Number of pixels in x dimension (default: 256 pixels; does not apply if input file is given)')
+    parser.add_argument('-cfg', '--config-file', type=str, dest='config_file', default=None, help='YAML config file for raw binary data (must include for binary data), header_offset, between_frames (space between images), width, height, n_images, datatype')
+    parser.add_argument('-fps', '--frame-rate', type=float, dest='frame_rate', default=10, help='Frames per second (default: 10 fps)')
+    parser.add_argument('-nx', '--n-x-pixels', type=int, dest='n_x_pixels', default=1024, help='Number of pixels in x dimension (default: 1024)')
+    parser.add_argument('-ny', '--n-y-pixels', type=int, dest='n_y_pixels', default=1024, help='Number of pixels in y dimension (default: 1024)')
     parser.add_argument('-cm', '--color-mode', type=int, dest='color_mode', default=0, help='Color mode (default: 0 (mono); this option does not apply if input file is given). Available modes are: 0 (mono), 2 (RGB1, [3, NX, NY]), 3 (RGB2, [NX, 3, NY]), and 4 (RGB3, [NX, NY, 3]).')
-    parser.add_argument('-dt', '--datatype', type=str, dest='datatype', default='uint8', help='Generated datatype. Possible options are int8, uint8, int16, uint16, int32, uint32, float32, float64 (default: uint8; does not apply if input file is given)')
+    parser.add_argument('-dt', '--datatype', type=str, dest='datatype', default='uint16', help='Data type for frames (default: uint16)')
     parser.add_argument('-mn', '--minimum', type=float, dest='minimum', default=None, help='Minimum generated value (does not apply if input file is given)')
     parser.add_argument('-mx', '--maximum', type=float, dest='maximum', default=None, help='Maximum generated value (does not apply if input file is given)')
-    parser.add_argument('-nf', '--n-frames', type=int, dest='n_frames', default=0, help='Number of different frames to generate from the input sources; if set to <= 0, the server will use all images found in input files, or it will generate enough images to fill up the image cache if no input files were specified. If the requested number of input frames is greater than the cache size, the server will stop publishing after exhausting generated frames; otherwise, the generated frames will be constantly recycled and republished.')
+    parser.add_argument('-nf', '--n-frames', type=int, dest='n_frames', default=900, help='Number of frames to generate (default: 900)')
     parser.add_argument('-cs', '--cache-size', type=int, dest='cache_size', default=1000, help='Number of different frames to cache (default: 1000); if the cache size is smaller than the number of input frames, the new frames will be constantly regenerated as cached ones are published; otherwise, cached frames will be published over and over again as long as the server is running.')
-    parser.add_argument('-rt', '--runtime', type=float, dest='runtime', default=300, help='Server runtime in seconds (default: 300 seconds)')
+    parser.add_argument('-rt', '--runtime', type=int, dest='runtime', default=7200, help='Run time in seconds (default: 7200)')
     parser.add_argument('-cn', '--channel-name', type=str, dest='channel_name', default='pvapy:image', help='Server PVA channel name (default: pvapy:image)')
     parser.add_argument('-npv', '--notify-pv', type=str, dest='notify_pv', default=None, help='CA channel that should be notified on start; for the default Area Detector PVA driver PV that controls image acquisition is 13PVA1:cam1:Acquire')
     parser.add_argument('-nvl', '--notify-pv-value', type=str, dest='notify_pv_value', default='1', help='Value for the notification channel; for the Area Detector PVA driver PV this should be set to "Acquire" (default: 1)')
     parser.add_argument('-mpv', '--metadata-pv', type=str, dest='metadata_pv', default=None, help='Comma-separated list of CA channels that should be contain simulated image metadata values')
     parser.add_argument('-std', '--start-delay', type=float, dest='start_delay',  default=10.0, help='Server start delay in seconds (default: 10 seconds)')
     parser.add_argument('-shd', '--shutdown-delay', type=float, dest='shutdown_delay', default=10.0, help='Server shutdown delay in seconds (default: 10 seconds)')
-    parser.add_argument('-rp', '--report-period', type=int, dest='report_period', default=1, help='Reporting period for publishing frames; if set to <=0 no frames will be reported as published (default: 1)')
+    parser.add_argument('-rp', '--report-period', type=int, dest='report_period', default=100, help='Repeat frames (default: 100)')
     parser.add_argument('-dc', '--disable-curses', dest='disable_curses', default=False, action='store_true', help='Disable curses library screen handling. This is enabled by default, except when logging into standard output is turned on.')
 
     args, unparsed = parser.parse_known_args()
@@ -908,3 +1035,20 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
+    """_summary_ 
+    
+    To run the script:
+    
+    python collector_testing/ad_sim_server_modified.py \
+    -cn pvapy:image \
+    -fps 10 \
+    -dt uint16 \
+    -rp 100 \
+    -nf 20 \
+    -rt 7200 \
+    -mpv ca://x,ca://y \
+    -if /Users/pmyint/Documents/Analysis/DashPVA/pyFAI/d350_CeO2-000000.tif
+
+
+    """

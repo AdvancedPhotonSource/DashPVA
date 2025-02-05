@@ -18,7 +18,20 @@ from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow #, analysis_window_process
 # from scan_plan_dialog import ScanPlanDialog
+import subprocess
+import os
+import logging
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Optional: Add a stream handler if no handlers are defined
+if not logger.hasHandlers():
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file 
 rot_gen = rotation_cycle(1,5)         
@@ -352,6 +365,7 @@ class ImageWindow(QMainWindow):
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
+        self.analysis_window = None  # Initialize as None
     
 
     def start_timers(self):
@@ -373,9 +387,15 @@ class ImageWindow(QMainWindow):
             self.reader.pixel_ordering = 'F'
 
     def open_analysis_window_clicked(self):
-        if self.reader.image is not None:
-            self.analysis_window = AnalysisWindow(parent=self)
-            self.analysis_window.show()
+        """
+        Launches the pyFAI_analysis.py script located in the viewer folder.
+        """
+        analysis_script = os.path.join(os.path.dirname(__file__), 'pyFAI_analysis.py')
+        if os.path.exists(analysis_script):
+            subprocess.Popen(['python', analysis_script])
+            print("pyFAI_analysis.py launched successfully.")
+        else:
+            print(f"Analysis script not found at {analysis_script}")
 
     def start_live_view_clicked(self):
         """
@@ -563,14 +583,14 @@ class ImageWindow(QMainWindow):
         self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
         self.frames_received_val.setText(f'{self.reader.frames_received:d}')
         self.plot_call_id.setText(f'{self.call_id_plot:d}')
-        self.size_x_val.setText(f'{self.reader.shape[0]:d}')
-        self.size_y_val.setText(f'{self.reader.shape[1]:d}')
-        self.data_type_val.setText(self.reader.data_type)
-        self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
-        self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
-        self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
-        self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
-        self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+        # self.size_x_val.setText(f'{self.reader.shape[0]:d}')
+        # self.size_y_val.setText(f'{self.reader.shape[1]:d}')
+        # self.data_type_val.setText(self.reader.data_type)
+        # self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
+        # self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
+        # self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
+        # self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
+        # self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_image(self):
         """
@@ -582,6 +602,7 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
+                # self.logger.debug(f"Displaying frame ID: {self.call_id_plot}, Shape: {image.shape}")
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
@@ -612,6 +633,9 @@ class ImageWindow(QMainWindow):
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
+    
+                # Log updated image display
+                # self.logger.debug(f"Updated image display for frame ID: {self.call_id_plot}")
     
     def update_min_max_setting(self):
         """Updates the levels for the pixel values you want to see in the ImageViewer"""
