@@ -441,8 +441,9 @@ class ImageWindow(QMainWindow):
                 self.start_stats_monitors()
                 self.add_rois()
                 self.init_hkl()
-                self.qx, self.qy, self.qz = self.create_rsm() 
                 self.start_timers()
+                self.qx, self.qy, self.qz = self.create_rsm() 
+
 
                 # print(self.qx, self.qy, self.qz)
         except:
@@ -613,11 +614,12 @@ class ImageWindow(QMainWindow):
             self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
                                                     self.det_circle_directions, 
                                                     self.primary_beam_directions)
+            print(self.det_circle_directions)
             # UB Matrix
             self.ub_matrix = self.hkl_data['UBMatrix']['Value']
             self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
             # Energy
-            self.energy = self.hkl_data['Energy']['Value']
+            self.energy = self.hkl_data['Energy']['Value'] * 1000
 
     def create_rsm(self):
         hxrd  = xu.HXRD(self.inplane_beam_direction, self.sample_surface_normal_direction, en=self.energy, qconv=self.q_conv)

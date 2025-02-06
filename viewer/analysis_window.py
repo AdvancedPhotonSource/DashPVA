@@ -123,6 +123,7 @@ class AnalysisWindow(QMainWindow):
             self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
         else:
             self.analysis_attributes = {}
+        print(self.analysis_attributes)
 
         self.check_num_rois()
         self.configure_plots()

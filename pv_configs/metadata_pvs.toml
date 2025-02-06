@@ -96,7 +96,7 @@ ConsumerType = "spontaneous"
     AxisNumber = 2
     SpecMotorName = "Delta"
     DirectionAxis = "z-"
-    Position = 25.035125
+    Position = 70.035125
 
     [HKL.UBMatrix]
     PVName = "6idb:spec:UB_matrix"
