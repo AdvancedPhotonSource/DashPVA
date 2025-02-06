@@ -614,7 +614,7 @@ class ImageWindow(QMainWindow):
             self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
                                                     self.det_circle_directions, 
                                                     self.primary_beam_directions)
-            print(self.det_circle_directions)
+            # print(self.det_circle_directions)
             # UB Matrix
             self.ub_matrix = self.hkl_data['UBMatrix']['Value']
             self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))

@@ -110,12 +110,15 @@ class AnalysisWindow(QMainWindow):
         self.xpos_path = None
         self.ypos_path = None
         self.save_path = None
+        # for if widget is a ImageView
+        self.view_intensity = None
         self.view_comx = None
         self.view_comy = None
-        self.view_intensity = None
+        # for if widget is a Plot
         self.plot_intensity = None
         self.plot_comx = None
         self.plot_comy = None
+        # configurations
         self.update_counter = 0
         self.max_updates = 10
         self.analysis_index = self.parent.reader.analysis_index
@@ -123,7 +126,6 @@ class AnalysisWindow(QMainWindow):
             self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
         else:
             self.analysis_attributes = {}
-        print(self.analysis_attributes)
 
         self.check_num_rois()
         self.configure_plots()
@@ -133,10 +135,6 @@ class AnalysisWindow(QMainWindow):
         self.timer_plot.start(int(1000/self.calc_freq.value()))
 
         # self.btn_create_hdf5.clicked.connect(self.save_hdf5)
-        # self.roi_x.valueChanged.connect(self.roi_boxes_changed)
-        # self.roi_y.valueChanged.connect(self.roi_boxes_changed)
-        # self.roi_width.valueChanged.connect(self.roi_boxes_changed)
-        # self.roi_height.valueChanged.connect(self.roi_boxes_changed)
         self.calc_freq.valueChanged.connect(self.frequency_changed)
         self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
@@ -148,22 +146,6 @@ class AnalysisWindow(QMainWindow):
         self.sbox_comy_min.valueChanged.connect(self.min_max_changed)
         self.sbox_comy_max.valueChanged.connect(self.min_max_changed)
 
-
-
-    # def load_path(self):
-    #     """
-    #     This function loads the path information for the HDF5 file and uses it to populate other variables.
-    #     """
-    #     # TODO: These positions are references, use only when we miss frames.
-    #     self.x_positions = np.load(self.xpos_path)
-    #     self.y_positions = np.load(self.ypos_path)
-    
-    #     self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
-    #     self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
-
-    #     self.x_indices = np.searchsorted(self.unique_x_positions, self.x_positions) # Time Complexity = O(log(n))
-    #     self.y_indices = np.searchsorted(self.unique_y_positions, self.y_positions) # Time Complexity = O(log(n))
-         
     # def save_hdf5(self):
     #     """
     #     This function creates and saves the data as an HDF5 file with a timestamp as the name.
