@@ -22,7 +22,7 @@
       </font>
      </property>
      <property name="currentIndex">
-      <number>1</number>
+      <number>4</number>
      </property>
      <widget class="QWidget" name="simServerTab">
       <attribute name="title">
@@ -261,6 +261,38 @@
           <bool>true</bool>
          </property>
         </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="configUploadTab">
+      <attribute name="title">
+       <string>Config Upload</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <item>
+        <layout class="QFormLayout" name="configUploadFormLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="label">
+           <property name="text">
+            <string>Config Directory Path</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <layout class="QHBoxLayout" name="configUploadHorizontalLayout">
+           <item>
+            <widget class="QLineEdit" name="lineEditConfigUploadPath"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButton_2">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
@@ -833,9 +865,6 @@
            </property>
           </widget>
          </item>
-         <item row="8" column="1">
-          <widget class="QLineEdit" name="lineEditMetadataConfigAnalysis"/>
-         </item>
          <item row="6" column="0">
           <widget class="QLabel" name="labelReportPeriodAnalysis">
            <property name="text">
@@ -874,7 +903,7 @@
          <item row="4" column="1">
           <widget class="QLineEdit" name="lineEditProcessorFileAnalysis">
            <property name="text">
-            <string>consumers/hpc_x_analysis_consumer.py</string>
+            <string>consumers/hpc_spontaneous_analysis_consumer.py</string>
            </property>
           </widget>
          </item>
@@ -898,6 +927,20 @@
             <string>Processor Class:</string>
            </property>
           </widget>
+         </item>
+         <item row="8" column="1">
+          <layout class="QHBoxLayout" name="horizontalLayout_3">
+           <item>
+            <widget class="QLineEdit" name="lineEditMetadataConfigAnalysis"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonBrowseMetadataAnalysis">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
         </layout>
        </item>

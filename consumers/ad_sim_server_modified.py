@@ -663,6 +663,7 @@ class AdSimServer:
     #         # value = random.uniform(0,1)
     #         metadataValueDict[mPv] = value[index]
     #     return metadataValueDict
+
     def getMetadataValueDict(self):
         metadataValueDict = {}
         try:
@@ -675,8 +676,6 @@ class AdSimServer:
             self.current_scan_position = next(self.scan_gen_instance)
             value = self.current_scan_position
         # print(f'metadata val: {value} ')
-        
-            
         for index, mPv in enumerate(self.metadataPvs):
             metadataValueDict[mPv] = value[index]
         return metadataValueDict

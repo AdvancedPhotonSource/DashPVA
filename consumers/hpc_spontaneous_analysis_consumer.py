@@ -7,6 +7,8 @@ from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 import sys
 
+import toml
+
 # Example AD Metadata Processor for the streaming framework
 # This updated version processes one frame at a time.
 class HpcAnalysisProcessor(AdImageProcessor):
@@ -40,10 +42,18 @@ class HpcAnalysisProcessor(AdImageProcessor):
     def configure(self, configDict):
         """
         Configure user-defined settings from configDict if needed.
-        For now, just use defaults or hard-coded values.
         """
-        # In this simplified version, we no longer rely on preloaded positions.
-        pass
+        if 'path' in configDict:
+            self.path = configDict['path']
+            with open(self.path, 'r') as f:
+                self.config: dict = toml.load(f)
+        else:
+            self.path = None
+
+        self.axis1 = self.config.get('analysis', {}).get('Axis1', None)
+        self.axis2 = self.config.get('analysis', {}).get('Axis2', None)
+
+
 
     def parse_image_data_type(self, pva_object):
         """
@@ -126,11 +136,12 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # Extract X, Y positions from attributes as they come in
         # The original code accessed x,y as: attributes.get('x')[0]['value']
         # Adjust as needed depending on attribute structure.
-        x_attr = self.attributes.get('x', None)
-        y_attr = self.attributes.get('y', None)
-        if x_attr is not None and y_attr is not None:
-            x_value = x_attr[0]['value'] if isinstance(x_attr, tuple) else 0.0
-            y_value = y_attr[0]['value'] if isinstance(y_attr, tuple) else 0.0
+        if self.axis1 is not None and self.axis2 is not None:
+            x_attr = self.attributes.get(self.axis1, None)
+            y_attr = self.attributes.get(self.axis2, None)
+            if x_attr is not None and y_attr is not None:
+                x_value = x_attr[0]['value'] if isinstance(x_attr, tuple) else 0.0
+                y_value = y_attr[0]['value'] if isinstance(y_attr, tuple) else 0.0
         else:
             # Default to 0 if attributes not found
             x_value = 0.0

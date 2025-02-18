@@ -78,6 +78,7 @@ class PVASetupDialog(QDialog):
         self.buttonStopCollector.clicked.connect(self.stop_collector)
 
         # Analysis Consumer Tab
+        self.buttonBrowseMetadataAnalysis.clicked.connect(self.browse_metadata_config_analysis)
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
@@ -443,7 +444,7 @@ class PVASetupDialog(QDialog):
         # Add metadata config file if specified
         metadata_config = self.lineEditMetadataConfigAnalysis.text()
         if metadata_config:
-            cmd.extend(['--metadata-config', metadata_config])
+            cmd.extend(['--processor-args', '{"path": "%s"}' % metadata_config])
 
         try:
             process = subprocess.Popen(
