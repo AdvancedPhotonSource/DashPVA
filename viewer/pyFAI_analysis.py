@@ -10,6 +10,7 @@ import logging
 import cv2  # for image/mask resizing if needed
 import fabio  # for mask loading if needed
 import time
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -36,7 +37,23 @@ class PyFAIAnalysisWindow(QMainWindow):
         self._latest_image = None
         self.frame_count = 0  # Initialize frame counter
 
+        # IMPORTANT: Build the UI first so that all UI elements (metadata_panel, status bar, etc.) are available.
         self.initUI()
+
+        # Load configuration data and automatically load the last used PONI file, if available.
+        self.load_config()
+        if "last_poni_file" in self.config:
+            last_file = self.config["last_poni_file"]
+            try:
+                self.ai = pyFAI.load(last_file)
+                self.poni_file = last_file
+                logger.debug(f"Auto-loaded last PONI file: {last_file}")
+                # Update metadata panel with calibration stats
+                self.update_metadata()
+                # Also update the status bar with an appropriate message.
+                self.statusBar().showMessage(f"Calibration loaded from: {last_file}")
+            except Exception as e:
+                logger.error(f"Failed to auto-load last PONI file '{last_file}': {e}")
 
         # Setup PV subscription (assuming it always delivers images)
         self.channel = pva.Channel("pvapy:image", pva.PVA)
@@ -106,6 +123,9 @@ class PyFAIAnalysisWindow(QMainWindow):
             try:
                 self.ai = pyFAI.load(filePath)
                 self.poni_file = filePath
+                # Update configuration with the new PONI file path
+                self.config["last_poni_file"] = filePath
+                self.save_config()
                 logger.debug(f"Loaded PONI file: {filePath}")
                 self.update_metadata()
             except Exception as e:
@@ -116,15 +136,15 @@ class PyFAIAnalysisWindow(QMainWindow):
 
     def update_metadata(self):
         """
-        Gathers metadata from the calibration (pyFAI) object and displays it in the sidebar.
+        Gathers metadata from the calibration (pyFAI) object and displays it in the metadata panel.
         This includes parameters like distance, detector offsets, rotations, pixel sizes, and wavelength.
         """
         if self.ai is None:
             self.metadata_panel.setPlainText("No calibration loaded.")
             return
 
-        metadata_str = f"PONI File: {self.poni_file}\n"
-        # List common parameters if available
+        # Prepare a string that summarizes the auto-loaded calibration.
+        metadata_str = f"Calibration loaded from: {self.poni_file}\n\n"
         metadata_items = ["dist", "poni1", "poni2", "rot1", "rot2", "rot3",
                           "pixel1", "pixel2", "centerX", "centerY", "wavelength"]
         for item in metadata_items:
@@ -292,6 +312,31 @@ class PyFAIAnalysisWindow(QMainWindow):
         current_text = self.metadata_panel.toPlainText()
         new_text = current_text + "\nInvalid image received."
         self.metadata_panel.setPlainText(new_text)
+
+    def load_config(self):
+        """
+        Loads application configuration from a JSON file.
+        Currently stores information such as the last used PONI file.
+        """
+        self.config_file = "config.json"
+        try:
+            with open(self.config_file, "r") as f:
+                self.config = json.load(f)
+                logger.debug(f"Configuration loaded: {self.config}")
+        except Exception as e:
+            logger.debug(f"No configuration found or could not load config: {e}")
+            self.config = {}
+
+    def save_config(self):
+        """
+        Saves the current application configuration to a JSON file.
+        """
+        try:
+            with open(self.config_file, "w") as f:
+                json.dump(self.config, f, indent=4)
+                logger.debug(f"Configuration saved: {self.config}")
+        except Exception as e:
+            logger.error(f"Could not save configuration: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
