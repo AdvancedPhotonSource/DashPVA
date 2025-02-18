@@ -2,9 +2,10 @@ import sys
 import numpy as np
 import pyFAI
 from PyQt5.QtWidgets import (QMainWindow, QApplication, QVBoxLayout, QHBoxLayout, QWidget,
-                             QPushButton, QTextEdit, QFileDialog, QMessageBox)
+                             QPushButton, QTextEdit, QFileDialog, QMessageBox, QLabel, QSpinBox)
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib.colors import LogNorm
 import pvaccess as pva
 import logging
 import cv2  # for image/mask resizing if needed
@@ -37,6 +38,11 @@ class PyFAIAnalysisWindow(QMainWindow):
         self._latest_image = None
         self.frame_count = 0  # Initialize frame counter
 
+        # Initialize data storage for waterfall plot
+        self.waterfall_data = []  # Will store intensity data for each frame
+        self.q_values = None      # Will store Q values (x-axis)
+        self.max_frames = 100     # Maximum number of frames to show in waterfall
+
         # IMPORTANT: Build the UI first so that all UI elements (metadata_panel, status bar, etc.) are available.
         self.initUI()
 
@@ -62,51 +68,90 @@ class PyFAIAnalysisWindow(QMainWindow):
         logger.debug("Started PV channel monitor with interactive UI.")
 
     def initUI(self):
-        """Initializes the UI with a left canvas for plotting and a right sidebar for controls and metadata."""
-        # Create a central widget with horizontal layout
+        """Initializes the UI with a top waterfall plot and the existing components."""
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-
-        # Left side: matplotlib FigureCanvas as the plotting area
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Top section: Waterfall plot
+        waterfall_widget = QWidget()
+        waterfall_layout = QHBoxLayout(waterfall_widget)
+        
+        # Create waterfall plot
+        self.waterfall_figure = Figure(figsize=(6, 2))
+        self.waterfall_canvas = FigureCanvas(self.waterfall_figure)
+        self.waterfall_ax = self.waterfall_figure.add_subplot(111)
+        self.waterfall_ax.set_xlabel("Q (Å⁻¹)")
+        self.waterfall_ax.set_ylabel("Frame Number")
+        self.waterfall_image = None
+        waterfall_layout.addWidget(self.waterfall_canvas)
+        
+        # Add waterfall plot to main layout
+        main_layout.addWidget(waterfall_widget)
+        
+        # Middle section: Original plot area
+        plot_widget = QWidget()
+        plot_layout = QHBoxLayout(plot_widget)
+        
+        # Create the original line plot
         self.figure = Figure(figsize=(6, 4))
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
-        # Initialize an empty line for the integration result
         self.line, = self.ax.plot([], [], lw=2)
         self.ax.set_xlabel("Q (Å⁻¹)")
         self.ax.set_ylabel("Intensity (a.u.)")
-        self.ax.set_title("Azimuthal Integration on Each Frame")
+        self.ax.set_title("Current Frame Integration")
         self.ax.grid(True)
-        main_layout.addWidget(self.canvas, stretch=3)
-
-        # Right side: Sidebar panel with buttons and metadata text box
-        sidebar = QWidget(self)
+        plot_layout.addWidget(self.canvas, stretch=3)
+        
+        # Add the original plot to main layout
+        main_layout.addWidget(plot_widget)
+        
+        # Right side: Sidebar panel
+        sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
-
-        # Button to load the PONI file (will open a file dialog)
+        
+        # Create a widget for PONI file and max frames controls
+        controls_widget = QWidget()
+        controls_layout = QHBoxLayout(controls_widget)
+        
+        # Button to load the PONI file
         self.load_poni_button = QPushButton("Load PONI File", self)
         self.load_poni_button.clicked.connect(self.load_poni)
-        sidebar_layout.addWidget(self.load_poni_button)
+        controls_layout.addWidget(self.load_poni_button)
 
-        # Button to pause/resume the processing of images
+        # Add max frames spinbox
+        max_frames_label = QLabel("Max Frames:", self)
+        self.max_frames_spinbox = QSpinBox(self)
+        self.max_frames_spinbox.setRange(10, 10000)
+        self.max_frames_spinbox.setValue(300)
+        self.max_frames_spinbox.setSingleStep(50)
+        self.max_frames_spinbox.valueChanged.connect(self.update_max_frames)
+        
+        controls_layout.addWidget(max_frames_label)
+        controls_layout.addWidget(self.max_frames_spinbox)
+        
+        # Add controls widget to sidebar
+        sidebar_layout.addWidget(controls_widget)
+
+        # Button to pause/resume
         self.pause_button = QPushButton("Pause", self)
         self.pause_button.clicked.connect(self.toggle_pause)
         sidebar_layout.addWidget(self.pause_button)
 
-        # Button to save the current plot into an image file
+        # Button to save plot
         self.save_button = QPushButton("Save Plot", self)
         self.save_button.clicked.connect(self.save_plot)
         sidebar_layout.addWidget(self.save_button)
 
-        # Text area to show the metadata from the calibration file
+        # Text area for metadata
         self.metadata_panel = QTextEdit(self)
         self.metadata_panel.setReadOnly(True)
         self.metadata_panel.setMinimumWidth(200)
         sidebar_layout.addWidget(self.metadata_panel, stretch=1)
 
         sidebar_layout.addStretch()  # push items to the top
-        main_layout.addWidget(sidebar, stretch=1)
+        plot_layout.addWidget(sidebar, stretch=1)
 
     def load_poni(self):
         """
@@ -283,11 +328,14 @@ class PyFAIAnalysisWindow(QMainWindow):
             logger.debug(f"Azimuthal integration successful. Q range: {q.min()} to {q.max()}, "
                          f"Intensity range: {intensity.min()} to {intensity.max()}")
 
-            # Update the matplotlib plot data
+            # Update both plots
             self.line.set_data(q, intensity)
             self.ax.relim()
             self.ax.autoscale_view()
-
+            
+            # Update waterfall plot
+            self.update_waterfall_plot(q, intensity)
+            
             # Increment frame counter and update the title with frame number and current time
             self.frame_count += 1
             current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -337,6 +385,55 @@ class PyFAIAnalysisWindow(QMainWindow):
                 logger.debug(f"Configuration saved: {self.config}")
         except Exception as e:
             logger.error(f"Could not save configuration: {e}")
+
+    def update_waterfall_plot(self, q, intensity):
+        """Updates the waterfall plot with new intensity data."""
+        if self.q_values is None:
+            self.q_values = q
+            
+        # Add new intensity data
+        self.waterfall_data.append(intensity)
+        
+        # Keep only the last max_frames
+        if len(self.waterfall_data) > self.max_frames:
+            self.waterfall_data.pop(0)
+            
+        # Convert data to 2D array for plotting
+        data_array = np.array(self.waterfall_data)
+        
+        # Clear previous plot
+        self.waterfall_ax.clear()
+        
+        # Create the contour plot
+        if len(self.waterfall_data) > 1:
+            frame_numbers = np.arange(len(self.waterfall_data))
+            X, Y = np.meshgrid(self.q_values, frame_numbers)
+            
+            # Create contour plot with log scale for better visualization
+            self.waterfall_image = self.waterfall_ax.pcolormesh(
+                X, Y, data_array, 
+                shading='auto',
+                cmap='viridis',
+                norm=LogNorm(vmin=data_array.min(), vmax=data_array.max())
+            )
+            
+            # Set labels and title
+            self.waterfall_ax.set_xlabel("Q (Å⁻¹)")
+            self.waterfall_ax.set_ylabel("Frame Number")
+            
+            # Add colorbar if it doesn't exist
+            if not hasattr(self, 'waterfall_colorbar'):
+                self.waterfall_colorbar = self.waterfall_figure.colorbar(
+                    self.waterfall_image, 
+                    ax=self.waterfall_ax
+                )
+                self.waterfall_colorbar.set_label('Intensity')
+        
+        self.waterfall_canvas.draw_idle()
+
+    def update_max_frames(self):
+        """Updates the max_frames attribute with the value from the spinbox."""
+        self.max_frames = self.max_frames_spinbox.value()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
