@@ -582,6 +582,22 @@ class ImageWindow(QMainWindow):
             roi.sigRegionChanged.connect(self.update_roi_region)
 
     def init_hkl(self):
+        """
+        Initializes HKL (reciprocal space) parameters from the configuration.
+
+        This method sets up all the necessary parameters for reciprocal space mapping:
+        - Sample circle parameters (directions, names, positions)
+        - Detector circle parameters (directions, names, positions) 
+        - Primary beam direction
+        - In-plane reference direction
+        - Sample surface normal direction
+        - Q-space conversion parameters
+        - UB matrix
+        - X-ray energy
+
+        The parameters are read from the HKL section of the configuration file.
+        This initialization is required before any reciprocal space calculations can be performed.
+        """
         if "HKL" in self.reader.config:
             self.hkl_data = self.reader.config["HKL"]
             # Get everything for the sample circles
@@ -622,6 +638,22 @@ class ImageWindow(QMainWindow):
             self.energy = self.hkl_data['Energy']['Value'] * 1000
 
     def create_rsm(self):
+        """
+        Creates a reciprocal space map (RSM) from the current detector image.
+
+        This method uses the xrayutilities package to convert detector coordinates 
+        to reciprocal space coordinates (Q-space). It requires:
+        - Valid detector statistics data
+        - Properly initialized HKL parameters
+        - Detector setup parameters (pixel directions, center channel, size, etc.)
+
+        Returns:
+            numpy.ndarray: The Q-space coordinates for the current detector image,
+                         or None if required data is missing.
+
+        The conversion uses the current sample and detector angles along with the UB matrix
+        to transform from angular to reciprocal space coordinates.
+        """
         hxrd  = xu.HXRD(self.inplane_beam_direction, self.sample_surface_normal_direction, en=self.energy, qconv=self.q_conv)
         if self.stats_data:
             if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data and f"{self.reader.pva_prefix}:Stats4:MaxValue_RBV" in self.stats_data:

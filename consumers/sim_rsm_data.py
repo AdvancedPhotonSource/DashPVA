@@ -198,7 +198,7 @@ def update_ca_record_field(caIoc, base_name, field_name, value):
     record_name = "%s:%s" % (valid_base, field_name)
     
     try:
-        print(record_name, value)
+        # print(record_name, value)
         if isinstance(value, list) and all(isinstance(x, (int, float)) for x in value):
             # For numeric arrays
             caIoc.putField(record_name, value)

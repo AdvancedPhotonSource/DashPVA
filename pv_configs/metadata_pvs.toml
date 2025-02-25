@@ -5,77 +5,10 @@ ConsumerType = "spontaneous"
 [metadata]
 
     [metadata.ca]
-    '6idb1:m17_RBV:AxisNumber' = '6idb1:m17_RBV:AxisNumber'
-    '6idb1:m17_RBV:DirectionAxis' = '6idb1:m17_RBV:DirectionAxis'
-    '6idb1:m17_RBV:Name' = '6idb1:m17_RBV:Name'
-    '6idb1:m17_RBV:Position' = '6idb1:m17_RBV:Position'
-    '6idb1:m17_RBV:SpecMotorName' = '6idb1:m17_RBV:SpecMotorName'
-    '6idb1:m18_RBV:AxisNumber' = '6idb1:m18_RBV:AxisNumber'
-    '6idb1:m18_RBV:DirectionAxis' = '6idb1:m18_RBV:DirectionAxis'
-    '6idb1:m18_RBV:Name' = '6idb1:m18_RBV:Name'
-    '6idb1:m18_RBV:Position' = '6idb1:m18_RBV:Position'
-    '6idb1:m18_RBV:SpecMotorName' = '6idb1:m18_RBV:SpecMotorName'
-    '6idb1:m19_RBV:AxisNumber' = '6idb1:m19_RBV:AxisNumber'
-    '6idb1:m19_RBV:DirectionAxis' = '6idb1:m19_RBV:DirectionAxis'
-    '6idb1:m19_RBV:Name' = '6idb1:m19_RBV:Name'
-    '6idb1:m19_RBV:Position' = '6idb1:m19_RBV:Position'
-    '6idb1:m19_RBV:SpecMotorName' = '6idb1:m19_RBV:SpecMotorName'
-    '6idb1:m20_RBV:AxisNumber' = '6idb1:m20_RBV:AxisNumber'
-    '6idb1:m20_RBV:DirectionAxis' = '6idb1:m20_RBV:DirectionAxis'
-    '6idb1:m20_RBV:Name' = '6idb1:m20_RBV:Name'
-    '6idb1:m20_RBV:Position' = '6idb1:m20_RBV:Position'
-    '6idb1:m20_RBV:SpecMotorName' = '6idb1:m20_RBV:SpecMotorName'
-    '6idb1:m28_RBV:AxisNumber' = '6idb1:m28_RBV:AxisNumber'
-    '6idb1:m28_RBV:DirectionAxis' = '6idb1:m28_RBV:DirectionAxis'
-    '6idb1:m28_RBV:Name' = '6idb1:m28_RBV:Name'
-    '6idb1:m28_RBV:Position' = '6idb1:m28_RBV:Position'
-    '6idb1:m28_RBV:SpecMotorName' = '6idb1:m28_RBV:SpecMotorName'
-    '6idb1:m29_RBV:AxisNumber' = '6idb1:m29_RBV:AxisNumber'
-    '6idb1:m29_RBV:DirectionAxis' = '6idb1:m29_RBV:DirectionAxis'
-    '6idb1:m29_RBV:Name' = '6idb1:m29_RBV:Name'
-    '6idb1:m29_RBV:Position' = '6idb1:m29_RBV:Position'
-    '6idb1:m29_RBV:SpecMotorName' = '6idb1:m29_RBV:SpecMotorName'
-    '6idb:spec:Energy:Name' = '6idb:spec:Energy:Name'
-    '6idb:spec:Energy:Value' = '6idb:spec:Energy:Value'
-    '6idb:spec:UB_matrix:Name' = '6idb:spec:UB_matrix:Name'
-    '6idb:spec:UB_matrix:Value' = '6idb:spec:UB_matrix:Value'
-    'DetectorSetup:CenterChannelPixel' = 'DetectorSetup:CenterChannelPixel'
-    'DetectorSetup:Distance' = 'DetectorSetup:Distance'
-    'DetectorSetup:Name' = 'DetectorSetup:Name'
-    'DetectorSetup:PixelDirection1' = 'DetectorSetup:PixelDirection1'
-    'DetectorSetup:PixelDirection2' = 'DetectorSetup:PixelDirection2'
-    'DetectorSetup:Size' = 'DetectorSetup:Size'
-    'DetectorSetup:Units' = 'DetectorSetup:Units'
-    'InplaneReferenceDirection:AxisNumber1' = 'InplaneReferenceDirection:AxisNumber1'
-    'InplaneReferenceDirection:AxisNumber2' = 'InplaneReferenceDirection:AxisNumber2'
-    'InplaneReferenceDirection:AxisNumber3' = 'InplaneReferenceDirection:AxisNumber3'
-    'InplaneReferenceDirection:Name' = 'InplaneReferenceDirection:Name'
-    'PrimaryBeamDirection:AxisNumber1' = 'PrimaryBeamDirection:AxisNumber1'
-    'PrimaryBeamDirection:AxisNumber2' = 'PrimaryBeamDirection:AxisNumber2'
-    'PrimaryBeamDirection:AxisNumber3' = 'PrimaryBeamDirection:AxisNumber3'
-    'PrimaryBeamDirection:Name' = 'PrimaryBeamDirection:Name'
-    'SampleSurfaceNormalDirection:AxisNumber1' = 'SampleSurfaceNormalDirection:AxisNumber1'
-    'SampleSurfaceNormalDirection:AxisNumber2' = 'SampleSurfaceNormalDirection:AxisNumber2'
-    'SampleSurfaceNormalDirection:AxisNumber3' = 'SampleSurfaceNormalDirection:AxisNumber3'
-    'SampleSurfaceNormalDirection:Name' = 'SampleSurfaceNormalDirection:Name'
-
-
-
-
+    x = "x"
+    y = "y"
 
     [metadata.pva]
-    # "6idb1:m17.RBV" = '6idb1:m17.RBV'
-    # "6idb1:m18.RBV" = '6idb1:m18.RBV'
-    # "6idb1:m19.RBV" = '6idb1:m19.RBV' 
-    # "6idb1:m20.RBV" = '6idb1:m20.RBV'
-    # "6idb1:m28.RBV" = '6idb1:m28.RBV'
-    # "6idb1:m29.RBV" = '6idb1:m29.RBV'
-    # Energy = '6idb:spec:Energy'
-    # UB_matrix = '6idb:spec:UB_matrix' 
-    # DetectorSetup = 'DetectorSetup'
-    # InplaneReferenceDirection = 'InplaneReferenceDirection'
-    # PrimaryBeamDirection = 'PrimaryBeamDirection'
-    # SampleSurfaceNormalDirection = 'SampleSurfaceNormalDirection'
 
 # Section specifically for ROI PVs
 [rois]
@@ -122,76 +55,137 @@ ConsumerType = "spontaneous"
 
 [HKL]
 
-    [HKL.SampleCircleAxis1]
-    PVName = "6idb1:m28.RBV"
-    AxisNumber = 1
-    SpecMotorName = "Mu"
-    DirectionAxis = "x+"
-    Position = 0.0
+    [HKL.Motors]
+    '6idb1:m17.RBV:AxisNumber' = '6idb1:m17_RBV:AxisNumber'
+    '6idb1:m17.RBV:DirectionAxis' = '6idb1:m17_RBV:DirectionAxis'
+    '6idb1:m17.RBV:Name' = '6idb1:m17_RBV:Name'
+    '6idb1:m17.RBV:Position' = '6idb1:m17_RBV:Position'
+    '6idb1:m17.RBV:SpecMotorName' = '6idb1:m17_RBV:SpecMotorName'
+    '6idb1:m18.RBV:AxisNumber' = '6idb1:m18_RBV:AxisNumber'
+    '6idb1:m18.RBV:DirectionAxis' = '6idb1:m18_RBV:DirectionAxis'
+    '6idb1:m18.RBV:Name' = '6idb1:m18_RBV:Name'
+    '6idb1:m18.RBV:Position' = '6idb1:m18_RBV:Position'
+    '6idb1:m18.RBV:SpecMotorName' = '6idb1:m18_RBV:SpecMotorName'
+    '6idb1:m19.RBV:AxisNumber' = '6idb1:m19_RBV:AxisNumber'
+    '6idb1:m19.RBV:DirectionAxis' = '6idb1:m19_RBV:DirectionAxis'
+    '6idb1:m19.RBV:Name' = '6idb1:m19_RBV:Name'
+    '6idb1:m19.RBV:Position' = '6idb1:m19_RBV:Position'
+    '6idb1:m19.RBV:SpecMotorName' = '6idb1:m19_RBV:SpecMotorName'
+    '6idb1:m20.RBV:AxisNumber' = '6idb1:m20_RBV:AxisNumber'
+    '6idb1:m20.RBV:DirectionAxis' = '6idb1:m20_RBV:DirectionAxis'
+    '6idb1:m20.RBV:Name' = '6idb1:m20_RBV:Name'
+    '6idb1:m20.RBV:Position' = '6idb1:m20_RBV:Position'
+    '6idb1:m20.RBV:SpecMotorName' = '6idb1:m20_RBV:SpecMotorName'
+    '6idb1:m28.RBV:AxisNumber' = '6idb1:m28_RBV:AxisNumber'
+    '6idb1:m28.RBV:DirectionAxis' = '6idb1:m28_RBV:DirectionAxis'
+    '6idb1:m28.RBV:Name' = '6idb1:m28_RBV:Name'
+    '6idb1:m28.RBV:Position' = '6idb1:m28_RBV:Position'
+    '6idb1:m28.RBV:SpecMotorName' = '6idb1:m28_RBV:SpecMotorName'
+    '6idb1:m29.RBV:AxisNumber' = '6idb1:m29_RBV:AxisNumber'
+    '6idb1:m29.RBV:DirectionAxis' = '6idb1:m29_RBV:DirectionAxis'
+    '6idb1:m29.RBV:Name' = '6idb1:m29_RBV:Name'
+    '6idb1:m29.RBV:Position' = '6idb1:m29_RBV:Position'
+    '6idb1:m29.RBV:SpecMotorName' = '6idb1:m29_RBV:SpecMotorName'
 
-    [HKL.SampleCircleAxis2]
-    PVName = "6idb1:m17.RBV"
-    AxisNumber = 2
-    SpecMotorName = "Eta"
-    DirectionAxis = "z-"
-    Position = 10.74625
-
-    
-    [HKL.SampleCircleAxis3]
-    PVName = "6idb1:m19.RBV"
-    AxisNumber = 3
-    SpecMotorName = "Chi"
-    DirectionAxis = "y+"
-    Position = 90.14
-
-    [HKL.SampleCircleAxis4]
-    PVName = "6idb1:m20.RBV"
-    AxisNumber = 4
-    SpecMotorName = "Phi"
-    DirectionAxis = "z-"
-    Position = 0.0
-
-    [HKL.DetectorCircleAxis1]
-    PVName = "6idb1:m29.RBV"
-    AxisNumber = 1
-    SpecMotorName = "Nu"
-    DirectionAxis = "x+"
-    Position = 0.0
-
-    [HKL.DetectorCircleAxis2]
-    PVName = "6idb1:m18.RBV"
-    AxisNumber = 2
-    SpecMotorName = "Delta"
-    DirectionAxis = "z-"
-    Position = 70.035125
-
-    [HKL.UBMatrix]
-    PVName = "6idb:spec:UB_matrix"
-    Value = [1,0,0,0,1,0,0,0,1]
-
-    [HKL.Energy]
-    PVName = "6idb:spec:Energy"
-    Value = 11.212 # keV Kilo Electron Volts
-
-    [HKL.PrimaryBeamDirection]
-    AxisNumber1 = 0
-    AxisNumber2 = 1
-    AxisNumber3 = 0
-
-    [HKL.InplaneReferenceDirection]
-    AxisNumber1 = 0
-    AxisNumber2 = 1
-    AxisNumber3 = 0
-
-    [HKL.SampleSurfaceNormalDirection]
-    AxisNumber1 = 0
-    AxisNumber2 = 0
-    AxisNumber3 = 1
+    [HKL.Spec]
+    '6idb:spec:Energy:Name' = '6idb:spec:Energy:Name'
+    '6idb:spec:Energy:Value' = '6idb:spec:Energy:Value'
+    '6idb:spec:UB_matrix:Name' = '6idb:spec:UB_matrix:Name'
+    '6idb:spec:UB_matrix:Value' = '6idb:spec:UB_matrix:Value'
 
     [HKL.DetectorSetup]
-    PixelDirection1 = "z-"
-    PixelDirection2 = "x+"
-    CenterChannelPixel = [237, 95]
-    Size = [83.764, 33.54]
-    Distance = 900.644
-    Units = "mm"
+    'DetectorSetup:CenterChannelPixel' = 'DetectorSetup:CenterChannelPixel'
+    'DetectorSetup:Distance' = 'DetectorSetup:Distance'
+    'DetectorSetup:Name' = 'DetectorSetup:Name'
+    'DetectorSetup:PixelDirection1' = 'DetectorSetup:PixelDirection1'
+    'DetectorSetup:PixelDirection2' = 'DetectorSetup:PixelDirection2'
+    'DetectorSetup:Size' = 'DetectorSetup:Size'
+    'DetectorSetup:Units' = 'DetectorSetup:Units'
+
+    [HKL.AxisDirections]
+    'InplaneReferenceDirection:AxisNumber1' = 'InplaneReferenceDirection:AxisNumber1'
+    'InplaneReferenceDirection:AxisNumber2' = 'InplaneReferenceDirection:AxisNumber2'
+    'InplaneReferenceDirection:AxisNumber3' = 'InplaneReferenceDirection:AxisNumber3'
+    'InplaneReferenceDirection:Name' = 'InplaneReferenceDirection:Name'
+    'PrimaryBeamDirection:AxisNumber1' = 'PrimaryBeamDirection:AxisNumber1'
+    'PrimaryBeamDirection:AxisNumber2' = 'PrimaryBeamDirection:AxisNumber2'
+    'PrimaryBeamDirection:AxisNumber3' = 'PrimaryBeamDirection:AxisNumber3'
+    'PrimaryBeamDirection:Name' = 'PrimaryBeamDirection:Name'
+    'SampleSurfaceNormalDirection:AxisNumber1' = 'SampleSurfaceNormalDirection:AxisNumber1'
+    'SampleSurfaceNormalDirection:AxisNumber2' = 'SampleSurfaceNormalDirection:AxisNumber2'
+    'SampleSurfaceNormalDirection:AxisNumber3' = 'SampleSurfaceNormalDirection:AxisNumber3'
+    'SampleSurfaceNormalDirection:Name' = 'SampleSurfaceNormalDirection:Name'
+
+    # [HKL.SampleCircleAxis1]
+    # PVName = "6idb1:m28.RBV"
+    # AxisNumber = 1
+    # SpecMotorName = "Mu"
+    # DirectionAxis = "x+"
+    # Position = 0.0
+
+    # [HKL.SampleCircleAxis2]
+    # PVName = "6idb1:m17.RBV"
+    # AxisNumber = 2
+    # SpecMotorName = "Eta"
+    # DirectionAxis = "z-"
+    # Position = 10.74625
+
+    
+    # [HKL.SampleCircleAxis3]
+    # PVName = "6idb1:m19.RBV"
+    # AxisNumber = 3
+    # SpecMotorName = "Chi"
+    # DirectionAxis = "y+"
+    # Position = 90.14
+
+    # [HKL.SampleCircleAxis4]
+    # PVName = "6idb1:m20.RBV"
+    # AxisNumber = 4
+    # SpecMotorName = "Phi"
+    # DirectionAxis = "z-"
+    # Position = 0.0
+
+    # [HKL.DetectorCircleAxis1]
+    # PVName = "6idb1:m29.RBV"
+    # AxisNumber = 1
+    # SpecMotorName = "Nu"
+    # DirectionAxis = "x+"
+    # Position = 0.0
+
+    # [HKL.DetectorCircleAxis2]
+    # PVName = "6idb1:m18.RBV"
+    # AxisNumber = 2
+    # SpecMotorName = "Delta"
+    # DirectionAxis = "z-"
+    # Position = 70.035125
+
+    # [HKL.UBMatrix]
+    # PVName = "6idb:spec:UB_matrix"
+    # Value = [1,0,0,0,1,0,0,0,1]
+
+    # [HKL.Energy]
+    # PVName = "6idb:spec:Energy"
+    # Value = 11.212 # keV Kilo Electron Volts
+
+    # [HKL.PrimaryBeamDirection]
+    # AxisNumber1 = 0
+    # AxisNumber2 = 1
+    # AxisNumber3 = 0
+
+    # [HKL.InplaneReferenceDirection]
+    # AxisNumber1 = 0
+    # AxisNumber2 = 1
+    # AxisNumber3 = 0
+
+    # [HKL.SampleSurfaceNormalDirection]
+    # AxisNumber1 = 0
+    # AxisNumber2 = 0
+    # AxisNumber3 = 1
+
+    # [HKL.DetectorSetup]
+    # PixelDirection1 = "z-"
+    # PixelDirection2 = "x+"
+    # CenterChannelPixel = [237, 95]
+    # Size = [83.764, 33.54]
+    # Distance = 900.644
+    # Units = "mm"
