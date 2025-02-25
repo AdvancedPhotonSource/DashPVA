@@ -1,26 +1,34 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-This script creates a PvaServer with multiple channels.
-- Six axis channels update their "Position" field periodically.
-- UBMatrix and Energy channels are static.
-- Four additional static channels are created:
-    - PrimaryBeamDirection
-    - InplaneReferenceDirection
-    - SampleSurfaceNormalDirection
-    - DetectorSetup
+This script sets up a CA IOC (using pva.CaIoc) to broadcast a set of PVs
+exclusively via the Channel Access (CA) protocol. It includes:
 
-Each record includes its own PV name (under the "Name" field) as part of its data.
+  - Dynamic axis records (6idb1:m28.RBV, etc.) whose "Position" field is updated periodically.
+  - Static records:
+      * 6idb:spec:UB_matrix
+      * 6idb:spec:Energy
+      * PrimaryBeamDirection
+      * InplaneReferenceDirection
+      * SampleSurfaceNormalDirection
+      * DetectorSetup
+
+Instead of sending dictionary data as JSON strings, we create individual records
+for each field in the dictionaries.
 """
 
+import os
 import time
+import tempfile
+import ctypes.util
 import math
-from pvaccess import ULONG, STRING, DOUBLE
-from pvaccess import PvObject, PvaServer
+import numpy as np
+import pvaccess as pva  # pva module provides CaIoc and related functions
 
 # -------------------------------
-# Define Axis PV record parameters
+# Define PV Record Parameters
 # -------------------------------
 
+# Dynamic axis records:
 axis_records = {
     "6idb1:m28.RBV": {
         "AxisNumber": 1,
@@ -60,9 +68,10 @@ axis_records = {
     },
 }
 
-# -------------------------------
-# Define Static PV record parameters
-# -------------------------------
+for key in axis_records.keys():
+    axis_records[key]["Name"] = key
+
+# Static records:
 
 # Existing static records:
 ub_matrix_record = {
@@ -72,7 +81,7 @@ energy_record = {
     "Value": 11.212  # keV
 }
 
-# Additional static records based on HKL configuration.
+# Additional static records based on HKL configuration:
 primary_beam_direction_record = {
     "AxisNumber1": 0,
     "AxisNumber2": 1,
@@ -98,131 +107,167 @@ detector_setup_record = {
 }
 
 # -------------------------------
-# Helper functions to create PvObjects
+# Helper: Convert to Valid EPICS Record Name
 # -------------------------------
 
-def create_axis_pv(record_name, initial):
+def valid_record_name(name):
     """
-    Creates a PvObject for an axis record.
-    The type dictionary includes:
-      - "Name": STRING
-      - "AxisNumber": ULONG
-      - "SpecMotorName": STRING
-      - "DirectionAxis": STRING
-      - "Position": DOUBLE
-    The record_name is added to the data as the "Name" field.
+    Converts the given record name to a valid EPICS record name.
+    In this example, any '.' characters are replaced with '_'.
     """
-    typeDict = {
-        "Name": STRING,
-        "AxisNumber": ULONG,
-        "SpecMotorName": STRING,
-        "DirectionAxis": STRING,
-        "Position": DOUBLE,
-    }
-    data = dict(initial)
-    data["Name"] = record_name
-    return PvObject(typeDict, data)
-
-def create_static_pv(record_name, typeDict, initial):
-    """
-    Creates a PvObject for a static record.
-    Adds the "Name" field with the record_name.
-    """
-    typeDict = dict(typeDict)  # make a copy so we don't modify the original
-    typeDict["Name"] = STRING
-    data = dict(initial)
-    data["Name"] = record_name
-    return PvObject(typeDict, data)
+    return name.replace('.', '_')
 
 # -------------------------------
-# Main server setup
+# CA IOC Setup Functions
 # -------------------------------
 
-if __name__ == '__main__':
-    # Create a single PvaServer instance.
-    server = PvaServer()
+def get_record_definition(name, value_type):
+    """
+    Returns the appropriate EPICS record definition based on the value type.
+    """
+    if isinstance(value_type, (int, float)):
+        return """
+        record(ai, "%s") {
+            field(DTYP, "Soft Channel")
+            field(PREC, "6")
+        }
+        """ % name
+    elif isinstance(value_type, str):
+        return """
+        record(stringout, "%s") {
+            field(DTYP, "Soft Channel")
+            field(VAL, "")
+        }
+        """ % name
+    elif isinstance(value_type, list) and all(isinstance(x, (int, float)) for x in value_type):
+        # For numeric arrays (like UB_matrix)
+        return """
+        record(waveform, "%s") {
+            field(DTYP, "Soft Channel")
+            field(FTVL, "DOUBLE")
+            field(NELM, "64")
+        }
+        """ % name
 
-    # -------------------------------
-    # Add Axis Records (Dynamic)
-    # -------------------------------
-    axis_pv_objects = {}
-    for pvname, params in axis_records.items():
-        pvObj = create_axis_pv(pvname, params)
-        server.addRecord(pvname, pvObj)
-        axis_pv_objects[pvname] = pvObj
+def setup_ca_ioc(records_dict):
+    """
+    Sets up a CA IOC using pva.CaIoc to broadcast records with the given names and value types.
+    """
+    if not os.environ.get('EPICS_DB_INCLUDE_PATH'):
+        pvDataLib = ctypes.util.find_library('pvData')
+        if not pvDataLib:
+            raise Exception('Cannot find dbd directory. Please set EPICS_DB_INCLUDE_PATH.')
+        pvDataLib = os.path.realpath(pvDataLib)
+        epicsLibDir = os.path.dirname(pvDataLib)
+        dbdDir = os.path.realpath('%s/../../dbd' % epicsLibDir)
+        os.environ['EPICS_DB_INCLUDE_PATH'] = dbdDir
 
-    # -------------------------------
-    # Add Static Records
-    # -------------------------------
-    # UBMatrix record.
-    ubMatrixType = {"Value": [ULONG]}
-    ubMatrixObj = create_static_pv("6idb:spec:UB_matrix", ubMatrixType, ub_matrix_record)
-    server.addRecord("6idb:spec:UB_matrix", ubMatrixObj)
+    # Create a temporary database file
+    dbFile = tempfile.NamedTemporaryFile(delete=False, mode='w')
+    
+    # Create all the record definitions
+    for base_name, record_data in records_dict.items():
+        valid_base = valid_record_name(base_name)
+        
+        # Add the Name field as a normal field
+        record_data = dict(record_data)  # Make a copy
+        record_data["Name"] = base_name  # Add original name
+        
+        # Create individual records for each field in the record data
+        for field_name, field_value in record_data.items():
+            record_name = "%s:%s" % (valid_base, field_name)
+            dbFile.write(get_record_definition(record_name, field_value))
 
-    # Energy record.
-    energyType = {"Value": DOUBLE}
-    energyObj = create_static_pv("6idb:spec:Energy", energyType, energy_record)
-    server.addRecord("6idb:spec:Energy", energyObj)
+    dbFile.close()
 
-    primaryBeamType = {
-        "AxisNumber1": ULONG,
-        "AxisNumber2": ULONG,
-        "AxisNumber3": ULONG,
+    caIoc = pva.CaIoc()
+    caIoc.loadDatabase('base.dbd', '', '')
+    caIoc.registerRecordDeviceDriver()
+    caIoc.loadRecords(dbFile.name, '')
+    print(caIoc.getRecordNames())
+    caIoc.start()
+    os.unlink(dbFile.name)
+    
+    return caIoc
+
+def update_ca_record_field(caIoc, base_name, field_name, value):
+    """
+    Updates a specific field of a CA record.
+    """
+    valid_base = valid_record_name(base_name)
+    record_name = "%s:%s" % (valid_base, field_name)
+    
+    try:
+        print(record_name, value)
+        if isinstance(value, list) and all(isinstance(x, (int, float)) for x in value):
+            # For numeric arrays
+            caIoc.putField(record_name, value)
+        else:
+        #     # For scalar values or other types
+            caIoc.putField(record_name, value)
+    except Exception as e:
+        print("Error updating %s: %s" % (record_name, e))
+
+def update_full_record(caIoc, base_name, record_data):
+    """
+    Updates all fields of a record based on the dictionary data.
+    """
+    for field_name, field_value in record_data.items():
+        update_ca_record_field(caIoc, base_name, field_name, field_value)
+
+# -------------------------------
+# Main Loop for Updates
+# -------------------------------
+
+def main():
+    # Combine all records into one dictionary
+    all_records = {
+        **axis_records,
+        "6idb:spec:UB_matrix": ub_matrix_record,
+        "6idb:spec:Energy": energy_record,
+        "PrimaryBeamDirection": primary_beam_direction_record,
+        "InplaneReferenceDirection": inplane_reference_direction_record,
+        "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
+        "DetectorSetup": detector_setup_record
     }
-    primaryBeamObj = create_static_pv("PrimaryBeamDirection", primaryBeamType, primary_beam_direction_record)
-    server.addRecord("PrimaryBeamDirection", primaryBeamObj)
+    print(all_records)
+    
+    # Set up the CA IOC with these records
+    caIoc = setup_ca_ioc(all_records)
 
-    inplaneReferenceType = {
-        "AxisNumber1": ULONG,
-        "AxisNumber2": ULONG,
-        "AxisNumber3": ULONG,
+    # Add Name field to all static records
+    static_records = {
+        "6idb:spec:UB_matrix": {**ub_matrix_record, "Name": "6idb:spec:UB_matrix"},
+        "6idb:spec:Energy": {**energy_record, "Name": "6idb:spec:Energy"},
+        "PrimaryBeamDirection": {**primary_beam_direction_record, "Name": "PrimaryBeamDirection"},
+        "InplaneReferenceDirection": {**inplane_reference_direction_record, "Name": "InplaneReferenceDirection"},
+        "SampleSurfaceNormalDirection": {**sample_surface_normal_direction_record, "Name": "SampleSurfaceNormalDirection"},
+        "DetectorSetup": {**detector_setup_record, "Name": "DetectorSetup"}
     }
-    inplaneReferenceObj = create_static_pv("InplaneReferenceDirection", inplaneReferenceType, inplane_reference_direction_record)
-    server.addRecord("InplaneReferenceDirection", inplaneReferenceObj)
+    
+    # Update static records (they remain constant)
+    for rec_name, rec_data in all_records.items():
+        update_full_record(caIoc, rec_name, rec_data)
 
-    sampleSurfaceNormalType = {
-        "AxisNumber1": ULONG,
-        "AxisNumber2": ULONG,
-        "AxisNumber3": ULONG,
-    }
-    sampleSurfaceNormalObj = create_static_pv("SampleSurfaceNormalDirection", sampleSurfaceNormalType, sample_surface_normal_direction_record)
-    server.addRecord("SampleSurfaceNormalDirection", sampleSurfaceNormalObj)
-
-    detectorSetupType = {
-        "PixelDirection1": STRING,
-        "PixelDirection2": STRING,
-        "CenterChannelPixel": [ULONG],
-        "Size": [DOUBLE],
-        "Distance": DOUBLE,
-        "Units": STRING,
-    }
-    detectorSetupObj = create_static_pv("DetectorSetup", detectorSetupType, detector_setup_record)
-    server.addRecord("DetectorSetup", detectorSetupObj)
-
-    # Display available channel names.
-    print("CHANNELS: %s" % server.getRecordNames())
-
-    # -------------------------------
-    # Dynamic Update Loop for Axis Records
-    # -------------------------------
-    base_positions = {name: params["Position"] for name, params in axis_records.items()}
-    amplitude = 0.5        # amplitude of sine-wave offset
-    update_interval = 0.5  # seconds between updates
-    startTime = time.time()
+    # For dynamic axis records, store their base positions
+    base_positions = {name: rec["Position"] for name, rec in axis_records.items()}
+    amplitude = 0.5        # Amplitude of the sine-wave update
+    update_interval = 0.5  # Seconds between updates
+    start_time = time.time()
 
     try:
         while True:
-            elapsed = time.time() - startTime
-            # Update each axis record's "Position" field.
-            for pvname, base in base_positions.items():
-                new_position = base + amplitude * math.sin(elapsed)
-                newPv = create_axis_pv(pvname, {
-                    "AxisNumber": axis_records[pvname]["AxisNumber"],
-                    "SpecMotorName": axis_records[pvname]["SpecMotorName"],
-                    "DirectionAxis": axis_records[pvname]["DirectionAxis"],
-                    "Position": new_position,
-                })
-                server.update(pvname, newPv)
+            elapsed = time.time() - start_time
+            for name, rec in axis_records.items():
+                # Update the Position field with a sine offset
+                new_position = base_positions[name] + amplitude * math.sin(elapsed)
+                # Only update the Eta field For Now
+                if rec["SpecMotorName"] == "Eta":
+                    # Only Update Eta Position
+                    update_ca_record_field(caIoc, name, "Position", new_position)
             time.sleep(update_interval)
     except KeyboardInterrupt:
-        print("\nShutting down the PvaServer.")
+        print("Shutting down CA IOC updates.")
+
+if __name__ == '__main__':
+    main()

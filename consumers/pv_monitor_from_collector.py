@@ -63,8 +63,8 @@ def monitor_callback(data):
             print('data recorded!')
         
 
-# collector_channel = pva.Channel("processor:1:vectorized", pva.PVA)
-collector_channel = pva.Channel('6idb1:m18.RBV', pva.PVA)
+# collector_channel = pva.Channel("SampleSurfaceNormalDirection:Name", pva.CA)
+collector_channel = pva.Channel('6idb1:m19_RBV:Name', pva.CA)
 # collector_channel = pva.Channel("collector:1:output", pva.PVA)u
 # collector_channel = pva.Channel("pvapy:Image", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)
