@@ -9,6 +9,18 @@ ConsumerType = "spontaneous"
     y = "y"
 
     [metadata.pva]
+    # "6idb1:m17.RBV" = '6idb1:m17.RBV'
+    # "6idb1:m18.RBV" = '6idb1:m18.RBV'
+    # "6idb1:m19.RBV" = '6idb1:m19.RBV' 
+    # "6idb1:m20.RBV" = '6idb1:m20.RBV'
+    # "6idb1:m28.RBV" = '6idb1:m28.RBV'
+    # "6idb1:m29.RBV" = '6idb1:m29.RBV'
+    # Energy = '6idb:spec:Energy'
+    # UB_matrix = '6idb:spec:UB_matrix' 
+    # DetectorSetup = 'DetectorSetup'
+    # InplaneReferenceDirection = 'InplaneReferenceDirection'
+    # PrimaryBeamDirection = 'PrimaryBeamDirection'
+    # SampleSurfaceNormalDirection = 'SampleSurfaceNormalDirection'
 
 # Section specifically for ROI PVs
 [rois]

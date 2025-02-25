@@ -64,7 +64,7 @@ def monitor_callback(data):
         
 
 # collector_channel = pva.Channel("processor:1:vectorized", pva.PVA)
-collector_channel = pva.Channel("6idb1:m17.RBV", pva.PVA)
+collector_channel = pva.Channel('6idb1:m18.RBV', pva.PVA)
 # collector_channel = pva.Channel("collector:1:output", pva.PVA)u
 # collector_channel = pva.Channel("pvapy:Image", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)

@@ -19,6 +19,9 @@ class HpcRsmProcessor(AdImageProcessor):
         self.hkl_data = None
         self.q_conv = None
         self.shape = None
+        self.qx = None
+        self.qy = None
+        self.qz = None  
         
         # Configure from dictionary
         self.configure(configDict)
