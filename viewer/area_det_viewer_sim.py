@@ -1,23 +1,21 @@
 import sys
-import toml
-# import copy
-import time
 import numpy as np
 import os.path as osp
-import pvaccess as pva
 import pyqtgraph as pg
 import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
-from epics import camonitor
+from epics import camonitor, caget
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
 from generators import rotation_cycle
+from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
+from hkl_3d_viewer import HKL3DViewer
 
 
 max_cache_size = 900 #TODO: Put this in the config file 
@@ -50,14 +48,14 @@ class ConfigDialog(QDialog):
         self.btn_create.clicked.connect(self.new_pv_setup)
         self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
-    def init_ui(self):
+    def init_ui(self) -> None:
         """
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
         self.le_roi_config.setText(self.le_roi_config.text())
 
-    def browse_file_dialog(self):
+    def browse_file_dialog(self) -> None:
         """
         Opens a file dialog to select the path to a TOML configuration file.
         """
@@ -65,13 +63,13 @@ class ConfigDialog(QDialog):
 
         self.le_roi_config.setText(self.pvs_path)
 
-    def new_pv_setup(self):
+    def new_pv_setup(self) -> None:
         """
         Opens a new window for setting up a new PV configuration within the UI.
         """
         self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
-    def edit_pv_setup(self):
+    def edit_pv_setup(self) -> None:
         """
         Opens a window for editing an existing PV configuration.
         """
@@ -80,7 +78,7 @@ class ConfigDialog(QDialog):
         else:
             print('file path empty')
 
-    def dialog_accepted(self):
+    def dialog_accepted(self) -> None:
         """
         Handles the final step when the dialog's accept button is pressed.
         Starts the ImageWindow process with filled information.
@@ -95,207 +93,6 @@ class ConfigDialog(QDialog):
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
             self.new_dialog = ConfigDialog()
             self.new_dialog.show()    
-
-
-class PVA_Reader:
-
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
-        """
-        Initializes the PVA Reader for monitoring connections and handling image data.
-
-        Args:
-            input_channel (str): Input channel for the PVA connection.
-            provider (protocol): The protocol for the PVA channel.
-            config_filepath (str): File path to the configuration TOML file.
-        """
-        self.input_channel = input_channel        
-        self.provider = provider
-        self.config_filepath = config_filepath
-        self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = "dp-ADSim"
-        # variables that will store pva data
-        self.pva_object = None
-        self.image = None
-        self.shape = (0,0)
-        self.pixel_ordering = 'C'
-        self.image_is_transposed = True
-        self.attributes = []
-        self.timestamp = None
-        self.data_type = None
-        # variables used for parsing analysis PV
-        self.analysis_index = None
-        self.analysis_exists = True
-        self.analysis_attributes = {}
-        # variables used for later logic
-        self.last_array_id = None
-        self.frames_missed = 0
-        self.frames_received = 0
-        self.id_diff = 0
-        # variables used for ROI and Stats PVs from config
-        self.config = {}
-        self.rois = {}
-        self.stats = {}
-
-        if self.config_filepath != '':
-            with open(self.config_filepath, 'r') as toml_file:
-                # loads the pvs in the toml file into a python dictionary
-                self.config:dict = toml.load(toml_file)
-                self.stats:dict = self.config["stats"]
-                if self.config["ConsumerType"] == "spontaneous":
-                    # TODO: change to dictionaries that store postions as keys and pv as value
-                    self.analysis_cache_dict = {"Intensity": {},
-                                                "ComX": {},
-                                                "ComY": {},
-                                                "Position": {}} 
-
-    def pva_callbackSuccess(self, pv):
-        """
-        Callback for handling monitored PV changes.
-
-        Args:
-            pv (PvaObject): The PV object received by the channel monitor.
-        """
-        self.pva_object = pv
-        self.parse_image_data_type()
-        self.pva_to_image()
-        self.parse_pva_attributes()
-        self.parse_roi_pvs()
-        if (self.analysis_index is None) and (self.analysis_exists): #go in with the assumption analysis exists, is changed to false otherwise
-            self.analysis_index = self.locate_analysis_index()
-            # print(self.analysis_index)
-        if self.analysis_exists:
-            self.analysis_attributes = self.attributes[self.analysis_index]
-            if self.config["ConsumerType"] == "spontaneous":
-                # turns axis1 and axis2 into a tuple
-                incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
-                                  self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
-                # use a tuple as a key so that we can check if there is a repeat position
-                self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
-                self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
-                self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
-                # double storing of the postion, will find out if needed
-                self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-                
-    def parse_image_data_type(self):
-        """
-        Parses the PVA Object to determine the incoming data type.
-        """
-        if self.pva_object is not None:
-            try:
-                self.data_type = list(self.pva_object['value'][0].keys())[0]
-            except:
-                self.data_type = "could not detect"
-    
-    def parse_pva_attributes(self):
-        """
-        Converts the PVA object to a Python dictionary and extracts its attributes.
-        """
-        if self.pva_object is not None:
-            self.attributes: list = self.pva_object.get().get("attribute", [])
-    
-    def locate_analysis_index(self):
-        """
-        Locates the index of the analysis attribute in the PVA attributes.
-
-        Returns:
-            int: The index of the analysis attribute or None if not found.
-        """
-        if self.attributes:
-            for i in range(len(self.attributes)):
-                attr_pv: dict = self.attributes[i]
-                if attr_pv.get("name", "") == "Analysis":
-                    return i
-            else:
-                self.analysis_exists = False
-                return None
-            
-    def parse_roi_pvs(self):
-        """
-        Parses attributes to extract ROI-specific PV information.
-        """
-        if self.attributes:
-            for i in range(len(self.attributes)):
-                attr_pv: dict = self.attributes[i]
-                attr_name:str = attr_pv.get("name", "")
-                if "ROI" in attr_name:
-                    name_components = attr_name.split(":")
-                    prefix = name_components[0]
-                    roi_key = name_components[1]
-                    pv_key = name_components[2]
-                    pv_value = attr_pv["value"][0]["value"]
-                    # can't append simply by using 2 keys in a row, there must be a value to call to then add to
-                    # then adds the key to the inner dictionary with update
-                    self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
-            
-    def pva_to_image(self):
-        """
-        Converts the PVA Object to an image array and determines if a frame was missed.
-        """
-        try:
-            if self.pva_object is not None:
-                self.frames_received += 1
-                # Parses dimensions and reshapes array into image
-                if 'dimension' in self.pva_object:
-                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-                    self.image = np.array(self.pva_object['value'][0][self.data_type])
-                    # reshapes but also transposes image so it is viewed correctly
-                    self.image = np.reshape(self.image, self.shape, order=self.pixel_ordering).T if self.image_is_transposed else np.reshape(self.image, self.shape, order=self.pixel_ordering)
-                else:
-                    self.image = None
-                # Check for missed frame starts here
-                current_array_id = self.pva_object['uniqueId']
-                if self.last_array_id is not None: 
-                    self.id_diff = current_array_id - self.last_array_id - 1
-                    if (self.id_diff > 0):
-                        self.frames_missed += self.id_diff 
-                    else:
-                        self.id_diff = 0
-                self.last_array_id = current_array_id
-        except:
-            print("failed process image")
-            self.frames_missed += 1
-            # return 1
-            
-    def start_channel_monitor(self):
-        """
-        Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
-        """
-        self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
-        self.channel.startMonitor()
-        
-    def stop_channel_monitor(self):
-        """
-        Stops all monitoring and callback functions.
-        """
-        self.channel.unsubscribe('pva callback success')
-        self.channel.stopMonitor()
-
-    def get_frames_missed(self):
-        """
-        Returns the number of frames missed.
-
-        Returns:
-            int: The number of missed frames.
-        """
-        return self.frames_missed
-
-    def get_pva_image(self):
-        """
-        Returns the current PVA image.
-
-        Returns:
-            numpy.ndarray: The current image array.
-        """
-        return self.image
-    
-    def get_attributes_dict(self):
-        """
-        Returns the attributes of the current PVA object.
-
-        Returns:
-            list: The attributes of the current PVA object.
-        """
-        return self.attributes
 
 
 class ImageWindow(QMainWindow):
@@ -330,12 +127,15 @@ class ImageWindow(QMainWindow):
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
-        # self.timer_rsm.timeout.connect(self.update_rsm)
         # For testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+        # HKL values
+        self.qx = None
+        self.qy = None
+        self.qz = None
         
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
@@ -356,6 +156,7 @@ class ImageWindow(QMainWindow):
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
+        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
@@ -373,39 +174,35 @@ class ImageWindow(QMainWindow):
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
-    def start_timers(self):
+    def start_timers(self) -> None:
         """
         Starts timers for updating labels and plotting at specified frequencies.
         """
         self.timer_labels.start(int(1000/100))
         self.timer_plot.start(int(1000/self.plotting_frequency.value()))
-        # if self.hkl_data:
-        #     self.timer_rsm.start(int(1000/self.plotting_frequency.value()))
 
-    def stop_timers(self):
+    def stop_timers(self) -> None:
         """
         Stops the updating of main window labels and plots.
         """
         self.timer_plot.stop()
         self.timer_labels.stop()
-        # if self.hkl_data:
-        #     self.timer_rsm.stop()
 
-    def c_ordering_clicked(self):
+    def c_ordering_clicked(self) -> None:
         """
         Sets the pixel ordering to C style.
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'C'
 
-    def f_ordering_clicked(self):
+    def f_ordering_clicked(self) -> None:
         """
         Sets the pixel ordering to Fortran style.
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'F'
 
-    def open_analysis_window_clicked(self):
+    def open_analysis_window_clicked(self) -> None:
         """
         Opens the analysis window if the reader and image are initialized.
         """
@@ -414,7 +211,7 @@ class ImageWindow(QMainWindow):
                 self.analysis_window = AnalysisWindow(parent=self)
                 self.analysis_window.show()
 
-    def start_live_view_clicked(self):
+    def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
         
@@ -424,7 +221,7 @@ class ImageWindow(QMainWindow):
         try:
             # A double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(input_channel=self._input_channel, 
+                self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
 
@@ -432,7 +229,7 @@ class ImageWindow(QMainWindow):
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                self.reader = PVA_Reader(input_channel=self._input_channel, 
+                self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.reader.start_channel_monitor()
 
@@ -440,8 +237,8 @@ class ImageWindow(QMainWindow):
             if self.reader is not None:
                 self.start_stats_monitors()
                 self.add_rois()
-                self.init_hkl()
                 self.start_timers()
+                self.init_hkl()
                 self.qx, self.qy, self.qz = self.create_rsm() 
 
 
@@ -455,7 +252,7 @@ class ImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
         
-    def stop_live_view_clicked(self):
+    def stop_live_view_clicked(self) -> None:
         """
         Clears the connection for the PVA channel and stops all active monitors.
 
@@ -487,7 +284,7 @@ class ImageWindow(QMainWindow):
         except:
             print("Failed to Connect to Stats CA Monitors")
 
-    def stats_ca_callback(self, pvname, value, **kwargs):
+    def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
         Updates the stats PV value based on changes observed by `camonitor`.
 
@@ -498,7 +295,7 @@ class ImageWindow(QMainWindow):
         """
         self.stats_data[pvname] = value
         
-    def stats_button_clicked(self):
+    def stats_button_clicked(self) -> None:
         """
         Creates a popup dialog for viewing the stats of a specific button.
 
@@ -512,7 +309,7 @@ class ImageWindow(QMainWindow):
                                                      timer=self.timer_labels)
             self.stats_dialog[text].show()
     
-    def show_rois_checked(self):
+    def show_rois_checked(self) -> None:
         """
         Toggles visibility of ROIs based on the checked state of the display checkbox.
         """
@@ -524,7 +321,7 @@ class ImageWindow(QMainWindow):
                 for roi in self.rois:
                     roi.hide()
 
-    def freeze_image_checked(self):
+    def freeze_image_checked(self) -> None:
         """
         Toggles freezing/unfreezing of the plot based on the checked state
         without stopping the collection of PVA objects.
@@ -535,7 +332,7 @@ class ImageWindow(QMainWindow):
             else:
                 self.start_timers()
     
-    def transpose_image_checked(self):
+    def transpose_image_checked(self) -> None:
         """
         Toggles whether the image data is transposed based on the checkbox state.
         """
@@ -545,19 +342,19 @@ class ImageWindow(QMainWindow):
             else: 
                 self.reader.image_is_transposed = False
 
-    def reset_first_plot(self):
+    def reset_first_plot(self) -> None:
         """
         Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
         """
         self.first_plot = True
 
-    def rotation_count(self):
+    def rotation_count(self) -> None:
         """
         Cycles the image rotation number between 1 and 4.
         """
         self.rot_num = next(rot_gen)
 
-    def add_rois(self):
+    def add_rois(self) -> None:
         """
         Adds ROIs to the image viewer and assigns them color codes.
 
@@ -581,63 +378,102 @@ class ImageWindow(QMainWindow):
             self.image_view.addItem(roi)
             roi.sigRegionChanged.connect(self.update_roi_region)
 
-    def init_hkl(self):
-        """
-        Initializes HKL (reciprocal space) parameters from the configuration.
+    def start_hkl_viewer(self) -> None:
+        try:
+            if self.reader is not None and 'HKL' in self.reader.config:
+                intensity = self.reader.image
+                self.hkl_3d_viwer = HKL3DViewer(self.qx, self.qy, self.qz, intensity)
+                self.hkl_3d_viwer.show()
 
-        This method sets up all the necessary parameters for reciprocal space mapping:
-        - Sample circle parameters (directions, names, positions)
-        - Detector circle parameters (directions, names, positions) 
-        - Primary beam direction
-        - In-plane reference direction
-        - Sample surface normal direction
-        - Q-space conversion parameters
-        - UB matrix
-        - X-ray energy
+        except Exception as e:
+            print(f'Failed to load HKL Viewer:{e}')
 
-        The parameters are read from the HKL section of the configuration file.
-        This initialization is required before any reciprocal space calculations can be performed.
+
+    def start_hkl_monitors(self) -> None:
         """
-        if "HKL" in self.reader.config:
-            self.hkl_data = self.reader.config["HKL"]
-            # Get everything for the sample circles
-            sample_circle_keys = [key for key in list(self.hkl_data.keys()) if key.startswith('SampleCircle')]
+        Initializes camonitors for HKL values and stores them in a dictionary.
+        """
+        try:
+            if "HKL" in self.reader.config:
+                self.hkl_config = self.reader.config["HKL"]
+                self.hkl_data = {}
+
+                # Monitor each HKL parameter
+                for section, pv_dict in self.hkl_config.items():
+                    for key, pv_name in pv_dict.items():
+                        self.hkl_data[pv_name] = caget(pv_name)
+                        camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
+        except Exception as e:
+            print(f"Failed to initialize HKL monitors: {e}")
+
+    def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
+        """
+        Callback for updating HKL values based on changes observed by `camonitor`.
+
+        Args:
+            pvname (str): The name of the PV that has been updated.
+            value: The new value sent by the monitor for the PV.
+            **kwargs: Additional keyword arguments sent by the monitor.
+        """
+        self.hkl_data[pvname] = value
+        if self.qx is not None and self.qy is not None and self.qz is not None:
+            self.update_rsm()
+
+    def init_hkl(self) -> None:
+        """
+        Initializes HKL parameters by setting up monitors for each HKL value.
+        """
+        self.start_hkl_monitors()
+        self.hkl_setup()
+        
+    def hkl_setup(self) -> None:
+        try:
+            sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SampleCircle') for pv_name in pv_dict.values()]
             self.sample_circle_directions = []
             self.sample_cirlce_names = []
             self.sample_circle_positions = []
-            for sample_circle in sample_circle_keys:
-                self.sample_circle_directions.append(self.hkl_data[sample_circle]['DirectionAxis'])
-                self.sample_cirlce_names.append(self.hkl_data[sample_circle]['SpecMotorName'])
-                # temporary simulated data until we get the beamline up and running
-                self.sample_circle_positions.append(self.hkl_data[sample_circle]['Position'])
+            for pvname in sample_circle_keys:
+                if pvname.endswith('DirectionAxis'):
+                    self.sample_circle_directions.append(self.hkl_data[pvname])
+                elif pvname.endswith('SpecMotorName'):
+                    self.sample_cirlce_names.append(self.hkl_data[pvname])
+                elif pvname.endswith('Position'):
+                    self.sample_circle_positions.append(self.hkl_data[pvname])
             # Get everything for the detector circles
-            det_circle_keys = [key for key in list(self.hkl_data.keys()) if key.startswith('DetectorCircle')]
+            det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DetectorCircle') for pv_name in pv_dict.values()]
             self.det_circle_directions = []
             self.det_cirlce_names = []
             self.det_circle_positions = []
-            for det_circle in det_circle_keys:
-                self.det_circle_directions.append(self.hkl_data[det_circle]['DirectionAxis'])
-                self.det_cirlce_names.append(self.hkl_data[det_circle]['SpecMotorName'])
-                # temporary simulated data until we get the beamline up and running
-                self.det_circle_positions.append(self.hkl_data[det_circle]['Position'])
+            for pvname in det_circle_keys:
+                if pvname.endswith('DirectionAxis'):
+                    self.det_circle_directions.append(self.hkl_data[pvname])
+                elif pvname.endswith('SpecMotorName'):
+                    self.det_cirlce_names.append(self.hkl_data[pvname])
+                elif pvname.endswith('Position'):
+                    self.det_circle_positions.append(self.hkl_data[pvname])
             # Primary Beam Direction
-            self.primary_beam_directions= [self.hkl_data['PrimaryBeamDirection'][axis] for axis in self.hkl_data['PrimaryBeamDirection'].keys()]
+            self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PrimaryBeamDirection'].values()]
             # Inplane Reference Direction
-            self.inplane_beam_direction = [self.hkl_data['InplaneReferenceDirection'][axis] for axis in self.hkl_data['InplaneReferenceDirection'].keys()]
+            self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['InplaneReferenceDirection'].values()]
             # Sample Surface Normal Direction
-            self.sample_surface_normal_direction = [self.hkl_data['SampleSurfaceNormalDirection'][axis] for axis in self.hkl_data['SampleSurfaceNormalDirection'].keys()]
-            # Class for the conversion of angular coordinates to momentum space 
-            self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
-                                                    self.det_circle_directions, 
-                                                    self.primary_beam_directions)
-            # print(self.det_circle_directions)
+            self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SampleSurfaceNormalDirection'].values()]
             # UB Matrix
-            self.ub_matrix = self.hkl_data['UBMatrix']['Value']
+            self.ub_matrix = self.hkl_data[self.hkl_config['Spec']['6idb:spec:UB_matrix:Value']]
             self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
             # Energy
-            self.energy = self.hkl_data['Energy']['Value'] * 1000
+            self.energy = self.hkl_data[self.hkl_config['Spec']['6idb:spec:Energy:Value']] * 1000
 
-    def create_rsm(self):
+            if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
+                # Class for the conversion of angular coordinates to momentum space 
+                self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
+                                                        self.det_circle_directions, 
+                                                        self.primary_beam_directions)
+        except Exception as e:
+            print(f'Error Setting up HKL: {e}')
+            return
+         
+
+    def create_rsm(self) -> np.ndarray:
         """
         Creates a reciprocal space map (RSM) from the current detector image.
 
@@ -648,35 +484,45 @@ class ImageWindow(QMainWindow):
         - Detector setup parameters (pixel directions, center channel, size, etc.)
 
         Returns:
-            numpy.ndarray: The Q-space coordinates for the current detector image,
+            numpy.ndarray:
+            - The Q-space coordinates for the current detector image,
                          or None if required data is missing.
+            - shape (N, 3) containing qx, qy, and qz values.
 
         The conversion uses the current sample and detector angles along with the UB matrix
         to transform from angular to reciprocal space coordinates.
         """
-        hxrd  = xu.HXRD(self.inplane_beam_direction, self.sample_surface_normal_direction, en=self.energy, qconv=self.q_conv)
-        if self.stats_data:
-            if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data and f"{self.reader.pva_prefix}:Stats4:MaxValue_RBV" in self.stats_data:
-                roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                pixel_dir1 = self.hkl_data['DetectorSetup']['PixelDirection1']
-                pixel_dir2 = self.hkl_data['DetectorSetup']['PixelDirection2']
-                cch1 = self.hkl_data['DetectorSetup']['CenterChannelPixel'][0]
-                cch2 = self.hkl_data['DetectorSetup']['CenterChannelPixel'][1]
-                nch1 = self.reader.shape[0]
-                nch2 = self.reader.shape[1]
-                pixel_width1 = self.hkl_data['DetectorSetup']['Size'][0] / nch1
-                pixel_width2 = self.hkl_data['DetectorSetup']['Size'][1] / nch2
-                distance = self.hkl_data['DetectorSetup']['Distance']
+        try:
+            hxrd = xu.HXRD(self.inplane_reference_directions,
+                        self.sample_surface_normal_directions, 
+                        en=self.energy, 
+                        qconv=self.q_conv)
 
-                hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
-                                    Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, pwidth2=pixel_width2,
-                                    distance=distance, roi=roi)
-                #used temporarily until we have a way to read pvs from detector directly or add it to metadata
-                angles = [*self.sample_circle_positions, *self.det_circle_positions]
+            if self.stats_data:
+                if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
+                    roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                    cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
+                    cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
+                    distance = self.hkl_data['DetectorSetup:Distance'] # Distance
+                    pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
+                    pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                    nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
+                    nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
+                    pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
+                    pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
 
-                return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+                    hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                        Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
+                                        pwidth2=pixel_width2, distance=distance, roi=roi)
+                    
+                    angles = [*self.sample_circle_positions, *self.det_circle_positions]
 
-    def update_rois(self):
+                    return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+        except Exception as e:
+            print(f'Error Creating RSM: {e}')
+            return
+
+    def update_rois(self) -> None:
         """
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
 
@@ -724,7 +570,7 @@ class ImageWindow(QMainWindow):
                        if self.hkl_data:
                         self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
                         self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
-                        self.mouse_l.setText(f'{self.qx[int(x)][int(y)]}')
+                        self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
 
     def update_labels(self):
         """
@@ -747,6 +593,7 @@ class ImageWindow(QMainWindow):
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self):
+        self.hkl_setup()
         self.qx, self.qy, self.qz = self.create_rsm()
 
     def update_image(self):

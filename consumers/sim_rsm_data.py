@@ -78,7 +78,7 @@ ub_matrix_record = {
     "Value": [1, 0, 0, 0, 1, 0, 0, 0, 1]
 }
 energy_record = {
-    "Value": 11.212  # keV
+    "Value": 5.212  # keV
 }
 
 # Additional static records based on HKL configuration:
@@ -100,9 +100,9 @@ sample_surface_normal_direction_record = {
 detector_setup_record = {
     "PixelDirection1": "z-",
     "PixelDirection2": "x+",
-    "CenterChannelPixel": [237, 95],
-    "Size": [83.764, 33.54],
-    "Distance": 900.644,
+    "CenterChannelPixel": [500, 500],
+    "Size": [100, 100],
+    "Distance": 20.644,
     "Units": "mm"
 }
 

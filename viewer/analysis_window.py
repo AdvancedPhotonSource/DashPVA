@@ -146,37 +146,6 @@ class AnalysisWindow(QMainWindow):
         self.sbox_comy_min.valueChanged.connect(self.min_max_changed)
         self.sbox_comy_max.valueChanged.connect(self.min_max_changed)
 
-    # def save_hdf5(self):
-    #     """
-    #     This function creates and saves the data as an HDF5 file with a timestamp as the name.
-    #     """
-    #     self.status_text.setText("Writing File...")
-    #     # Get the current time as a timestamp for file name
-    #     dt = datetime.fromtimestamp(time.time())
-    #     formatted_time = dt.strftime('%Y%m%d%H%M')
-    #     # put scan pos in dictionary 
-    #     scan_pos = {'x_positions': self.x_positions,
-    #                 'y_positions': self.y_positions}
-    #     # start writer thread
-    #     self.hdf5_writer_thread = HDF5WriterThread(
-    #         f"{self.save_path}/{formatted_time}data.h5",
-    #         self.parent.reader.images_cache, scan_pos, 
-    #         self.parent.reader.metadata, 
-    #         self.parent.reader.attributes, 
-    #         self.intensity_matrix, 
-    #         self.com_x_matrix, 
-    #         self.com_y_matrix)
-    #     self.hdf5_writer_thread.file_written.connect(self.on_file_written)
-    #     self.hdf5_writer_thread.start()
-
-    # def on_file_written(self):
-    #     """
-    #     This function is called when the file writing is done.
-    #     """
-    #     print("Signal Received")
-    #     self.status_text.setText("File Written")
-    #     QTimer.singleShot(10000, self.check_if_running)
-
     def configure_plots(self):
         """
         Configures the plotting interface based on the consumer type.

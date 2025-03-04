@@ -210,7 +210,7 @@ QPushButton:pressed {
            <x>0</x>
            <y>0</y>
            <width>335</width>
-           <height>1851</height>
+           <height>1911</height>
           </rect>
          </property>
          <widget class="QGroupBox" name="group_box_stats">
@@ -621,7 +621,7 @@ QPushButton:pressed {
             <x>10</x>
             <y>330</y>
             <width>321</width>
-            <height>311</height>
+            <height>421</height>
            </rect>
           </property>
           <property name="sizePolicy">
@@ -965,12 +965,37 @@ QPushButton:pressed {
             </item>
            </layout>
           </widget>
+          <widget class="QWidget" name="verticalLayoutWidget_2">
+           <property name="geometry">
+            <rect>
+             <x>9</x>
+             <y>309</y>
+             <width>301</width>
+             <height>101</height>
+            </rect>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_2">
+            <item>
+             <widget class="QPushButton" name="btn_hkl_viewer">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="text">
+               <string>HKL 3D Viewer</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
          </widget>
          <widget class="QGroupBox" name="group_box_img_info">
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>690</y>
+            <y>760</y>
             <width>321</width>
             <height>371</height>
            </rect>
@@ -1339,7 +1364,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>1070</y>
+            <y>1140</y>
             <width>321</width>
             <height>631</height>
            </rect>
@@ -1703,7 +1728,7 @@ QPushButton::pressed {
           <property name="geometry">
            <rect>
             <x>10</x>
-            <y>1710</y>
+            <y>1780</y>
             <width>321</width>
             <height>121</height>
            </rect>

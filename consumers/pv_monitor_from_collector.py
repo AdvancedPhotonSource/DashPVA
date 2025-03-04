@@ -63,10 +63,8 @@ def monitor_callback(data):
             print('data recorded!')
         
 
-# collector_channel = pva.Channel("SampleSurfaceNormalDirection:Name", pva.CA)
-collector_channel = pva.Channel('6idb1:m19_RBV:Name', pva.CA)
-# collector_channel = pva.Channel("collector:1:output", pva.PVA)u
-# collector_channel = pva.Channel("pvapy:Image", pva.PVA)
+collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
+# collector_channel = pva.Channel("collector:1:output", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
 
@@ -74,9 +72,6 @@ try:
     while True:
         time.sleep(0.1)
         # print(f"{total_intensities}, {metadata0_list}")
-        # if len(total_intensities) > 0:
-        # plt.figure()
-        # plt.plot(np.array(metadata0_list),np.array(total_intensities))
-        # plt.show()
+
 except KeyboardInterrupt:
     collector_channel.stopMonitor()
