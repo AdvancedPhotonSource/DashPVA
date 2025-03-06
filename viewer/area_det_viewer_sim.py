@@ -1,4 +1,6 @@
+import os
 import sys
+import subprocess
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
@@ -15,7 +17,6 @@ from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
-from hkl_3d_viewer import HKL3DViewer
 
 
 max_cache_size = 900 #TODO: Put this in the config file 
@@ -136,6 +137,7 @@ class ImageWindow(QMainWindow):
         self.qx = None
         self.qy = None
         self.qz = None
+        self.processes = {}
         
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
@@ -268,7 +270,7 @@ class ImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
-    def start_stats_monitors(self):
+    def start_stats_monitors(self)  -> None:
         """
         Initializes monitors for updating stats values.
 
@@ -381,9 +383,31 @@ class ImageWindow(QMainWindow):
     def start_hkl_viewer(self) -> None:
         try:
             if self.reader is not None and 'HKL' in self.reader.config:
-                intensity = self.reader.image
-                self.hkl_3d_viwer = HKL3DViewer(self.qx, self.qy, self.qz, intensity)
-                self.hkl_3d_viwer.show()
+                qx = self.qx.flatten()
+                qy = self.qy.flatten()
+                qz = self.qz.flatten()
+                intensity = self.reader.image.flatten()
+
+                np.save('qx.npy', qx)
+                np.save('qy.npy', qy)
+                np.save('qz.npy', qz)
+                np.save('intensity.npy', intensity)
+
+                cmd = ['python', 'viewer/hkl_3d_viewer.py',
+                       '--qx-file', 'qx.npy',
+                       '--qy-file', 'qy.npy',
+                       '--qz-file', 'qz.npy',
+                       '--intensity-file', 'intensity.npy']
+
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    preexec_fn=os.setsid,
+                    universal_newlines=True
+                )
+
+                self.processes[process.pid] = process
 
         except Exception as e:
             print(f'Failed to load HKL Viewer:{e}')
@@ -536,19 +560,19 @@ class ImageWindow(QMainWindow):
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
     
-    def update_roi_region(self):
+    def update_roi_region(self) -> None:
         """
         Forces the image viewer to refresh when an ROI region changes.
         """
         self.image_view.update()
 
-    def update_pv_prefix(self):
+    def update_pv_prefix(self) -> None:
         """
         Updates the input channel prefix based on the value entered in the prefix field.
         """
         self._input_channel = self.pv_prefix.text()
     
-    def update_mouse_pos(self, pos):
+    def update_mouse_pos(self, pos) -> None:
         """
         Maps the mouse position in the Image Viewer to the corresponding pixel value.
 
@@ -572,7 +596,7 @@ class ImageWindow(QMainWindow):
                         self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
                         self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
 
-    def update_labels(self):
+    def update_labels(self) -> None:
         """
         Updates the UI labels with current connection and cached data.
         """
@@ -592,11 +616,11 @@ class ImageWindow(QMainWindow):
         self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
-    def update_rsm(self):
+    def update_rsm(self) -> None:
         self.hkl_setup()
         self.qx, self.qy, self.qz = self.create_rsm()
 
-    def update_image(self):
+    def update_image(self) -> None:
         """
         Redraws plots based on the configured update rate.
 
@@ -638,7 +662,7 @@ class ImageWindow(QMainWindow):
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
     
-    def update_min_max_setting(self):
+    def update_min_max_setting(self) -> None:
         """
         Updates the min/max pixel levels in the Image Viewer based on UI settings.
         """

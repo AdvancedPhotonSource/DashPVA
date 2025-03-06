@@ -110,7 +110,7 @@ detector_setup_record = {
 # Helper: Convert to Valid EPICS Record Name
 # -------------------------------
 
-def valid_record_name(name):
+def valid_record_name(name) -> str:
     """
     Converts the given record name to a valid EPICS record name.
     In this example, any '.' characters are replaced with '_'.
@@ -121,7 +121,7 @@ def valid_record_name(name):
 # CA IOC Setup Functions
 # -------------------------------
 
-def get_record_definition(name, value_type):
+def get_record_definition(name, value_type) -> str:
     """
     Returns the appropriate EPICS record definition based on the value type.
     """
@@ -149,7 +149,7 @@ def get_record_definition(name, value_type):
         }
         """ % name
 
-def setup_ca_ioc(records_dict):
+def setup_ca_ioc(records_dict) -> pva.CaIoc:
     """
     Sets up a CA IOC using pva.CaIoc to broadcast records with the given names and value types.
     """
@@ -190,7 +190,7 @@ def setup_ca_ioc(records_dict):
     
     return caIoc
 
-def update_ca_record_field(caIoc, base_name, field_name, value):
+def update_ca_record_field(caIoc, base_name, field_name, value) -> None:
     """
     Updates a specific field of a CA record.
     """
@@ -219,7 +219,7 @@ def update_full_record(caIoc, base_name, record_data):
 # Main Loop for Updates
 # -------------------------------
 
-def main():
+def main() -> None:
     # Combine all records into one dictionary
     all_records = {
         **axis_records,
@@ -265,6 +265,7 @@ def main():
                 if rec["SpecMotorName"] == "Eta":
                     # Only Update Eta Position
                     update_ca_record_field(caIoc, name, "Position", new_position)
+            
             time.sleep(update_interval)
     except KeyboardInterrupt:
         print("Shutting down CA IOC updates.")

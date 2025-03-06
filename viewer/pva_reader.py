@@ -52,7 +52,7 @@ class PVAReader:
                                                 "ComY": {},
                                                 "Position": {}} 
 
-    def pva_callbackSuccess(self, pv):
+    def pva_callbackSuccess(self, pv) -> None:
         """
         Callback for handling monitored PV changes.
 
@@ -80,7 +80,7 @@ class PVAReader:
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
                 
-    def parse_image_data_type(self):
+    def parse_image_data_type(self) -> None:
         """
         Parses the PVA Object to determine the incoming data type.
         """
@@ -90,14 +90,14 @@ class PVAReader:
             except:
                 self.data_type = "could not detect"
     
-    def parse_pva_attributes(self):
+    def parse_pva_attributes(self) -> None:
         """
         Converts the PVA object to a Python dictionary and extracts its attributes.
         """
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
     
-    def locate_analysis_index(self):
+    def locate_analysis_index(self) -> None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
 
@@ -113,7 +113,7 @@ class PVAReader:
                 self.analysis_exists = False
                 return None
             
-    def parse_roi_pvs(self):
+    def parse_roi_pvs(self) -> None:
         """
         Parses attributes to extract ROI-specific PV information.
         """
@@ -131,7 +131,7 @@ class PVAReader:
                     # then adds the key to the inner dictionary with update
                     self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
             
-    def pva_to_image(self):
+    def pva_to_image(self) -> None:
         """
         Converts the PVA Object to an image array and determines if a frame was missed.
         """
@@ -160,21 +160,21 @@ class PVAReader:
             self.frames_missed += 1
             # return 1
             
-    def start_channel_monitor(self):
+    def start_channel_monitor(self) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
         
-    def stop_channel_monitor(self):
+    def stop_channel_monitor(self) -> None:
         """
         Stops all monitoring and callback functions.
         """
         self.channel.unsubscribe('pva callback success')
         self.channel.stopMonitor()
 
-    def get_frames_missed(self):
+    def get_frames_missed(self) -> int:
         """
         Returns the number of frames missed.
 
@@ -183,7 +183,7 @@ class PVAReader:
         """
         return self.frames_missed
 
-    def get_pva_image(self):
+    def get_pva_image(self) -> np.ndarray:
         """
         Returns the current PVA image.
 
@@ -192,7 +192,7 @@ class PVAReader:
         """
         return self.image
     
-    def get_attributes_dict(self):
+    def get_attributes_dict(self) -> list[dict]:
         """
         Returns the attributes of the current PVA object.
 
