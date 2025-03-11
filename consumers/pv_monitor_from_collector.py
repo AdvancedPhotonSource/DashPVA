@@ -20,10 +20,10 @@ def monitor_callback(data):
         last_print_time = current_time
         
         print("\nReceived data:")
-        print(data)
+        # print(data)
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
-        # image_data = data['value'][0]['ushortValue']
+        image_data = data['value'][0]['ushortValue']
         # print(data.get())
         # total_intensities.append(np.sum(image_data))
         # print(np.size(image_data))
@@ -32,21 +32,21 @@ def monitor_callback(data):
 
         # print(f"Image data length: {len(image_data)}")
 
-        # metadata = {}
-        # if 'attribute' in data:
-        #     attributes = data['attribute']
-        #     for attr in attributes:
-        #         name = attr['name']
-        #         value = attr['value']
-        #         metadata[name] = value
-        #     metadata["uniqueId"] = data["uniqueId"]
+        metadata = {}
+        if 'attribute' in data:
+            attributes = data['attribute']
+            for attr in attributes:
+                name = attr['name']
+                value = attr['value']
+                metadata[name] = value
+            metadata["uniqueId"] = data["uniqueId"]
 
-        # print("\nMetadata:")
-        # for channel, value in metadata.items():
-        #     print(f"{channel}: {value}")
-            # if channel == "6idb1:m27.RBV":
-            #     print(f"appending {value[0]['value']}")
-            #     metadata0_list.append(value[0]['value'])
+        print("\nMetadata:")
+        for channel, value in metadata.items():
+            print(f"{channel}: {value}")
+            if channel == "processor:1:analysis":
+                print(f"appending {value[0]['value']}")
+                metadata0_list.append(value[0]['value'])
 
         # if previous_data is not None:
         #     images_equal = (image_data == previous_data).all()
@@ -63,8 +63,8 @@ def monitor_callback(data):
             print('data recorded!')
         
 
-collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
-# collector_channel = pva.Channel("collector:1:output", pva.PVA)
+# collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
+collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
 

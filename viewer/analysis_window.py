@@ -107,7 +107,7 @@ class AnalysisWindow(QMainWindow):
         self.setWindowTitle('Analysis Window')
         # TODO: load config separately using the filepath provided by the parent
         self.config: dict = self.parent.reader.config
-        self.consumer_type = self.config.get("ConsumerType", "")
+        self.consumer_type = self.config.get("CONSUMER_TYPE", "")
         self.xpos_path = None
         self.ypos_path = None
         self.save_path = None
@@ -207,7 +207,7 @@ class AnalysisWindow(QMainWindow):
         """
         Populates the dropdown menu with the number of available ROIs.
         """
-        num_rois =  len(self.config.get('rois'))
+        num_rois =  len(self.config.get('ROI'))
         if num_rois > 0:
             for i in range(num_rois):
                 self.cbox_select_roi.addItem(f'ROI{i+1}')
@@ -262,9 +262,9 @@ class AnalysisWindow(QMainWindow):
         self.min_comy = self.sbox_comy_min.value()
         self.max_comy = self.sbox_comy_max.value()
 
-        if self.config['ConsumerType'] == 'spontaneous':
+        if self.config['CONSUMER_TYPE'] == 'spontaneous':
             self.plot_images()
-        if self.config['ConsumerType'] == 'vectorized':
+        if self.config['CONSUMER_TYPE'] == 'vectorized':
             self.view_intensity.setLevels(self.min_intensity, self.max_intensity)
             self.view_comx.setLevels(self.min_comx, self.max_comx)
             self.view_comy.setLevels(self.min_comy, self.max_comy)

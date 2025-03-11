@@ -50,8 +50,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
         else:
             self.path = None
 
-        self.axis1 = self.config.get('analysis', {}).get('Axis1', None)
-        self.axis2 = self.config.get('analysis', {}).get('Axis2', None)
+        self.axis1 = self.config.get('ANALYSIS', {}).get('AXIS1', None)
+        self.axis2 = self.config.get('ANALYSIS', {}).get('AXIS2', None)
 
 
 

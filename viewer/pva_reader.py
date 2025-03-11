@@ -44,8 +44,8 @@ class PVAReader:
             with open(self.config_filepath, 'r') as toml_file:
                 # loads the pvs in the toml file into a python dictionary
                 self.config:dict = toml.load(toml_file)
-                self.stats:dict = self.config["stats"]
-                if self.config["ConsumerType"] == "spontaneous":
+                self.stats:dict = self.config["STATS"]
+                if self.config["CONSUMER_TYPE"] == "spontaneous":
                     # TODO: change to dictionaries that store postions as keys and pv as value
                     self.analysis_cache_dict = {"Intensity": {},
                                                 "ComX": {},
@@ -69,7 +69,7 @@ class PVAReader:
             # print(self.analysis_index)
         if self.analysis_exists:
             self.analysis_attributes = self.attributes[self.analysis_index]
-            if self.config["ConsumerType"] == "spontaneous":
+            if self.config["CONSUMER_TYPE"] == "spontaneous":
                 # turns axis1 and axis2 into a tuple
                 incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
                                   self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))

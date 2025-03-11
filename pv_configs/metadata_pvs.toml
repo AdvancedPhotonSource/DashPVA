@@ -1,138 +1,134 @@
 # Required Setup
-ConsumerType = "spontaneous"
+CONSUMER_TYPE = "spontaneous"
 
 # Section used specifically for Metadata Pvs
-[metadata]
+[METADATA]
 
-    [metadata.ca]
+    [METADATA.CA]
     x = "x"
     y = "y"
 
-    [metadata.pva]
+    [METADATA.PVA]
 
 # Section specifically for ROI PVs
-[rois]
+[ROI]
 
-    [rois.ROI1]
+    [ROI.ROI1]
     MinX = "dp-ADSim:ROI1:MinX"
     MinY = "dp-ADSim:ROI1:MinY"
     SizeX = "dp-ADSim:ROI1:SizeX"
     SizeY = "dp-ADSim:ROI1:SizeY"
 
-    [rois.ROI2]
+    [ROI.ROI2]
     MinX = "dp-ADSim:ROI2:MinX"
     MinY = "dp-ADSim:ROI2:MinY"
     SizeX = "dp-ADSim:ROI2:SizeX"
     SizeY = "dp-ADSim:ROI2:SizeY"
 
-    [rois.ROI3]
+    [ROI.ROI3]
     MinX = "dp-ADSim:ROI3:MinX"
     MinY = "dp-ADSim:ROI3:MinY"
     SizeX = "dp-ADSim:ROI3:SizeX"
     SizeY = "dp-ADSim:ROI3:SizeY"
 
-    [rois.ROI4]
+    [ROI.ROI4]
     MinX = "dp-ADSim:ROI4:MinX"
     MinY = "dp-ADSim:ROI4:MinY"
     SizeX = "dp-ADSim:ROI4:SizeX"
     SizeY = "dp-ADSim:ROI4:SizeY"
 
 
-[stats]
+[STATS]
 
-    [stats.Stats1]
-    Total = "dp-ADSim:Stats1:Total_RBV"
-    Min = "dp-ADSim:Stats1:MinValue_RBV"
-    Max = "dp-ADSim:Stats1:MaxValue_RBV"
-    Sigma = "dp-ADSim:Stats1:Sigma_RBV"
-    Mean = "dp-ADSim:Stats1:MeanValue_RBV"
+[STATS.STATS1]
+    TOTAL = "dp-ADSim:Stats1:Total_RBV"
+    MIN = "dp-ADSim:Stats1:MinValue_RBV"
+    MAX = "dp-ADSim:Stats1:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
 
-    [stats.Stats4]
-    Total = "dp-ADSim:Stats4:Total_RBV"
-    Min = "dp-ADSim:Stats4:MinValue_RBV"
-    Max = "dp-ADSim:Stats4:MaxValue_RBV"
-    Sigma = "dp-ADSim:Stats4:Sigma_RBV"
-    Mean = "dp-ADSim:Stats4:MeanValue_RBV"
+    [STATS.STATS4]
+    TOTAL = "dp-ADSim:Stats4:Total_RBV"
+    MIN = "dp-ADSim:Stats4:MinValue_RBV"
+    MAX = "dp-ADSim:Stats4:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats4:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats4:MeanValue_RBV"
 
 # For use in the analysis server, not on the client side.
-[analysis]
+[ANALYSIS]
     # substitute with real PVs that are also in Metadata
-    Axis1 = "x" 
-    Axis2 = "y"
+    AXIS1 = "x" 
+    AXIS2 = "y"
 
 [HKL]
 
-    [HKL.SampleCircleAxis1]
-    '6idb1:m28.RBV:AxisNumber' = '6idb1:m28_RBV:AxisNumber'
-    '6idb1:m28.RBV:DirectionAxis' = '6idb1:m28_RBV:DirectionAxis'
-    '6idb1:m28.RBV:Name' = '6idb1:m28_RBV:Name'
-    '6idb1:m28.RBV:Position' = '6idb1:m28_RBV:Position'
-    '6idb1:m28.RBV:SpecMotorName' = '6idb1:m28_RBV:SpecMotorName'
+    [HKL.SAMPLE_CIRCLE_AXIS_1]
+    AXIS_NUMBER = '6idb1:m28_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m28_RBV:DirectionAxis'
+    NAME = '6idb1:m28_RBV:Name'
+    POSITION = '6idb1:m28_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m28_RBV:SpecMotorName'
     
-    [HKL.SampleCircleAxis2]
-    '6idb1:m17.RBV:AxisNumber' = '6idb1:m17_RBV:AxisNumber'
-    '6idb1:m17.RBV:DirectionAxis' = '6idb1:m17_RBV:DirectionAxis'
-    '6idb1:m17.RBV:Name' = '6idb1:m17_RBV:Name'
-    '6idb1:m17.RBV:Position' = '6idb1:m17_RBV:Position'
-    '6idb1:m17.RBV:SpecMotorName' = '6idb1:m17_RBV:SpecMotorName'
+    [HKL.SAMPLE_CIRCLE_AXIS_2]
+    AXIS_NUMBER = '6idb1:m17_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m17_RBV:DirectionAxis'
+    NAME = '6idb1:m17_RBV:Name'
+    POSITION = '6idb1:m17_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m17_RBV:SpecMotorName'
 
-    [HKL.SampleCircleAxis3]
-    '6idb1:m19.RBV:AxisNumber' = '6idb1:m19_RBV:AxisNumber'
-    '6idb1:m19.RBV:DirectionAxis' = '6idb1:m19_RBV:DirectionAxis'
-    '6idb1:m19.RBV:Name' = '6idb1:m19_RBV:Name'
-    '6idb1:m19.RBV:Position' = '6idb1:m19_RBV:Position'
-    '6idb1:m19.RBV:SpecMotorName' = '6idb1:m19_RBV:SpecMotorName'
+    [HKL.SAMPLE_CIRCLE_AXIS_3]
+    AXIS_NUMBER = '6idb1:m19_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m19_RBV:DirectionAxis'
+    NAME = '6idb1:m19_RBV:Name'
+    POSITION = '6idb1:m19_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m19_RBV:SpecMotorName'
 
-    [HKL.SampleCircleAxis4]
-    '6idb1:m20.RBV:AxisNumber' = '6idb1:m20_RBV:AxisNumber'
-    '6idb1:m20.RBV:DirectionAxis' = '6idb1:m20_RBV:DirectionAxis'
-    '6idb1:m20.RBV:Name' = '6idb1:m20_RBV:Name'
-    '6idb1:m20.RBV:Position' = '6idb1:m20_RBV:Position'
-    '6idb1:m20.RBV:SpecMotorName' = '6idb1:m20_RBV:SpecMotorName'
+    [HKL.SAMPLE_CIRCLE_AXIS_4]
+    AXIS_NUMBER = '6idb1:m20_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m20_RBV:DirectionAxis'
+    NAME = '6idb1:m20_RBV:Name'
+    POSITION = '6idb1:m20_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m20_RBV:SpecMotorName'
 
-    [HKL.DetectorCircleAxis1]
-    '6idb1:m29.RBV:AxisNumber' = '6idb1:m29_RBV:AxisNumber'
-    '6idb1:m29.RBV:DirectionAxis' = '6idb1:m29_RBV:DirectionAxis'
-    '6idb1:m29.RBV:Name' = '6idb1:m29_RBV:Name'
-    '6idb1:m29.RBV:Position' = '6idb1:m29_RBV:Position'
-    '6idb1:m29.RBV:SpecMotorName' = '6idb1:m29_RBV:SpecMotorName'
+    [HKL.DETECTOR_CIRCLE_AXIS_1]
+    AXIS_NUMBER = '6idb1:m29_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m29_RBV:DirectionAxis'
+    NAME = '6idb1:m29_RBV:Name'
+    POSITION = '6idb1:m29_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m29_RBV:SpecMotorName'
 
-    [HKL.DetectorCircleAxis2]
-    '6idb1:m18.RBV:AxisNumber' = '6idb1:m18_RBV:AxisNumber'
-    '6idb1:m18.RBV:DirectionAxis' = '6idb1:m18_RBV:DirectionAxis'
-    '6idb1:m18.RBV:Name' = '6idb1:m18_RBV:Name'
-    '6idb1:m18.RBV:Position' = '6idb1:m18_RBV:Position'
-    '6idb1:m18.RBV:SpecMotorName' = '6idb1:m18_RBV:SpecMotorName'
+    [HKL.DETECTOR_CIRCLE_AXIS_2]
+    AXIS_NUMBER = '6idb1:m18_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m18_RBV:DirectionAxis'
+    NAME = '6idb1:m18_RBV:Name'
+    POSITION = '6idb1:m18_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m18_RBV:SpecMotorName'
 
-    [HKL.Spec]
-    # '6idb:spec:Energy:Name' = '6idb:spec:Energy:Name'
-    '6idb:spec:Energy:Value' = '6idb:spec:Energy:Value'
-    # '6idb:spec:UB_matrix:Name' = '6idb:spec:UB_matrix:Name'
-    '6idb:spec:UB_matrix:Value' = '6idb:spec:UB_matrix:Value'
+    [HKL.SPEC]
+    ENERGY_VALUE = '6idb:spec:Energy:Value'
+#TODO: make RSM consumer
+# These values will not change often so they can be changed to values and read in by the rsm consumer
+    UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
 
-    [HKL.DetectorSetup]
-    'DetectorSetup:CenterChannelPixel' = 'DetectorSetup:CenterChannelPixel'
-    'DetectorSetup:Distance' = 'DetectorSetup:Distance'
-    'DetectorSetup:PixelDirection1' = 'DetectorSetup:PixelDirection1'
-    'DetectorSetup:PixelDirection2' = 'DetectorSetup:PixelDirection2'
-    'DetectorSetup:Size' = 'DetectorSetup:Size'
-    'DetectorSetup:Units' = 'DetectorSetup:Units'
-    # 'DetectorSetup:Name' = 'DetectorSetup:Name'
+    [HKL.DETECTOR_SETUP]
+    CENTER_CHANNEL_PIXEL = 'DetectorSetup:CenterChannelPixel'
+    DISTANCE = 'DetectorSetup:Distance'
+    PIXEL_DIRECTION_1 = 'DetectorSetup:PixelDirection1'
+    PIXEL_DIRECTION_2 = 'DetectorSetup:PixelDirection2'
+    SIZE = 'DetectorSetup:Size'
+    UNITS = 'DetectorSetup:Units'
 
-    [HKL.PrimaryBeamDirection]
-    'PrimaryBeamDirection:AxisNumber1' = 'PrimaryBeamDirection:AxisNumber1'
-    'PrimaryBeamDirection:AxisNumber2' = 'PrimaryBeamDirection:AxisNumber2'
-    'PrimaryBeamDirection:AxisNumber3' = 'PrimaryBeamDirection:AxisNumber3'
-    # 'PrimaryBeamDirection:Name' = 'PrimaryBeamDirection:Name'
+    [HKL.PRIMARY_BEAM_DIRECTION]
+    AXIS_NUMBER_1 = 'PrimaryBeamDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'PrimaryBeamDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'PrimaryBeamDirection:AxisNumber3'
 
-    [HKL.InplaneReferenceDirection]
-    'InplaneReferenceDirection:AxisNumber1' = 'InplaneReferenceDirection:AxisNumber1'
-    'InplaneReferenceDirection:AxisNumber2' = 'InplaneReferenceDirection:AxisNumber2'
-    'InplaneReferenceDirection:AxisNumber3' = 'InplaneReferenceDirection:AxisNumber3'
-    # 'InplaneReferenceDirection:Name' = 'InplaneReferenceDirection:Name'
+    [HKL.INPLANE_REFERENCE_DIRECITON]
+    AXIS_NUMBER_1 = 'InplaneReferenceDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'InplaneReferenceDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'InplaneReferenceDirection:AxisNumber3'
     
-    [HKL.SampleSurfaceNormalDirection]
-    'SampleSurfaceNormalDirection:AxisNumber1' = 'SampleSurfaceNormalDirection:AxisNumber1'
-    'SampleSurfaceNormalDirection:AxisNumber2' = 'SampleSurfaceNormalDirection:AxisNumber2'
-    'SampleSurfaceNormalDirection:AxisNumber3' = 'SampleSurfaceNormalDirection:AxisNumber3'
-    # 'SampleSurfaceNormalDirection:Name' = 'SampleSurfaceNormalDirection:Name'
+    [HKL.SAMPLE_SURFACE_NORMAL_DIRECITON]
+    AXIS_NUMBER_1 = 'SampleSurfaceNormalDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'SampleSurfaceNormalDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'SampleSurfaceNormalDirection:AxisNumber3'

@@ -158,11 +158,11 @@ class PVASetupDialog(QDialog):
             str: Comma-separated list of CA and PVA channels.
         """
         pv_config = self.parse_toml(path=metadata_config_path)
-        metadata_config : dict = pv_config.get("metadata", {})
+        metadata_config : dict = pv_config.get("METADATA", {})
         
         if metadata_config and metadata_config is not None:
-            ca = metadata_config.get("ca", {})
-            pva = metadata_config.get("pva", {})
+            ca = metadata_config.get("CA", {})
+            pva = metadata_config.get("PVA", {})
             ca_pvs = ""
             pva_pvs = ""
             if ca:
@@ -186,7 +186,7 @@ class PVASetupDialog(QDialog):
             str: Comma-separated list of ROI channels.
         """
         pv_config = self.parse_toml(roi_config_path)
-        roi_config: dict = pv_config.get("rois", {})
+        roi_config: dict = pv_config.get("ROI", {})
         #num_rois = len(roi_config)
         roi_pvs = ""
 

@@ -6,12 +6,11 @@ from pvaccess import PvObject, DOUBLE
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
+# import logging
 #custom imports
 import sys
 sys.path.append('/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer')
 from viewer.generators import rotation_cycle
-
-# import logging
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
@@ -26,7 +25,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.nMetadataProcessed = 0 # Number of metadata values associated with images
         self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
         self.processingTime = 0
-
+        # pass through any variables that were sent in the command line
         self.configure(configDict)
 
         # PVObject vars needed for caching
@@ -86,8 +85,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 attributes[value] = pva_object[value]
         
         self.attributes = attributes
-        
-        
 
     def pva_to_image(self, pva_object):
         """
@@ -115,7 +112,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         This function loads the path information for the HDF5 file and uses it to populate other variables.
         """
-        # TODO: These positions are references, use only when we miss frames.
         self.x_positions = np.load(self.xpos_path)
         self.y_positions = np.load(self.ypos_path)
     
@@ -127,7 +123,21 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
     def process_analysis_objects(self, frameAttributes=None):
         """
-        
+        Processes image data stored in the cache to compute intensity and center of mass (COM) 
+        values, then stores the results in matrices and appends them as a PV attribute.
+
+        Parameters:
+        -----------
+        frameAttributes : list, optional
+            A list to which the computed analysis results will be appended. Defaults to None.
+
+        Functionality:
+        --------------
+        - Extracts regions of interest (ROIs) from cached images.
+        - Computes intensity values by summing pixel intensities within the ROIs.
+        - Calculates the center of mass (COM) in both x and y directions for each image.
+        - Stores intensity and COM values in matrices indexed by unique x and y positions.
+        - Creates a `PvObject` to store the computed matrices and appends it to `frameAttributes`.
         """
         # if self.cache_id is not None:
         #     xpos_det = self.positions_cache[self.cache_id, 0]
