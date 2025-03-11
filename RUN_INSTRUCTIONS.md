@@ -97,7 +97,7 @@ CONSUMER_TYPE = "spontaneous"
     MIN_X = "dp-ADSim:ROI1:MinX"
     MIN_Y = "dp-ADSim:ROI1:MinY"
     SIZE_X = "dp-ADSim:ROI1:SizeX"
-    SIZEY = "dp-ADSim:ROI1:SizeY"
+    SIZE_Y = "dp-ADSim:ROI1:SizeY"
 
     [ROI.ROI2]
     MIN_X = "dp-ADSim:ROI2:MinX"
@@ -119,7 +119,7 @@ CONSUMER_TYPE = "spontaneous"
 
 [STATS]
 
-[STATS.STATS1]
+    [STATS.STATS1]
     TOTAL = "dp-ADSim:Stats1:Total_RBV"
     MIN = "dp-ADSim:Stats1:MinValue_RBV"
     MAX = "dp-ADSim:Stats1:MaxValue_RBV"
