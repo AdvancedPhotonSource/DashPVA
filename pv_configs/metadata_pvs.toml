@@ -5,8 +5,8 @@ CONSUMER_TYPE = "spontaneous"
 [METADATA]
 
     [METADATA.CA]
-    x = "x"
-    y = "y"
+    X = "x"
+    Y = "y"
 
     [METADATA.PVA]
 
@@ -14,29 +14,28 @@ CONSUMER_TYPE = "spontaneous"
 [ROI]
 
     [ROI.ROI1]
-    MinX = "dp-ADSim:ROI1:MinX"
-    MinY = "dp-ADSim:ROI1:MinY"
-    SizeX = "dp-ADSim:ROI1:SizeX"
-    SizeY = "dp-ADSim:ROI1:SizeY"
+    MIN_X = "dp-ADSim:ROI1:MinX"
+    MIN_Y = "dp-ADSim:ROI1:MinY"
+    SIZE_X = "dp-ADSim:ROI1:SizeX"
+    SIZE_Y = "dp-ADSim:ROI1:SizeY"
 
     [ROI.ROI2]
-    MinX = "dp-ADSim:ROI2:MinX"
-    MinY = "dp-ADSim:ROI2:MinY"
-    SizeX = "dp-ADSim:ROI2:SizeX"
-    SizeY = "dp-ADSim:ROI2:SizeY"
+    MIN_X = "dp-ADSim:ROI2:MinX"
+    MIN_Y = "dp-ADSim:ROI2:MinY"
+    SIZE_X = "dp-ADSim:ROI2:SizeX"
+    SIZE_Y = "dp-ADSim:ROI2:SizeY"
 
     [ROI.ROI3]
-    MinX = "dp-ADSim:ROI3:MinX"
-    MinY = "dp-ADSim:ROI3:MinY"
-    SizeX = "dp-ADSim:ROI3:SizeX"
-    SizeY = "dp-ADSim:ROI3:SizeY"
+    MIN_X = "dp-ADSim:ROI3:MinX"
+    MIN_Y = "dp-ADSim:ROI3:MinY"
+    SIZE_X = "dp-ADSim:ROI3:SizeX"
+    SIZE_Y = "dp-ADSim:ROI3:SizeY"
 
     [ROI.ROI4]
-    MinX = "dp-ADSim:ROI4:MinX"
-    MinY = "dp-ADSim:ROI4:MinY"
-    SizeX = "dp-ADSim:ROI4:SizeX"
-    SizeY = "dp-ADSim:ROI4:SizeY"
-
+    MIN_X = "dp-ADSim:ROI4:MinX"
+    MIN_Y = "dp-ADSim:ROI4:MinY"
+    SIZE_X = "dp-ADSim:ROI4:SizeX"
+    SIZE_Y = "dp-ADSim:ROI4:SizeY"
 
 [STATS]
 
