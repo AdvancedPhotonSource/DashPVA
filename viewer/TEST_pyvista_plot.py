@@ -34,5 +34,5 @@ plotter.add_mesh(
 )
 
 plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
-plotter.show_axes()
+plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 plotter.show()
