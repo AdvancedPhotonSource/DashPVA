@@ -32,6 +32,7 @@ plotter.add_mesh(
     # point_size=10
 
 )
-plotter.show_bounds()
+
+plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
 plotter.show_axes()
 plotter.show()

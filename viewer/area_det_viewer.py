@@ -134,6 +134,8 @@ class ImageWindow(QMainWindow):
         self.roi_width = 50
         self.roi_height = 50
         # HKL values
+        self.hkl_config = None
+        self.hkl_data = {}
         self.qx = None
         self.qy = None
         self.qz = None
@@ -249,7 +251,8 @@ class ImageWindow(QMainWindow):
             self.start_timers()
             try:
                 self.init_hkl()
-                self.qx, self.qy, self.qz = self.create_rsm() 
+                if self.hkl_data:
+                    self.qx, self.qy, self.qz = self.create_rsm() 
             except Exception as e:
                 print('failed to create rsm: %s' % e)
 
@@ -371,7 +374,7 @@ class ImageWindow(QMainWindow):
             x = self.reader.rois[roi].get("MIN_X", 0)
             y = self.reader.rois[roi].get("MIN_Y", 0)
             width = self.reader.rois[roi].get("SIZE_X", 0)
-            height = self.reader.rois[roi].get("SIZE_Y", 0)
+            height = self.reader.rois[roi].get("SIZE_fY", 0)
             roi = pg.ROI(pos=[x,y],
                          size=[width, height],
                          movable=False,
@@ -421,7 +424,6 @@ class ImageWindow(QMainWindow):
         try:
             if "HKL" in self.reader.config:
                 self.hkl_config = self.reader.config["HKL"]
-                self.hkl_data = {}
 
                 # Monitor each HKL parameter
                 for section, pv_dict in self.hkl_config.items():
@@ -449,7 +451,8 @@ class ImageWindow(QMainWindow):
         Initializes HKL parameters by setting up monitors for each HKL value.
         """
         self.start_hkl_monitors()
-        self.hkl_setup()
+        if self.hkl_config is not None:
+            self.hkl_setup()
         
     def hkl_setup(self) -> None:
         try:
@@ -518,34 +521,37 @@ class ImageWindow(QMainWindow):
         The conversion uses the current sample and detector angles along with the UB matrix
         to transform from angular to reciprocal space coordinates.
         """
-        try:
-            hxrd = xu.HXRD(self.inplane_reference_directions,
-                        self.sample_surface_normal_directions, 
-                        en=self.energy, 
-                        qconv=self.q_conv)
+        if self.hkl_data:
+            try:
+                hxrd = xu.HXRD(self.inplane_reference_directions,
+                            self.sample_surface_normal_directions, 
+                            en=self.energy, 
+                            qconv=self.q_conv)
 
-            if self.stats_data:
-                if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
-                    roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                    cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
-                    cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
-                    distance = self.hkl_data['DetectorSetup:Distance'] # Distance
-                    pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
-                    pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
-                    nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
-                    nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
-                    pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
-                    pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
+                if self.stats_data:
+                    if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
+                        roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                        cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
+                        cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
+                        distance = self.hkl_data['DetectorSetup:Distance'] # Distance
+                        pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
+                        pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                        nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
+                        nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
+                        pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
+                        pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
 
-                    hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
-                                        Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
-                                        pwidth2=pixel_width2, distance=distance, roi=roi)
-                    
-                    angles = [*self.sample_circle_positions, *self.det_circle_positions]
+                        hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                            Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
+                                            pwidth2=pixel_width2, distance=distance, roi=roi)
+                        
+                        angles = [*self.sample_circle_positions, *self.det_circle_positions]
 
-                    return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
-        except Exception as e:
-            print(f'Error Creating RSM: {e}')
+                        return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+            except Exception as e:
+                print(f'Error Creating RSM: {e}')
+                return
+        else:
             return
 
     def update_rois(self) -> None:
@@ -592,11 +598,11 @@ class ImageWindow(QMainWindow):
                 if img_data is not None:
                     img_data = np.rot90(img_data, k = self.rot_num)
                     if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                       self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
-                       if self.hkl_data:
-                        self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
-                        self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
-                        self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
+                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                        if self.hkl_data:
+                            self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
+                            self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
+                            self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
 
     def update_labels(self) -> None:
         """
@@ -619,8 +625,9 @@ class ImageWindow(QMainWindow):
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self) -> None:
-        self.hkl_setup()
-        self.qx, self.qy, self.qz = self.create_rsm()
+        if self.hkl_data:
+            self.hkl_setup()
+            self.qx, self.qy, self.qz = self.create_rsm()
 
     def update_image(self) -> None:
         """
