@@ -208,7 +208,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>0</y>
+           <y>-120</y>
            <width>335</width>
            <height>1911</height>
           </rect>
@@ -1816,7 +1816,7 @@ QPushButton::pressed {
             </property>
             <property name="maximumSize">
              <size>
-              <width>75</width>
+              <width>175</width>
               <height>40</height>
              </size>
             </property>
@@ -1880,7 +1880,7 @@ QPushButton::pressed {
         <widget class="QWidget" name="formLayoutWidget_3">
          <property name="geometry">
           <rect>
-           <x>190</x>
+           <x>210</x>
            <y>30</y>
            <width>201</width>
            <height>42</height>
@@ -1967,9 +1967,9 @@ QPushButton::pressed {
         <widget class="QWidget" name="formLayoutWidget_4">
          <property name="geometry">
           <rect>
-           <x>420</x>
+           <x>450</x>
            <y>30</y>
-           <width>441</width>
+           <width>531</width>
            <height>42</height>
           </rect>
          </property>
@@ -1996,7 +1996,7 @@ QPushButton::pressed {
             </property>
             <property name="maximumSize">
              <size>
-              <width>65</width>
+              <width>16675</width>
               <height>40</height>
              </size>
             </property>
@@ -2006,7 +2006,7 @@ QPushButton::pressed {
              </font>
             </property>
             <property name="text">
-             <string>PV Prefix:</string>
+             <string>PV Input Channel:</string>
             </property>
            </widget>
           </item>
@@ -2026,7 +2026,7 @@ QPushButton::pressed {
             </property>
             <property name="maximumSize">
              <size>
-              <width>340</width>
+              <width>16776</width>
               <height>40</height>
              </size>
             </property>
