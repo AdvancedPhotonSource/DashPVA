@@ -87,11 +87,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                 nt_attribute = {'name': mdChannel, 'value': pva.PvString(mdValue)}
             elif isinstance(mdValue, (np.ndarray)):
                 pv = pva.PvScalarArray(pva.DOUBLE)
-
                 pv.set(mdValue.tolist())
-
                 nt_attribute = {'name': mdChannel, 'value': pv}
-
         except ValueError:
             self.logger.error(f"Failed to set ndAttribute {mdChannel}: {mdValue}")
 
