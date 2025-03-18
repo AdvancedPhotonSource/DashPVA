@@ -12,7 +12,7 @@ Using the [environment.yml](environment.yml) file, you can install the environme
 conda env create -f environment.yml
 ```
 
-Instead of using the `environment.yml` file, follow these manual instructions to set up the environment:
+Instead of using the `environment.yml` file, you can follow these manual instructions to set up the environment:
 
 1. Create a new Conda environment:
    ```bash
