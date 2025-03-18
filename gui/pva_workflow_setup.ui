@@ -1,0 +1,996 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PVASetupDialog</class>
+ <widget class="QDialog" name="PVASetupDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>797</width>
+    <height>797</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>PVA Workflow Setup</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+      </font>
+     </property>
+     <property name="currentIndex">
+      <number>1</number>
+     </property>
+     <widget class="QWidget" name="simServerTab">
+      <attribute name="title">
+       <string>Sim Server Processor</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayoutSimServer">
+       <item>
+        <layout class="QGridLayout" name="gridLayout_2">
+         <item row="2" column="0">
+          <widget class="QLabel" name="labelNy">
+           <property name="text">
+            <string>Height (-ny):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QSpinBox" name="spinBoxRt">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>86400</number>
+           </property>
+           <property name="value">
+            <number>28800</number>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="labelNf">
+           <property name="text">
+            <string>Number of Frames (-nf):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="labelFps">
+           <property name="text">
+            <string>Frames per Second (-fps):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QComboBox" name="comboBoxDt">
+           <item>
+            <property name="text">
+             <string>uint8</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>uint16</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>float32</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="labelRp">
+           <property name="text">
+            <string>Report Period (-rp):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="1">
+          <widget class="QLineEdit" name="lineEditMpv">
+           <property name="text">
+            <string>ca://x,ca://y</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QSpinBox" name="spinBoxNx">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>1024</number>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QSpinBox" name="spinBoxRp">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>100</number>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="labelDt">
+           <property name="text">
+            <string>Data Type (-dt):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QSpinBox" name="spinBoxNy">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>1024</number>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QSpinBox" name="spinBoxFps">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>1000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="labelRt">
+           <property name="text">
+            <string>Run Time (-rt) [s]:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorFileSim">
+           <property name="text">
+            <string>consumers/ad_sim_server_modified.py</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLineEdit" name="lineEditInputChannelSim">
+           <property name="text">
+            <string>pvapy:image</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="0">
+          <widget class="QLabel" name="labelProcessorFileSim">
+           <property name="text">
+            <string>Processor File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="labelNx">
+           <property name="text">
+            <string>Width (-nx):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="0">
+          <widget class="QLabel" name="labelMpv">
+           <property name="text">
+            <string>Metadata Output PVs(-mpv):</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QSpinBox" name="spinBoxNf">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>100000</number>
+           </property>
+           <property name="value">
+            <number>900</number>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0">
+          <widget class="QLabel" name="labelInputChannelSim">
+           <property name="text">
+            <string>Input Channel (-cn):</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="buttonLayoutSimServer">
+         <item>
+          <widget class="QPushButton" name="buttonRunSimServer">
+           <property name="text">
+            <string>Run</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonStopSimServer">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Stop</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelStatusSimServer">
+           <property name="text">
+            <string>Process ID: Not running</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="textEditSimServerOutput">
+         <property name="font">
+          <font>
+           <family>Sans Serif</family>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="configUploadTab">
+      <attribute name="title">
+       <string>Config Upload</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <item>
+        <layout class="QFormLayout" name="configUploadFormLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="label">
+           <property name="text">
+            <string>Config Directory Path</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <layout class="QHBoxLayout" name="configUploadHorizontalLayout">
+           <item>
+            <widget class="QLineEdit" name="lineEditConfigUploadPath"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButton_2">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="associatorConsumersTab">
+      <attribute name="title">
+       <string>Metadata Associator</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayoutSplitConsumers">
+       <item>
+        <layout class="QGridLayout" name="gridLayout">
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="horizontalSpacing">
+          <number>6</number>
+         </property>
+         <item row="1" column="0">
+          <widget class="QLabel" name="labelControlChannelAssociator">
+           <property name="text">
+            <string>Control Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="0">
+          <widget class="QLabel" name="labelDistributorUpdatesAssociator">
+           <property name="text">
+            <string>Distributor Updates:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="lineEditOutputChannelAssociator">
+           <property name="text">
+            <string>processor:*:output</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="labelStatusChannelAssociator">
+           <property name="text">
+            <string>Status Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="labelServerQueueSizeAssociator">
+           <property name="text">
+            <string>Server Queue Size:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="10" column="0">
+          <widget class="QLabel" name="labelMetadataConfigAssociator">
+           <property name="text">
+            <string>Metadata Config File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="lineEditControlChannelAssociator">
+           <property name="text">
+            <string>processor:*:control</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="labelProcessorClassAssociator">
+           <property name="text">
+            <string>Processor Class:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0">
+          <widget class="QLabel" name="labelInputChannelAssociator">
+           <property name="text">
+            <string>Input Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QLineEdit" name="lineEditStatusChannelAssociator">
+           <property name="text">
+            <string>processor:*:status</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorFileAssociator">
+           <property name="text">
+            <string>consumers/hpc_metadata_consumer.py</string>
+           </property>
+          </widget>
+         </item>
+         <item row="10" column="1">
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <item>
+            <widget class="QLineEdit" name="lineEditMetadataConfigAssociator"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonBrowseMetadataAssociator">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="labelProcessorFileAssociator">
+           <property name="text">
+            <string>Processor File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="1">
+          <widget class="QSpinBox" name="spinBoxNConsumersAssociator">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>100</number>
+           </property>
+           <property name="value">
+            <number>4</number>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QSpinBox" name="spinBoxReportPeriodAssociator">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLineEdit" name="lineEditInputChannelAssociator">
+           <property name="text">
+            <string>pvapy:image</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="1">
+          <widget class="QSpinBox" name="spinBoxDistributorUpdatesAssociator">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>1</number>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="labelReportPeriodAssociator">
+           <property name="text">
+            <string>Report Period:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QSpinBox" name="spinBoxServerQueueSizeAssociator">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="labelOutputChannelAssociator">
+           <property name="text">
+            <string>Output Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="0">
+          <widget class="QLabel" name="labelNConsumersAssociator">
+           <property name="text">
+            <string>Number of Consumers:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorClassAssociator">
+           <property name="text">
+            <string>HpcAdMetadataProcessor</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="buttonLayoutAssociatorConsumers">
+         <item>
+          <widget class="QPushButton" name="buttonRunAssociatorConsumers">
+           <property name="text">
+            <string>Run</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonStopAssociatorConsumers">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Stop</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelStatusAssociatorConsumers">
+           <property name="text">
+            <string>Process ID: Not running</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="textEditAssociatorConsumersOutput">
+         <property name="font">
+          <font>
+           <family>Courier</family>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="collectorTab">
+      <attribute name="title">
+       <string>Collector</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayoutCollector">
+       <item>
+        <layout class="QGridLayout" name="gridLayout_3">
+         <item row="0" column="1">
+          <widget class="QSpinBox" name="spinBoxCollectorId">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>100</number>
+           </property>
+           <property name="value">
+            <number>1</number>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="labelProcessorClassCollector">
+           <property name="text">
+            <string>Processor Class:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="1">
+          <widget class="QSpinBox" name="spinBoxServerQueueSizeCollector">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>500</number>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QLineEdit" name="lineEditOutputChannelCollector">
+           <property name="text">
+            <string>collector:*:output</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="lineEditControlChannelCollector">
+           <property name="text">
+            <string>collector:*:control</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="labelProducerIdList">
+           <property name="text">
+            <string>Producer ID List:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="labelOutputChannelCollector">
+           <property name="text">
+            <string>Output Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="11" column="0">
+          <widget class="QLabel" name="labelMetadataConfigCollector">
+           <property name="text">
+            <string>Metadata Config File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorClassCollector">
+           <property name="text">
+            <string>HpcAdMetadataProcessor</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="1">
+          <widget class="QSpinBox" name="spinBoxReportPeriodCollector">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="labelControlChannelCollector">
+           <property name="text">
+            <string>Control Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="labelInputChannelCollector">
+           <property name="text">
+            <string>Input Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="labelProcessorFileCollector">
+           <property name="text">
+            <string>Processor File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="11" column="1">
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <item>
+            <widget class="QLineEdit" name="lineEditMetadataConfigCollector"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonBrowseMetadataCollector">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item row="8" column="0">
+          <widget class="QLabel" name="labelReportPeriodCollector">
+           <property name="text">
+            <string>Report Period:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0">
+          <widget class="QLabel" name="labelCollectorId">
+           <property name="text">
+            <string>Collector ID:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="10" column="0">
+          <widget class="QLabel" name="labelCollectorCacheSize">
+           <property name="text">
+            <string>Collector Cache Size:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="labelStatusChannelCollector">
+           <property name="text">
+            <string>Status Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QLineEdit" name="lineEditInputChannelCollector">
+           <property name="text">
+            <string>processor:*:output</string>
+           </property>
+          </widget>
+         </item>
+         <item row="10" column="1">
+          <widget class="QSpinBox" name="spinBoxCollectorCacheSize">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>1000000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="lineEditProducerIdList">
+           <property name="text">
+            <string>1,2,3,4</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="lineEditStatusChannelCollector">
+           <property name="text">
+            <string>collector:*:status</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorFileCollector">
+           <property name="text">
+            <string>consumers/hpc_metadata_consumer.py</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="0">
+          <widget class="QLabel" name="labelServerQueueSizeCollector">
+           <property name="text">
+            <string>Server Queue Size:</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="buttonLayoutCollector">
+         <item>
+          <widget class="QPushButton" name="buttonRunCollector">
+           <property name="text">
+            <string>Run</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonStopCollector">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Stop</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelStatusCollector">
+           <property name="text">
+            <string>Process ID: Not running</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="textEditCollectorOutput">
+         <property name="font">
+          <font>
+           <family>Courier</family>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="analysisConsumerTab">
+      <attribute name="title">
+       <string>Analysis</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayoutAnalysisConsumer">
+       <item>
+        <layout class="QGridLayout" name="gridLayout_4">
+         <item row="4" column="0">
+          <widget class="QLabel" name="labelProcessorFileAnalysis">
+           <property name="text">
+            <string>Processor File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="lineEditControlChannelAnalysis">
+           <property name="text">
+            <string>processor:*:control</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QSpinBox" name="spinBoxServerQueueSizeAnalysis">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="labelControlChannelAnalysis">
+           <property name="text">
+            <string>Control Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorClassAnalysis">
+           <property name="text">
+            <string>HpcAnalysisProcessor</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="labelServerQueueSizeAnalysis">
+           <property name="text">
+            <string>Server Queue Size:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="lineEditOutputChannelAnalysis">
+           <property name="text">
+            <string>processor:*:analysis</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QSpinBox" name="spinBoxReportPeriodAnalysis">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>10000</number>
+           </property>
+           <property name="value">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="labelReportPeriodAnalysis">
+           <property name="text">
+            <string>Report Period:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QLineEdit" name="lineEditStatusChannelAnalysis">
+           <property name="text">
+            <string>processor:*:status</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="labelStatusChannelAnalysis">
+           <property name="text">
+            <string>Status Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="0">
+          <widget class="QLabel" name="labelMetadataConfigAnalysis">
+           <property name="text">
+            <string>Metadata Config File:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QLineEdit" name="lineEditInputChannelAnalysis">
+           <property name="text">
+            <string>collector:1:output</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="lineEditProcessorFileAnalysis">
+           <property name="text">
+            <string>consumers/hpc_spontaneous_analysis_consumer.py</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0">
+          <widget class="QLabel" name="labelInputChannelAnalysis">
+           <property name="text">
+            <string>Input Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="labelOutputChannelAnalysis">
+           <property name="text">
+            <string>Output Channel:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="labelProcessorClassAnalysis">
+           <property name="text">
+            <string>Processor Class:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="8" column="1">
+          <layout class="QHBoxLayout" name="horizontalLayout_3">
+           <item>
+            <widget class="QLineEdit" name="lineEditMetadataConfigAnalysis"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonBrowseMetadataAnalysis">
+             <property name="text">
+              <string>Browse</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="buttonLayoutAnalysisConsumer">
+         <item>
+          <widget class="QPushButton" name="buttonRunAnalysisConsumer">
+           <property name="text">
+            <string>Run</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonStopAnalysisConsumer">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Stop</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelStatusAnalysisConsumer">
+           <property name="text">
+            <string>Process ID: Not running</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="textEditAnalysisConsumerOutput">
+         <property name="font">
+          <font>
+           <family>Courier</family>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

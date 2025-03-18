@@ -1,336 +1,109 @@
+import os
 import sys
-import json
-import copy
-import time
+import subprocess
 import numpy as np
 import os.path as osp
-import pvaccess as pva
 import pyqtgraph as pg
+import xrayutilities as xu
 from PyQt5 import uic
-from epics import caget
-from epics import camonitor
-from PyQt5.QtCore import Qt
+# from epics import caget
+from epics import camonitor, caget
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSizePolicy, QLabel, QFormLayout, QWidget, QFrame
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
 from generators import rotation_cycle
+from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
-from analysis_window import AnalysisWindow #, analysis_window_process
-from scan_plan_dialog import ScanPlanDialog
+from analysis_window import AnalysisWindow 
 
 
-max_cache_size = 900 #TODO: ask the user this important information before opening the analysis window. Ask for a scan plan json file
+max_cache_size = 900 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
-                
-# timer_for_roi_change = time.time()
+
+
 class ConfigDialog(QDialog):
 
-    def __init__(self, prefix='', c_address='', cache_freq=10):
+    def __init__(self):
         """
         Class that does initial setup for getting the pva prefix, collector address,
         and the path to the json that stores the pvs that will be observed
 
-        Keyword Args:
-        prefix (str) -- used to populate the prefix for all pvas in PVAReader
-        c_address (str) -- used to populate the address for the collector channel in PVAReader
-        cache_freq (int) -- used to set the update frequency of ImageViewer
+        Attributes:
+            input_channel (str): Input channel for PVA.
+            roi_config (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.prefix = prefix
-        self.collector_address = c_address
-        self.pvs_path =  ''
-        self.cache_frequency = cache_freq
+        self.input_channel = ""
+        self.roi_config =  ""
         # class can be prefilled with text
         self.init_ui()
+        
+        # Connecting signasl to 
+        # self.btn_edit.clicked.connect(self.json_open_file_dialog)
+        self.btn_browse.clicked.connect(self.browse_file_dialog)
+        self.btn_create.clicked.connect(self.new_pv_setup)
+        self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
-        self.btn_load.clicked.connect(self.json_open_file_dialog)
-        self.btn_edit.clicked.connect(self.json_open_file_dialog)
-        self.btn_new_config.clicked.connect(self.new_pv_setup)
-        self.btn_edit_accept_reject.accepted.connect(self.edit_pv_setup)
-        self.btn_setup_accept_reject.accepted.connect(self.dialog_accepted) 
-
-    
-    def init_ui(self):
+    def init_ui(self) -> None:
         """
-        function called which prefills text in the Line Editors
+        Prefills text in the Line Editors for the user.
         """
-        self.le_pv_prefix.setText(self.prefix)
-        self.le_collector.setText(self.collector_address)
-        self.sb_collector_frequency.setValue(self.cache_frequency)
+        self.le_input_channel.setText(self.le_input_channel.text())
+        self.le_roi_config.setText(self.le_roi_config.text())
 
-
-    def json_open_file_dialog(self):
+    def browse_file_dialog(self) -> None:
         """
-        Function called when you want to get the file path to a json file.
-        is split between 2 buttons:
-        - file path for the config you wan't to load and monitor
-        - file path for a config you want to edit
+        Opens a file dialog to select the path to a TOML configuration file.
         """
-        btn_sender = self.sender()
-        sender_name = btn_sender.objectName()
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select PV Json', 'pv_configs', '*.json (*.json')
+        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
 
-        if sender_name.endswith('load'):
-            self.le_load_file_path.setText(self.pvs_path)
-        else:
-            self.le_edit_file_path.setText(self.pvs_path)
+        self.le_roi_config.setText(self.pvs_path)
 
-    def new_pv_setup(self):
+    def new_pv_setup(self) -> None:
         """
-        Pops up a new window for setting up a new config within the ui
+        Opens a new window for setting up a new PV configuration within the UI.
         """
         self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
-    def edit_pv_setup(self):
+    def edit_pv_setup(self) -> None:
         """
-        Pops up a new window for editting an already existing config
+        Opens a window for editing an existing PV configuration.
         """
         if self.le_edit_file_path.text() != '':
             self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
         else:
             print('file path empty')
 
-    def dialog_accepted(self):
+    def dialog_accepted(self) -> None:
         """
-        Function called when the last Dialog Accept button is pressed.
-        Starts the ImageWindow process passing all filled out information to it and initializing it.
+        Handles the final step when the dialog's accept button is pressed.
+        Starts the ImageWindow process with filled information.
         """
-        self.prefix = self.le_pv_prefix.text()
-        self.collector_address = self.le_collector.text()
-        self.pvs_path = self.le_load_file_path.text()
-        self.cache_frequency = self.sb_collector_frequency.value()
-        if osp.isfile(self.pvs_path) ^ (self.pvs_path == ''):
-            if self.cache_frequency > 0 and self.collector_address != '':
-                self.image_viewer = ImageWindow(prefix=self.prefix,
-                                                collector_address=self.collector_address,
-                                                file_path=self.pvs_path,
-                                                cache_frequency=self.cache_frequency) 
-            else:
-                self.image_viewer = ImageWindow(prefix=self.prefix,
-                                                collector_address=self.collector_address,
-                                                file_path=self.pvs_path,) 
+        self.input_channel = self.le_input_channel.text()
+        self.roi_config = self.le_roi_config.text()
+        if osp.isfile(self.roi_config) or (self.roi_config == ''):
+            self.image_viewer = ImageWindow(input_channel=self.input_channel,
+                                            file_path=self.roi_config,) 
         else:
             print('File Path Doesn\'t Exitst')  
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
-            self.new_dialog = ConfigDialog(prefix=self.prefix, c_address=self.collector_address, cache_freq=self.cache_frequency)
+            self.new_dialog = ConfigDialog()
             self.new_dialog.show()    
-
-
-class PVA_Reader:
-
-    def __init__(self, pva_prefix='dp-ADSim', provider=pva.PVA, collector_address='', config_filepath: str = 'pv_configs/PVs.json'):
-        """
-        Variables needed for monitoring a connection.
-        Provides connections and to broadcasted images and PVAs
-        
-        KeyWord Args:
-        pva_prefix (str) -- The prefix of the specific detector that will be appended to the PVA channel name (default dp-ADSim)
-        provider (protocol) -- The protocol that will be used when creating the channel (default pva.PVA)
-        collector_address (str) -- address to the collector server
-        config_filepath (str) -- file path to where the config json file is located
-        """
-        self.pva_prefix = pva_prefix        
-        self.provider = provider
-        self.collector_address = collector_address
-        self.config_filepath = config_filepath
-        self.pva_address = self.pva_prefix + ':Pva1:Image' if self.collector_address == "" else self.collector_address
-        self.channel = pva.Channel(self.pva_address, self.provider)
-        # variables that will store pva data
-        self.pva_object = None
-        self.image = None
-        self.shape = (0,0)
-        self.attributes = {}
-        self.timestamp = None
-        # self.pva_cache = []
-        self.images_cache = None
-        self.positions_cache = None
-        self.__last_array_id = None
-        self.frames_missed = 0
-        self.frames_received = 0
-        self.data_type = None
-        self.pvs = {}
-        self.metadata = {}
-        self.num_rois = 0
-        self.cache_id = None
-        self.cache_id_gen = rotation_cycle(0,max_cache_size)
-        self.first_scan_detected = False
-
-        if self.config_filepath != '':
-            with open(self.config_filepath, 'r') as json_file:
-                # loads the pvs in the json file into a python dictionary
-                self.pvs = json.load(json_file)
-        
-    def pva_callbackSuccess(self, pv):
-        """
-        Function is called every time a PV change is monitored.
-        Makes sure we only keep queue of 1000 PV objects in memory 
-        and before caching then processes incoming pv. 
-        
-        KeyWord Args:
-        pv (PVObject) -- Received by channel Monitor
-        """
-        self.pva_object = pv
-        # Create a deep copy of pv before appending
-        # pv_copy = copy.deepcopy(pv)
-        # if len(self.pva_cache) < 100: 
-        #     self.pva_cache.append(pv_copy)
-        # else:
-        #     self.pva_cache = self.pva_cache[1:]
-        #     self.pva_cache.append(pv_copy)
-        self.parse_pva_ndattributes()
-        self.parse_image_data_type()
-        self.pva_to_image()
-        x_value = self.attributes.get('x')[0]['value']
-        y_value = self.attributes.get('y')[0]['value']
-        #need to avoid hard coding the initial scan position 
-        if (x_value == 0) and (y_value == 0) and self.first_scan_detected == False:
-            self.first_scan_detected = True
-            print(f"First Scan detected...")
-  
-        #now start caching after the first scan is detected 
-        # now scan pos recorded should match the prerecorded scan positions 
-        # TODO: make sure the scan positions read from the numpy file is the same as those read through the collector 
-        # and overwrite if not
-        if self.first_scan_detected:
-            #TODO: Debug why starting cache causes missed frames 
-            if self.id_diff> 0:
-                for i in range(self.id_diff):
-                    self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN #TODO: wil be overwritten by predetermined scan positions in analysis window if called
-            else:
-                self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-                self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-                self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
-            # print(self.cache_id)
-            # print(self.positions_cache[self.cache_id])
-            
-            # TODO: Use thise actual positions to do calculations in analysis window
-
-    def parse_image_data_type(self):
-        """Parse through a PVA Object to store the incoming datatype."""
-        if self.pva_object is not None:
-            self.data_type = list(self.pva_object['value'][0].keys())[0]
-    
-    def parse_pva_ndattributes(self):
-        """Convert a pva object to python dict and parses attributes into a separate dict."""
-        if self.pva_object is not None:
-            obj_dict = self.pva_object.get()
-        else:
-            return None
-        
-        attributes = {}
-        for attr in obj_dict.get("attribute", []):
-            name = attr['name']
-            value = attr['value']
-            attributes[name] = value
-
-        for value in ["codec", "uniqueId", "uncompressedSize"]:
-            if value in self.pva_object:
-                attributes[value] = self.pva_object[value]
-
-        self.attributes = attributes
-
-    def pva_to_image(self):
-        """
-        Parses through the PVA Object to retrieve the size and use that to shape incoming image.
-        Then immedately check if that PVA Object is next image or if we missed a frame in between.
-        """
-        try:
-            if self.pva_object is not None:
-                self.frames_received += 1
-                # Parses dimensions and reshapes array into image
-                if 'dimension' in self.pva_object:
-                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-                    self.image = np.array(self.pva_object['value'][0][self.data_type])
-                    # reshapes but also transposes image so it is viewed correctly
-                    self.image= np.reshape(self.image, self.shape).T
-                else:
-                    self.image = None
-                # Initialize Image and Positions Cache
-                if self.images_cache is None:
-                    self.images_cache = np.zeros((max_cache_size, *self.shape))
-                    self.positions_cache = np.zeros((max_cache_size,2)) # TODO: make useable for more metadata
-                # Check for missed frame starts here
-                current_array_id = self.pva_object['uniqueId']
-                if self.__last_array_id is not None: 
-                    self.id_diff = current_array_id - self.__last_array_id - 1
-                    if (self.id_diff > 0):
-                        self.frames_missed += self.id_diff 
-                    else:
-                        self.id_diff = 0
-                self.__last_array_id = current_array_id
-                # Check for missed frame starts here
-                # current_array_id = self.pva_object['uniqueId']
-                # if self.__last_array_id is not None: 
-                #     id_diff = current_array_id - self.__last_array_id - 1
-                #     self.frames_missed += id_diff if (id_diff > 0) else 0
-                # self.__last_array_id = current_array_id
-
-        except:
-            self.frames_missed += 1
-            # return 1
-            
-    def start_channel_monitor(self):
-        """
-        Calls the PVA subscribe function of the pvaccess module to 
-        provide a callback function to process any incoming PV Objects. 
-
-        After that it starts the channel Monitor and it goes through each 
-        item stored in the metadata PVs dict to retrieve ROI information 
-        using epics caget as monitoring them is not consistent at the start.
-        (this can be changed with the collector running)
-        """
-        self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
-        self.channel.startMonitor()
-        if self.pvs and self.pvs is not None:
-            try:
-                for key in self.pvs:
-                    if f'{self.pvs[key]}'.startswith('ROI'):
-                        metadata_name = f'{self.pva_prefix}:{self.pvs[key]}'
-                        self.metadata[metadata_name] = caget(metadata_name)
-                        if not(f'{self.pvs[key]}'.startswith(f'ROI{self.num_rois}')):
-                            self.num_rois += 1                        
-            except:
-                print('Failed to connect to PV ROIs/Stats')
-        
-    def stop_channel_monitor(self):
-        """Stops all monitorg and callback functions from continuing"""
-        self.channel.unsubscribe('pva callback success')
-        self.channel.stopMonitor()
-
-    def get_pva_objects(self):
-        """Returns entire cached list of PVA Objects"""
-        return self.pva_cache
-
-    def get_last_pva_object(self):
-        return self.pva_cache[-1]
-
-    def get_frames_missed(self):
-        return self.frames_missed
-
-    def get_pva_image(self):
-        return self.image
-    
-    def get_attributes_dict(self):
-        return self.attributes
 
 
 class ImageWindow(QMainWindow):
 
-    def __init__(self, prefix='dp-ADSim', collector_address='', file_path='', cache_frequency=100): 
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
-        This is the Main Window that first pops up and allows a user to type 
-        a detector prefix in and connect to it. It does things like allow one 
-        to view and manipulate the incoming image, change the color scheme, and 
-        view ROIs. In addtion to this it can also show multiple stats about the 
-        connection, the images shown, and specific ROIs.
+        Initializes the main window for real-time image visualization and manipulation.
+
+        Args:
+            input_channel (str): The PVA input channel for the detector.
+            file_path (str): The file path for loading configuration.
         """
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
@@ -340,27 +113,34 @@ class ImageWindow(QMainWindow):
         self.reader = None
         self.call_id_plot = 0
         self.first_plot = True
-        self.caching_frequency = cache_frequency #TODO take this value from a texbox .. user has to put in the frequency of the detector or collector manually or it has to be acertained it matches with the collector
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
         self.stats_data = {}
-        self._prefix = prefix
-        self.pv_prefix.setText(self._prefix)
-        self._collector_address = collector_address
+        self._input_channel = input_channel
+        self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
+        # self.timer_rsm = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
-        #for testing ROIs being sent from analysis window
+        self.timer_plot.timeout.connect(self.update_rois)
+        # For testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+        # HKL values
+        self.hkl_config = None
+        self.hkl_data = {}
+        self.qx = None
+        self.qy = None
+        self.qz = None
+        self.processes = {}
+        
         # Adding widgets manually to have better control over them
-        # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
         self.viewer_layout.addWidget(self.image_view,1,1)
@@ -375,77 +155,125 @@ class ImageWindow(QMainWindow):
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
+        self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
-        self.rotate90degCCW.clicked.connect(self.rotation_count)
-        self.log_image.clicked.connect(self.update_image)
-        self.log_image.clicked.connect(self.reset_first_plot)
+        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
         self.btn_Stats4.clicked.connect(self.stats_button_clicked)
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
+        self.rbtn_C.clicked.connect(self.c_ordering_clicked)
+        self.rbtn_F.clicked.connect(self.f_ordering_clicked)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
+        self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
+        self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
-    def open_analysis_window_clicked(self):
-        scd_dialog = ScanPlanDialog()
-        if scd_dialog.exec_():
-            self.analysis_window = AnalysisWindow(parent=self, xpos_path=scd_dialog.x_positions, ypos_path=scd_dialog.y_positions,save_path=scd_dialog.download_loc)
-            self.analysis_window.show()
-        
-    def start_timers(self):
-        """Timer speeds for updating labels and plotting"""
-        self.timer_labels.start(int(1000/float(self.caching_frequency)))
-        self.timer_plot.start(int(1000/float(self.plotting_frequency.text())))
+    def start_timers(self) -> None:
+        """
+        Starts timers for updating labels and plotting at specified frequencies.
+        """
+        self.timer_labels.start(int(1000/100))
+        self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
-    def stop_timers(self):
-        """Stops the updating of Main Window Labels"""
+    def stop_timers(self) -> None:
+        """
+        Stops the updating of main window labels and plots.
+        """
         self.timer_plot.stop()
         self.timer_labels.stop()
 
-    def start_live_view_clicked(self):
+    def set_pixel_ordering(self) -> None:
         """
-        Goes through and tries to initialize the connections to the PVA channel using
-        the prefix which was typed in. 
+        Checks which pixel ordering is selected on startup
+        """
+        if self.reader is not None:
+            if self.rbtn_C.isChecked():
+                self.reader.pixel_ordering = 'C'
+            elif self.rbtn_F.isChecked():
+                self.reader.pixel_ordering = 'F'
+
+
+    def c_ordering_clicked(self) -> None:
+        """
+        Sets the pixel ordering to C style.
+        """
+        if self.reader is not None:
+            self.reader.pixel_ordering = 'C'
+
+    def f_ordering_clicked(self) -> None:
+        """
+        Sets the pixel ordering to Fortran style.
+        """
+        if self.reader is not None:
+            self.reader.pixel_ordering = 'F'
+
+    def open_analysis_window_clicked(self) -> None:
+        """
+        Opens the analysis window if the reader and image are initialized.
+        """
+        if self.reader is not None:
+            if self.reader.image is not None:
+                self.analysis_window = AnalysisWindow(parent=self)
+                self.analysis_window.show()
+
+    def start_live_view_clicked(self) -> None:
+        """
+        Initializes the connections to the PVA channel using the provided Channel Name.
+        
+        This method ensures that any existing connections are cleared and re-initialized.
+        Also starts monitoring the stats and adds ROIs to the viewer.
         """
         try:
-            prefix = self.pv_prefix.text()
-            # a double check to make sure there isn't a connection already when starting
+            # A double check to make sure there isn't a connection already when starting
             if self.reader is None:
-                self.reader = PVA_Reader(pva_prefix=prefix, collector_address=self._collector_address, config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel, 
+                                         config_filepath=self._file_path)
+                self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
-                if self.reader.channel.get():
-                    self.start_timers()
+
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                self.reader = PVA_Reader(pva_prefix=self._prefix, collector_address=self._collector_address, config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel, 
+                                         config_filepath=self._file_path)
+                self.set_pixel_ordering
                 self.reader.start_channel_monitor()
-                if self.reader.channel.get():
-                    self.start_timers()
-            
-            # additional functions that aren't affected by whether the PVA reader is None or not
-            self.start_stats_monitors()
-            self.start_roi_monitors()
-            self.add_rois()
         except:
-            print('Failed to Connect')
+            print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-        
-    def stop_live_view_clicked(self):
-        """Clears the connection for the PVA channel and any active monitors."""
+
+        if self.reader is not None:
+            self.start_stats_monitors()
+            self.add_rois()
+            self.start_timers()
+            try:
+                self.init_hkl()
+                if self.hkl_data:
+                    self.qx, self.qy, self.qz = self.create_rsm() 
+            except Exception as e:
+                print('failed to create rsm: %s' % e)
+
+    def stop_live_view_clicked(self) -> None:
+        """
+        Clears the connection for the PVA channel and stops all active monitors.
+
+        This method also updates the UI to reflect the disconnected state.
+        """
         if self.reader is not None:
             self.reader.stop_channel_monitor()
             self.stop_timers()
@@ -456,67 +284,52 @@ class ImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
-    def start_roi_monitors(self):
-        """Monitors used for changing the shape/location of ROIS Live."""
-        try:
-            if self.reader.pvs and self.reader.pvs is not None:
-                for key in self.reader.pvs:
-                    if f'{self.reader.pvs[key]}'.startswith('ROI'):
-                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}',
-                                      callback=self.roi_ca_callback)
-        except:
-            print('Failed to Connect to ROI CA Monitors')
+    def start_stats_monitors(self)  -> None:
+        """
+        Initializes monitors for updating stats values.
 
-    def start_stats_monitors(self):
-        """Monitors used to update Stats values."""
+        This method uses `camonitor` to observe changes in the stats PVs and update
+        them in the UI accordingly.
+        """
         try:
-            if self.reader.pvs and self.reader.pvs is not None:
-                for key in self.reader.pvs:
-                    if f'{self.reader.pvs[key]}'.startswith('Stats'):
-                            camonitor(pvname=f'{self.reader.pva_prefix}:{self.reader.pvs[key]}', 
-                                      callback=self.stats_ca_callback)
+            if self.reader.stats:
+                for stat_num in self.reader.stats.keys():
+                    for stat in self.reader.stats[stat_num].keys():
+                        pv = f"{self.reader.stats[stat_num][stat]}"
+                        self.stats_data[pv] = caget(pv)
+                        camonitor(pvname=pv, callback=self.stats_ca_callback)
         except:
             print("Failed to Connect to Stats CA Monitors")
-    
-    def roi_ca_callback(self, pvname, value, **kwargs):
-        """
-        Manipulates ROIs live whenever a change is made in the EPICS software
-        then loops through the list of cached ROIs and updates their position/size.
-        
-        KeyWord Args:
-        pvname -- The name of the specific ROI PV that's been updated
-        value -- The new value sent by the monitor for the PV
-        **kwargs -- a catch all for the other values sent by the monitor
-        """
-        self.reader.metadata[pvname] = value
-        prefix = self.reader.pva_prefix
-        for i, roi in enumerate(self.rois):
-            roi.setPos(pos=self.reader.metadata[f'{prefix}:ROI{i+1}:MinX'], 
-                       y=self.reader.metadata[f'{prefix}:ROI{i+1}:MinY'])
-            roi.setSize(size=(self.reader.metadata[f'{prefix}:ROI{i+1}:SizeX'], 
-                              self.reader.metadata[f'{prefix}:ROI{i+1}:SizeY']))
 
-    def stats_ca_callback(self, pvname, value, **kwargs):
+    def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
-        Updates the Stats PV Value.
-        
-        KeyWord Args:
-        pvname -- The name of the specific Stat PV that's been updated.
-        value -- The new value sent by the monitor for the PV.
-        **kwargs -- a catch all for the other values sent by the monitor."""
+        Updates the stats PV value based on changes observed by `camonitor`.
+
+        Args:
+            pvname (str): The name of the specific Stat PV that has been updated.
+            value: The new value sent by the monitor for the PV.
+            **kwargs: Additional keyword arguments sent by the monitor.
+        """
         self.stats_data[pvname] = value
         
-    def stats_button_clicked(self):
-        """Creates a pop up dialog specifically for the stat that you want to view."""
+    def stats_button_clicked(self) -> None:
+        """
+        Creates a popup dialog for viewing the stats of a specific button.
+
+        This method identifies the button pressed and opens the corresponding stats dialog.
+        """
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
-            # TODO: Pass it a timer so it doesn't create a new one every time
-            self.stats_dialog[text] = RoiStatsDialog(parent=self, stats_text=text, timer=self.timer_labels)
+            self.stats_dialog[text] = RoiStatsDialog(parent=self, 
+                                                     stats_text=text, 
+                                                     timer=self.timer_labels)
             self.stats_dialog[text].show()
     
-    def show_rois_checked(self):
-        """Shows/Hides ROIs depending on checked state."""
+    def show_rois_checked(self) -> None:
+        """
+        Toggles visibility of ROIs based on the checked state of the display checkbox.
+        """
         if self.reader is not None:
             if self.display_rois.isChecked():
                 for roi in self.rois:
@@ -525,54 +338,265 @@ class ImageWindow(QMainWindow):
                 for roi in self.rois:
                     roi.hide()
 
-    def freeze_image_checked(self):
+    def freeze_image_checked(self) -> None:
         """
-        Freezes/Unfreezes plot depending on checked state
-        without stopping collection of PVA Objects.
+        Toggles freezing/unfreezing of the plot based on the checked state
+        without stopping the collection of PVA objects.
         """
         if self.reader is not None:
             if self.freeze_image.isChecked():
-                self.timer_labels.stop()
-                self.timer_plot.stop()
+                self.stop_timers()
             else:
                 self.start_timers()
+    
+    def transpose_image_checked(self) -> None:
+        """
+        Toggles whether the image data is transposed based on the checkbox state.
+        """
+        if self.reader is not None:
+            if self.chk_transpose.isChecked():
+                self.reader.image_is_transposed = True
+            else: 
+                self.reader.image_is_transposed = False
 
-    def reset_first_plot(self):
+    def reset_first_plot(self) -> None:
+        """
+        Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
+        """
         self.first_plot = True
 
-    def rotation_count(self):
-        """Used to cycle image rotation number between 1 - 4."""
+    def rotation_count(self) -> None:
+        """
+        Cycles the image rotation number between 1 and 4.
+        """
         self.rot_num = next(rot_gen)
 
-    def add_rois(self):
+    def add_rois(self) -> None:
         """
-        Takes the number of ROIs detected earlier from pvs dict and 
-        adds them to the image viewer and color codes them.
+        Adds ROIs to the image viewer and assigns them color codes.
 
         Color Codes:
-        ROI1 -- Red (ff0000)
-        ROI2 -- Blue (0000ff)
-        ROI3 -- Green (4CBB17)
-        ROI4 -- Pink (ff00ff)
+            ROI1 -- Red (#ff0000)
+            ROI2 -- Blue (#0000ff)
+            ROI3 -- Green (#4CBB17)
+            ROI4 -- Pink (#ff00ff)
         """
-        self.roi_colors = ['ff0000', '0000ff', '4CBB17', 'ff00ff']
-        for i in range(self.reader.num_rois):
-            roi = pg.ROI(pos=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinX'],
-                               self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:MinY']],
-                         size=[self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeX'], 
-                              self.reader.metadata[f'{self.reader.pva_prefix}:ROI{i+1}:SizeY']],
+        roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added # prefix for hex colors
+        for i, roi in enumerate(self.reader.rois.keys()):
+            x = self.reader.rois[roi].get("MIN_X", 0)
+            y = self.reader.rois[roi].get("MIN_Y", 0)
+            width = self.reader.rois[roi].get("SIZE_X", 0)
+            height = self.reader.rois[roi].get("SIZE_fY", 0)
+            roi = pg.ROI(pos=[x,y],
+                         size=[width, height],
                          movable=False,
-                         pen=pg.mkPen(self.roi_colors[i]))
+                         pen=pg.mkPen(color=roi_colors[i]))
             self.rois.append(roi)
             self.image_view.addItem(roi)
-    
-    def update_mouse_pos(self, pos):
-        """
-        Receives mouse position signal inside the ImageViewer and maps it 
-        to a QPointer on the image to receive pixel value where the mouse is.
+            roi.sigRegionChanged.connect(self.update_roi_region)
 
-        KeyWord Args:
-        pos -- position event sent by mouse moving
+    def start_hkl_viewer(self) -> None:
+
+        try:
+            if self.reader is not None and 'HKL' in self.reader.config:
+                qx = self.qx.flatten()
+                qy = self.qy.flatten()
+                qz = self.qz.flatten()
+                intensity = self.reader.image.flatten()
+
+                np.save('qx.npy', qx)
+                np.save('qy.npy', qy)
+                np.save('qz.npy', qz)
+                np.save('intensity.npy', intensity)
+
+                # cmd = ['python', 'viewer/hkl_3d_viewer.py',
+                #        '--qx-file', 'qx.npy',
+                #        '--qy-file', 'qy.npy',
+                #        '--qz-file', 'qz.npy',
+                #        '--intensity-file', 'intensity.npy']
+
+                # process = subprocess.Popen(
+                #     cmd,
+                #     stdout=subprocess.PIPE,
+                #     stderr=subprocess.STDOUT,
+                #     preexec_fn=os.setsid,
+                #     universal_newlines=True
+                # )
+
+                # self.processes[process.pid] = process
+
+        except Exception as e:
+            print(f'Failed to load HKL Viewer:{e}')
+
+
+    def start_hkl_monitors(self) -> None:
+        """
+        Initializes camonitors for HKL values and stores them in a dictionary.
+        """
+        try:
+            if "HKL" in self.reader.config:
+                self.hkl_config = self.reader.config["HKL"]
+
+                # Monitor each HKL parameter
+                for section, pv_dict in self.hkl_config.items():
+                    for key, pv_name in pv_dict.items():
+                        self.hkl_data[pv_name] = caget(pv_name)
+                        camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
+        except Exception as e:
+            print(f"Failed to initialize HKL monitors: {e}")
+
+    def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
+        """
+        Callback for updating HKL values based on changes observed by `camonitor`.
+
+        Args:
+            pvname (str): The name of the PV that has been updated.
+            value: The new value sent by the monitor for the PV.
+            **kwargs: Additional keyword arguments sent by the monitor.
+        """
+        self.hkl_data[pvname] = value
+        if self.qx is not None and self.qy is not None and self.qz is not None:
+            self.update_rsm()
+
+    def init_hkl(self) -> None:
+        """
+        Initializes HKL parameters by setting up monitors for each HKL value.
+        """
+        self.start_hkl_monitors()
+        self.hkl_setup()
+        
+    def hkl_setup(self) -> None:
+        try:
+            # Get everything for the sample circles
+            sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
+            self.sample_circle_directions = []
+            self.sample_cirlce_names = []
+            self.sample_circle_positions = []
+            for pv_key in sample_circle_keys:
+                if pv_key.endswith('DirectionAxis'):
+                    self.sample_circle_directions.append(self.hkl_data[pv_key])
+                elif pv_key.endswith('SpecMotorName'):
+                    self.sample_cirlce_names.append(self.hkl_data[pv_key])
+                elif pv_key.endswith('Position'):
+                    self.sample_circle_positions.append(self.hkl_data[pv_key])
+            # Get everything for the detector circles
+            det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
+            self.det_circle_directions = []
+            self.det_cirlce_names = []
+            self.det_circle_positions = []
+            for pv_key in det_circle_keys:
+                if pv_key.endswith('DirectionAxis'):
+                    self.det_circle_directions.append(self.hkl_data[pv_key])
+                elif pv_key.endswith('SpecMotorName'):
+                    self.det_cirlce_names.append(self.hkl_data[pv_key])
+                elif pv_key.endswith('Position'):
+                    self.det_circle_positions.append(self.hkl_data[pv_key])
+            # Primary Beam Direction
+            self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
+            # Inplane Reference Direction
+            self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
+            # Sample Surface Normal Direction
+            self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
+            # UB Matrix
+            self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
+            self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
+            # Energy
+            self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
+
+            if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
+                # Class for the conversion of angular coordinates to momentum space 
+                self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
+                                                        self.det_circle_directions, 
+                                                        self.primary_beam_directions)
+        except Exception as e:
+            print(f'Error Setting up HKL: {e}')
+            return
+         
+
+    def create_rsm(self) -> np.ndarray:
+        """
+        Creates a reciprocal space map (RSM) from the current detector image.
+
+        This method uses the xrayutilities package to convert detector coordinates 
+        to reciprocal space coordinates (Q-space). It requires:
+        - Valid detector statistics data
+        - Properly initialized HKL parameters
+        - Detector setup parameters (pixel directions, center channel, size, etc.)
+
+        Returns:
+            numpy.ndarray:
+            - The Q-space coordinates for the current detector image,
+                         or None if required data is missing.
+            - shape (N, 3) containing qx, qy, and qz values.
+
+        The conversion uses the current sample and detector angles along with the UB matrix
+        to transform from angular to reciprocal space coordinates.
+        """
+        if self.hkl_data:
+            try:
+                hxrd = xu.HXRD(self.inplane_reference_directions,
+                            self.sample_surface_normal_directions, 
+                            en=self.energy, 
+                            qconv=self.q_conv)
+
+                if self.stats_data:
+                    if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
+                        roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                        cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
+                        cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
+                        distance = self.hkl_data['DetectorSetup:Distance'] # Distance
+                        pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
+                        pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                        nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
+                        nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
+                        pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
+                        pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
+
+                        hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                            Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
+                                            pwidth2=pixel_width2, distance=distance, roi=roi)
+                        
+                        angles = [*self.sample_circle_positions, *self.det_circle_positions]
+
+                        return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+            except Exception as e:
+                print(f'Error Creating RSM: {e}')
+                return
+        else:
+            return
+
+    def update_rois(self) -> None:
+        """
+        Updates the positions and sizes of ROIs based on changes from the EPICS software.
+
+        Loops through the cached ROIs and adjusts their parameters accordingly.
+        """
+        for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
+            x_pos = self.reader.rois[roi_key].get("MIN_X",0)
+            y_pos = self.reader.rois[roi_key].get("MIN_Y",0)
+            width = self.reader.rois[roi_key].get("SIZE_X",0)
+            height = self.reader.rois[roi_key].get("SIZE_Y",0)
+            roi.setPos(pos=x_pos, y=y_pos)
+            roi.setSize(size=(width, height))
+    
+    def update_roi_region(self) -> None:
+        """
+        Forces the image viewer to refresh when an ROI region changes.
+        """
+        self.image_view.update()
+
+    def update_pv_prefix(self) -> None:
+        """
+        Updates the input channel prefix based on the value entered in the prefix field.
+        """
+        self._input_channel = self.pv_prefix.text()
+    
+    def update_mouse_pos(self, pos) -> None:
+        """
+        Maps the mouse position in the Image Viewer to the corresponding pixel value.
+
+        Args:
+            pos (QPointF): Position event sent by the mouse moving.
         """
         if pos is not None:
             if self.reader is not None:
@@ -585,10 +609,16 @@ class ImageWindow(QMainWindow):
                 if img_data is not None:
                     img_data = np.rot90(img_data, k = self.rot_num)
                     if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                       self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                        if self.hkl_data:
+                            self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
+                            self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
+                            self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
 
-    def update_labels(self):
-        """Updates labels based on connection and cached data"""
+    def update_labels(self) -> None:
+        """
+        Updates the UI labels with current connection and cached data.
+        """
         provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
         is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
         self.provider_name.setText(provider_name)
@@ -605,24 +635,27 @@ class ImageWindow(QMainWindow):
         self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
         self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
-    def update_image(self):
+    def update_rsm(self) -> None:
+        if self.hkl_data:
+            self.hkl_setup()
+            self.qx, self.qy, self.qz = self.create_rsm()
+
+    def update_image(self) -> None:
         """
-        Redraws plots based on rate entered in main window.
-        Processes the images based on the different settings in the main window.
-        And shows the min/max pixel value within the entire image
+        Redraws plots based on the configured update rate.
+
+        Processes the image data according to main window settings, such as rotation
+        and log transformations. Also sets initial min/max pixel values in the UI.
         """
         if self.reader is not None:
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                # print(self.reader.cache_id)
-                # print(self.reader.positions_cache[self.reader.cache_id])
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
                     height, width = image.shape[:2]
-                    # print(image.shape[:2])
-                    coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
+                    # coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
                             min_level = np.log(min_level + 1)
@@ -635,6 +668,7 @@ class ImageWindow(QMainWindow):
                                                  autoHistogramRange=False) 
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
+                        self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(image,
@@ -649,26 +683,28 @@ class ImageWindow(QMainWindow):
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
     
-    def update_min_max_setting(self):
-        """Updates the levels for the pixel values you want to see in the ImageViewer"""
-        min = float(self.min_setting_val.text())
-        max = float(self.max_setting_val.text())
+    def update_min_max_setting(self) -> None:
+        """
+        Updates the min/max pixel levels in the Image Viewer based on UI settings.
+        """
+        min = self.min_setting_val.value()
+        max = self.max_setting_val.value()
         self.image_view.setLevels(min, max)
     
     def closeEvent(self, event):
         """
-        Altered close event to delete stat dialogs as well when main window closes
-        
-        Keyword Args:
-        event -- close event sent by main window
+        Custom close event to clean up resources, including stat dialogs.
+
+        Args:
+            event (QCloseEvent): The close event triggered when the main window is closed.
         """
-        del self.stats_dialog # otherwise memory piles up
+        del self.stats_dialog # otherwise dialogs stay in memory
         super(ImageWindow,self).closeEvent(event)
 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = ConfigDialog(prefix='dp-ADSim', c_address='collector:1:output')
+    window = ConfigDialog()
     window.show()
 
     sys.exit(app.exec_())

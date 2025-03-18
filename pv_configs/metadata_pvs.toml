@@ -1,0 +1,133 @@
+# Required Setup
+CONSUMER_TYPE = "spontaneous"
+
+# Section used specifically for Metadata Pvs
+[METADATA]
+
+    [METADATA.CA]
+    X = "x"
+    Y = "y"
+
+    [METADATA.PVA]
+
+# Section specifically for ROI PVs
+[ROI]
+
+    [ROI.ROI1]
+    MIN_X = "dp-ADSim:ROI1:MinX"
+    MIN_Y = "dp-ADSim:ROI1:MinY"
+    SIZE_X = "dp-ADSim:ROI1:SizeX"
+    SIZE_Y = "dp-ADSim:ROI1:SizeY"
+
+    [ROI.ROI2]
+    MIN_X = "dp-ADSim:ROI2:MinX"
+    MIN_Y = "dp-ADSim:ROI2:MinY"
+    SIZE_X = "dp-ADSim:ROI2:SizeX"
+    SIZE_Y = "dp-ADSim:ROI2:SizeY"
+
+    [ROI.ROI3]
+    MIN_X = "dp-ADSim:ROI3:MinX"
+    MIN_Y = "dp-ADSim:ROI3:MinY"
+    SIZE_X = "dp-ADSim:ROI3:SizeX"
+    SIZE_Y = "dp-ADSim:ROI3:SizeY"
+
+    [ROI.ROI4]
+    MIN_X = "dp-ADSim:ROI4:MinX"
+    MIN_Y = "dp-ADSim:ROI4:MinY"
+    SIZE_X = "dp-ADSim:ROI4:SizeX"
+    SIZE_Y = "dp-ADSim:ROI4:SizeY"
+
+[STATS]
+
+[STATS.STATS1]
+    TOTAL = "dp-ADSim:Stats1:Total_RBV"
+    MIN = "dp-ADSim:Stats1:MinValue_RBV"
+    MAX = "dp-ADSim:Stats1:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
+
+    [STATS.STATS4]
+    TOTAL = "dp-ADSim:Stats4:Total_RBV"
+    MIN = "dp-ADSim:Stats4:MinValue_RBV"
+    MAX = "dp-ADSim:Stats4:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats4:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats4:MeanValue_RBV"
+
+# For use in the analysis server, not on the client side.
+[ANALYSIS]
+    # substitute with real PVs that are also in Metadata
+    AXIS1 = "x" 
+    AXIS2 = "y"
+
+[HKL]
+
+    [HKL.SAMPLE_CIRCLE_AXIS_1]
+    AXIS_NUMBER = '6idb1:m28_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m28_RBV:DirectionAxis'
+    NAME = '6idb1:m28_RBV:Name'
+    POSITION = '6idb1:m28_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m28_RBV:SpecMotorName'
+    
+    [HKL.SAMPLE_CIRCLE_AXIS_2]
+    AXIS_NUMBER = '6idb1:m17_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m17_RBV:DirectionAxis'
+    NAME = '6idb1:m17_RBV:Name'
+    POSITION = '6idb1:m17_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m17_RBV:SpecMotorName'
+
+    [HKL.SAMPLE_CIRCLE_AXIS_3]
+    AXIS_NUMBER = '6idb1:m19_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m19_RBV:DirectionAxis'
+    NAME = '6idb1:m19_RBV:Name'
+    POSITION = '6idb1:m19_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m19_RBV:SpecMotorName'
+
+    [HKL.SAMPLE_CIRCLE_AXIS_4]
+    AXIS_NUMBER = '6idb1:m20_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m20_RBV:DirectionAxis'
+    NAME = '6idb1:m20_RBV:Name'
+    POSITION = '6idb1:m20_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m20_RBV:SpecMotorName'
+
+    [HKL.DETECTOR_CIRCLE_AXIS_1]
+    AXIS_NUMBER = '6idb1:m29_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m29_RBV:DirectionAxis'
+    NAME = '6idb1:m29_RBV:Name'
+    POSITION = '6idb1:m29_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m29_RBV:SpecMotorName'
+
+    [HKL.DETECTOR_CIRCLE_AXIS_2]
+    AXIS_NUMBER = '6idb1:m18_RBV:AxisNumber'
+    DIRECTION_AXIS = '6idb1:m18_RBV:DirectionAxis'
+    NAME = '6idb1:m18_RBV:Name'
+    POSITION = '6idb1:m18_RBV:Position'
+    SPEC_MOTOR_NAME = '6idb1:m18_RBV:SpecMotorName'
+
+    [HKL.SPEC]
+    ENERGY_VALUE = '6idb:spec:Energy:Value'
+#TODO: make RSM consumer
+# These values will not change often so they can be changed to values and read in by the rsm consumer
+    UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
+
+    [HKL.DETECTOR_SETUP]
+    CENTER_CHANNEL_PIXEL = 'DetectorSetup:CenterChannelPixel'
+    DISTANCE = 'DetectorSetup:Distance'
+    PIXEL_DIRECTION_1 = 'DetectorSetup:PixelDirection1'
+    PIXEL_DIRECTION_2 = 'DetectorSetup:PixelDirection2'
+    SIZE = 'DetectorSetup:Size'
+    UNITS = 'DetectorSetup:Units'
+
+    [HKL.PRIMARY_BEAM_DIRECTION]
+    AXIS_NUMBER_1 = 'PrimaryBeamDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'PrimaryBeamDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'PrimaryBeamDirection:AxisNumber3'
+
+    [HKL.INPLANE_REFERENCE_DIRECITON]
+    AXIS_NUMBER_1 = 'InplaneReferenceDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'InplaneReferenceDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'InplaneReferenceDirection:AxisNumber3'
+    
+    [HKL.SAMPLE_SURFACE_NORMAL_DIRECITON]
+    AXIS_NUMBER_1 = 'SampleSurfaceNormalDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'SampleSurfaceNormalDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'SampleSurfaceNormalDirection:AxisNumber3'

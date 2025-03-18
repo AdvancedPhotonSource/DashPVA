@@ -7,22 +7,23 @@ This guide provides step-by-step instructions to set up, configure, and run the 
 ## Setup
 
 ### Install Dependencies
-Instead of using the `environment.yml` file, follow these manual instructions to set up the environment:
-
+Using the [environment.yml](environment.yml) file, you can install the environment using the conda command:
+```bash
+conda env create -f environment.yml
+```
 1. Create a new Conda environment:
    ```bash
-   conda create -n DashPVA python=3.8 numpy=1.24.4
+   conda create -n DashPVA python=3.11 numpy pyqt pyqtgraph xrayutilities h5py toml
+
    ```
 2. Activate the environment:
    ```bash
    conda activate DashPVA
    ```
-3. Install essential libraries:
+3. Install additional dependencies:
    ```bash
-   conda install -c conda-forge pyqt=5.15 pyqtgraph=0.12
-   conda install -c apsu pvapy=5.3
-   conda install matplotlib=3.7
-   conda install scipy pandas h5py
+   conda install -c apsu pvapy
+   pip install pyepics
    ```
 
 ### Verify Installation
@@ -73,13 +74,69 @@ python area_det_viewer.py
 All configuration files are stored in the `pv_configs/` directory.
 
 ### Example File
-Below is an example configuration file (`example_config.json`):
-```json
-{
-  "PVA_PREFIX": "dp-ADSim",
-  "COLLECTOR_ADDRESS": "collector:1:output",
-  "CACHE_FREQUENCY": 10
-}
+Below is an example configuration file (`example_config.toml`):
+```toml
+# Required Setup
+CONSUMER_TYPE = "spontaneous"
+
+# Section used specifically for Metadata Pvs
+[METADATA]
+
+    [METADATA.CA]
+    x = "x"
+    y = "y"
+
+    [METADATA.PVA]
+
+# Section specifically for ROI PVs
+[ROI]
+
+    [ROI.ROI1]
+    MIN_X = "dp-ADSim:ROI1:MinX"
+    MIN_Y = "dp-ADSim:ROI1:MinY"
+    SIZE_X = "dp-ADSim:ROI1:SizeX"
+    SIZE_Y = "dp-ADSim:ROI1:SizeY"
+
+    [ROI.ROI2]
+    MIN_X = "dp-ADSim:ROI2:MinX"
+    MIN_Y = "dp-ADSim:ROI2:MinY"
+    SIZE_X = "dp-ADSim:ROI2:SizeX"
+    SIZE_Y = "dp-ADSim:ROI2:SizeY"
+
+    [ROI.ROI3]
+    MIN_X = "dp-ADSim:ROI3:MinX"
+    MIN_Y = "dp-ADSim:ROI3:MinY"
+    SIZE_X = "dp-ADSim:ROI3:SizeX"
+    SIZE_Y = "dp-ADSim:ROI3:SizeY"
+
+    [ROI.ROI4]
+    MIN_X = "dp-ADSim:ROI4:MinX"
+    MIN_Y = "dp-ADSim:ROI4:MinY"
+    SIZE_X = "dp-ADSim:ROI4:SizeX"
+    SIZE_Y = "dp-ADSim:ROI4:SizeY"
+
+[STATS]
+
+    [STATS.STATS1]
+    TOTAL = "dp-ADSim:Stats1:Total_RBV"
+    MIN = "dp-ADSim:Stats1:MinValue_RBV"
+    MAX = "dp-ADSim:Stats1:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
+
+    [STATS.STATS4]
+    TOTAL = "dp-ADSim:Stats4:Total_RBV"
+    MIN = "dp-ADSim:Stats4:MinValue_RBV"
+    MAX = "dp-ADSim:Stats4:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats4:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats4:MeanValue_RBV"
+
+# For use in the analysis server, not on the client side.
+[ANALYSIS]
+    # substitute with real PVs that are also in Metadata
+    AXIS1 = "x" 
+    AXIS2 = "y"
+
 ```
 
 To use a custom configuration, load the file through the ConfigDialog GUI or place it in the `pv_configs/` folder.
