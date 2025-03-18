@@ -11,12 +11,10 @@ Using the [environment.yml](environment.yml) file, you can install the environme
 ```bash
 conda env create -f environment.yml
 ```
-
-Instead of using the `environment.yml` file, follow these manual instructions to set up the environment:
-
 1. Create a new Conda environment:
    ```bash
    conda create -n DashPVA python=3.11 numpy pyqt pyqtgraph xrayutilities h5py toml
+
    ```
 2. Activate the environment:
    ```bash
@@ -138,6 +136,7 @@ CONSUMER_TYPE = "spontaneous"
     # substitute with real PVs that are also in Metadata
     AXIS1 = "x" 
     AXIS2 = "y"
+
 ```
 
 To use a custom configuration, load the file through the ConfigDialog GUI or place it in the `pv_configs/` folder.

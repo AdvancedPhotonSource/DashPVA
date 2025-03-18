@@ -13,6 +13,7 @@ DashPVA enables distributed analysis and real-time image streaming using PvaPy a
 ## Getting Started
 Follow the instructions in the [RUN_INSTRUCTIONS.md](RUN_INSTRUCTIONS.md) for setup and usage.
 
+
 # **FAQ: Area Detector and Data Analysis System**
 
 ### _What is the primary function of the software described in the provided sources?_
