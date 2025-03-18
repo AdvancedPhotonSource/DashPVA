@@ -143,7 +143,7 @@ class PVAReader:
                     self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # reshapes but also transposes image so it is viewed correctly
-                    self.image = np.reshape(self.image, self.shape, order=self.pixel_ordering).T if self.image_is_transposed else np.reshape(self.image, self.shape, order=self.pixel_ordering)
+                    self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
                 else:
                     self.image = None
                 # Check for missed frame starts here

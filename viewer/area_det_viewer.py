@@ -8,7 +8,6 @@ import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor, caget
-from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
@@ -192,6 +191,17 @@ class ImageWindow(QMainWindow):
         self.timer_plot.stop()
         self.timer_labels.stop()
 
+    def set_pixel_ordering(self) -> None:
+        """
+        Checks which pixel ordering is selected on startup
+        """
+        if self.reader is not None:
+            if self.rbtn_C.isChecked():
+                self.reader.pixel_ordering = 'C'
+            elif self.rbtn_F.isChecked():
+                self.reader.pixel_ordering = 'F'
+
+
     def c_ordering_clicked(self) -> None:
         """
         Sets the pixel ordering to C style.
@@ -227,6 +237,7 @@ class ImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
+                self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
 
             else:
@@ -235,6 +246,7 @@ class ImageWindow(QMainWindow):
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
+                self.set_pixel_ordering
                 self.reader.start_channel_monitor()
         except:
             print(f'Failed to Connect to {self._input_channel}')
@@ -451,8 +463,7 @@ class ImageWindow(QMainWindow):
         Initializes HKL parameters by setting up monitors for each HKL value.
         """
         self.start_hkl_monitors()
-        if self.hkl_config is not None:
-            self.hkl_setup()
+        self.hkl_setup()
         
     def hkl_setup(self) -> None:
         try:
@@ -657,6 +668,7 @@ class ImageWindow(QMainWindow):
                                                  autoHistogramRange=False) 
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
+                        self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(image,
