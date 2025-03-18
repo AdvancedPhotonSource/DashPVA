@@ -21,7 +21,6 @@ import time
 import tempfile
 import ctypes.util
 import math
-import numpy as np
 import pvaccess as pva  # pva module provides CaIoc and related functions
 
 # -------------------------------

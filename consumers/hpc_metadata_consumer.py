@@ -77,19 +77,30 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             self.logger.error(f'Metadata object {mdObject} does not have field "value"')
             return False
 
-        mdValue_str = str(mdObject['value'])  # Read value as a string
-        self.logger.debug(f"Value from metadata object: {mdValue_str}")
+        mdValue = mdObject['value']  # Read value as a string
+        self.logger.debug(f"Value from metadata object: {mdValue}")
         try:
-            mdValue = float(mdValue_str)  # Convert mdValue to float
+            if isinstance(mdValue, (int, float)):
+                mdValue = float(mdValue)  # Convert mdValue to float
+                nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
+            elif isinstance(mdValue, str):
+                nt_attribute = {'name': mdChannel, 'value': pva.PvString(mdValue)}
+            elif isinstance(mdValue, (np.ndarray)):
+                pv = pva.PvScalarArray(pva.DOUBLE)
+
+                pv.set(mdValue.tolist())
+
+                nt_attribute = {'name': mdChannel, 'value': pv}
+
         except ValueError:
-            self.logger.error(f"Failed to convert value '{mdValue_str}' to float")
+            self.logger.error(f"Failed to set ndAttribute {mdChannel}: {mdValue}")
 
             return False
+        
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-
+        # Here is where any logic with time offsets would go
         # Attach Metadata no matter what
-        nt_attribute = {'name': mdChannel, 'value': pva.PvFloat(mdValue)}
         frameAttributes.append(nt_attribute)
         self.nMetadataProcessed += 1
         return True
