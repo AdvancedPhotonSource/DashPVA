@@ -171,6 +171,7 @@ class ImageWindow(QMainWindow):
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
+        self.chk_transpose.stateChanged.connect(self.transpose_image_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
@@ -238,6 +239,7 @@ class ImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.set_pixel_ordering()
+                self.transpose_image_checked()
                 self.reader.start_channel_monitor()
 
             else:
@@ -246,7 +248,8 @@ class ImageWindow(QMainWindow):
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering
+                self.set_pixel_ordering()
+                self.transpose_image_checked()
                 self.reader.start_channel_monitor()
         except:
             print(f'Failed to Connect to {self._input_channel}')
@@ -466,51 +469,52 @@ class ImageWindow(QMainWindow):
         self.hkl_setup()
         
     def hkl_setup(self) -> None:
-        try:
-            # Get everything for the sample circles
-            sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
-            self.sample_circle_directions = []
-            self.sample_cirlce_names = []
-            self.sample_circle_positions = []
-            for pv_key in sample_circle_keys:
-                if pv_key.endswith('DirectionAxis'):
-                    self.sample_circle_directions.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('SpecMotorName'):
-                    self.sample_cirlce_names.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('Position'):
-                    self.sample_circle_positions.append(self.hkl_data[pv_key])
-            # Get everything for the detector circles
-            det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
-            self.det_circle_directions = []
-            self.det_cirlce_names = []
-            self.det_circle_positions = []
-            for pv_key in det_circle_keys:
-                if pv_key.endswith('DirectionAxis'):
-                    self.det_circle_directions.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('SpecMotorName'):
-                    self.det_cirlce_names.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('Position'):
-                    self.det_circle_positions.append(self.hkl_data[pv_key])
-            # Primary Beam Direction
-            self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
-            # Inplane Reference Direction
-            self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
-            # Sample Surface Normal Direction
-            self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
-            # UB Matrix
-            self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
-            self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
-            # Energy
-            self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
-
-            if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
-                # Class for the conversion of angular coordinates to momentum space 
-                self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
-                                                        self.det_circle_directions, 
-                                                        self.primary_beam_directions)
-        except Exception as e:
-            print(f'Error Setting up HKL: {e}')
-            return
+        if self.hkl_config is not None:
+            try:
+                # Get everything for the sample circles
+                sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
+                self.sample_circle_directions = []
+                self.sample_cirlce_names = []
+                self.sample_circle_positions = []
+                for pv_key in sample_circle_keys:
+                    if pv_key.endswith('DirectionAxis'):
+                        self.sample_circle_directions.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('SpecMotorName'):
+                        self.sample_cirlce_names.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('Position'):
+                        self.sample_circle_positions.append(self.hkl_data[pv_key])
+                # Get everything for the detector circles
+                det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
+                self.det_circle_directions = []
+                self.det_cirlce_names = []
+                self.det_circle_positions = []
+                for pv_key in det_circle_keys:
+                    if pv_key.endswith('DirectionAxis'):
+                        self.det_circle_directions.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('SpecMotorName'):
+                        self.det_cirlce_names.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('Position'):
+                        self.det_circle_positions.append(self.hkl_data[pv_key])
+                # Primary Beam Direction
+                self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
+                # Inplane Reference Direction
+                self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
+                # Sample Surface Normal Direction
+                self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
+                # UB Matrix
+                self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
+                self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
+                # Energy
+                self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
+                # Make sure all values are setup correctly before instantiating QConversion
+                if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
+                    # Class for the conversion of angular coordinates to momentum space 
+                    self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
+                                                            self.det_circle_directions, 
+                                                            self.primary_beam_directions)
+            except Exception as e:
+                print(f'Error Setting up HKL: {e}')
+                return
          
 
     def create_rsm(self) -> np.ndarray:
@@ -654,8 +658,6 @@ class ImageWindow(QMainWindow):
                 image = np.rot90(image, k = self.rot_num)
                 if len(image.shape) == 2:
                     min_level, max_level = np.min(image), np.max(image)
-                    height, width = image.shape[:2]
-                    # coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
                             image = np.log(image + 1)
                             min_level = np.log(min_level + 1)
@@ -677,7 +679,7 @@ class ImageWindow(QMainWindow):
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
-                                              y=np.arange(0,self.reader.shape[1]), 
+                                              y=np.arange(0,image.shape[1]), 
                                               clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")

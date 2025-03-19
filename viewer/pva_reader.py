@@ -22,13 +22,13 @@ class PVAReader:
         self.image = None
         self.shape = (0,0)
         self.pixel_ordering = 'C'
-        self.image_is_transposed = True
+        self.image_is_transposed = False
         self.attributes = []
         self.timestamp = None
         self.data_type = None
         # variables used for parsing analysis PV
         self.analysis_index = None
-        self.analysis_exists = True
+        self.analysis_exists = False
         self.analysis_attributes = {}
         # variables used for later logic
         self.last_array_id = None
@@ -64,9 +64,9 @@ class PVAReader:
         self.pva_to_image()
         self.parse_pva_attributes()
         self.parse_roi_pvs()
-        if (self.analysis_index is None) and (self.analysis_exists): #go in with the assumption analysis exists, is changed to false otherwise
+        if (self.analysis_index is None) and (not(self.analysis_exists)): #go in with the assumption analysis Doesn't Exist, is changed to True otherwise
             self.analysis_index = self.locate_analysis_index()
-            # print(self.analysis_index)
+        # Only runs if an analysis index was found
         if self.analysis_exists:
             self.analysis_attributes = self.attributes[self.analysis_index]
             if self.config["CONSUMER_TYPE"] == "spontaneous":
@@ -97,7 +97,7 @@ class PVAReader:
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
     
-    def locate_analysis_index(self) -> None:
+    def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
 
@@ -108,9 +108,9 @@ class PVAReader:
             for i in range(len(self.attributes)):
                 attr_pv: dict = self.attributes[i]
                 if attr_pv.get("name", "") == "Analysis":
+                    self.analysis_exists = True
                     return i
             else:
-                self.analysis_exists = False
                 return None
             
     def parse_roi_pvs(self) -> None:
