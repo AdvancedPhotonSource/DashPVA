@@ -111,8 +111,10 @@ class ImageWindow(QMainWindow):
         self.show()
         # Initializing important variables
         self.reader = None
+        self.image = None
         self.call_id_plot = 0
         self.first_plot = True
+        self.image_is_transposed = False
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -267,7 +269,9 @@ class ImageWindow(QMainWindow):
             try:
                 self.init_hkl()
                 if self.hkl_data:
-                    self.qx, self.qy, self.qz = self.create_rsm() 
+                    self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
+                    self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
+                    self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
             except Exception as e:
                 print('failed to create rsm: %s' % e)
 
@@ -358,9 +362,9 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             if self.chk_transpose.isChecked():
-                self.reader.image_is_transposed = True
+                self.image_is_transposed = True
             else: 
-                self.reader.image_is_transposed = False
+                self.image_is_transposed = False
 
     def reset_first_plot(self) -> None:
         """
@@ -399,7 +403,6 @@ class ImageWindow(QMainWindow):
             roi.sigRegionChanged.connect(self.update_roi_region)
 
     def start_hkl_viewer(self) -> None:
-
         try:
             if self.reader is not None and 'HKL' in self.reader.config:
                 qx = self.qx.flatten()
@@ -606,14 +609,12 @@ class ImageWindow(QMainWindow):
             if self.reader is not None:
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
-                x, y = q_pointer.x(), q_pointer.y()
-                self.mouse_x_val.setText(f"{x:.3f}")
-                self.mouse_y_val.setText(f"{y:.3f}")
-                img_data = self.reader.get_pva_image()
-                if img_data is not None:
-                    img_data = np.rot90(img_data, k = self.rot_num)
-                    if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                x, y = q_pointer.x(), q_pointer.y() 
+                if self.image is not None:
+                    if 0 <= x < self.image.shape[0] and 0 <= y < self.image.shape[1]:
+                        self.mouse_x_val.setText(f"{x:.3f}")
+                        self.mouse_y_val.setText(f"{y:.3f}")
+                        self.mouse_px_val.setText(f'{self.image[int(x)][int(y)]}')
                         if self.hkl_data:
                             self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
                             self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
@@ -642,7 +643,9 @@ class ImageWindow(QMainWindow):
     def update_rsm(self) -> None:
         if self.hkl_data:
             self.hkl_setup()
-            self.qx, self.qy, self.qz = self.create_rsm()
+            self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
+            self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
+            self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
 
     def update_image(self) -> None:
         """
@@ -655,15 +658,15 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                image = np.rot90(image, k = self.rot_num)
-                if len(image.shape) == 2:
-                    min_level, max_level = np.min(image), np.max(image)
+                self.image = image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                if len(self.image.shape) == 2:
+                    min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            image = np.log(image + 1)
+                            self.image = np.log(self.image + 1)
                             min_level = np.log(min_level + 1)
                             max_level = np.log(max_level + 1)
                     if self.first_plot:
-                        self.image_view.setImage(image, 
+                        self.image_view.setImage(self.image, 
                                                  autoRange=False, 
                                                  autoLevels=False, 
                                                  levels=(min_level, max_level),
@@ -673,13 +676,13 @@ class ImageWindow(QMainWindow):
                         self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
-                        self.image_view.setImage(image,
+                        self.image_view.setImage(self.image,
                                                 autoRange=False, 
                                                 autoLevels=False, 
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
-                self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
-                                              y=np.arange(0,image.shape[1]), 
+                self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
+                                              y=np.arange(0,self.image.shape[1]), 
                                               clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")
