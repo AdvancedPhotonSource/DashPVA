@@ -1,6 +1,7 @@
 import toml
 import numpy as np
 import pvaccess as pva
+import blosc
 from epics import camonitor, caget
 
 class PVAReader:
@@ -147,75 +148,34 @@ class PVAReader:
         Handles bslz4 compressed image data.
         """
         try:
-            if self.pva_object is not None:
-                self.frames_received += 1
-                
-                # Check for compressed data
-                if 'codec' in self.pva_object and self.pva_object['codec']['name'] == 'bslz4':
-                    try:
-                        # Get the compressed data
-                        compressed_data = np.array(self.pva_object['value'][0][self.data_type])
-                        
-                        # Get dimensions from the PV object
-                        if 'dimension' in self.pva_object:
-                            self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-                            
-                            # For bslz4 decompression, we need to use a specialized library
-                            # If you have bitshuffle installed:
-                            try:
-                                import bitshuffle.h5
-                                
-                                # Get uncompressed size from PV object
-                                uncompressed_size = self.pva_object.get('uncompressedSize', 0)
-                                
-                                # Decompress the data
-                                # Note: You might need to adjust parameters based on your specific compression settings
-                                decompressed_data = bitshuffle.h5.decompress(compressed_data, 
-                                                                            shape=np.prod(self.shape),
-                                                                            dtype=compressed_data.dtype)
-                                
-                                # Reshape the decompressed data
-                                self.image = decompressed_data.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+            if 'dimension' in self.pva_object:
+                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
 
-                                if self.image_is_transposed:
-                                    self.image = self.image.T
-                                    
-                            except ImportError:
-                                print("bitshuffle library not found. Cannot decompress bslz4 data.")
-                                print("Install with: pip install bitshuffle")
-                                self.image = None
-                            except Exception as e:
-                                print(f"Error during bslz4 decompression: {e}")
-                                self.image = None
-                        else:
-                            print("Dimension information missing for compressed data")
-                            self.image = None
-                    except Exception as e:
-                        print(f"Error processing compressed image: {e}")
-                        self.image = None
+            if self.pva_object.has_key('compressedSize') and self.pva_object.has_key('uncompressedSize'):
+                if self.pva_object['compressedSize'] != self.pva_object['uncompressedSize']:
+                    compressed_image = np.array(self.pva_object['value'][0][self.data_type])
+                    codec = self.pva_object['codec']['name']
+                    decompressed_image = blosc.decompress(compressed_image)
+                    selfimage = np.frombuffer(decompressed_image, dtype=self.data_type)
+        
                 else:
                     # Handle uncompressed data
-                    if 'dimension' in self.pva_object:
-                        self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-                        self.image = np.array(self.pva_object['value'][0][self.data_type])
-                        
-                        # Reshape the image
-                        self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                    self.image = np.array(self.pva_object['value'][0][self.data_type])
+                    # Reshape the image
+                    self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
 
-                        if self.image_is_transposed:
-                            self.image = self.image.T
-                    else:
-                        self.image = None
-                    
-                # Check for missed frame starts here
-                current_array_id = self.pva_object['uniqueId']
-                if self.last_array_id is not None: 
-                    self.id_diff = current_array_id - self.last_array_id - 1
-                    if (self.id_diff > 0):
-                        self.frames_missed += self.id_diff 
-                    else:
-                        self.id_diff = 0
-                self.last_array_id = current_array_id
+            else:
+                self.image = None
+                
+            # Check for missed frame starts here
+            current_array_id = self.pva_object['uniqueId']
+            if self.last_array_id is not None: 
+                self.id_diff = current_array_id - self.last_array_id - 1
+                if (self.id_diff > 0):
+                    self.frames_missed += self.id_diff 
+                else:
+                    self.id_diff = 0
+            self.last_array_id = current_array_id
         except Exception as e:
             print(f"Failed to process image: {e}")
             self.frames_missed += 1
