@@ -1,6 +1,7 @@
 import toml
 import numpy as np
 import pvaccess as pva
+from epics import camonitor, caget
 
 class PVAReader:
     def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
@@ -79,7 +80,16 @@ class PVAReader:
                 self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-                
+    
+    def roi_backup_callback(self, pvname, value, **kwargs):
+        name_components = pvname.split(":")
+        roi_key = name_components[1]
+        pv_key = name_components[2]
+        pv_value = value
+        # can't append simply by using 2 keys in a row, there must be a value to call to then add to
+        # then adds the key to the inner dictionary with update
+        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+    
     def parse_image_data_type(self) -> None:
         """
         Parses the PVA Object to determine the incoming data type.
@@ -216,6 +226,18 @@ class PVAReader:
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
+        # if not(self.rois):
+        #     if ('ROI' in self.config):
+        #         self.start_roi_backup_monitor()
+
+    def start_roi_backup_monitor(self) -> None:
+        try:
+            for roi_num, roi_dict in self.config['ROI'].items():
+                for config_key, pv_name in roi_dict.items():
+                    self.rois[pv_name] = caget(pv_name)
+                    camonitor(pvname=pv_name, callback=self.roi_backup_callback)
+        except Exception as e:
+            print(f'Failed to setup backup ROI monitor: {e}')
         
     def stop_channel_monitor(self) -> None:
         """

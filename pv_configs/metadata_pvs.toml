@@ -13,23 +13,23 @@ CONSUMER_TYPE = "spontaneous"
 # Section specifically for ROI PVs
 [ROI]
 
-    [ROI.ROI1]
-    MIN_X = "dp-ADSim:ROI1:MinX"
-    MIN_Y = "dp-ADSim:ROI1:MinY"
-    SIZE_X = "dp-ADSim:ROI1:SizeX"
-    SIZE_Y = "dp-ADSim:ROI1:SizeY"
+    # [ROI.ROI1]
+    # MIN_X = "dp-ADSim:ROI1:MinX"
+    # MIN_Y = "dp-ADSim:ROI1:MinY"
+    # SIZE_X = "dp-ADSim:ROI1:SizeX"
+    # SIZE_Y = "dp-ADSim:ROI1:SizeY"
 
-    [ROI.ROI2]
-    MIN_X = "dp-ADSim:ROI2:MinX"
-    MIN_Y = "dp-ADSim:ROI2:MinY"
-    SIZE_X = "dp-ADSim:ROI2:SizeX"
-    SIZE_Y = "dp-ADSim:ROI2:SizeY"
+    # [ROI.ROI2]
+    # MIN_X = "dp-ADSim:ROI2:MinX"
+    # MIN_Y = "dp-ADSim:ROI2:MinY"
+    # SIZE_X = "dp-ADSim:ROI2:SizeX"
+    # SIZE_Y = "dp-ADSim:ROI2:SizeY"
 
-    [ROI.ROI3]
-    MIN_X = "dp-ADSim:ROI3:MinX"
-    MIN_Y = "dp-ADSim:ROI3:MinY"
-    SIZE_X = "dp-ADSim:ROI3:SizeX"
-    SIZE_Y = "dp-ADSim:ROI3:SizeY"
+    # [ROI.ROI3]
+    # MIN_X = "dp-ADSim:ROI3:MinX"
+    # MIN_Y = "dp-ADSim:ROI3:MinY"
+    # SIZE_X = "dp-ADSim:ROI3:SizeX"
+    # SIZE_Y = "dp-ADSim:ROI3:SizeY"
 
     [ROI.ROI4]
     MIN_X = "dp-ADSim:ROI4:MinX"

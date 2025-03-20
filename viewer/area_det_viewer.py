@@ -269,9 +269,10 @@ class ImageWindow(QMainWindow):
             try:
                 self.init_hkl()
                 if self.hkl_data:
-                    self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
-                    self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
-                    self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
+                    qxyz = self.create_rsm()
+                    self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
+                    self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
+                    self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
             except Exception as e:
                 print('failed to create rsm: %s' % e)
 
@@ -388,12 +389,12 @@ class ImageWindow(QMainWindow):
             ROI3 -- Green (#4CBB17)
             ROI4 -- Pink (#ff00ff)
         """
-        roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added # prefix for hex colors
+        roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added '#' prefix for hex colors
         for i, roi in enumerate(self.reader.rois.keys()):
-            x = self.reader.rois[roi].get("MIN_X", 0)
-            y = self.reader.rois[roi].get("MIN_Y", 0)
-            width = self.reader.rois[roi].get("SIZE_X", 0)
-            height = self.reader.rois[roi].get("SIZE_fY", 0)
+            x = self.reader.rois[roi].get("MinX", 0)
+            y = self.reader.rois[roi].get("MinY", 0)
+            width = self.reader.rois[roi].get("SizeX", 0)
+            height = self.reader.rois[roi].get("SizeY", 0)
             roi = pg.ROI(pos=[x,y],
                          size=[width, height],
                          movable=False,
@@ -658,7 +659,7 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                self.image = image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
