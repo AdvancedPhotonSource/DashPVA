@@ -390,17 +390,18 @@ class ImageWindow(QMainWindow):
             ROI4 -- Pink (#ff00ff)
         """
         try:
-            print(self.reader.rois)
+            print(self.reader.attributes)
             roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added '#' prefix for hex colors
-            for i, roi in enumerate(self.reader.rois.keys()):
+            for roi in self.reader.rois.keys():
                 x = self.reader.rois[roi].get("MinX", 0)
                 y = self.reader.rois[roi].get("MinY", 0)
                 width = self.reader.rois[roi].get("SizeX", 0)
                 height = self.reader.rois[roi].get("SizeY", 0)
+                roi_color = int(roi[-1]) - 1 
                 roi = pg.ROI(pos=[x,y],
                             size=[width, height],
                             movable=False,
-                            pen=pg.mkPen(color=roi_colors[i]))
+                            pen=pg.mkPen(color=roi_colors[roi_color]))
                 self.rois.append(roi)
                 self.image_view.addItem(roi)
                 roi.sigRegionChanged.connect(self.update_roi_region)
@@ -584,10 +585,10 @@ class ImageWindow(QMainWindow):
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
         for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
-            x_pos = self.reader.rois[roi_key].get("MIN_X",0)
-            y_pos = self.reader.rois[roi_key].get("MIN_Y",0)
-            width = self.reader.rois[roi_key].get("SIZE_X",0)
-            height = self.reader.rois[roi_key].get("SIZE_Y",0)
+            x_pos = self.reader.rois[roi_key].get("MinX",0)
+            y_pos = self.reader.rois[roi_key].get("MinY",0)
+            width = self.reader.rois[roi_key].get("SizeX",0)
+            height = self.reader.rois[roi_key].get("SizeY",0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
     

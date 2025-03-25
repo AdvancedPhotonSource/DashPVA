@@ -151,14 +151,14 @@ class PVAReader:
             if 'dimension' in self.pva_object:
                     self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
 
-            if self.pva_object.has_key('compressedSize') and self.pva_object.has_key('uncompressedSize'):
-                if self.pva_object['compressedSize'] != self.pva_object['uncompressedSize']:
+            if self.pva_object['codec']:
+                if self.pva_object['codec']['name'] == 'bslz4':
                     compressed_image = np.array(self.pva_object['value'][0][self.data_type])
                     codec = self.pva_object['codec']['name']
                     decompressed_image = bls.decompress(compressed_image)
                     self.image = np.frombuffer(decompressed_image, dtype=self.data_type)
-        
-                else:
+
+                elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # Reshape the image
