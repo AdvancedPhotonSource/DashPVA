@@ -1,7 +1,7 @@
 import toml
 import numpy as np
 import pvaccess as pva
-import blosc
+import blosc2 as bls
 from epics import camonitor, caget
 
 class PVAReader:
@@ -155,8 +155,8 @@ class PVAReader:
                 if self.pva_object['compressedSize'] != self.pva_object['uncompressedSize']:
                     compressed_image = np.array(self.pva_object['value'][0][self.data_type])
                     codec = self.pva_object['codec']['name']
-                    decompressed_image = blosc.decompress(compressed_image)
-                    selfimage = np.frombuffer(decompressed_image, dtype=self.data_type)
+                    decompressed_image = bls.decompress(compressed_image)
+                    self.image = np.frombuffer(decompressed_image, dtype=self.data_type)
         
                 else:
                     # Handle uncompressed data

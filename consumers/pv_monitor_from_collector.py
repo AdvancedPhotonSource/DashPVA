@@ -23,8 +23,10 @@ def monitor_callback(data):
         # print(data)
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
+        print(data.get())
         image_data = data['value'][0]['ushortValue']
-        print(data['dimension'])
+        # print(data.has_key('uncompressedSize'))
+        # print(data['compressedSize'], data['uncompressedSize'])
         # print(data.get())
         # total_intensities.append(np.sum(image_data))
         # print(np.size(image_data))
