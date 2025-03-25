@@ -163,7 +163,7 @@ class PVAReader:
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
                     # Reshape the image
                     self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
-
+                self.frames_received += 1
             else:
                 self.image = None
                 

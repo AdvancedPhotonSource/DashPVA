@@ -389,19 +389,23 @@ class ImageWindow(QMainWindow):
             ROI3 -- Green (#4CBB17)
             ROI4 -- Pink (#ff00ff)
         """
-        roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added '#' prefix for hex colors
-        for i, roi in enumerate(self.reader.rois.keys()):
-            x = self.reader.rois[roi].get("MinX", 0)
-            y = self.reader.rois[roi].get("MinY", 0)
-            width = self.reader.rois[roi].get("SizeX", 0)
-            height = self.reader.rois[roi].get("SizeY", 0)
-            roi = pg.ROI(pos=[x,y],
-                         size=[width, height],
-                         movable=False,
-                         pen=pg.mkPen(color=roi_colors[i]))
-            self.rois.append(roi)
-            self.image_view.addItem(roi)
-            roi.sigRegionChanged.connect(self.update_roi_region)
+        try:
+            print(self.reader.rois)
+            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added '#' prefix for hex colors
+            for i, roi in enumerate(self.reader.rois.keys()):
+                x = self.reader.rois[roi].get("MinX", 0)
+                y = self.reader.rois[roi].get("MinY", 0)
+                width = self.reader.rois[roi].get("SizeX", 0)
+                height = self.reader.rois[roi].get("SizeY", 0)
+                roi = pg.ROI(pos=[x,y],
+                            size=[width, height],
+                            movable=False,
+                            pen=pg.mkPen(color=roi_colors[i]))
+                self.rois.append(roi)
+                self.image_view.addItem(roi)
+                roi.sigRegionChanged.connect(self.update_roi_region)
+        except Exception as e:
+            print(f'Failed to add ROIs:{e}')
 
     def start_hkl_viewer(self) -> None:
         try:
