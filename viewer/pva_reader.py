@@ -1,6 +1,7 @@
 import toml
 import numpy as np
 import pvaccess as pva
+import bitshuffle
 import blosc2 as bls
 from epics import camonitor, caget
 
@@ -14,6 +15,18 @@ class PVAReader:
             provider (protocol): The protocol for the PVA channel.
             config_filepath (str): File path to the configuration TOML file.
         """
+        self.NUMPY_DATA_TYPE_MAP = {
+            'ubyteValue'   : np.dtype('uint8'),
+            'byteValue'   : np.dtype('int8'),
+            'ushortValue'  : np.dtype('uint16'),
+            'shortValue'   : np.dtype('int16'),
+            'uintValue'    : np.dtype('uint32'),
+            'intValue'    : np.dtype('int32'),
+            'ulongValue'   : np.dtype('uint64'),
+            'longValue'    : np.dtype('int64'),
+            'floatValue'   : np.dtype('float32'),
+            'doubleValue'  : np.dtype('float64')
+        }
         self.input_channel = input_channel        
         self.provider = provider
         self.config_filepath = config_filepath
@@ -149,21 +162,28 @@ class PVAReader:
         """
         try:
             if 'dimension' in self.pva_object:
-                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+                self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
 
-            if self.pva_object['codec']:
                 if self.pva_object['codec']['name'] == 'bslz4':
+                    size = self.pva_object['uncompressedSize']
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.data_type)
+                    print(dtype)
+                    img_uncompressed_size = size // dtype.itemsize
+                    uncompressed_shape = (img_uncompressed_size,)
                     # Handle compressed data
-                    compressed_image = np.array(self.pva_object['value'][0][self.data_type])
-                    # codec = self.pva_object['codec']['name']
-                    decompressed_image = bls.unpack_array(compressed_image)
+                    compressed_image = np.array(self.pva_object['value'][0][self.data_type], dtype=dtype)
+                    # print(uncompressed_shape)
+                    # print(f"Compressed image shape: {compressed_image.shape}, dtype: {compressed_image.dtype}")
+                    # print(f"Expected uncompressed shape: {uncompressed_shape}, dtype: {numpy_dtype}")
+                    # print(f"First bytes of compressed data: {compressed_image[:10]}")
+                    decompressed_image = bitshuffle.decompress_lz4(compressed_image[0:], uncompressed_shape, dtype, 0)
                     self.image = decompressed_image # np.frombuffer(decompressed_image, dtype=self.data_type)
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
-                    # Reshape the image
-                    self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                        
+                self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
                 self.frames_received += 1
             else:
                 self.image = None
