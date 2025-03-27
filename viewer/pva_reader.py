@@ -87,7 +87,7 @@ class PVAReader:
         roi_key = name_components[1]
         pv_key = name_components[2]
         pv_value = value
-        # can't append simply by using 2 keys in a row, there must be a value to call to then add to
+        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
         # then adds the key to the inner dictionary with update
         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
     
@@ -153,10 +153,11 @@ class PVAReader:
 
             if self.pva_object['codec']:
                 if self.pva_object['codec']['name'] == 'bslz4':
+                    # Handle compressed data
                     compressed_image = np.array(self.pva_object['value'][0][self.data_type])
-                    codec = self.pva_object['codec']['name']
-                    decompressed_image = bls.decompress(compressed_image)
-                    self.image = np.frombuffer(decompressed_image, dtype=self.data_type)
+                    # codec = self.pva_object['codec']['name']
+                    decompressed_image = bls.unpack_array(compressed_image)
+                    self.image = decompressed_image # np.frombuffer(decompressed_image, dtype=self.data_type)
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
@@ -186,15 +187,17 @@ class PVAReader:
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
-        # if not(self.rois):
-        #     if ('ROI' in self.config):
-        #         self.start_roi_backup_monitor()
 
     def start_roi_backup_monitor(self) -> None:
         try:
             for roi_num, roi_dict in self.config['ROI'].items():
                 for config_key, pv_name in roi_dict.items():
-                    self.rois[pv_name] = caget(pv_name)
+                    name_components = pv_name.split(":")
+
+                    roi_key = name_components[1] # ROI1-ROI4
+                    pv_key = name_components[2] # MinX, MinY, SizeX, SizeY
+
+                    self.rois.setdefault(roi_key, {}).update({pv_key: caget(pv_name)})
                     camonitor(pvname=pv_name, callback=self.roi_backup_callback)
         except Exception as e:
             print(f'Failed to setup backup ROI monitor: {e}')

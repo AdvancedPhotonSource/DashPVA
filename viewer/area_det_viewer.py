@@ -243,7 +243,6 @@ class ImageWindow(QMainWindow):
                 self.set_pixel_ordering()
                 self.transpose_image_checked()
                 self.reader.start_channel_monitor()
-
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
@@ -261,8 +260,11 @@ class ImageWindow(QMainWindow):
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-
+        
         if self.reader is not None:
+            if not(self.reader.rois):
+                    if ('ROI' in self.reader.config):
+                        self.reader.start_roi_backup_monitor()
             self.start_stats_monitors()
             self.add_rois()
             self.start_timers()
@@ -390,8 +392,9 @@ class ImageWindow(QMainWindow):
             ROI4 -- Pink (#ff00ff)
         """
         try:
-            print(self.reader.attributes)
-            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added '#' prefix for hex colors
+            print(self.reader.rois)
+            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            # TODO: can just loop through values rather than lookup with keys
             for roi in self.reader.rois.keys():
                 x = self.reader.rois[roi].get("MinX", 0)
                 y = self.reader.rois[roi].get("MinY", 0)
