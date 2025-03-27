@@ -18,7 +18,7 @@ class PVAReader:
         self.provider = provider
         self.config_filepath = config_filepath
         self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = "dp-ADSim"
+        self.pva_prefix = input_channel.split(":")[0]
         # variables that will store pva data
         self.pva_object = None
         self.image = None
