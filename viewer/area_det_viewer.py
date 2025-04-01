@@ -392,15 +392,14 @@ class ImageWindow(QMainWindow):
             ROI4 -- Pink (#ff00ff)
         """
         try:
-            print(self.reader.rois)
             roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
             # TODO: can just loop through values rather than lookup with keys
-            for roi in self.reader.rois.keys():
-                x = self.reader.rois[roi].get("MinX", 0)
-                y = self.reader.rois[roi].get("MinY", 0)
-                width = self.reader.rois[roi].get("SizeX", 0)
-                height = self.reader.rois[roi].get("SizeY", 0)
-                roi_color = int(roi[-1]) - 1 
+            for roi_num, roi in self.reader.rois.items():
+                x = roi.get("MinX", 0) if not(self.image_is_transposed) else roi.get('MinY',0)
+                y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
+                width = roi.get("SizeX", 0) if not(self.image_is_transposed) else roi.get('SizeY',0)
+                height = roi.get("SizeY", 0) if not(self.image_is_transposed) else roi.get('SizeX',0)
+                roi_color = int(roi_num[-1]) - 1 
                 roi = pg.ROI(pos=[x,y],
                             size=[width, height],
                             movable=False,
@@ -587,14 +586,14 @@ class ImageWindow(QMainWindow):
 
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
-        for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
-            x_pos = self.reader.rois[roi_key].get("MinX",0)
-            y_pos = self.reader.rois[roi_key].get("MinY",0)
-            width = self.reader.rois[roi_key].get("SizeX",0)
-            height = self.reader.rois[roi_key].get("SizeY",0)
+        for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
+            x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
+            y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
+            width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
+            height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
-    
+
     def update_roi_region(self) -> None:
         """
         Forces the image viewer to refresh when an ROI region changes.

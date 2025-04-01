@@ -190,7 +190,7 @@ class PVAReader:
                     uncompressed_shape = (img_uncompressed_size,)
                     # Handle compressed data
                     compressed_image = self.pva_object['value'][0][self.data_type]
-                    decompressed_image = bitshuffle.decompress_lz4(compressed_image[0:], uncompressed_shape, dtype, 0)
+                    decompressed_image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
                     self.image = decompressed_image 
 
                 elif self.pva_object['codec']['name'] == '':
