@@ -642,7 +642,7 @@ class ImageWindow(QMainWindow):
         self.plot_call_id.setText(f'{self.call_id_plot:d}')
         self.size_x_val.setText(f'{self.reader.shape[0]:d}')
         self.size_y_val.setText(f'{self.reader.shape[1]:d}')
-        self.data_type_val.setText(self.reader.data_type)
+        self.data_type_val.setText(self.reader.display_dtype)
         self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
         self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
         self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")

@@ -57,6 +57,7 @@ class PVAReader:
         self.attributes = []
         self.timestamp = None
         self.data_type = None
+        self.display_dtype = None
         # variables used for parsing analysis PV
         self.analysis_index = None
         self.analysis_exists = False
@@ -91,7 +92,6 @@ class PVAReader:
             pv (PvaObject): The PV object received by the channel monitor.
         """
         self.pva_object = pv
-        # print(self.pva_object.get())
         self.parse_image_data_type()
         self.pva_to_image()
         self.parse_pva_attributes()
@@ -128,8 +128,10 @@ class PVAReader:
         if self.pva_object is not None:
             try:
                 self.data_type = list(self.pva_object['value'][0].keys())[0]
+                self.display_dtype = self.data_type if self.pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+
             except:
-                self.data_type = "could not detect"
+                self.display_dtype = "could not detect"
     
     def parse_pva_attributes(self) -> None:
         """
@@ -183,19 +185,13 @@ class PVAReader:
 
                 if self.pva_object['codec']['name'] == 'bslz4':
                     size = self.pva_object['uncompressedSize']
-                    # TODO: change the dtype to use codec[name][parameter] number
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
-                    print(dtype)
                     img_uncompressed_size = size // dtype.itemsize
                     uncompressed_shape = (img_uncompressed_size,)
                     # Handle compressed data
                     compressed_image = self.pva_object['value'][0][self.data_type]
-                    # print(uncompressed_shape)
-                    # print(f"Compressed image shape: {compressed_image.shape}, dtype: {compressed_image.dtype}")
-                    # print(f"Expected uncompressed shape: {uncompressed_shape}, dtype: {numpy_dtype}")
-                    # print(f"First bytes of compressed data: {compressed_image[:10]}")
                     decompressed_image = bitshuffle.decompress_lz4(compressed_image[0:], uncompressed_shape, dtype, 0)
-                    self.image = decompressed_image # np.frombuffer(decompressed_image, dtype=self.data_type)
+                    self.image = decompressed_image 
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
