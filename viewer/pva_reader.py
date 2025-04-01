@@ -15,18 +15,34 @@ class PVAReader:
             provider (protocol): The protocol for the PVA channel.
             config_filepath (str): File path to the configuration TOML file.
         """
+        # Each datatype is enumerated in C++ starting 1-10
+        
         self.NUMPY_DATA_TYPE_MAP = {
-            'ubyteValue'   : np.dtype('uint8'),
-            'byteValue'   : np.dtype('int8'),
-            'ushortValue'  : np.dtype('uint16'),
-            'shortValue'   : np.dtype('int16'),
-            'uintValue'    : np.dtype('uint32'),
-            'intValue'    : np.dtype('int32'),
-            'ulongValue'   : np.dtype('uint64'),
-            'longValue'    : np.dtype('int64'),
-            'floatValue'   : np.dtype('float32'),
-            'doubleValue'  : np.dtype('float64')
+            pva.UBYTE   : np.dtype('uint8'),
+            pva.BYTE    : np.dtype('int8'),
+            pva.USHORT  : np.dtype('uint16'),
+            pva.SHORT   : np.dtype('int16'),
+            pva.UINT    : np.dtype('uint32'),
+            pva.INT     : np.dtype('int32'),
+            pva.ULONG   : np.dtype('uint64'),
+            pva.LONG    : np.dtype('int64'),
+            pva.FLOAT   : np.dtype('float32'),
+            pva.DOUBLE  : np.dtype('float64')
         }
+        
+        self. NTNDA_DATA_TYPE_MAP = {
+            pva.UBYTE   : 'ubyteValue',
+            pva.BYTE    : 'byteValue',
+            pva.USHORT  : 'ushortValue',
+            pva.SHORT   : 'shortValue',
+            pva.UINT    : 'uintValue',
+            pva.INT     : 'intValue',
+            pva.ULONG   : 'ulongValue',
+            pva.LONG    : 'longValue',
+            pva.FLOAT   : 'floatValue',
+            pva.DOUBLE  : 'doubleValue',
+        }
+
         self.input_channel = input_channel        
         self.provider = provider
         self.config_filepath = config_filepath
@@ -75,6 +91,7 @@ class PVAReader:
             pv (PvaObject): The PV object received by the channel monitor.
         """
         self.pva_object = pv
+        # print(self.pva_object.get())
         self.parse_image_data_type()
         self.pva_to_image()
         self.parse_pva_attributes()
@@ -166,12 +183,13 @@ class PVAReader:
 
                 if self.pva_object['codec']['name'] == 'bslz4':
                     size = self.pva_object['uncompressedSize']
-                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.data_type)
+                    # TODO: change the dtype to use codec[name][parameter] number
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
                     print(dtype)
                     img_uncompressed_size = size // dtype.itemsize
                     uncompressed_shape = (img_uncompressed_size,)
                     # Handle compressed data
-                    compressed_image = np.array(self.pva_object['value'][0][self.data_type], dtype=dtype)
+                    compressed_image = self.pva_object['value'][0][self.data_type]
                     # print(uncompressed_shape)
                     # print(f"Compressed image shape: {compressed_image.shape}, dtype: {compressed_image.dtype}")
                     # print(f"Expected uncompressed shape: {uncompressed_shape}, dtype: {numpy_dtype}")
