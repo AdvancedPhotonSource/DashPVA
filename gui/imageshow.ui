@@ -1239,7 +1239,7 @@ QPushButton:pressed {
                <string>Log Image</string>
               </property>
               <property name="checked">
-               <bool>false</bool>
+               <bool>true</bool>
               </property>
              </widget>
             </item>
@@ -1272,9 +1272,6 @@ QPushButton:pressed {
               <property name="text">
                <string>Transpose Image</string>
               </property>
-              <property name="checked">
-               <bool>true</bool>
-              </property>
              </widget>
             </item>
             <item row="5" column="1">
@@ -1300,15 +1297,15 @@ QPushButton:pressed {
                 <property name="text">
                  <string>C</string>
                 </property>
-                <property name="checked">
-                 <bool>true</bool>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QRadioButton" name="rbtn_F">
                 <property name="text">
                  <string>Fortran</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
                 </property>
                </widget>
               </item>

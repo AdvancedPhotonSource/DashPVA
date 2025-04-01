@@ -3,6 +3,7 @@ import numpy as np
 import pvaccess as pva
 import bitshuffle
 import blosc2 as bls
+import lz4.block
 from epics import camonitor, caget
 
 class PVAReader:
@@ -177,7 +178,7 @@ class PVAReader:
     def pva_to_image(self) -> None:
         """
         Converts the PVA Object to an image array and determines if a frame was missed.
-        Handles bslz4 compressed image data.
+        Handles bslz4 and lz4 compressed image data.
         """
         try:
             if 'dimension' in self.pva_object:
@@ -192,6 +193,16 @@ class PVAReader:
                     compressed_image = self.pva_object['value'][0][self.data_type]
                     decompressed_image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
                     self.image = decompressed_image 
+                
+                elif self.pva_object['codec']['name'] == 'lz4':
+                    # Handle LZ4 compressed data
+                    size = self.pva_object['uncompressedSize']
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+                    compressed_image = self.pva_object['value'][0][self.data_type]
+                    # Decompress using lz4.block
+                    decompressed_bytes = lz4.block.decompress(compressed_image, size)
+                    # Convert bytes to numpy array with correct dtype
+                    self.image = np.frombuffer(decompressed_bytes, dtype=dtype)
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
