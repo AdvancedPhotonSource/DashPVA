@@ -247,6 +247,7 @@ class ImageWindow(QMainWindow):
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
+                self.rois = []
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.set_pixel_ordering()
