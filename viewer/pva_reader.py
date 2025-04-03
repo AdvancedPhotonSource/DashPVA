@@ -2,7 +2,7 @@ import toml
 import numpy as np
 import pvaccess as pva
 import bitshuffle
-import blosc2 as bls
+import blosc2
 import lz4.block
 from epics import camonitor, caget
 
