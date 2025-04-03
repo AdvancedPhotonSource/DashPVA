@@ -583,7 +583,6 @@ class ImageWindow(QMainWindow):
     def update_rois(self) -> None:
         """
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
-
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
@@ -593,6 +592,7 @@ class ImageWindow(QMainWindow):
             height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
+        self.image_view.update()
 
     def update_roi_region(self) -> None:
         """
