@@ -632,28 +632,31 @@ class ImageWindow(QMainWindow):
         """
         Updates the UI labels with current connection and cached data.
         """
-        provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-        is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
-        self.provider_name.setText(provider_name)
-        self.is_connected.setText(is_connected)
-        self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
-        self.frames_received_val.setText(f'{self.reader.frames_received:d}')
-        self.plot_call_id.setText(f'{self.call_id_plot:d}')
-        self.size_x_val.setText(f'{self.reader.shape[0]:d}')
-        self.size_y_val.setText(f'{self.reader.shape[1]:d}')
-        self.data_type_val.setText(self.reader.display_dtype)
-        self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
-        self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
-        self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
-        self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
-        self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+        if self.reader is not None:
+            provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
+            is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
+            self.provider_name.setText(provider_name)
+            self.is_connected.setText(is_connected)
+            self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
+            self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+            self.plot_call_id.setText(f'{self.call_id_plot:d}')
+            if len(self.reader.shape):
+                self.size_x_val.setText(f'{self.reader.shape[0]:d}')
+                self.size_y_val.setText(f'{self.reader.shape[1]:d}')
+            self.data_type_val.setText(self.reader.display_dtype)
+            self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
+            self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
+            self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
+            self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
+            self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self) -> None:
-        if self.hkl_data:
-            self.hkl_setup()
-            self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
-            self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
-            self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
+        if self.reader is not None:
+            if self.hkl_data:
+                self.hkl_setup()
+                self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
+                self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
+                self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
 
     def update_image(self) -> None:
         """

@@ -16,8 +16,9 @@ class PVAReader:
             provider (protocol): The protocol for the PVA channel.
             config_filepath (str): File path to the configuration TOML file.
         """
-        # Each datatype is enumerated in C++ starting 1-10
-        
+        # Each PVA ScalarType is enumerated in C++ starting 1-10
+        # This means we map them as numbers to a numpy datatype which we parse from pva codec parameters
+        # Then use this to correctly decompress the image depending on the codec used
         self.NUMPY_DATA_TYPE_MAP = {
             pva.UBYTE   : np.dtype('uint8'),
             pva.BYTE    : np.dtype('int8'),
@@ -30,7 +31,7 @@ class PVAReader:
             pva.FLOAT   : np.dtype('float32'),
             pva.DOUBLE  : np.dtype('float64')
         }
-        
+        # This also means we can parse the pva codec parameters to show the correct datatype in viewer
         self. NTNDA_DATA_TYPE_MAP = {
             pva.UBYTE   : 'ubyteValue',
             pva.BYTE    : 'byteValue',
@@ -53,7 +54,7 @@ class PVAReader:
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
-        self.pixel_ordering = 'C'
+        self.pixel_ordering = 'F'
         self.image_is_transposed = False
         self.attributes = []
         self.timestamp = None
@@ -185,24 +186,23 @@ class PVAReader:
                 self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
 
                 if self.pva_object['codec']['name'] == 'bslz4':
-                    size = self.pva_object['uncompressedSize']
+                    # Handle BSLZ4 compressed data
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
-                    img_uncompressed_size = size // dtype.itemsize
-                    uncompressed_shape = (img_uncompressed_size,)
-                    # Handle compressed data
+                    uncompressed_size = self.pva_object['uncompressedSize'] // dtype.itemsize # size has to be divided by bytes needed to store dtype in bitshuffle
+                    uncompressed_shape = (uncompressed_size,)
                     compressed_image = self.pva_object['value'][0][self.data_type]
-                    decompressed_image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
-                    self.image = decompressed_image 
-                
+                    # Decompress numpy array to correct datatype
+                    self.image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
+
                 elif self.pva_object['codec']['name'] == 'lz4':
                     # Handle LZ4 compressed data
-                    size = self.pva_object['uncompressedSize']
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+                    uncompressed_size = self.pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
                     compressed_image = self.pva_object['value'][0][self.data_type]
                     # Decompress using lz4.block
-                    decompressed_bytes = lz4.block.decompress(compressed_image, size)
+                    decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
                     # Convert bytes to numpy array with correct dtype
-                    self.image = np.frombuffer(decompressed_bytes, dtype=dtype)
+                    self.image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype is used to convert from buffer to correct dtype from bytes
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
