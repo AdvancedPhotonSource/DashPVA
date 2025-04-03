@@ -67,20 +67,31 @@ class PVASetupDialog(QDialog):
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
+        # Config Upload Tab
+        self.buttonBrowseConfigUpload.clicked.connect(self.browse_config_upload)
+
         # Associator Consumers Tab
-        self.buttonBrowseMetadataAssociator.clicked.connect(self.browse_metadata_config_associator)
+        # self.buttonBrowseMetadataAssociator.clicked.connect(self.browse_metadata_config_associator)
         self.buttonRunAssociatorConsumers.clicked.connect(self.run_associator_consumers)
         self.buttonStopAssociatorConsumers.clicked.connect(self.stop_associator_consumers)
 
         # Collector Tab
-        self.buttonBrowseMetadataCollector.clicked.connect(self.browse_metadata_config_collector)
+        # self.buttonBrowseMetadataCollector.clicked.connect(self.browse_metadata_config_collector)
         self.buttonRunCollector.clicked.connect(self.run_collector)
         self.buttonStopCollector.clicked.connect(self.stop_collector)
 
         # Analysis Consumer Tab
-        self.buttonBrowseMetadataAnalysis.clicked.connect(self.browse_metadata_config_analysis)
+        # self.buttonBrowseMetadataAnalysis.clicked.connect(self.browse_metadata_config_analysis)
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
+
+    def browse_config_upload(self):
+        """
+        Opens a file dialog to select the metadata configuration file for the Associator Consumer.
+        """
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
+        if file_name:
+            self.lineEditConfigUploadPath.setText(file_name)
 
     # Browse functions for AssociatorConsumers
     def browse_processor_file_associator(self):
@@ -297,11 +308,11 @@ class PVASetupDialog(QDialog):
         ]
 
         # Add metadata config file if specified
-        config_path = self.lineEditMetadataConfigAssociator.text()
+        config_path = self.lineEditConfigUploadPath.text()
         if config_path:
-            metadata_config = self.parse_metadata_channels(config_path)
-            if metadata_config:
-                cmd.extend(['--metadata-channels', metadata_config])
+            metadata_pvs = self.parse_metadata_channels(config_path)
+            if metadata_pvs:
+                cmd.extend(['--metadata-channels', metadata_pvs])
 
         try:
             process = subprocess.Popen(
@@ -371,11 +382,11 @@ class PVASetupDialog(QDialog):
         ]
 
         # Add metadata config file if specified
-        config_path = self.lineEditMetadataConfigCollector.text()
+        config_path = self.lineEditConfigUploadPath.text()
         if config_path:
-            metadata_config = self.parse_roi_channels(config_path)
-            if metadata_config:
-                cmd.extend(['--metadata-channels', metadata_config])
+            roi_pvs = self.parse_roi_channels(config_path)
+            if roi_pvs:
+                cmd.extend(['--metadata-channels', roi_pvs])
 
         try:
             process = subprocess.Popen(
@@ -442,9 +453,9 @@ class PVASetupDialog(QDialog):
         ]
 
         # Add metadata config file if specified
-        metadata_config = self.lineEditMetadataConfigAnalysis.text()
-        if metadata_config:
-            cmd.extend(['--processor-args', '{"path": "%s"}' % metadata_config])
+        config_path = self.lineEditConfigUploadPath.text()
+        if config_path:
+            cmd.extend(['--processor-args', '{"path": "%s"}' % config_path])
 
         try:
             process = subprocess.Popen(

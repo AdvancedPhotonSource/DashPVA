@@ -1,6 +1,10 @@
 import toml
 import numpy as np
 import pvaccess as pva
+import bitshuffle
+import blosc2
+import lz4.block
+from epics import camonitor, caget
 
 class PVAReader:
     def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
@@ -12,23 +16,53 @@ class PVAReader:
             provider (protocol): The protocol for the PVA channel.
             config_filepath (str): File path to the configuration TOML file.
         """
+        # Each PVA ScalarType is enumerated in C++ starting 1-10
+        # This means we map them as numbers to a numpy datatype which we parse from pva codec parameters
+        # Then use this to correctly decompress the image depending on the codec used
+        self.NUMPY_DATA_TYPE_MAP = {
+            pva.UBYTE   : np.dtype('uint8'),
+            pva.BYTE    : np.dtype('int8'),
+            pva.USHORT  : np.dtype('uint16'),
+            pva.SHORT   : np.dtype('int16'),
+            pva.UINT    : np.dtype('uint32'),
+            pva.INT     : np.dtype('int32'),
+            pva.ULONG   : np.dtype('uint64'),
+            pva.LONG    : np.dtype('int64'),
+            pva.FLOAT   : np.dtype('float32'),
+            pva.DOUBLE  : np.dtype('float64')
+        }
+        # This also means we can parse the pva codec parameters to show the correct datatype in viewer
+        self. NTNDA_DATA_TYPE_MAP = {
+            pva.UBYTE   : 'ubyteValue',
+            pva.BYTE    : 'byteValue',
+            pva.USHORT  : 'ushortValue',
+            pva.SHORT   : 'shortValue',
+            pva.UINT    : 'uintValue',
+            pva.INT     : 'intValue',
+            pva.ULONG   : 'ulongValue',
+            pva.LONG    : 'longValue',
+            pva.FLOAT   : 'floatValue',
+            pva.DOUBLE  : 'doubleValue',
+        }
+
         self.input_channel = input_channel        
         self.provider = provider
         self.config_filepath = config_filepath
         self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = "dp-ADSim"
+        self.pva_prefix = input_channel.split(":")[0]
         # variables that will store pva data
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
-        self.pixel_ordering = 'C'
-        self.image_is_transposed = True
+        self.pixel_ordering = 'F'
+        self.image_is_transposed = False
         self.attributes = []
         self.timestamp = None
         self.data_type = None
+        self.display_dtype = None
         # variables used for parsing analysis PV
         self.analysis_index = None
-        self.analysis_exists = True
+        self.analysis_exists = False
         self.analysis_attributes = {}
         # variables used for later logic
         self.last_array_id = None
@@ -64,9 +98,9 @@ class PVAReader:
         self.pva_to_image()
         self.parse_pva_attributes()
         self.parse_roi_pvs()
-        if (self.analysis_index is None) and (self.analysis_exists): #go in with the assumption analysis exists, is changed to false otherwise
+        if (self.analysis_index is None) and (not(self.analysis_exists)): #go in with the assumption analysis Doesn't Exist, is changed to True otherwise
             self.analysis_index = self.locate_analysis_index()
-            # print(self.analysis_index)
+        # Only runs if an analysis index was found
         if self.analysis_exists:
             self.analysis_attributes = self.attributes[self.analysis_index]
             if self.config["CONSUMER_TYPE"] == "spontaneous":
@@ -79,7 +113,16 @@ class PVAReader:
                 self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-                
+    
+    def roi_backup_callback(self, pvname, value, **kwargs):
+        name_components = pvname.split(":")
+        roi_key = name_components[1]
+        pv_key = name_components[2]
+        pv_value = value
+        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
+        # then adds the key to the inner dictionary with update
+        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+    
     def parse_image_data_type(self) -> None:
         """
         Parses the PVA Object to determine the incoming data type.
@@ -87,8 +130,10 @@ class PVAReader:
         if self.pva_object is not None:
             try:
                 self.data_type = list(self.pva_object['value'][0].keys())[0]
+                self.display_dtype = self.data_type if self.pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+
             except:
-                self.data_type = "could not detect"
+                self.display_dtype = "could not detect"
     
     def parse_pva_attributes(self) -> None:
         """
@@ -97,7 +142,7 @@ class PVAReader:
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
     
-    def locate_analysis_index(self) -> None:
+    def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
 
@@ -108,9 +153,9 @@ class PVAReader:
             for i in range(len(self.attributes)):
                 attr_pv: dict = self.attributes[i]
                 if attr_pv.get("name", "") == "Analysis":
+                    self.analysis_exists = True
                     return i
             else:
-                self.analysis_exists = False
                 return None
             
     def parse_roi_pvs(self) -> None:
@@ -134,31 +179,52 @@ class PVAReader:
     def pva_to_image(self) -> None:
         """
         Converts the PVA Object to an image array and determines if a frame was missed.
+        Handles bslz4 and lz4 compressed image data.
         """
         try:
-            if self.pva_object is not None:
-                self.frames_received += 1
-                # Parses dimensions and reshapes array into image
-                if 'dimension' in self.pva_object:
-                    self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+            if 'dimension' in self.pva_object:
+                self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+
+                if self.pva_object['codec']['name'] == 'bslz4':
+                    # Handle BSLZ4 compressed data
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+                    uncompressed_size = self.pva_object['uncompressedSize'] // dtype.itemsize # size has to be divided by bytes needed to store dtype in bitshuffle
+                    uncompressed_shape = (uncompressed_size,)
+                    compressed_image = self.pva_object['value'][0][self.data_type]
+                    # Decompress numpy array to correct datatype
+                    self.image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
+
+                elif self.pva_object['codec']['name'] == 'lz4':
+                    # Handle LZ4 compressed data
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+                    uncompressed_size = self.pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
+                    compressed_image = self.pva_object['value'][0][self.data_type]
+                    # Decompress using lz4.block
+                    decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
+                    # Convert bytes to numpy array with correct dtype
+                    self.image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype is used to convert from buffer to correct dtype from bytes
+
+                elif self.pva_object['codec']['name'] == '':
+                    # Handle uncompressed data
                     self.image = np.array(self.pva_object['value'][0][self.data_type])
-                    # reshapes but also transposes image so it is viewed correctly
-                    self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                        
+                self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                self.frames_received += 1
+            else:
+                self.image = None
+                
+            # Check for missed frame starts here
+            current_array_id = self.pva_object['uniqueId']
+            if self.last_array_id is not None: 
+                self.id_diff = current_array_id - self.last_array_id - 1
+                if (self.id_diff > 0):
+                    self.frames_missed += self.id_diff 
                 else:
-                    self.image = None
-                # Check for missed frame starts here
-                current_array_id = self.pva_object['uniqueId']
-                if self.last_array_id is not None: 
-                    self.id_diff = current_array_id - self.last_array_id - 1
-                    if (self.id_diff > 0):
-                        self.frames_missed += self.id_diff 
-                    else:
-                        self.id_diff = 0
-                self.last_array_id = current_array_id
-        except:
-            print("failed process image")
+                    self.id_diff = 0
+            self.last_array_id = current_array_id
+        except Exception as e:
+            print(f"Failed to process image: {e}")
             self.frames_missed += 1
-            # return 1
             
     def start_channel_monitor(self) -> None:
         """
@@ -166,6 +232,20 @@ class PVAReader:
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
+
+    def start_roi_backup_monitor(self) -> None:
+        try:
+            for roi_num, roi_dict in self.config['ROI'].items():
+                for config_key, pv_name in roi_dict.items():
+                    name_components = pv_name.split(":")
+
+                    roi_key = name_components[1] # ROI1-ROI4
+                    pv_key = name_components[2] # MinX, MinY, SizeX, SizeY
+
+                    self.rois.setdefault(roi_key, {}).update({pv_key: caget(pv_name)})
+                    camonitor(pvname=pv_name, callback=self.roi_backup_callback)
+        except Exception as e:
+            print(f'Failed to setup backup ROI monitor: {e}')
         
     def stop_channel_monitor(self) -> None:
         """

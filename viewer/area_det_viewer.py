@@ -111,8 +111,10 @@ class ImageWindow(QMainWindow):
         self.show()
         # Initializing important variables
         self.reader = None
+        self.image = None
         self.call_id_plot = 0
         self.first_plot = True
+        self.image_is_transposed = False
         self.rot_num = 0
         self.rois = []
         self.stats_dialog = {}
@@ -171,6 +173,7 @@ class ImageWindow(QMainWindow):
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
+        self.chk_transpose.stateChanged.connect(self.transpose_image_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
@@ -238,15 +241,16 @@ class ImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.set_pixel_ordering()
+                self.transpose_image_checked()
                 self.reader.start_channel_monitor()
-
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering
+                self.set_pixel_ordering()
+                self.transpose_image_checked()
                 self.reader.start_channel_monitor()
         except:
             print(f'Failed to Connect to {self._input_channel}')
@@ -256,15 +260,21 @@ class ImageWindow(QMainWindow):
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-
+        
         if self.reader is not None:
+            if not(self.reader.rois):
+                    if ('ROI' in self.reader.config):
+                        self.reader.start_roi_backup_monitor()
             self.start_stats_monitors()
             self.add_rois()
             self.start_timers()
             try:
                 self.init_hkl()
                 if self.hkl_data:
-                    self.qx, self.qy, self.qz = self.create_rsm() 
+                    qxyz = self.create_rsm()
+                    self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
+                    self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
+                    self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
             except Exception as e:
                 print('failed to create rsm: %s' % e)
 
@@ -355,9 +365,9 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             if self.chk_transpose.isChecked():
-                self.reader.image_is_transposed = True
+                self.image_is_transposed = True
             else: 
-                self.reader.image_is_transposed = False
+                self.image_is_transposed = False
 
     def reset_first_plot(self) -> None:
         """
@@ -381,22 +391,26 @@ class ImageWindow(QMainWindow):
             ROI3 -- Green (#4CBB17)
             ROI4 -- Pink (#ff00ff)
         """
-        roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  # Added # prefix for hex colors
-        for i, roi in enumerate(self.reader.rois.keys()):
-            x = self.reader.rois[roi].get("MIN_X", 0)
-            y = self.reader.rois[roi].get("MIN_Y", 0)
-            width = self.reader.rois[roi].get("SIZE_X", 0)
-            height = self.reader.rois[roi].get("SIZE_fY", 0)
-            roi = pg.ROI(pos=[x,y],
-                         size=[width, height],
-                         movable=False,
-                         pen=pg.mkPen(color=roi_colors[i]))
-            self.rois.append(roi)
-            self.image_view.addItem(roi)
-            roi.sigRegionChanged.connect(self.update_roi_region)
+        try:
+            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            # TODO: can just loop through values rather than lookup with keys
+            for roi_num, roi in self.reader.rois.items():
+                x = roi.get("MinX", 0) if not(self.image_is_transposed) else roi.get('MinY',0)
+                y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
+                width = roi.get("SizeX", 0) if not(self.image_is_transposed) else roi.get('SizeY',0)
+                height = roi.get("SizeY", 0) if not(self.image_is_transposed) else roi.get('SizeX',0)
+                roi_color = int(roi_num[-1]) - 1 
+                roi = pg.ROI(pos=[x,y],
+                            size=[width, height],
+                            movable=False,
+                            pen=pg.mkPen(color=roi_colors[roi_color]))
+                self.rois.append(roi)
+                self.image_view.addItem(roi)
+                roi.sigRegionChanged.connect(self.update_roi_region)
+        except Exception as e:
+            print(f'Failed to add ROIs:{e}')
 
     def start_hkl_viewer(self) -> None:
-
         try:
             if self.reader is not None and 'HKL' in self.reader.config:
                 qx = self.qx.flatten()
@@ -466,51 +480,52 @@ class ImageWindow(QMainWindow):
         self.hkl_setup()
         
     def hkl_setup(self) -> None:
-        try:
-            # Get everything for the sample circles
-            sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
-            self.sample_circle_directions = []
-            self.sample_cirlce_names = []
-            self.sample_circle_positions = []
-            for pv_key in sample_circle_keys:
-                if pv_key.endswith('DirectionAxis'):
-                    self.sample_circle_directions.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('SpecMotorName'):
-                    self.sample_cirlce_names.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('Position'):
-                    self.sample_circle_positions.append(self.hkl_data[pv_key])
-            # Get everything for the detector circles
-            det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
-            self.det_circle_directions = []
-            self.det_cirlce_names = []
-            self.det_circle_positions = []
-            for pv_key in det_circle_keys:
-                if pv_key.endswith('DirectionAxis'):
-                    self.det_circle_directions.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('SpecMotorName'):
-                    self.det_cirlce_names.append(self.hkl_data[pv_key])
-                elif pv_key.endswith('Position'):
-                    self.det_circle_positions.append(self.hkl_data[pv_key])
-            # Primary Beam Direction
-            self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
-            # Inplane Reference Direction
-            self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
-            # Sample Surface Normal Direction
-            self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
-            # UB Matrix
-            self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
-            self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
-            # Energy
-            self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
-
-            if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
-                # Class for the conversion of angular coordinates to momentum space 
-                self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
-                                                        self.det_circle_directions, 
-                                                        self.primary_beam_directions)
-        except Exception as e:
-            print(f'Error Setting up HKL: {e}')
-            return
+        if self.hkl_config is not None:
+            try:
+                # Get everything for the sample circles
+                sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
+                self.sample_circle_directions = []
+                self.sample_cirlce_names = []
+                self.sample_circle_positions = []
+                for pv_key in sample_circle_keys:
+                    if pv_key.endswith('DirectionAxis'):
+                        self.sample_circle_directions.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('SpecMotorName'):
+                        self.sample_cirlce_names.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('Position'):
+                        self.sample_circle_positions.append(self.hkl_data[pv_key])
+                # Get everything for the detector circles
+                det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
+                self.det_circle_directions = []
+                self.det_cirlce_names = []
+                self.det_circle_positions = []
+                for pv_key in det_circle_keys:
+                    if pv_key.endswith('DirectionAxis'):
+                        self.det_circle_directions.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('SpecMotorName'):
+                        self.det_cirlce_names.append(self.hkl_data[pv_key])
+                    elif pv_key.endswith('Position'):
+                        self.det_circle_positions.append(self.hkl_data[pv_key])
+                # Primary Beam Direction
+                self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
+                # Inplane Reference Direction
+                self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
+                # Sample Surface Normal Direction
+                self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
+                # UB Matrix
+                self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
+                self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
+                # Energy
+                self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
+                # Make sure all values are setup correctly before instantiating QConversion
+                if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
+                    # Class for the conversion of angular coordinates to momentum space 
+                    self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
+                                                            self.det_circle_directions, 
+                                                            self.primary_beam_directions)
+            except Exception as e:
+                print(f'Error Setting up HKL: {e}')
+                return
          
 
     def create_rsm(self) -> np.ndarray:
@@ -571,14 +586,14 @@ class ImageWindow(QMainWindow):
 
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
-        for roi, roi_key in zip(self.rois, self.reader.rois.keys()):
-            x_pos = self.reader.rois[roi_key].get("MIN_X",0)
-            y_pos = self.reader.rois[roi_key].get("MIN_Y",0)
-            width = self.reader.rois[roi_key].get("SIZE_X",0)
-            height = self.reader.rois[roi_key].get("SIZE_Y",0)
+        for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
+            x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
+            y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
+            width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
+            height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
-    
+
     def update_roi_region(self) -> None:
         """
         Forces the image viewer to refresh when an ROI region changes.
@@ -602,14 +617,12 @@ class ImageWindow(QMainWindow):
             if self.reader is not None:
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
-                x, y = q_pointer.x(), q_pointer.y()
-                self.mouse_x_val.setText(f"{x:.3f}")
-                self.mouse_y_val.setText(f"{y:.3f}")
-                img_data = self.reader.get_pva_image()
-                if img_data is not None:
-                    img_data = np.rot90(img_data, k = self.rot_num)
-                    if 0 <= x < self.reader.shape[0] and 0 <= y < self.reader.shape[1]:
-                        self.mouse_px_val.setText(f'{img_data[int(x)][int(y)]}')
+                x, y = q_pointer.x(), q_pointer.y() 
+                if self.image is not None:
+                    if 0 <= x < self.image.shape[0] and 0 <= y < self.image.shape[1]:
+                        self.mouse_x_val.setText(f"{x:.3f}")
+                        self.mouse_y_val.setText(f"{y:.3f}")
+                        self.mouse_px_val.setText(f'{self.image[int(x)][int(y)]}')
                         if self.hkl_data:
                             self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
                             self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
@@ -619,26 +632,31 @@ class ImageWindow(QMainWindow):
         """
         Updates the UI labels with current connection and cached data.
         """
-        provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-        is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
-        self.provider_name.setText(provider_name)
-        self.is_connected.setText(is_connected)
-        self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
-        self.frames_received_val.setText(f'{self.reader.frames_received:d}')
-        self.plot_call_id.setText(f'{self.call_id_plot:d}')
-        self.size_x_val.setText(f'{self.reader.shape[0]:d}')
-        self.size_y_val.setText(f'{self.reader.shape[1]:d}')
-        self.data_type_val.setText(self.reader.data_type)
-        self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
-        self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
-        self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
-        self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
-        self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+        if self.reader is not None:
+            provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
+            is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
+            self.provider_name.setText(provider_name)
+            self.is_connected.setText(is_connected)
+            self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
+            self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+            self.plot_call_id.setText(f'{self.call_id_plot:d}')
+            if len(self.reader.shape):
+                self.size_x_val.setText(f'{self.reader.shape[0]:d}')
+                self.size_y_val.setText(f'{self.reader.shape[1]:d}')
+            self.data_type_val.setText(self.reader.display_dtype)
+            self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
+            self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
+            self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
+            self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
+            self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self) -> None:
-        if self.hkl_data:
-            self.hkl_setup()
-            self.qx, self.qy, self.qz = self.create_rsm()
+        if self.reader is not None:
+            if self.hkl_data:
+                self.hkl_setup()
+                self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
+                self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
+                self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
 
     def update_image(self) -> None:
         """
@@ -651,17 +669,15 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                image = np.rot90(image, k = self.rot_num)
-                if len(image.shape) == 2:
-                    min_level, max_level = np.min(image), np.max(image)
-                    height, width = image.shape[:2]
-                    # coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
+                self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                if len(self.image.shape) == 2:
+                    min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            image = np.log(image + 1)
-                            min_level = np.log(min_level + 1)
-                            max_level = np.log(max_level + 1)
+                            self.image = np.log1p(self.image + 1)
+                            min_level = np.log1p(min_level + 1)
+                            max_level = np.log1p(max_level + 1)
                     if self.first_plot:
-                        self.image_view.setImage(image, 
+                        self.image_view.setImage(self.image, 
                                                  autoRange=False, 
                                                  autoLevels=False, 
                                                  levels=(min_level, max_level),
@@ -671,13 +687,13 @@ class ImageWindow(QMainWindow):
                         self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
-                        self.image_view.setImage(image,
+                        self.image_view.setImage(self.image,
                                                 autoRange=False, 
                                                 autoLevels=False, 
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
-                self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
-                                              y=np.arange(0,self.reader.shape[1]), 
+                self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
+                                              y=np.arange(0,self.image.shape[1]), 
                                               clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")
