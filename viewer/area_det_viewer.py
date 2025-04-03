@@ -292,6 +292,9 @@ class ImageWindow(QMainWindow):
             self.stop_timers()
             for key in self.stats_dialog:
                 self.stats_dialog[key] = None
+            for roi in self.rois:
+                self.image_view.getView().removeItem(roi)
+            self.rois = []
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
