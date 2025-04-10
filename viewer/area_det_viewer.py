@@ -18,7 +18,6 @@ from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
 
 
-max_cache_size = 900 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
 
 
@@ -116,7 +115,7 @@ class ImageWindow(QMainWindow):
         self.first_plot = True
         self.image_is_transposed = False
         self.rot_num = 0
-        self.rois = []
+        self.rois: list[pg.ROI] = []
         self.stats_dialog = {}
         self.stats_data = {}
         self._input_channel = input_channel
@@ -146,8 +145,8 @@ class ImageWindow(QMainWindow):
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
         self.viewer_layout.addWidget(self.image_view,1,1)
-        self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
-        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
+        self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
+        self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
@@ -169,7 +168,8 @@ class ImageWindow(QMainWindow):
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
-        self.rotate90degCCW.clicked.connect(self.rotation_count)
+        # self.rotate90degCCW.clicked.connect(self.rotation_count)
+        # self.rotate90degCCW.clicked.connect(self.rotate_rois)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
@@ -194,6 +194,8 @@ class ImageWindow(QMainWindow):
         self.timer_plot.stop()
         self.timer_labels.stop()
 
+    #TODO: CHECK With 4id network camera to test if
+    # start of X,Y and size of X,Y line up when transposed
     def set_pixel_ordering(self) -> None:
         """
         Checks which pixel ordering is selected on startup
@@ -201,9 +203,10 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             if self.rbtn_C.isChecked():
                 self.reader.pixel_ordering = 'C'
+                self.image_is_transposed = True 
             elif self.rbtn_F.isChecked():
                 self.reader.pixel_ordering = 'F'
-
+                self.image_is_transposed = False
 
     def c_ordering_clicked(self) -> None:
         """
@@ -211,6 +214,7 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'C'
+            self.image_is_transposed = True
 
     def f_ordering_clicked(self) -> None:
         """
@@ -218,6 +222,7 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'F'
+            self.image_is_transposed = False
 
     def open_analysis_window_clicked(self) -> None:
         """
@@ -386,6 +391,19 @@ class ImageWindow(QMainWindow):
         Cycles the image rotation number between 1 and 4.
         """
         self.rot_num = next(rot_gen)
+
+    def rotate_rois(self) -> None:
+        img_center = img_center = np.array(self.image_view.image.shape[::-1]) / 2.0 # width, height
+
+        for roi in self.rois:
+            roi_center = np.array(roi.pos()) + np.array(roi.size()) / 2.0
+            roi.setPos(pos=img_center)
+            roi.rotate(-90)
+            roi_pos = roi.pos()
+            roi.setPos(pos=roi_pos[0]-img_center[0], y=roi_pos[1]-img_center[1]/2)
+
+            
+
 
     def add_rois(self) -> None:
         """

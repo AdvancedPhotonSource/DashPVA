@@ -1,5 +1,6 @@
 # Required Setup
-CONSUMER_TYPE = "spontaneous"
+CONSUMER_MODE = "continuous"
+MAX_CACHE_SIZE = 900 # must be a squared number: 30x30 = 900
 
 # Section used specifically for Metadata Pvs
 [METADATA]

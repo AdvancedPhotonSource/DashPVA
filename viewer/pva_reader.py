@@ -47,7 +47,6 @@ class PVAReader:
 
         self.input_channel = input_channel        
         self.provider = provider
-        self.config_filepath = config_filepath
         self.channel = pva.Channel(self.input_channel, self.provider)
         self.pva_prefix = input_channel.split(":")[0]
         # variables that will store pva data
@@ -69,22 +68,31 @@ class PVAReader:
         self.frames_missed = 0
         self.frames_received = 0
         self.id_diff = 0
-        # variables used for ROI and Stats PVs from config
+        # variables setup using config
         self.config = {}
         self.rois = {}
         self.stats = {}
+        self.CONSUMER_MODE = ''
+        self.MAX_CACHE_SIZE = 0
 
-        if self.config_filepath != '':
-            with open(self.config_filepath, 'r') as toml_file:
-                # loads the pvs in the toml file into a python dictionary
+        self.configure(config_filepath)
+
+    def configure(self, config_path: str) -> None:
+        if config_path != '':
+            with open(config_path, 'r') as toml_file:
+                # loads toml config into a python dict
                 self.config:dict = toml.load(toml_file)
-                self.stats:dict = self.config["STATS"]
-                if self.config["CONSUMER_TYPE"] == "spontaneous":
-                    # TODO: change to dictionaries that store postions as keys and pv as value
-                    self.analysis_cache_dict = {"Intensity": {},
-                                                "ComX": {},
-                                                "ComY": {},
-                                                "Position": {}} 
+
+        self.stats:dict = self.config.get('STATS', {})
+        self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
+        self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
+
+        if self.CONSUMER_MODE == "continuous":
+            self.analysis_cache_dict = {"Intensity": {},
+                                        "ComX": {},
+                                        "ComY": {},
+                                        "Position": {}}
+        
 
     def pva_callbackSuccess(self, pv) -> None:
         """
@@ -103,7 +111,7 @@ class PVAReader:
         # Only runs if an analysis index was found
         if self.analysis_exists:
             self.analysis_attributes = self.attributes[self.analysis_index]
-            if self.config["CONSUMER_TYPE"] == "spontaneous":
+            if self.config["CONSUMER_MODE"] == "continuous":
                 # turns axis1 and axis2 into a tuple
                 incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
                                   self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))

@@ -84,9 +84,9 @@ class AnalysisWindow(QMainWindow):
         view_comx (pyqtgraph.ImageView): Image view for x center-of-mass if consumer type is vectorized.
         view_comy (pyqtgraph.ImageView): Image view for y center-of-mass if consumer type is vectorized.
         view_intensity (pyqtgraph.ImageView): Image view for intensity if consumer type is vectorized.
-        plot_comx (pg.PlotWidget): Plot widget for x center-of-mass if consumer type is spontaneous.
-        plot_comy (pg.PlotWidget): Plot widget for y center-of-mass if consumer type is spontaneous.
-        plot_intensity (pg.PlotWidget): Plot widget for intensity if consumer type is spontaneous.
+        plot_comx (pg.PlotWidget): Plot widget for x center-of-mass if consumer type is continuous.
+        plot_comy (pg.PlotWidget): Plot widget for y center-of-mass if consumer type is continuous.
+        plot_intensity (pg.PlotWidget): Plot widget for intensity if consumer type is continuous.
         update_counter (int): Counter for updates to plotting data.
         max_updates (int): Maximum number of updates allowed.
         analysis_index (int): Index for identifying analysis data from metadata.
@@ -107,7 +107,7 @@ class AnalysisWindow(QMainWindow):
         self.setWindowTitle('Analysis Window')
         # TODO: load config separately using the filepath provided by the parent
         self.config: dict = self.parent.reader.config
-        self.consumer_type = self.config.get("CONSUMER_TYPE", "")
+        self.consumer_mode = self.config.get("CONSUMER_MODE", "")
         self.xpos_path = None
         self.ypos_path = None
         self.save_path = None
@@ -124,7 +124,7 @@ class AnalysisWindow(QMainWindow):
         self.max_updates = 10
         self.analysis_index = self.parent.reader.analysis_index
         if self.analysis_index is not None:
-            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_type == "vectorized" else self.parent.reader.analysis_cache_dict 
+            self.analysis_attributes: dict = self.parent.reader.attributes[self.analysis_index] if self.consumer_mode == "vectorized" else self.parent.reader.analysis_cache_dict 
         else:
             self.analysis_attributes = {}
 
@@ -152,9 +152,9 @@ class AnalysisWindow(QMainWindow):
         Configures the plotting interface based on the consumer type.
         """
         # cmap = pg.colormap.getFromMatplotlib('viridis')
-        if self.consumer_type == "spontaneous":
+        if self.consumer_mode == "continuous":
             self.init_scatter_plot()
-        elif self.consumer_type == "vectorized":
+        elif self.consumer_mode == "vectorized":
             self.init_image_view()
         else:
             #TODO: replace with w/ a message box
@@ -183,7 +183,7 @@ class AnalysisWindow(QMainWindow):
         This function resets the plot and clears all caches when the reset button is clicked.
         """
         # self.status_text.setText("Waiting for the first scan...")
-        if self.consumer_type == "vectorized":
+        if self.consumer_mode == "vectorized":
             self.view_intensity.clear()
             self.view_comx.clear()
             self.view_comy.clear()
@@ -262,9 +262,9 @@ class AnalysisWindow(QMainWindow):
         self.min_comy = self.sbox_comy_min.value()
         self.max_comy = self.sbox_comy_max.value()
 
-        if self.config['CONSUMER_TYPE'] == 'spontaneous':
+        if self.config['CONSUMER_MODE'] == 'continuous':
             self.plot_images()
-        if self.config['CONSUMER_TYPE'] == 'vectorized':
+        if self.config['CONSUMER_MODE'] == 'vectorized':
             self.view_intensity.setLevels(self.min_intensity, self.max_intensity)
             self.view_comx.setLevels(self.min_comx, self.max_comx)
             self.view_comy.setLevels(self.min_comy, self.max_comy)
@@ -298,9 +298,9 @@ class AnalysisWindow(QMainWindow):
             self.view_comy.setImage(img=com_y_matrix.T, autoRange=False, autoLevels=False, autoHistogramRange=False)
 
         
-    def update_spontaneous_image(self, intensity, com_x, com_y, position) -> None:
+    def update_continuous_image(self, intensity, com_x, com_y, position) -> None:
         """
-        Updates the scatter plots for spontaneous data.
+        Updates the scatter plots for continuous data.
 
         Args:
             intensity (list): List of intensity values.
@@ -346,12 +346,12 @@ class AnalysisWindow(QMainWindow):
 
             self.update_counter += 1
             # TODO: test if this line can be assigned once and use update on its own
-            if self.consumer_type == "vectorized":
+            if self.consumer_mode == "vectorized":
                 self.analysis_attributes = self.parent.reader.attributes[self.analysis_index] 
                 intensity = self.analysis_attributes["value"][0]["value"].get("Intensity",0.0)
                 com_x = self.analysis_attributes["value"][0]["value"].get("ComX",0.0)
                 com_y = self.analysis_attributes["value"][0]["value"].get("ComY",0.0)
-            elif self.consumer_type == "spontaneous":
+            elif self.consumer_mode == "continuous":
                 intensity = list(self.analysis_attributes["Intensity"].values())
                 com_x = list(self.analysis_attributes["ComX"].values())
                 com_y = list(self.analysis_attributes["ComY"].values())
@@ -372,15 +372,15 @@ class AnalysisWindow(QMainWindow):
                     self.sbox_comy_max.setValue(self.max_comy)
 
                 # print(intensity)
-                if self.consumer_type == "vectorized":
+                if self.consumer_mode == "vectorized":
                     self.update_vectorized_image(intensity=intensity, com_x=com_x, com_y=com_y,)
-                elif self.consumer_type == "spontaneous":
-                    self.update_spontaneous_image(intensity=intensity, com_x=com_x, com_y=com_y, position=position)  
+                elif self.consumer_mode == "continuous":
+                    self.update_continuous_image(intensity=intensity, com_x=com_x, com_y=com_y, position=position)  
 
     def init_scatter_plot(self) -> None:
         """
         Initializes scatter plots for intensity, com_x, and com_y data.
-        called only if consumer type is spontaneous
+        called only if consumer type is continuous
         """
         self.scatter_item_intensity = pg.ScatterPlotItem()
         self.scatter_item_comx = pg.ScatterPlotItem()
