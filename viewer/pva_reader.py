@@ -87,6 +87,9 @@ class PVAReader:
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
 
+        if self.config.get('DETECTOR_PREFIX', ''):
+            self.pva_prefix = self.config['DETECTOR_PREFIX']
+
         if self.CONSUMER_MODE == "continuous":
             self.analysis_cache_dict = {"Intensity": {},
                                         "ComX": {},
@@ -118,7 +121,7 @@ class PVAReader:
                 # use a tuple as a key so that we can check if there is a repeat position
                 self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
                 self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
-                self.analysis_cache_dict["ComY"].update({incoming_coord:self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
+                self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
     

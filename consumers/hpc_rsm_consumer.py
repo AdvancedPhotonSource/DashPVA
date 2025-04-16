@@ -16,6 +16,7 @@ class HpcRsmProcessor(AdImageProcessor):
         self.processingTime = 0
         
         # HKL parameters
+        self.attributes = None
         self.hkl_data = None
         self.q_conv = None
         self.shape = None
@@ -33,6 +34,27 @@ class HpcRsmProcessor(AdImageProcessor):
         if "HKL" in configDict:
             self.hkl_data = configDict["HKL"]
             self.init_hkl()
+
+    def parse_pva_ndattributes(self, pva_object):
+        """
+        Parse the NDAttributes from the PVA Object into a python dict.
+        Store attributes in self.attributes for easy reference.
+        """
+        if pva_object is None:
+            return
+        obj_dict = pva_object.get()
+        attributes = {}
+        for attr in obj_dict.get("attribute", []):
+            name = attr['name']
+            value = attr['value']
+            attributes[name] = value
+
+        # Include additional values commonly found at top-level for completeness.
+        for value_key in ["codec", "uniqueId", "uncompressedSize"]:
+            if value_key in pva_object:
+                attributes[value_key] = pva_object[value_key]
+
+        self.attributes = attributes
 
     def init_hkl(self):
         """Initialize HKL parameters from config"""

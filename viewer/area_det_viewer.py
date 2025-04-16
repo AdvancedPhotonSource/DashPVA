@@ -509,25 +509,25 @@ class ImageWindow(QMainWindow):
                 # Get everything for the sample circles
                 sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
                 self.sample_circle_directions = []
-                self.sample_cirlce_names = []
+                self.sample_circle_names = []
                 self.sample_circle_positions = []
                 for pv_key in sample_circle_keys:
                     if pv_key.endswith('DirectionAxis'):
                         self.sample_circle_directions.append(self.hkl_data[pv_key])
                     elif pv_key.endswith('SpecMotorName'):
-                        self.sample_cirlce_names.append(self.hkl_data[pv_key])
+                        self.sample_circle_names.append(self.hkl_data[pv_key])
                     elif pv_key.endswith('Position'):
                         self.sample_circle_positions.append(self.hkl_data[pv_key])
                 # Get everything for the detector circles
                 det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
                 self.det_circle_directions = []
-                self.det_cirlce_names = []
+                self.det_circle_names = []
                 self.det_circle_positions = []
                 for pv_key in det_circle_keys:
                     if pv_key.endswith('DirectionAxis'):
                         self.det_circle_directions.append(self.hkl_data[pv_key])
                     elif pv_key.endswith('SpecMotorName'):
-                        self.det_cirlce_names.append(self.hkl_data[pv_key])
+                        self.det_circle_names.append(self.hkl_data[pv_key])
                     elif pv_key.endswith('Position'):
                         self.det_circle_positions.append(self.hkl_data[pv_key])
                 # Primary Beam Direction

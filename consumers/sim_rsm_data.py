@@ -144,7 +144,7 @@ def get_record_definition(name, value_type) -> str:
         record(waveform, "%s") {
             field(DTYP, "Soft Channel")
             field(FTVL, "DOUBLE")
-            field(NELM, "64")
+            field(NELM, "9")
         }
         """ % name
 

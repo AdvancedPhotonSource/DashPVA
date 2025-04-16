@@ -170,18 +170,25 @@ class PVASetupDialog(QDialog):
         """
         pv_config = self.parse_toml(path=metadata_config_path)
         metadata_config : dict = pv_config.get("METADATA", {})
+        hkl_config : dict = pv_config.get('HKL', {})
+        ca_pvs = ""
+        pva_pvs = ""
         
         if metadata_config and metadata_config is not None:
             ca = metadata_config.get("CA", {})
             pva = metadata_config.get("PVA", {})
-            ca_pvs = ""
-            pva_pvs = ""
+            
             if ca:
-                for value in list(ca.values()):
+                for value in ca.values():
                     ca_pvs += f"ca://{value},"
             if pva:
-                for value in list(pva.values()):
+                for value in pva.values():
                     pva_pvs += f"pva://{value},"
+   
+        if hkl_config and hkl_config is not None:
+            for pvs_dict in hkl_config.values():
+                for pv_channel in pvs_dict.values():
+                    ca_pvs += f"ca://{pv_channel},"
             
         all_pvs = ca_pvs.strip(',') if not(pva_pvs) else ca_pvs + pva_pvs.strip(',')
         return all_pvs
@@ -313,6 +320,9 @@ class PVASetupDialog(QDialog):
             metadata_pvs = self.parse_metadata_channels(config_path)
             if metadata_pvs:
                 cmd.extend(['--metadata-channels', metadata_pvs])
+
+        # print(' '.join(cmd))
+
 
         try:
             process = subprocess.Popen(
