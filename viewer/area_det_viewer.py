@@ -207,6 +207,7 @@ class ImageWindow(QMainWindow):
             elif self.rbtn_F.isChecked():
                 self.reader.pixel_ordering = 'F'
                 self.image_is_transposed = False
+                self.reader.image_is_transposed = False
 
     def c_ordering_clicked(self) -> None:
         """
@@ -223,6 +224,7 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             self.reader.pixel_ordering = 'F'
             self.image_is_transposed = False
+            self.reader.image_is_transposed = False
 
     def open_analysis_window_clicked(self) -> None:
         """
