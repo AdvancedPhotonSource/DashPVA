@@ -168,7 +168,7 @@ class ImageWindow(QMainWindow):
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
-        # self.rotate90degCCW.clicked.connect(self.rotation_count)
+        self.rotate90degCCW.clicked.connect(self.rotation_count)
         # self.rotate90degCCW.clicked.connect(self.rotate_rois)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
@@ -392,18 +392,15 @@ class ImageWindow(QMainWindow):
         """
         self.rot_num = next(rot_gen)
 
-    def rotate_rois(self) -> None:
-        img_center = img_center = np.array(self.image_view.image.shape[::-1]) / 2.0 # width, height
+    # def rotate_rois(self) -> None:
+    #     img_center = img_center = np.array(self.image_view.image.shape[::-1]) / 2.0 # width, height
 
-        for roi in self.rois:
-            roi_center = np.array(roi.pos()) + np.array(roi.size()) / 2.0
-            roi.setPos(pos=img_center)
-            roi.rotate(-90)
-            roi_pos = roi.pos()
-            roi.setPos(pos=roi_pos[0]-img_center[0], y=roi_pos[1]-img_center[1]/2)
-
-            
-
+    #     for roi in self.rois:
+    #         roi_center = np.array(roi.pos()) + np.array(roi.size()) / 2.0
+    #         roi.setPos(pos=img_center)
+    #         roi.rotate(-90)
+    #         roi_pos = roi.pos()
+    #         roi.setPos(pos=roi_pos[0]-img_center[0], y=roi_pos[1]-img_center[1]/2)
 
     def add_rois(self) -> None:
         """
