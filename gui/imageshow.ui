@@ -220,7 +220,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-618</y>
+           <y>-693</y>
            <width>335</width>
            <height>1911</height>
           </rect>
@@ -1276,7 +1276,7 @@ QPushButton:pressed {
               <item row="5" column="0">
                <widget class="QCheckBox" name="chk_transpose">
                 <property name="enabled">
-                 <bool>false</bool>
+                 <bool>true</bool>
                 </property>
                 <property name="maximumSize">
                  <size>
@@ -1329,7 +1329,7 @@ QPushButton:pressed {
               <item row="7" column="0">
                <widget class="QPushButton" name="rotate90degCCW">
                 <property name="enabled">
-                 <bool>false</bool>
+                 <bool>true</bool>
                 </property>
                 <property name="minimumSize">
                  <size>
