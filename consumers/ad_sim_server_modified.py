@@ -270,7 +270,7 @@ class NumpyRandomGenerator(FrameGenerator):
         total_intensity = 200 
         #array = np.zeros((size, size))
         x = np.linspace(0, size - 1, size)
-        y = np.linspace(0, int(size/2) - 1, int(size/2))
+        y = np.linspace(0, size - 1, size)
         x_grid, y_grid = np.meshgrid(x, y)
 
         x0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_x * (x_grid+ shift_x) / size)) 

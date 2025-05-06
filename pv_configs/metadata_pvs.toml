@@ -1,6 +1,8 @@
 # Required Setup
+DETECTOR_PREFIX = 'dp-ADSim'
 CONSUMER_MODE = "continuous"
-MAX_CACHE_SIZE = 900 # must be a squared number: 30x30 = 900
+MAX_CACHE_SIZE = 900 # must be a squared number: 30*30 = 900
+OUTPUT_FILE_LOCATION = ''
 
 # Section used specifically for Metadata Pvs
 [METADATA]
@@ -20,17 +22,17 @@ MAX_CACHE_SIZE = 900 # must be a squared number: 30x30 = 900
     SIZE_X = "dp-ADSim:ROI1:SizeX"
     SIZE_Y = "dp-ADSim:ROI1:SizeY"
 
-    # [ROI.ROI2]
-    # MIN_X = "dp-ADSim:ROI2:MinX"
-    # MIN_Y = "dp-ADSim:ROI2:MinY"
-    # SIZE_X = "dp-ADSim:ROI2:SizeX"
-    # SIZE_Y = "dp-ADSim:ROI2:SizeY"
+    [ROI.ROI2]
+    MIN_X = "dp-ADSim:ROI2:MinX"
+    MIN_Y = "dp-ADSim:ROI2:MinY"
+    SIZE_X = "dp-ADSim:ROI2:SizeX"
+    SIZE_Y = "dp-ADSim:ROI2:SizeY"
 
-    # [ROI.ROI3]
-    # MIN_X = "dp-ADSim:ROI3:MinX"
-    # MIN_Y = "dp-ADSim:ROI3:MinY"
-    # SIZE_X = "dp-ADSim:ROI3:SizeX"
-    # SIZE_Y = "dp-ADSim:ROI3:SizeY"
+    [ROI.ROI3]
+    MIN_X = "dp-ADSim:ROI3:MinX"
+    MIN_Y = "dp-ADSim:ROI3:MinY"
+    SIZE_X = "dp-ADSim:ROI3:SizeX"
+    SIZE_Y = "dp-ADSim:ROI3:SizeY"
 
     [ROI.ROI4]
     MIN_X = "dp-ADSim:ROI4:MinX"
@@ -65,50 +67,51 @@ MAX_CACHE_SIZE = 900 # must be a squared number: 30x30 = 900
     [HKL.SAMPLE_CIRCLE_AXIS_1]
     AXIS_NUMBER = '6idb1:m28_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m28_RBV:DirectionAxis'
-    NAME = '6idb1:m28_RBV:Name'
+    # NAME = '6idb1:m28_RBV:Name'
     POSITION = '6idb1:m28_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m28_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m28_RBV:SpecMotorName'
     
     [HKL.SAMPLE_CIRCLE_AXIS_2]
     AXIS_NUMBER = '6idb1:m17_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m17_RBV:DirectionAxis'
-    NAME = '6idb1:m17_RBV:Name'
+    # NAME = '6idb1:m17_RBV:Name'
     POSITION = '6idb1:m17_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m17_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m17_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_3]
     AXIS_NUMBER = '6idb1:m19_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m19_RBV:DirectionAxis'
-    NAME = '6idb1:m19_RBV:Name'
+    # NAME = '6idb1:m19_RBV:Name'
     POSITION = '6idb1:m19_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m19_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m19_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_4]
     AXIS_NUMBER = '6idb1:m20_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m20_RBV:DirectionAxis'
-    NAME = '6idb1:m20_RBV:Name'
+    # NAME = '6idb1:m20_RBV:Name'
     POSITION = '6idb1:m20_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m20_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m20_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_1]
     AXIS_NUMBER = '6idb1:m29_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m29_RBV:DirectionAxis'
-    NAME = '6idb1:m29_RBV:Name'
+    # NAME = '6idb1:m29_RBV:Name'
     POSITION = '6idb1:m29_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m29_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m29_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_2]
     AXIS_NUMBER = '6idb1:m18_RBV:AxisNumber'
     DIRECTION_AXIS = '6idb1:m18_RBV:DirectionAxis'
-    NAME = '6idb1:m18_RBV:Name'
+    # NAME = '6idb1:m18_RBV:Name'
     POSITION = '6idb1:m18_RBV:Position'
-    SPEC_MOTOR_NAME = '6idb1:m18_RBV:SpecMotorName'
+    # SPEC_MOTOR_NAME = '6idb1:m18_RBV:SpecMotorName'
 
     [HKL.SPEC]
     ENERGY_VALUE = '6idb:spec:Energy:Value'
+    UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
+
 #TODO: make RSM consumer
 # These values will not change often so they can be changed to values and read in by the rsm consumer
-    UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
 
     [HKL.DETECTOR_SETUP]
     CENTER_CHANNEL_PIXEL = 'DetectorSetup:CenterChannelPixel'

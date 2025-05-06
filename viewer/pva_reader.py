@@ -125,7 +125,7 @@ class PVAReader:
                 # double storing of the postion, will find out if needed
                 self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
     
-    def roi_backup_callback(self, pvname, value, **kwargs):
+    def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         name_components = pvname.split(":")
         roi_key = name_components[1]
         pv_key = name_components[2]

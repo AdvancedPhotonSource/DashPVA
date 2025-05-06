@@ -24,6 +24,7 @@ def monitor_callback(data):
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
         print(data.get())
+        print(data.getIntrospectionDict())
         image_data = data['value'][0]['ushortValue']
         # print(data.has_key('uncompressedSize'))
         # print(data['compressedSize'], data['uncompressedSize'])
@@ -33,23 +34,28 @@ def monitor_callback(data):
     
         # print(f"appending image total intensity {np.sum(image_data)}")
 
-        # print(f"Image data length: {len(image_data)}")
+        print(f"Image data length: {len(image_data)}")
 
-        metadata = {}
-        if 'attribute' in data:
-            attributes = data['attribute']
-            for attr in attributes:
-                name = attr['name']
-                value = attr['value']
-                metadata[name] = value
-            metadata["uniqueId"] = data["uniqueId"]
+        # metadata = {}
+        # if 'attribute' in data:
+        #     attributes = data['attribute']
+        #     for attr in attributes:
+        #         name = attr['name']
+        #         value = attr['value'][0]['value']
+        #         metadata[name] = value
+        #     metadata["uniqueId"] = data["uniqueId"]
 
-        print("\nMetadata:")
-        for channel, value in metadata.items():
-            print(f"{channel}: {value}")
-            if channel == "processor:1:analysis":
-                print(f"appending {value[0]['value']}")
-                metadata0_list.append(value[0]['value'])
+        # print("\nMetadata:")
+        # for channel, value in metadata.items():
+        #     print(f"{channel} = {value}")
+
+        # print([metadata[f'PrimaryBeamDirection:AxisNumber{i}'] for i in range(1,4)])
+        # primary_beam_directions = [metadata.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
+        # inplane_beam_direction = [metadata.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
+        # sample_surface_normal_direction = [metadata.get(f'SampleSurfaceNormalDirection:AxisNumber{i}', None) for i in range(1,4)]
+
+        # print(primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction)
+
 
         # if previous_data is not None:
         #     images_equal = (image_data == previous_data).all()
@@ -68,7 +74,7 @@ def monitor_callback(data):
 
 # collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
 # collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
-collector_channel = pva.Channel("pvapy:image", pva.PVA)
+collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
 

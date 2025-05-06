@@ -76,11 +76,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
             value = attr['value']
             attributes[name] = value
 
-        # Include additional values commonly found at top-level for completeness.
-        for value_key in ["codec", "uniqueId", "uncompressedSize"]:
-            if value_key in pva_object:
-                attributes[value_key] = pva_object[value_key]
-
         self.attributes = attributes
 
     def pva_to_image(self, pva_object):
@@ -169,9 +164,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # Now create a PvObject with the analysis results
         # We will send out a single data point (X, Y, Intensity, ComX, ComY)
         analysis_object = PvObject({'value':{'Axis1': DOUBLE, 'Axis2': DOUBLE,
-                                    'Intensity': DOUBLE, 'ComX': DOUBLE, 'ComY': DOUBLE}},
-                                   {'value':{'Axis1': float(x_value),
-                                    'Axis2': float(y_value),
+                                    'Intensity': DOUBLE, 
+                                    'ComX': DOUBLE, 
+                                    'ComY': DOUBLE}},
+                                   {'value':{'Axis1': float(x_value),'Axis2': float(y_value),
                                     'Intensity': float(intensity),
                                     'ComX': float(com_x),
                                     'ComY': float(com_y)}})
