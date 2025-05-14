@@ -101,7 +101,7 @@ detector_setup_record = {
     "PixelDirection2": "x+",
     "CenterChannelPixel": [500, 500],
     "Size": [100, 100],
-    "Distance": 20.644,
+    "Distance": 400.644,
     "Units": "mm"
 }
 
@@ -250,7 +250,7 @@ def main() -> None:
 
     # For dynamic axis records, store their base positions
     base_positions = {name: rec["Position"] for name, rec in axis_records.items()}
-    amplitude = 0.5        # Amplitude of the sine-wave update
+    amplitude = 1        # Amplitude of the sine-wave update
     update_interval = 0.5  # Seconds between updates
     start_time = time.time()
 
@@ -261,7 +261,9 @@ def main() -> None:
                 # Update the Position field with a sine offset
                 new_position = base_positions[name] + amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
-                if rec["SpecMotorName"] == "Eta":
+                # print(name)
+                if name == "6idb1:m17.RBV":
+                    # print('here')
                     # Only Update Eta Position
                     update_ca_record_field(caIoc, name, "Position", new_position)
             

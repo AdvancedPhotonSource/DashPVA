@@ -1,12 +1,12 @@
 import time
+import copy
 import numpy as np
 import pvaccess as pva
-from pvaccess import PvObject
+from pvaccess import PvObject, NtAttribute
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
-import logging
-
+# import logging
 import xrayutilities as xu
 import toml
 
@@ -31,19 +31,21 @@ class HpcRsmProcessor(AdImageProcessor):
         self.type_dict = {'value':{
             'qx': [pva.DOUBLE],
             'qy': [pva.DOUBLE],
-            'qz': [pva.DOUBLE]}}                   
+            'qz': [pva.DOUBLE],
+            # 'attributes_diff': pva.BOOLEAN
+            }}                   
         
         # HKL parameters
-        self.attributes = {}
+        self.all_attributes = {}
         self.hkl_pv_channels = set()
         self.hkl_attributes = {}
+        self.old_attrbutes : dict = None
         self.q_conv = None
         self.qx = None
         self.qy = None
         self.qz = None   
 
         self.configure(configDict)
-       
         
     def configure(self, configDict):
         """Configure processor settings and initialize HKL parameters"""
@@ -63,7 +65,7 @@ class HpcRsmProcessor(AdImageProcessor):
     def parse_hkl_ndattributes(self, pva_object):
         """
         Parse the NDAttributes from the PVA Object into a python dict.
-        Store attributes in self.attributes for easy reference.
+        Store attributes in self.all_attributes for easy reference.
         """
         if pva_object is None:
             return
@@ -73,7 +75,7 @@ class HpcRsmProcessor(AdImageProcessor):
         for attr in attributes: # list of attribute dictionaries
             name = attr['name']
             value = attr['value'][0]['value']
-            self.attributes[name] = value
+            self.all_attributes[name] = value
             if name in self.hkl_pv_channels:
                 hkl_attributes[name] = value
         return hkl_attributes
@@ -114,7 +116,6 @@ class HpcRsmProcessor(AdImageProcessor):
             return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
         else:
             return None, None, None
-
         
     def get_ub_matrix(self, hkl_attr: dict):
         ub_matrix_key = self.hkl_config['SPEC'].get('UB_MATRIX_VALUE', '')
@@ -124,8 +125,7 @@ class HpcRsmProcessor(AdImageProcessor):
     def get_energy(self, hkl_attr: dict):
         energy_key = self.hkl_config['SPEC'].get('ENERGY_VALUE', '')
 
-        return hkl_attr[energy_key]
-      
+        return hkl_attr[energy_key]  
 
     def create_rsm(self, hkl_attr: dict, shape: tuple):
         """Calculate reciprocal space mapping"""
@@ -179,6 +179,20 @@ class HpcRsmProcessor(AdImageProcessor):
             with open("error_output.txt", "w") as f:
                 f.write(str(e))
             return None, None, None
+        
+    def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
+        # if len(previous_data) != len(metadata):
+        #         dicts_equal = False
+        #     else:   
+        for key, value in hkl_attr.items():
+            if isinstance(value, np.ndarray):
+                arrs_equal = np.array_equal(value, old_attr[key])
+                if not arrs_equal:
+                    return True
+            elif old_attr[key] != hkl_attr[key]:
+                return True
+        
+        return False
 
     def process(self, pvObject):
         t0 = time.time()
@@ -192,41 +206,47 @@ class HpcRsmProcessor(AdImageProcessor):
         if 'timeStamp' not in pvObject:
             # No timestamp, just return the object
             return pvObject
-        
+                
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
-        for key, val in self.hkl_attributes.items():
-            self.logger.log(level=1, msg=f'{key}: {val}')
-        
         self.shape = tuple([dim['size'] for dim in dims])
     
-        qx, qy, qz = self.create_rsm(self.hkl_attributes, self.shape)
+        if self.old_attrbutes is not None:
+            attributes_diff = self.attributes_diff(self.hkl_attributes, self.old_attrbutes)
+            self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
+        else:
+            attributes_diff = True
+
+        if attributes_diff:
+            # Only recalculate qxyz if there are new attributes
+            self.qx, self.qy, self.qz = self.create_rsm(self.hkl_attributes, self.shape)
         
-        if qx is not None:
+        if self.qx is not None:
             # Create RSM data structure
             rsm_data = {
-                'qx': qx.flatten().tolist(),
-                'qy': qy.flatten().tolist(),
-                'qz': qz.flatten().tolist()
+                'qx': self.qx.flatten().tolist(),
+                'qy': self.qy.flatten().tolist(),
+                'qz': self.qz.flatten().tolist(),
+                # 'attributes_diff': attributes_diff
             }
             try:
                 # Create attribute
                 rsm_attribute = {'value': rsm_data}
             
-                rsm_object = pva.PvObject(self.type_dict, rsm_attribute) 
-                rsm_attribute = pva.NtAttribute('RSM', rsm_object)
-                pvObject['attribute'] = [rsm_attribute,]
+                rsm_object = PvObject(self.type_dict, rsm_attribute) 
+                rsm_attribute = NtAttribute('RSM', rsm_object)
+
+                frameAttributes = pvObject['attribute']
+                frameAttributes.append(rsm_attribute)
+                pvObject['attribute'] = frameAttributes
+
             except Exception as e:
                 with open("error_output.txt", "w") as f:
                     f.writelines([str(np.shape(rsm_data['qx']))+'\n', str(type(rsm_data['qx']))+'\n', str(e)])
                 return pvObject
             
-            
             self.nFramesProcessed += 1
         else:
             self.nFrameErrors += 1
-
-
-
         # Update stats
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         self.lastFrameTimestamp = frameTimestamp
@@ -240,7 +260,6 @@ class HpcRsmProcessor(AdImageProcessor):
         self.processingTime += (t1 - t0)
 
         return pvObject
-
 
     def resetStats(self):
         """

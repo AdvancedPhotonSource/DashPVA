@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 from generators import rotation_cycle
 from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
-from pv_setup_dialog import PVSetupDialog
+# from unused_files.pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
 
 
@@ -44,7 +44,7 @@ class ConfigDialog(QDialog):
         # Connecting signasl to 
         # self.btn_edit.clicked.connect(self.json_open_file_dialog)
         self.btn_browse.clicked.connect(self.browse_file_dialog)
-        self.btn_create.clicked.connect(self.new_pv_setup)
+        # self.btn_create.clicked.connect(self.new_pv_setup)
         self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
     def init_ui(self) -> None:
@@ -62,30 +62,30 @@ class ConfigDialog(QDialog):
 
         self.le_roi_config.setText(self.pvs_path)
 
-    def new_pv_setup(self) -> None:
-        """
-        Opens a new window for setting up a new PV configuration within the UI.
-        """
-        self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
+    # def new_pv_setup(self) -> None:
+    #     """
+    #     Opens a new window for setting up a new PV configuration within the UI.
+    #     """
+    #     self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
     
-    def edit_pv_setup(self) -> None:
-        """
-        Opens a window for editing an existing PV configuration.
-        """
-        if self.le_edit_file_path.text() != '':
-            self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
-        else:
-            print('file path empty')
+    # def edit_pv_setup(self) -> None:
+    #     """
+    #     Opens a window for editing an existing PV configuration.
+    #     """
+    #     if self.le_edit_file_path.text() != '':
+    #         self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
+    #     else:
+    #         print('file path empty')
 
     def dialog_accepted(self) -> None:
         """
         Handles the final step when the dialog's accept button is pressed.
-        Starts the ImageWindow process with filled information.
+        Starts the DiffractionImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
         self.roi_config = self.le_roi_config.text()
         if osp.isfile(self.roi_config) or (self.roi_config == ''):
-            self.image_viewer = ImageWindow(input_channel=self.input_channel,
+            self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel,
                                             file_path=self.roi_config,) 
         else:
             print('File Path Doesn\'t Exitst')  
@@ -94,7 +94,7 @@ class ConfigDialog(QDialog):
             self.new_dialog.show()    
 
 
-class ImageWindow(QMainWindow):
+class DiffractionImageWindow(QMainWindow):
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
@@ -104,7 +104,7 @@ class ImageWindow(QMainWindow):
             input_channel (str): The PVA input channel for the detector.
             file_path (str): The file path for loading configuration.
         """
-        super(ImageWindow, self).__init__()
+        super(DiffractionImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
         self.setWindowTitle('Image Viewer with PVAaccess')
         self.show()
@@ -738,7 +738,7 @@ class ImageWindow(QMainWindow):
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
         del self.stats_dialog # otherwise dialogs stay in memory
-        super(ImageWindow,self).closeEvent(event)
+        super(DiffractionImageWindow,self).closeEvent(event)
 
 
 if __name__ == '__main__':

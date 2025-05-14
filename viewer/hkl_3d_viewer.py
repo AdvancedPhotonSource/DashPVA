@@ -1,77 +1,106 @@
 import sys
-import argparse
 import numpy as np
-import open3d as o3d
-import matplotlib.pyplot as plt
-# from pyqtgraph import colormap
-from PyQt5.QtWidgets import QApplication, QPushButton, QMainWindow
-#TODO: add axis, legend, and labels
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PyQt5.QtCore import QTimer
+import pyvistaqt as pvqt
+from pyvistaqt import QtInteractor
+import pyvista as pv
+from pva_reader import PVAReader
 
 class HKL3DViewer(QMainWindow):
-    def __init__(self, qx, qy, qz, intensity):
+    def __init__(self):
         super().__init__()
-        self.qx = qx
-        self.qy = qy
-        self.qz = qz
-        self.intensity = intensity
+        self.setWindowTitle("HKL PyVista Viewer")
+        self.setGeometry(100, 100, 800, 600)
+
+        self.all_points = None
+        self.all_intensity = None
+
+        self.pva_reader = PVAReader(config_filepath='pv_configs/metadata_pvs.toml')
+        self.pva_reader.start_channel_monitor()
+
         self.initUI()
+        self.initTimer()
 
     def initUI(self):
-        self.setWindowTitle("HKL Data Viewer")
-        self.setGeometry(100, 100, 300, 200)
+        self.frame = QWidget()
+        self.layout = QVBoxLayout()
 
-        # Button to open Open3D visualization
-        btn = QPushButton("Show 3D Plot", self)
-        btn.setGeometry(80, 80, 140, 40)
-        btn.clicked.connect(self.show_3d_plot)
+        # PyVista rendering widget
+        pv.set_plot_theme('dark')
 
-    def show_3d_plot(self) -> None:
-        # open_3d_plot(self.qx, self.qy, self.qz, self.intensity)
-        points = np.column_stack((self.qx, self.qy, self.qz))
-        
-        # Normalize qz for color mapping
-        intensity_min, intensity_max = np.min(self.intensity), np.max(self.intensity)
-        norm_intensity = (self.intensity - intensity_min) / (intensity_max - intensity_min)
+        self.plotter = QtInteractor(self.frame)
+        self.layout.addWidget(self.plotter.interactor)
 
-        # Apply a colormap
-        cmap = plt.get_cmap("jet")
-        colors = cmap(norm_intensity)[:, :3]  # Extract RGB
+        self.frame.setLayout(self.layout)
+        self.setCentralWidget(self.frame)
 
+        # Add axes and initial empty point cloud
+        self.point_cloud = None
+        self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+        self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 
-        # Create Open3D point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(colors)
+    def initTimer(self):
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_plot)
+        self.timer.start(1000)  # update every 1000 ms
 
-
-        # Show the Open3D plot
+    def update_plot(self):
         try:
-            axes = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0,0,0])
-            o3d.visualization.draw_geometries([pcd, axes])
+            # Skip if nothing cached
+            if not self.pva_reader.cache_images:
+                return
+            
+            # Collect all cached data
+            all_points = []
+            all_intensity = []
 
-            # o3d.visualization.draw_geometries([pcd])
+            for img, qx, qy, qz in zip(
+                self.pva_reader.cache_images,
+                self.pva_reader.cache_qx,
+                self.pva_reader.cache_qy,
+                self.pva_reader.cache_qz
+            ):
+                flat_points = np.column_stack((
+                    qx.flatten(), qy.flatten(), qz.flatten()
+                ))
+                flat_intensity = img.flatten()
+
+                all_points.append(flat_points)
+                all_intensity.append(flat_intensity)
+
+            all_points = np.vstack(all_points)
+            all_intensity = np.concatenate(all_intensity)
+
+            # Normalize intensity
+            norm_intensity = (all_intensity - all_intensity.min()) / (all_intensity.ptp())
+            scalars = (norm_intensity * 255).astype(np.uint8)
+
+            cloud = pv.PolyData(all_points)
+            cloud["intensity"] = scalars
+
+            # First-time setup
+            if self.point_cloud is None:
+                self.point_cloud = self.plotter.add_points(
+                    cloud,
+                    scalars="intensity",
+                    cmap="jet",
+                    render_points_as_spheres=False,
+                    point_size=10,
+                    opacity=0.8,
+                )
+            else:
+                self.plotter.update_coordinates(all_points, render=False)
+                self.plotter.update_scalars(scalars, render=False)
+                self.plotter.render()
+
         except Exception as e:
-            print(f'Failed to perform visualization:{e}')
-            sys.exit(2)
+            print(f"[Viewer] Failed to update 3D plot: {e}")
+
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Visualize Q-space data using Open3D.")
-    parser.add_argument("--qx-file", type=str, required=True, help="Path to NumPy file containing qx array.")
-    parser.add_argument("--qy-file", type=str, required=True, help="Path to NumPy file containing qy array.")
-    parser.add_argument("--qz-file", type=str, required=True, help="Path to NumPy file containing qz array.")
-    parser.add_argument("--intensity-file", type=str, required=True, help="Path to NumPy file containing Intensity array.")
-
-    args = parser.parse_args()
-
-    try:
-        qx = np.load(args.qx_file)
-        qy = np.load(args.qy_file)
-        qz = np.load(args.qz_file)
-        intensity = np.load(args.intensity_file)
-    except Exception as e:
-        print(f"Failed to Load Numpy File: {e}")
-
     app = QApplication(sys.argv)
-    window = HKL3DViewer(qx, qy,qz,intensity)
-    window.show()
+    viewer = HKL3DViewer()
+    viewer.show()
     sys.exit(app.exec_())

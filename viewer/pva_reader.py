@@ -1,9 +1,11 @@
 import toml
 import numpy as np
 import pvaccess as pva
+import h5py
 import bitshuffle
 import blosc2
 import lz4.block
+from collections import deque
 from epics import camonitor, caget
 
 class PVAReader:
@@ -32,6 +34,7 @@ class PVAReader:
             pva.DOUBLE  : np.dtype('float64')
         }
         # This also means we can parse the pva codec parameters to show the correct datatype in viewer
+        # rather than using default compressed dtype
         self. NTNDA_DATA_TYPE_MAP = {
             pva.UBYTE   : 'ubyteValue',
             pva.BYTE    : 'byteValue',
@@ -59,10 +62,15 @@ class PVAReader:
         self.timestamp = None
         self.data_type = None
         self.display_dtype = None
-        # variables used for parsing analysis PV
+        # variables used for parsing analysis data
         self.analysis_index = None
-        self.analysis_exists = False
         self.analysis_attributes = {}
+        # variables used for parsing hkl data
+        self.rsm_index = None
+        self.rsm_attributes = {}
+        # self.qx = None
+        # self.qy = None
+        # self.qz = None
         # variables used for later logic
         self.last_array_id = None
         self.frames_missed = 0
@@ -74,10 +82,16 @@ class PVAReader:
         self.stats = {}
         self.CONSUMER_MODE = ''
         self.MAX_CACHE_SIZE = 0
+        # Cache variables that need to be initialized
+        self.cache_images = None
+        self.cache_qx = None
+        self.cache_qy = None
+        self.cache_qz = None
 
-        self.configure(config_filepath)
 
-    def configure(self, config_path: str) -> None:
+        self._configure(config_filepath)
+
+    def _configure(self, config_path: str) -> None:
         if config_path != '':
             with open(config_path, 'r') as toml_file:
                 # loads toml config into a python dict
@@ -86,9 +100,22 @@ class PVAReader:
         self.stats:dict = self.config.get('STATS', {})
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
+        self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
+        self._HKL_IN_CONFIG = ('HKL' in self.config)
 
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
+
+        if "MAX_CACHE_SIZE" in self.config and self.MAX_CACHE_SIZE > 0:
+            # Create a 1D NumPy array whose length = MAX_CACHE_SIZE
+            self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
+            if self._HKL_IN_CONFIG:
+                self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
+
+        else:
+            self.cache_images = None
 
         if self.CONSUMER_MODE == "continuous":
             self.analysis_cache_dict = {"Intensity": {},
@@ -106,24 +133,32 @@ class PVAReader:
         """
         self.pva_object = pv
         self.parse_image_data_type()
-        self.pva_to_image()
         self.parse_pva_attributes()
+         # Check for HKL attributes from all attributes
+        if self._HKL_IN_CONFIG:
+            self.rsm_index = self.locate_rsm_index()
+            if self.rsm_index is not None:
+                self.parse_rsm_attributes()
         self.parse_roi_pvs()
-        if (self.analysis_index is None) and (not(self.analysis_exists)): #go in with the assumption analysis Doesn't Exist, is changed to True otherwise
+        self.pva_to_image()
+
+        if self.ANALYSIS_IN_CONFIG:
             self.analysis_index = self.locate_analysis_index()
-        # Only runs if an analysis index was found
-        if self.analysis_exists:
-            self.analysis_attributes = self.attributes[self.analysis_index]
-            if self.config["CONSUMER_MODE"] == "continuous":
-                # turns axis1 and axis2 into a tuple
-                incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
-                                  self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
-                # use a tuple as a key so that we can check if there is a repeat position
-                self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
-                self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
-                self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
-                # double storing of the postion, will find out if needed
-                self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+            # Only runs if an analysis index was found
+            if self.analysis_index is not None:
+                self.analysis_attributes = self.attributes[self.analysis_index]
+                if self.config["CONSUMER_MODE"] == "continuous":
+                    # turns axis1 and axis2 into a tuple
+                    incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
+                                    self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
+                    # use a tuple as a key so that we can check if there is a repeat position
+                    self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
+                    self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
+                    self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
+                    # double storing of the postion, will find out if needed
+                    self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+       
+
     
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         name_components = pvname.split(":")
@@ -161,14 +196,32 @@ class PVAReader:
             int: The index of the analysis attribute or None if not found.
         """
         if self.attributes:
-            for i in range(len(self.attributes)):
-                attr_pv: dict = self.attributes[i]
+            # for i in range(len(self.attributes))
+            for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
+                # attr_pv: dict = self.attributes[i]
                 if attr_pv.get("name", "") == "Analysis":
-                    self.analysis_exists = True
                     return i
             else:
                 return None
             
+    def locate_rsm_index(self) -> int|None:
+        if self.attributes:
+            # for i in range(len(self.attributes))
+            for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
+                # attr_pv: dict = self.attributes[i]
+                if attr_pv.get("name", "") == "RSM":
+                    return i
+            else:
+                return None
+    
+    def parse_rsm_attributes(self) -> None:
+        rsm_attributes = self.attributes[self.rsm_index]
+        self.rsm_attributes = rsm_attributes['value'][0].get('value', {})
+        # if self.rsm_attributes:
+        #     self.qx = self.rsm_attributes.get('qx', np.zeros(self.shape[0] * self.shape[1]))
+        #     self.qy = self.rsm_attributes.get('qy', np.zeros(self.shape[0] * self.shape[1]))
+        #     self.qz = self.rsm_attributes.get('qz', np.zeros(self.shape[0] * self.shape[1]))
+                
     def parse_roi_pvs(self) -> None:
         """
         Parses attributes to extract ROI-specific PV information.
@@ -193,8 +246,13 @@ class PVAReader:
         Handles bslz4 and lz4 compressed image data.
         """
         try:
+            self.frames_received += 1
+
             if 'dimension' in self.pva_object:
                 self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+
+                # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
+                # print('empty shape:', self.empty_array.shape)
 
                 if self.pva_object['codec']['name'] == 'bslz4':
                     # Handle BSLZ4 compressed data
@@ -217,24 +275,39 @@ class PVAReader:
 
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
-                    self.image = np.array(self.pva_object['value'][0][self.data_type])
-                        
+                    self.image = np.array(self.pva_object['value'][0][self.data_type]) 
+                    # print('img:shape:', self.image.shape)                       
+
+                # Check for missed frame starts here
+                current_array_id = self.pva_object['uniqueId']
+                if self.last_array_id is not None: 
+                    self.id_diff = current_array_id - self.last_array_id - 1
+                    if (self.id_diff > 0):
+                        self.frames_missed += self.id_diff 
+                        # if self._HKL_IN_CONFIG:
+                            # for i in range(self.id_diff):
+                            #     if self._HKL_IN_CONFIG:
+                            #         self.cache_images.append(self.empty_array)
+                            #         self.cache_qx.append(self.empty_array)
+                            #         self.cache_qy.append(self.empty_array)
+                            #         self.cache_qz.append(self.empty_array)                            
+                    if self._HKL_IN_CONFIG:
+                            self.cache_images.append(self.image)
+                            self.cache_qx.append(self.rsm_attributes['qx'])
+                            self.cache_qy.append(self.rsm_attributes['qy'])
+                            self.cache_qz.append(self.rsm_attributes['qz'])
+                        # print(self.cache_qx)
                 self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
-                self.frames_received += 1
+                self.last_array_id = current_array_id
+                self.id_diff = 0
+
             else:
                 self.image = None
+                raise ValueError("Image data could not be processed.")
                 
-            # Check for missed frame starts here
-            current_array_id = self.pva_object['uniqueId']
-            if self.last_array_id is not None: 
-                self.id_diff = current_array_id - self.last_array_id - 1
-                if (self.id_diff > 0):
-                    self.frames_missed += self.id_diff 
-                else:
-                    self.id_diff = 0
-            self.last_array_id = current_array_id
         except Exception as e:
             print(f"Failed to process image: {e}")
+            self.frames_received -= 1
             self.frames_missed += 1
             
     def start_channel_monitor(self) -> None:
@@ -257,6 +330,45 @@ class PVAReader:
                     camonitor(pvname=pv_name, callback=self.roi_backup_callback)
         except Exception as e:
             print(f'Failed to setup backup ROI monitor: {e}')
+
+    def save_caches_to_h5(self, filename: str) -> None:
+        # TODO:
+        # add motor positions
+        # add timestamps
+        # add analysis and rest of metadata
+        """
+        Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
+        The file structure is as follows:
+            /entry/data         --> The image cache array
+            /entry/HKL/qx        --> The qx cache array (if available)
+            /entry/HKL/qy        --> The qy cache array (if available)
+            /entry/HKL/qz        --> The qz cache array (if available)
+
+        Args:
+            filename (str): The output HDF5 file name.
+        """
+        try:
+            if self.cache_images is None or self.cache_qx is None or self.cache_qy is None or self.cache_qz is None:
+                raise ValueError("Caches cannot be empty.")
+            n = len(self.cache_images)
+            if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n) or n == 0:
+                raise ValueError("All four caches must have the same number of elements.")
+            
+            with h5py.File(filename, 'w') as h5f:
+                # Create the main "images" group
+                images_grp = h5f.create_group("entry")
+                images_grp.create_dataset("data", data=np.array(self.cache_images))
+
+                # Create HKL subgroup under images if HKL caches exist
+                hkl_grp = images_grp.create_group("HKL")
+                hkl_grp.create_dataset("qx", data=np.array(self.cache_qx))
+                hkl_grp.create_dataset("qy", data=np.array(self.cache_qy))
+                hkl_grp.create_dataset("qz", data=np.array(self.cache_qz))
+                    
+            print(f"Caches successfully saved in a branch structure to {filename}")
+        except Exception as e:
+            print(f"Failed to save caches to {filename}: {e}")
+
         
     def stop_channel_monitor(self) -> None:
         """
@@ -290,4 +402,4 @@ class PVAReader:
         Returns:
             list: The attributes of the current PVA object.
         """
-        return self.attributes
+        return self.attributesa
