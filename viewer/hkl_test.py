@@ -107,10 +107,6 @@ class HKLImageWindow(QMainWindow):
         self.call_id_plot = 0
         self.first_plot = True
         self.image_is_transposed = False
-        # self.rot_num = 0
-        # self.rois: list[pg.ROI] = []
-        # self.stats_dialog = {}
-        # self.stats_data = {}
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
@@ -120,12 +116,7 @@ class HKLImageWindow(QMainWindow):
         # self.timer_rsm = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
-        # self.timer_plot.timeout.connect(self.update_rois)
-        # For testing ROIs being sent from analysis window
-        self.roi_x = 100
-        self.roi_y = 200
-        self.roi_width = 50
-        self.roi_height = 50
+
         # HKL values
         self.hkl_config = None
         self.hkl_data = {}
@@ -143,31 +134,16 @@ class HKLImageWindow(QMainWindow):
         self.actor = None
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 
-        # plot = pg.PlotItem()        
-        # self.image_view = pg.ImageView(view=plot)
-        # self.viewer_layout.addWidget(self.image_view,1,1)
-        # self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
-        # self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
-        # second is a separate plot to show the horiontal avg of peaks in the image
-        # self.horizontal_avg_plot = pg.PlotWidget()
-        # self.horizontal_avg_plot.invertY(True)
-        # self.horizontal_avg_plot.setMaximumWidth(175)
-        # self.horizontal_avg_plot.setYLink(self.image_view.getView())
-        # self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
-
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        # self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer)
-        # self.rbtn_C.clicked.connect(self.c_ordering_clicked)
-        # self.rbtn_F.clicked.connect(self.f_ordering_clicked)
-        # self.rotate90degCCW.clicked.connect(self.rotate_rois)
+        self.rbtn_C.clicked.connect(self.c_ordering_clicked)
+        self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         # self.log_image.clicked.connect(self.reset_first_plot)
         # self.freeze_image.stateChanged.connect(self.freeze_image_checked)
-        # self.display_rois.stateChanged.connect(self.show_rois_checked)
-        # self.plotting_frequency.valueChanged.connect(self.start_timers)
+        self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
@@ -230,46 +206,28 @@ class HKLImageWindow(QMainWindow):
             # A double check to make sure there isn't a connection already when starting
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                                         config_filepath=self._file_path,
+                                         viewer_type='rsm')
                 self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
                 self.reader.stop_channel_monitor()
                 del self.reader
-                # for roi in self.rois:
-                #     pass
-                    # self.image_view.getView().removeItem(roi)
-                # self.rois = []
                 self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                                         config_filepath=self._file_path,
+                                         viewer_type='rsm')
                 self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
         except:
             print(f'Failed to Connect to {self._input_channel}')
-            # self.image_view.clear()
-            # self.horizontal_avg_plot.getPlotItem().clear()
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
         
         if self.reader is not None:
-            # if not(self.reader.rois):
-            #         if ('ROI' in self.reader.config):
-            #             self.reader.start_roi_backup_monitor()
-            # self.start_stats_monitors()
-            # self.add_rois()
             self.start_timers()
-            # try:
-            #     self.init_hkl()
-            #     if self.hkl_data:
-            #         qxyz = self.create_rsm()
-            #         self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
-            #         self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
-            #         self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
-            # except Exception as e:
-            #     print('failed to create rsm: %s' % e)
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -280,28 +238,10 @@ class HKLImageWindow(QMainWindow):
         if self.reader is not None:
             self.reader.stop_channel_monitor()
             self.stop_timers()
-            # for key in self.stats_dialog:
-            #     self.stats_dialog[key] = None
-            # for roi in self.rois:
-            #     pass
-                # self.image_view.getView().removeItem(roi)
-            # self.rois = []
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-  
-    def show_rois_checked(self) -> None:
-        """
-        Toggles visibility of ROIs based on the checked state of the display checkbox.
-        """
-        if self.reader is not None:
-            if self.display_rois.isChecked():
-                for roi in self.rois:
-                    roi.show()
-            else:
-                for roi in self.rois:
-                    roi.hide()
 
     def freeze_image_checked(self) -> None:
         """
@@ -319,85 +259,6 @@ class HKLImageWindow(QMainWindow):
         Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
         """
         self.first_plot = True
-
-    def start_hkl_viewer(self) -> None:
-        try:
-            if self.reader is not None and 'HKL' in self.reader.config:
-                qx = self.qx.flatten()
-                qy = self.qy.flatten()
-                qz = self.qz.flatten()
-                intensity = self.reader.image.flatten()
-
-                np.save('qx.npy', qx)
-                np.save('qy.npy', qy)
-                np.save('qz.npy', qz)
-                np.save('intensity.npy', intensity)
-
-                # cmd = ['python', 'viewer/hkl_3d_viewer.py',
-                #        '--qx-file', 'qx.npy',
-                #        '--qy-file', 'qy.npy',
-                #        '--qz-file', 'qz.npy',
-                #        '--intensity-file', 'intensity.npy']
-
-                # process = subprocess.Popen(
-                #     cmd,
-                #     stdout=subprocess.PIPE,
-                #     stderr=subprocess.STDOUT,
-                #     preexec_fn=os.setsid,
-                #     universal_newlines=True
-                # )
-
-                # self.processes[process.pid] = process
-
-        except Exception as e:
-            print(f'Failed to load HKL Viewer:{e}')
-
-
-    def start_hkl_monitors(self) -> None:
-        """
-        Initializes camonitors for HKL values and stores them in a dictionary.
-        """
-        try:
-            if "HKL" in self.reader.config:
-                self.hkl_config = self.reader.config["HKL"]
-
-                # Monitor each HKL parameter
-                for section, pv_dict in self.hkl_config.items():
-                    for key, pv_name in pv_dict.items():
-                        self.hkl_data[pv_name] = caget(pv_name)
-                        camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
-        except Exception as e:
-            print(f"Failed to initialize HKL monitors: {e}")
-
-    def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
-        """
-        Callback for updating HKL values based on changes observed by `camonitor`.
-
-        Args:
-            pvname (str): The name of the PV that has been updated.
-            value: The new value sent by the monitor for the PV.
-            **kwargs: Additional keyword arguments sent by the monitor.
-        """
-        self.hkl_data[pvname] = value
-        if self.qx is not None and self.qy is not None and self.qz is not None:
-            self.update_rsm()
-
-    def init_hkl(self) -> None:
-        """
-        Initializes HKL parameters by setting up monitors for each HKL value.
-        """
-        self.start_hkl_monitors()
-        self.hkl_setup()
-        
-    def hkl_setup(self) -> None:
-        pass
-         
-    def update_roi_region(self) -> None:
-        """
-        Forces the image viewer to refresh when an ROI region changes.
-        """
-        pass
-        # self.image_view.update()
 
     def update_pv_prefix(self) -> None:
         """
@@ -433,43 +294,45 @@ class HKLImageWindow(QMainWindow):
                 # min_level, max_level = np.min(self.image), np.max(self.image)
                 try:    
                     # Collect all cached data
-                    flat_intensity = np.array(self.reader.cache_images).flatten()
-                    # print('images:', self.reader.cache_images)
-                    qx = np.array(self.reader.cache_qx).flatten()
-                    # # print('qx:', self.reader.cache_qx)
-                    qy = np.array(self.reader.cache_qy).flatten()
-                    qz = np.array(self.reader.cache_qz).flatten()
+                    flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
+                    qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
+                    qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
+                    qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
                 
-                    flat_points = np.column_stack((
+                    points = np.column_stack((
                         qx, qy, qz
                     ))
-
-                    self.cloud = pyv.PolyData(flat_points)
-                    self.cloud['intensity'] = flat_intensity                    
-
+                    min = np.min(flat_intensity)
+                    max = np.max(flat_intensity)
+                    
                     # First-time setup
                     if self.first_plot:
-                        # self.lut = pyv.LookupTable()
-                        # self.lut.cmap = 'viridis'
-                        # self.lut.scalar_range=(np.min(flat_intensity), np.max(flat_intensity))
-                        # self.lut.alpha_range=(0, 1)
+                        self.cloud = pyv.PolyData(points)
+                        self.cloud['intensity'] = flat_intensity 
+
+                        self.lut = pyv.LookupTable(cmap='viridis')
+                        self.lut.scalar_range = (min, max)
+                        self.lut.apply_opacity([0,1])
+                        # self.lut.below_range_color = 'black
+                        # self.lut.above_range_color = 'y'
+                        
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
                             scalars='intensity',
-                            cmap='viridis'
-                            # point_size=10,
+                            cmap=self.lut
                         )
-                        self.lut = self.actor.mapper.lookup_table
-                        self.lut.scalar_range = (np.min(flat_intensity), np.max(flat_intensity))
-                        self.lut.alpha_range = (0, 1)
-                        # self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+                        
+                        self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                         self.plotter.render()
                         self.first_plot = False
                     else:
-                        self.plotter.mesh.points = flat_points
-                    #     # self.plotter.renderer.actors['hkl'](flat_intensity, render=False)
-                    #     # self.plotter.render()
-                    #     pass
+                        self.plotter.mesh.points = points
+                        self.cloud['intensity'][:] = flat_intensity
+                        # self.lut = pyv.LookupTable(cmap='viridis')
+                        # self.lut.scalar_range = (min, max)
+                        self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
+                        # self.lut.apply_opacity([0,1])
+                        self.plotter.render()
 
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")

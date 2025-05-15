@@ -48,7 +48,7 @@ class HKL3DViewer(QMainWindow):
     def update_plot(self):
         try:
             # Skip if nothing cached
-            if not self.pva_reader.cache_images:
+            if not len(self.pva_reader.cache_images) > 0:
                 return
             
             # Collect all cached data

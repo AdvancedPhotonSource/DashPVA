@@ -250,7 +250,7 @@ def main() -> None:
 
     # For dynamic axis records, store their base positions
     base_positions = {name: rec["Position"] for name, rec in axis_records.items()}
-    amplitude = 1        # Amplitude of the sine-wave update
+    amplitude = 2        # Amplitude of the sine-wave update
     update_interval = 0.5  # Seconds between updates
     start_time = time.time()
 

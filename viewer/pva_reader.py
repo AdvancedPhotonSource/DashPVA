@@ -9,7 +9,7 @@ from collections import deque
 from epics import camonitor, caget
 
 class PVAReader:
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml', viewer_type='image'):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
 
@@ -35,7 +35,7 @@ class PVAReader:
         }
         # This also means we can parse the pva codec parameters to show the correct datatype in viewer
         # rather than using default compressed dtype
-        self. NTNDA_DATA_TYPE_MAP = {
+        self.NTNDA_DATA_TYPE_MAP = {
             pva.UBYTE   : 'ubyteValue',
             pva.BYTE    : 'byteValue',
             pva.USHORT  : 'ushortValue',
@@ -48,6 +48,12 @@ class PVAReader:
             pva.DOUBLE  : 'doubleValue',
         }
 
+        self.VIEWER_TYPE_MAP = {
+            'image': 'i',
+            'analysis': 'a',
+            'rsm': 'm' 
+        }
+
         self.input_channel = input_channel        
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
@@ -57,6 +63,7 @@ class PVAReader:
         self.image = None
         self.shape = (0,0)
         self.pixel_ordering = 'F'
+        self.viewer_type = self.VIEWER_TYPE_MAP.get(viewer_type, 'i')
         self.image_is_transposed = False
         self.attributes = []
         self.timestamp = None
@@ -101,18 +108,18 @@ class PVAReader:
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
-        self._HKL_IN_CONFIG = ('HKL' in self.config)
+        self.HKL_IN_CONFIG = ('HKL' in self.config)
 
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
 
         if "MAX_CACHE_SIZE" in self.config and self.MAX_CACHE_SIZE > 0:
             # Create a 1D NumPy array whose length = MAX_CACHE_SIZE
-            self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
-            if self._HKL_IN_CONFIG:
-                self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
-                self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
-                self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cache_images = np.empty(self.MAX_CACHE_SIZE, dtype=object)
+            if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
+                self.cache_qx = np.empty(self.MAX_CACHE_SIZE, dtype=object)
+                self.cache_qy = np.empty(self.MAX_CACHE_SIZE, dtype=object)
+                self.cache_qz = np.empty(self.MAX_CACHE_SIZE, dtype=object)
 
         else:
             self.cache_images = None
@@ -135,7 +142,7 @@ class PVAReader:
         self.parse_image_data_type()
         self.parse_pva_attributes()
          # Check for HKL attributes from all attributes
-        if self._HKL_IN_CONFIG:
+        if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
             self.rsm_index = self.locate_rsm_index()
             if self.rsm_index is not None:
                 self.parse_rsm_attributes()
@@ -217,11 +224,7 @@ class PVAReader:
     def parse_rsm_attributes(self) -> None:
         rsm_attributes = self.attributes[self.rsm_index]
         self.rsm_attributes = rsm_attributes['value'][0].get('value', {})
-        # if self.rsm_attributes:
-        #     self.qx = self.rsm_attributes.get('qx', np.zeros(self.shape[0] * self.shape[1]))
-        #     self.qy = self.rsm_attributes.get('qy', np.zeros(self.shape[0] * self.shape[1]))
-        #     self.qz = self.rsm_attributes.get('qz', np.zeros(self.shape[0] * self.shape[1]))
-                
+              
     def parse_roi_pvs(self) -> None:
         """
         Parses attributes to extract ROI-specific PV information.
@@ -284,22 +287,32 @@ class PVAReader:
                     self.id_diff = current_array_id - self.last_array_id - 1
                     if (self.id_diff > 0):
                         self.frames_missed += self.id_diff 
-                        # if self._HKL_IN_CONFIG:
+                        self.id_diff = 0
+                        # if self.HKL_IN_CONFIG:
                             # for i in range(self.id_diff):
-                            #     if self._HKL_IN_CONFIG:
+                            #     if self.HKL_IN_CONFIG:
                             #         self.cache_images.append(self.empty_array)
                             #         self.cache_qx.append(self.empty_array)
                             #         self.cache_qy.append(self.empty_array)
-                            #         self.cache_qz.append(self.empty_array)                            
-                    if self._HKL_IN_CONFIG:
-                            self.cache_images.append(self.image)
-                            self.cache_qx.append(self.rsm_attributes['qx'])
-                            self.cache_qy.append(self.rsm_attributes['qy'])
-                            self.cache_qz.append(self.rsm_attributes['qz'])
-                        # print(self.cache_qx)
-                self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                            #         self.cache_qz.append(self.empty_array)
+
                 self.last_array_id = current_array_id
-                self.id_diff = 0
+                # print('here1')
+                # print(self.viewer_type)
+                            
+                if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
+                        # print('here2')
+                        self.cache_images = np.roll(self.cache_images, -1, axis=0)
+                        self.cache_images[-1] = self.image
+                        # print(self.cache_images)
+                        self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
+                        self.cache_qx[-1] = self.rsm_attributes['qx']
+                        self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
+                        self.cache_qy[-1] = self.rsm_attributes['qy']
+                        self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
+                        self.cache_qz[-1] = self.rsm_attributes['qz']
+
+                self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
 
             else:
                 self.image = None
