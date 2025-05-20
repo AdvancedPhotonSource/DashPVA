@@ -20,9 +20,10 @@ def monitor_callback(data):
         
         print("\nReceived data:")
         # print(data)
+        print(data['uniqueId'])
         # image_data = data['value'][0]['ubyteValue']
         # image_data = data['value'][0]['uintValue']
-        print(data.get())
+        # print(data.get())
         # print(data.getIntrospectionDict())
         # image_data = data['value'][0]['ushortValue']
         # print(data.has_key('uncompressedSize'))
@@ -100,8 +101,10 @@ def monitor_callback(data):
         
 
 # collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
-collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
+# collector_channel = pva.Channel("processor:5:analysis", pva.PVA)
 # collector_channel = pva.Channel("collector:1:output", pva.PVA)
+collector_channel = pva.Channel("collector2:1:output", pva.PVA)
+
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
 

@@ -101,7 +101,8 @@ class HKLImageWindow(QMainWindow):
         uic.loadUi('gui/hkl_viewer_window.ui', self)
         self.setWindowTitle('Image Viewer with PVAaccess')
         self.show()
-        # Initializing important variables
+
+        # Initializing Viewer variables
         self.reader = None
         self.image = None
         self.call_id_plot = 0
@@ -110,10 +111,10 @@ class HKLImageWindow(QMainWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
-        # self.timer_rsm = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
 
@@ -129,6 +130,7 @@ class HKLImageWindow(QMainWindow):
         pyv.set_plot_theme('dark')
         self.plotter = QtInteractor(self)
         self.viewer_layout.addWidget(self.plotter,1,1)
+
         # pyvista vars
         self.point_cloud = None
         self.actor = None
@@ -142,7 +144,7 @@ class HKLImageWindow(QMainWindow):
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         # self.log_image.clicked.connect(self.reset_first_plot)
-        # self.freeze_image.stateChanged.connect(self.freeze_image_checked)
+        self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
@@ -219,6 +221,10 @@ class HKLImageWindow(QMainWindow):
                                          viewer_type='rsm')
                 self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
+
+                if self.reader is not None:
+                    self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
+
         except:
             print(f'Failed to Connect to {self._input_channel}')
             del self.reader
@@ -289,24 +295,24 @@ class HKLImageWindow(QMainWindow):
         if self.reader is not None:
             self.call_id_plot +=1
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
-                # self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
-                # if len(self.image.shape) == 2:
-                # min_level, max_level = np.min(self.image), np.max(self.image)
                 try:    
                     # Collect all cached data
-                    flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
-                    qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
-                    qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
-                    qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
-                
+                    # mask = np.any(self.reader.cache_images, axis=1)
+                    flat_intensity = self.reader.cache_images.ravel()
+                    qx = self.reader.cache_qx.ravel()
+                    qy = self.reader.cache_qy.ravel()
+                    qz = self.reader.cache_qz.ravel()
+
                     points = np.column_stack((
                         qx, qy, qz
                     ))
-                    min = np.min(flat_intensity)
-                    max = np.max(flat_intensity)
+
+                    
                     
                     # First-time setup
                     if self.first_plot:
+                        min = np.min(flat_intensity)
+                        max = np.max(flat_intensity)
                         self.cloud = pyv.PolyData(points)
                         self.cloud['intensity'] = flat_intensity 
 
@@ -321,18 +327,16 @@ class HKLImageWindow(QMainWindow):
                             scalars='intensity',
                             cmap=self.lut
                         )
-                        
-                        self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
-                        self.plotter.render()
                         self.first_plot = False
                     else:
                         self.plotter.mesh.points = points
-                        self.cloud['intensity'][:] = flat_intensity
-                        # self.lut = pyv.LookupTable(cmap='viridis')
+                        self.cloud['intensity'] = flat_intensity
                         # self.lut.scalar_range = (min, max)
-                        self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
+                        # self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
                         # self.lut.apply_opacity([0,1])
-                        self.plotter.render()
+                    
+                    self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+                    self.plotter.render()
 
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")

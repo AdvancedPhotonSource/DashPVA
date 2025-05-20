@@ -435,32 +435,32 @@ class DiffractionImageWindow(QMainWindow):
 
     def start_hkl_viewer(self) -> None:
         try:
-            if self.reader is not None and 'HKL' in self.reader.config:
-                qx = self.qx.flatten()
-                qy = self.qy.flatten()
-                qz = self.qz.flatten()
-                intensity = self.reader.image.flatten()
+            if self.reader is not None and self.reader.HKL_IN_CONFIG:
+                # qx = self.qx.flatten()
+                # qy = self.qy.flatten()
+                # qz = self.qz.flatten()
+                # intensity = self.reader.image.flatten()
 
-                np.save('qx.npy', qx)
-                np.save('qy.npy', qy)
-                np.save('qz.npy', qz)
-                np.save('intensity.npy', intensity)
+                # np.save('qx.npy', qx)
+                # np.save('qy.npy', qy)
+                # np.save('qz.npy', qz)
+                # np.save('intensity.npy', intensity)
 
-                # cmd = ['python', 'viewer/hkl_3d_viewer.py',
+                cmd = ['python', 'viewer/hkl_test.py',]
                 #        '--qx-file', 'qx.npy',
                 #        '--qy-file', 'qy.npy',
                 #        '--qz-file', 'qz.npy',
                 #        '--intensity-file', 'intensity.npy']
 
-                # process = subprocess.Popen(
-                #     cmd,
-                #     stdout=subprocess.PIPE,
-                #     stderr=subprocess.STDOUT,
-                #     preexec_fn=os.setsid,
-                #     universal_newlines=True
-                # )
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    preexec_fn=os.setsid,
+                    universal_newlines=True
+                )
 
-                # self.processes[process.pid] = process
+                self.processes[process.pid] = process
 
         except Exception as e:
             print(f'Failed to load HKL Viewer:{e}')

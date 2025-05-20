@@ -33,6 +33,7 @@ class PVAReader:
             pva.FLOAT   : np.dtype('float32'),
             pva.DOUBLE  : np.dtype('float64')
         }
+
         # This also means we can parse the pva codec parameters to show the correct datatype in viewer
         # rather than using default compressed dtype
         self.NTNDA_DATA_TYPE_MAP = {
@@ -48,53 +49,77 @@ class PVAReader:
             pva.DOUBLE  : 'doubleValue',
         }
 
+        self.NTNDA_NUMPY_MAP = {
+            'ubyteValue'  : np.dtype('uint8'),
+            'byteValue'   : np.dtype('int8'),
+            'ushortValue' : np.dtype('uint16'),
+            'shortValue'  : np.dtype('int16'),
+            'uintValue'   : np.dtype('uint32'),
+            'intValue'    : np.dtype('int32'),
+            'ulongValue'  : np.dtype('uint64'),
+            'longValue'   : np.dtype('int64'),
+            'floatValue'  : np.dtype('float32'),
+            'doubleValue' : np.dtype('float64')
+        }
+
         self.VIEWER_TYPE_MAP = {
             'image': 'i',
             'analysis': 'a',
-            'rsm': 'm' 
+            'rsm': 'r' 
         }
 
+        # variables related to monitoring connection
         self.input_channel = input_channel        
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
         self.pva_prefix = input_channel.split(":")[0]
-        # variables that will store pva data
-        self.pva_object = None
-        self.image = None
-        self.shape = (0,0)
-        self.pixel_ordering = 'F'
-        self.viewer_type = self.VIEWER_TYPE_MAP.get(viewer_type, 'i')
-        self.image_is_transposed = False
-        self.attributes = []
-        self.timestamp = None
-        self.data_type = None
-        self.display_dtype = None
-        # variables used for parsing analysis data
-        self.analysis_index = None
-        self.analysis_attributes = {}
-        # variables used for parsing hkl data
-        self.rsm_index = None
-        self.rsm_attributes = {}
-        # self.qx = None
-        # self.qy = None
-        # self.qz = None
-        # variables used for later logic
-        self.last_array_id = None
-        self.frames_missed = 0
-        self.frames_received = 0
-        self.id_diff = 0
+
         # variables setup using config
         self.config = {}
         self.rois = {}
         self.stats = {}
         self.CONSUMER_MODE = ''
         self.MAX_CACHE_SIZE = 0
-        # Cache variables that need to be initialized
+        self.OUTPUT_FILE_LOCATION = ''
+
+        # variables that will store pva data
+        self.pva_object = None
+        self.image = None
+        self.shape = (0,0)
+        self.timestamp = None
+        self.data_type = None
+        self.display_dtype = None
+        self.numpy_dtype = None
+        self.attributes = []
+        self.pv_attributes = {}
+
+        # variables used for image manipulaiton
+        self.pixel_ordering = 'F'
+        self.viewer_type = self.VIEWER_TYPE_MAP.get(viewer_type, 'i')
+        self.image_is_transposed = False
+        
+        # variables used for parsing analysis data
+        self.analysis_index = None
+        self.analysis_attributes = {}
+
+        # variables used for parsing hkl data
+        self.rsm_index = None
+        self.rsm_attributes = {}
+
+        # variables used for frame count
+        self.last_array_id = None
+        self.frames_missed = 0
+        self.frames_received = 0
+        self.id_diff = 0
+
+        # variables for data caches
+        self.caches_needed = False
+        self.caches_initialized = False
+        self.cache_attributes = None
         self.cache_images = None
         self.cache_qx = None
         self.cache_qy = None
         self.cache_qz = None
-
 
         self._configure(config_filepath)
 
@@ -106,23 +131,17 @@ class PVAReader:
 
         self.stats:dict = self.config.get('STATS', {})
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
+        self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','')  
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
         self.HKL_IN_CONFIG = ('HKL' in self.config)
 
+
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
 
-        if "MAX_CACHE_SIZE" in self.config and self.MAX_CACHE_SIZE > 0:
-            # Create a 1D NumPy array whose length = MAX_CACHE_SIZE
-            self.cache_images = np.empty(self.MAX_CACHE_SIZE, dtype=object)
-            if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
-                self.cache_qx = np.empty(self.MAX_CACHE_SIZE, dtype=object)
-                self.cache_qy = np.empty(self.MAX_CACHE_SIZE, dtype=object)
-                self.cache_qz = np.empty(self.MAX_CACHE_SIZE, dtype=object)
-
-        else:
-            self.cache_images = None
+        if self.MAX_CACHE_SIZE > 0:
+            self.caches_needed = True
 
         if self.CONSUMER_MODE == "continuous":
             self.analysis_cache_dict = {"Intensity": {},
@@ -130,7 +149,6 @@ class PVAReader:
                                         "ComY": {},
                                         "Position": {}}
         
-
     def pva_callbackSuccess(self, pv) -> None:
         """
         Callback for handling monitored PV changes.
@@ -139,15 +157,28 @@ class PVAReader:
             pv (PvaObject): The PV object received by the channel monitor.
         """
         self.pva_object = pv
+
+        if self.caches_needed != self.caches_initialized:
+            self.init_caches()
+
+        # parsing important sections
         self.parse_image_data_type()
+        self.parse_img_shape()
         self.parse_pva_attributes()
-         # Check for HKL attributes from all attributes
-        if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
-            self.rsm_index = self.locate_rsm_index()
-            if self.rsm_index is not None:
-                self.parse_rsm_attributes()
+        self.pv_attributes = self.parse_attributes(pv)
         self.parse_roi_pvs()
+
+         # Check for HKL attributes from all attributes
+        if self.HKL_IN_CONFIG:
+            self.rsm_index = self.locate_rsm_index()
+            if self.rsm_index != None:
+                self.parse_rsm_attributes()
+
         self.pva_to_image()
+
+        if self.caches_initialized:
+            self.cache_attributes.append(self.pv_attributes)
+
 
         if self.ANALYSIS_IN_CONFIG:
             self.analysis_index = self.locate_analysis_index()
@@ -164,8 +195,6 @@ class PVAReader:
                     self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                     # double storing of the postion, will find out if needed
                     self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-       
-
     
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         name_components = pvname.split(":")
@@ -184,9 +213,26 @@ class PVAReader:
             try:
                 self.data_type = list(self.pva_object['value'][0].keys())[0]
                 self.display_dtype = self.data_type if self.pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
-
+                self.numpy_dtype = self.NTNDA_NUMPY_MAP.get(self.display_dtype, np.dtype('float32'))
             except:
                 self.display_dtype = "could not detect"
+
+    def parse_img_shape(self) -> None:
+        if 'dimension' in self.pva_object:
+            self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+
+    def parse_attributes(self, pva_object) -> dict:
+        pv_attributes = {}
+        if pva_object != None and 'attribute' in pva_object:
+            pv_attributes['timeStamp'] = pva_object['timeStamp']
+            attributes = pva_object['attribute']
+            for attr in attributes:
+                name = attr['name']
+                value = attr['value'][0]['value']
+                pv_attributes[name] = value
+            return pv_attributes
+        else:
+            return {}
     
     def parse_pva_attributes(self) -> None:
         """
@@ -194,6 +240,24 @@ class PVAReader:
         """
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
+
+    def init_caches(self) -> None:
+        if self.shape is not None:
+            #Get the correct shape of the caches
+            shape = (self.MAX_CACHE_SIZE, self.shape[0]*self.shape[1])
+
+            #initialize all the caches to be that shape
+            self.cache_images = np.zeros(shape, dtype=np.float32)
+            self.cache_qx = np.zeros(shape, dtype=np.float32)
+            self.cache_qy = np.zeros(shape, dtype=np.float32)
+            self.cache_qz = np.zeros(shape, dtype=np.float32)
+            self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
+
+            # empty array for when we miss a frame
+            self.empty_arr = np.zeros(self.shape[0]*self.shape[1], dtype=self.numpy_dtype)
+            
+            self.caches_initialized = True
+            
     
     def locate_analysis_index(self) -> int|None:
         """
@@ -250,10 +314,7 @@ class PVAReader:
         """
         try:
             self.frames_received += 1
-
             if 'dimension' in self.pva_object:
-                self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-
                 # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
                 # print('empty shape:', self.empty_array.shape)
 
@@ -297,20 +358,16 @@ class PVAReader:
                             #         self.cache_qz.append(self.empty_array)
 
                 self.last_array_id = current_array_id
-                # print('here1')
-                # print(self.viewer_type)
                             
-                if self.viewer_type == 'm' and self.HKL_IN_CONFIG:
-                        # print('here2')
-                        self.cache_images = np.roll(self.cache_images, -1, axis=0)
-                        self.cache_images[-1] = self.image
-                        # print(self.cache_images)
-                        self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
-                        self.cache_qx[-1] = self.rsm_attributes['qx']
-                        self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
-                        self.cache_qy[-1] = self.rsm_attributes['qy']
-                        self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
-                        self.cache_qz[-1] = self.rsm_attributes['qz']
+                if self.viewer_type == 'r' and self.HKL_IN_CONFIG:
+                    self.cache_images = np.roll(self.cache_images, -1, axis=0)
+                    self.cache_images[-1] = np.array(self.image, dtype = np.float32)
+                    self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
+                    self.cache_qx[-1] = self.rsm_attributes['qx']
+                    self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
+                    self.cache_qy[-1] = self.rsm_attributes['qy']
+                    self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
+                    self.cache_qz[-1] = self.rsm_attributes['qz']
 
                 self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
 
@@ -344,7 +401,7 @@ class PVAReader:
         except Exception as e:
             print(f'Failed to setup backup ROI monitor: {e}')
 
-    def save_caches_to_h5(self, filename: str) -> None:
+    def save_caches_to_h5(self) -> None:
         # TODO:
         # add motor positions
         # add timestamps
@@ -353,6 +410,11 @@ class PVAReader:
         Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
         The file structure is as follows:
             /entry/data         --> The image cache array
+            /entry/rois/ROI1-4
+            /entry/metadata/motor_positions
+            /entry/analysis/intensity
+            /entry/analysis/comx
+            /entry/analysis/comy            
             /entry/HKL/qx        --> The qx cache array (if available)
             /entry/HKL/qy        --> The qy cache array (if available)
             /entry/HKL/qz        --> The qz cache array (if available)
@@ -364,23 +426,54 @@ class PVAReader:
             if self.cache_images is None or self.cache_qx is None or self.cache_qy is None or self.cache_qz is None:
                 raise ValueError("Caches cannot be empty.")
             n = len(self.cache_images)
-            if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n) or n == 0:
+            if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == len(self.cache_attributes) == n) or n == 0:
                 raise ValueError("All four caches must have the same number of elements.")
             
-            with h5py.File(filename, 'w') as h5f:
+            cache_metadata = self.cache_attributes
+            merged_metadata = {}
+
+            for attribute_dict in cache_metadata:
+                for key, value in attribute_dict.items():
+                    if key != 'RSM' and key != 'Analysis':
+                        if key not in merged_metadata:
+                            merged_metadata[key] = []
+                            merged_metadata[key].append(value)
+                        else:
+                            merged_metadata[key].append(value)
+            
+            with h5py.File(self.OUTPUT_FILE_LOCATION, 'w') as h5f:
                 # Create the main "images" group
                 images_grp = h5f.create_group("entry")
-                images_grp.create_dataset("data", data=np.array(self.cache_images))
+                images_grp.create_dataset("data", data=self.cache_images)
+
+                metadata_grp = images_grp.create_group("metadata")
+                motor_pos_grp = metadata_grp.create_group('motor_positions')
+                rois_grp = images_grp.create_group('rois')
+                for key, values in merged_metadata.items():
+                    if all(isinstance(v, (int, float, np.number)) for v in values):
+                        if 'ROI' in key:
+                            parts = key.split(':')
+                            roi = parts[1]
+                            if roi not in rois_grp.keys():
+                                rois_grp.create_group(name=roi)
+                            rois_grp[roi].create_dataset(key, data=np.array(values))
+                        elif 'Position' in key:
+                            motor_pos_grp.create_dataset(key, data=np.array(values))
+                        else:
+                            metadata_grp.create_dataset(key, data=np.array(values))
+                    else:
+                        dt = h5py.string_dtype(encoding='utf-8')
+                        metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
 
                 # Create HKL subgroup under images if HKL caches exist
                 hkl_grp = images_grp.create_group("HKL")
-                hkl_grp.create_dataset("qx", data=np.array(self.cache_qx))
-                hkl_grp.create_dataset("qy", data=np.array(self.cache_qy))
-                hkl_grp.create_dataset("qz", data=np.array(self.cache_qz))
+                hkl_grp.create_dataset("qx", data=self.cache_qx)
+                hkl_grp.create_dataset("qy", data=self.cache_qy)
+                hkl_grp.create_dataset("qz", data=self.cache_qz)
                     
-            print(f"Caches successfully saved in a branch structure to {filename}")
+            print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:
-            print(f"Failed to save caches to {filename}: {e}")
+            print(f"Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
 
         
     def stop_channel_monitor(self) -> None:

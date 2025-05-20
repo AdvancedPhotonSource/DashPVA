@@ -459,7 +459,9 @@ class PVASetupDialog(QDialog):
             '--processor-file', self.lineEditProcessorFileAnalysis.text(),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
-            '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value())
+            '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
+            '--n-consumers', str(self.spinBoxNConsumersAnalysis.value()),
+            '--distributor-updates', str(self.spinBoxDistributorUpdatesAnalysis.value()),
         ]
 
         # Add metadata config file if specified
