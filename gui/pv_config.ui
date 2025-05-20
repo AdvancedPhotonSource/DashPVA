@@ -51,7 +51,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/pv_configs/metadata_pvs.toml</string>
+     <string>/home/beams/JULIO.RODRIGUEZ/Codebase/Lab_Software/area_det_PVA_viewer/pv_configs/metadata_pvs.toml</string>
     </property>
    </widget>
    <widget class="QPushButton" name="btn_browse">
