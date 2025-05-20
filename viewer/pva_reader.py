@@ -158,15 +158,15 @@ class PVAReader:
         """
         self.pva_object = pv
 
-        if self.caches_needed != self.caches_initialized:
-            self.init_caches()
-
         # parsing important sections
         self.parse_image_data_type()
         self.parse_img_shape()
         self.parse_pva_attributes()
         self.pv_attributes = self.parse_attributes(pv)
         self.parse_roi_pvs()
+
+        if self.caches_needed != self.caches_initialized:
+            self.init_caches()
 
          # Check for HKL attributes from all attributes
         if self.HKL_IN_CONFIG:
@@ -175,6 +175,7 @@ class PVAReader:
                 self.parse_rsm_attributes()
 
         self.pva_to_image()
+
 
         if self.caches_initialized:
             self.cache_attributes.append(self.pv_attributes)
@@ -220,6 +221,7 @@ class PVAReader:
     def parse_img_shape(self) -> None:
         if 'dimension' in self.pva_object:
             self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+            # print('parsing shape:', self.shape)
 
     def parse_attributes(self, pva_object) -> dict:
         pv_attributes = {}

@@ -36,17 +36,17 @@ def monitor_callback(data):
 
         # print(f"Image data length: {len(image_data)}")
 
-        # metadata = {}
-        # if 'attribute' in data:
-        #     attributes = data['attribute']
-        #     for attr in attributes:
-        #         name = attr['name']
-        #         value = attr['value'][0]['value']
-        #         metadata[name] = value
+        metadata = {}
+        if 'attribute' in data:
+            attributes = data['attribute']
+            for attr in attributes:
+                name = attr['name']
+                value = attr['value'][0]['value']
+                metadata[name] = value
                 
-        # print("\nMetadata:")
-        # for channel, value in metadata.items():
-        #     print(f"{channel} = {value}")
+        print("\nMetadata:")
+        for channel, value in metadata.items():
+            print(f"{channel} = {value}")
 
             
             # if previous_data is not None:
@@ -101,9 +101,9 @@ def monitor_callback(data):
         
 
 # collector_channel = pva.Channel('DetectorSetup:Name', pva.CA)
-# collector_channel = pva.Channel("processor:5:analysis", pva.PVA)
+collector_channel = pva.Channel("processor:1:analysis", pva.PVA)
 # collector_channel = pva.Channel("collector:1:output", pva.PVA)
-collector_channel = pva.Channel("collector2:1:output", pva.PVA)
+# collector_channel = pva.Channel("collector:1:output", pva.PVA)
 
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()

@@ -307,8 +307,6 @@ class HKLImageWindow(QMainWindow):
                         qx, qy, qz
                     ))
 
-                    
-                    
                     # First-time setup
                     if self.first_plot:
                         min = np.min(flat_intensity)
