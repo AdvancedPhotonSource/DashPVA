@@ -222,8 +222,7 @@ class HKLImageWindow(QMainWindow):
                 self.set_pixel_ordering()
                 self.reader.start_channel_monitor()
 
-                if self.reader is not None:
-                    self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
+            self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
 
         except:
             print(f'Failed to Connect to {self._input_channel}')

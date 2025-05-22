@@ -131,7 +131,7 @@ class PVAReader:
 
         self.stats:dict = self.config.get('STATS', {})
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
-        self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','')  
+        self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
         self.HKL_IN_CONFIG = ('HKL' in self.config)
@@ -430,10 +430,10 @@ class PVAReader:
             n = len(self.cache_images)
             if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == len(self.cache_attributes) == n) or n == 0:
                 raise ValueError("All four caches must have the same number of elements.")
-            
+            print('attempting save')
             cache_metadata = self.cache_attributes
             merged_metadata = {}
-
+            print('merging attributes')
             for attribute_dict in cache_metadata:
                 for key, value in attribute_dict.items():
                     if key != 'RSM' and key != 'Analysis':
@@ -442,15 +442,19 @@ class PVAReader:
                             merged_metadata[key].append(value)
                         else:
                             merged_metadata[key].append(value)
+            print('merging complete')
             
             with h5py.File(self.OUTPUT_FILE_LOCATION, 'w') as h5f:
                 # Create the main "images" group
+                print(f'creating file at :{self.OUTPUT_FILE_LOCATION}')
                 images_grp = h5f.create_group("entry")
-                images_grp.create_dataset("data", data=self.cache_images)
-
+                data_grp = images_grp.create_group('data')
+                data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images]))
+                print('images written')
                 metadata_grp = images_grp.create_group("metadata")
                 motor_pos_grp = metadata_grp.create_group('motor_positions')
                 rois_grp = images_grp.create_group('rois')
+                print('metadata, rois, and motorposistion groups created')
                 for key, values in merged_metadata.items():
                     if all(isinstance(v, (int, float, np.number)) for v in values):
                         if 'ROI' in key:
@@ -463,15 +467,21 @@ class PVAReader:
                             motor_pos_grp.create_dataset(key, data=np.array(values))
                         else:
                             metadata_grp.create_dataset(key, data=np.array(values))
-                    else:
+                    elif all(isinstance(v, str) for v in values):
                         dt = h5py.string_dtype(encoding='utf-8')
                         metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
+                    else:
+                        print(value)
+
+                        print(f'{key}: {type(value)}')
+                print('metadata saved')
 
                 # Create HKL subgroup under images if HKL caches exist
                 hkl_grp = images_grp.create_group("HKL")
                 hkl_grp.create_dataset("qx", data=self.cache_qx)
                 hkl_grp.create_dataset("qy", data=self.cache_qy)
                 hkl_grp.create_dataset("qz", data=self.cache_qz)
+                print('hkl vars written')
                     
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:

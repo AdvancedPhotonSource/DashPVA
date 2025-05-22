@@ -69,8 +69,8 @@ class HpcRsmProcessor(AdImageProcessor):
         """
         if pva_object is None:
             return
-        obj_dict : dict = pva_object.get()
-        attributes : list = obj_dict.get('attribute', [])
+        # obj_dict : dict = pva_object.get()
+        attributes : list = pva_object['attribute']
         hkl_attributes = {}
         for attr in attributes: # list of attribute dictionaries
             name = attr['name']
@@ -191,8 +191,8 @@ class HpcRsmProcessor(AdImageProcessor):
                     return True
             elif old_attr[key] != hkl_attr[key]:
                 return True
-        
-        return False
+        else:
+            return False
 
     def process(self, pvObject):
         t0 = time.time()
@@ -212,9 +212,9 @@ class HpcRsmProcessor(AdImageProcessor):
     
         if self.old_attrbutes is not None:
             attributes_diff = self.attributes_diff(self.hkl_attributes, self.old_attrbutes)
-            self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
         else:
             attributes_diff = True
+        self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
 
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes

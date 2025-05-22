@@ -21,7 +21,9 @@ import time
 import tempfile
 import ctypes.util
 import math
+import numpy as np
 import pvaccess as pva  # pva module provides CaIoc and related functions
+from epics import camonitor, caget
 
 # -------------------------------
 # Define PV Record Parameters
@@ -39,13 +41,13 @@ axis_records = {
         "AxisNumber": 2,
         "SpecMotorName": "Eta",
         "DirectionAxis": "z-",
-        "Position": 10.74625,
+        "Position": 0.0,
     },
     "6idb1:m19.RBV": {
         "AxisNumber": 3,
         "SpecMotorName": "Chi",
         "DirectionAxis": "y+",
-        "Position": 90.14,
+        "Position": 0.0
     },
     "6idb1:m20.RBV": {
         "AxisNumber": 4,
@@ -63,7 +65,7 @@ axis_records = {
         "AxisNumber": 2,
         "SpecMotorName": "Delta",
         "DirectionAxis": "z-",
-        "Position": 70.035125,
+        "Position": 0.0,
     },
 }
 
@@ -160,7 +162,7 @@ def setup_ca_ioc(records_dict) -> pva.CaIoc:
         epicsLibDir = os.path.dirname(pvDataLib)
         dbdDir = os.path.realpath('%s/../../dbd' % epicsLibDir)
         os.environ['EPICS_DB_INCLUDE_PATH'] = dbdDir
-
+        
     # Create a temporary database file
     dbFile = tempfile.NamedTemporaryFile(delete=False, mode='w')
     
@@ -198,8 +200,9 @@ def update_ca_record_field(caIoc, base_name, field_name, value) -> None:
     
     try:
         # print(record_name, value)
-        if isinstance(value, list) and all(isinstance(x, (int, float)) for x in value):
+        if isinstance(value, (list, np.ndarray)) and all(isinstance(x, (int, float, np.float32)) for x in value):
             # For numeric arrays
+            value = [int(val) for val in value]
             caIoc.putField(record_name, value)
         else:
         #     # For scalar values or other types
@@ -229,7 +232,7 @@ def main() -> None:
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
         "DetectorSetup": detector_setup_record
     }
-    print(all_records)
+    print(axis_records)
     
     # Set up the CA IOC with these records
     caIoc = setup_ca_ioc(all_records)
@@ -249,25 +252,30 @@ def main() -> None:
         update_full_record(caIoc, rec_name, rec_data)
 
     # For dynamic axis records, store their base positions
-    base_positions = {name: rec["Position"] for name, rec in axis_records.items()}
-    amplitude = 2        # Amplitude of the sine-wave update
-    update_interval = 0.5  # Seconds between updates
-    start_time = time.time()
+    base_positions = {name: rec['Position'] for name, rec in axis_records.items()}
+    dynamic_records = {**axis_records, '6idb:spec:Energy':13.0,} #'6idb:spec:UB_matrix': caget('6idb:spec:UB_matrix')}
+
+    # amplitude = 0.5        # Amplitude of the sine-wave update
+    # update_interval = 0.5  # Seconds between updates
+    # start_time = time.time()
 
     try:
         while True:
-            elapsed = time.time() - start_time
-            for name, rec in axis_records.items():
+            # elapsed = time.time() - start_time
+            for name, rec in dynamic_records.items():
                 # Update the Position field with a sine offset
-                new_position = base_positions[name] + amplitude * math.sin(elapsed)
+                new_position = caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
-                # print(name)
-                if name == "6idb1:m17.RBV":
-                    # print('here')
-                    # Only Update Eta Position
-                    update_ca_record_field(caIoc, name, "Position", new_position)
+                if isinstance(rec, dict):
+                    # if rec["SpecMotorName"] == "Eta":
+                    #     # Only Update Eta Position
+                    update_ca_record_field(caIoc, name, 'Position', new_position)
+                elif name == '6idb:spec:Energy':
+                    update_ca_record_field(caIoc, name, 'Value', new_position)
+                # elif name == '6idb:spec:UB_matrix':
+                #     update_ca_record_field(caIoc, name, 'Value', new_position)
             
-            time.sleep(update_interval)
+            # time.sleep(update_interval)
     except KeyboardInterrupt:
         print("Shutting down CA IOC updates.")
 
