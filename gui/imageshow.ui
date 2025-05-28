@@ -220,7 +220,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-693</y>
+           <y>-315</y>
            <width>335</width>
            <height>1911</height>
           </rect>
@@ -1369,6 +1369,13 @@ QPushButton::pressed {
                <widget class="QLabel" name="label">
                 <property name="text">
                  <string>Image Pixel Order:</string>
+                </property>
+               </widget>
+              </item>
+              <item row="7" column="1">
+               <widget class="QCheckBox" name="stop_hkl">
+                <property name="text">
+                 <string>Stop HKL</string>
                 </property>
                </widget>
               </item>

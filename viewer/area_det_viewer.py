@@ -106,7 +106,7 @@ class DiffractionImageWindow(QMainWindow):
         """
         super(DiffractionImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
-        self.setWindowTitle('Image Viewer with PVAaccess')
+        self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
         self.reader = None
@@ -503,7 +503,7 @@ class DiffractionImageWindow(QMainWindow):
         self.hkl_setup()
         
     def hkl_setup(self) -> None:
-        if self.hkl_config is not None:
+        if (self.hkl_config is not None) and (not self.stop_hkl.isChecked()):
             try:
                 # Get everything for the sample circles
                 sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
@@ -570,7 +570,7 @@ class DiffractionImageWindow(QMainWindow):
         The conversion uses the current sample and detector angles along with the UB matrix
         to transform from angular to reciprocal space coordinates.
         """
-        if self.hkl_data:
+        if self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
                 hxrd = xu.HXRD(self.inplane_reference_directions,
                             self.sample_surface_normal_directions, 
@@ -674,7 +674,7 @@ class DiffractionImageWindow(QMainWindow):
             self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self) -> None:
-        if self.reader is not None:
+        if (self.reader is not None) and (not self.stop_hkl.isChecked()):
             if self.hkl_data:
                 self.hkl_setup()
                 self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]

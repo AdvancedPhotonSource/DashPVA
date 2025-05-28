@@ -98,7 +98,7 @@ class HKLImageWindow(QMainWindow):
             file_path (str): The file path for loading configuration.
         """
         super(HKLImageWindow, self).__init__()
-        uic.loadUi('gui/hkl_viewer_window.ui', self)
+        uic.loadUi('gui/HKL Viewer.ui', self)
         self.setWindowTitle('Image Viewer with PVAaccess')
         self.show()
 
@@ -114,9 +114,9 @@ class HKLImageWindow(QMainWindow):
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
-        self.timer_plot = QTimer()
+        # self.timer_plot = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
-        self.timer_plot.timeout.connect(self.update_image)
+        # self.timer_plot.timeout.connect(self.update_image)
 
         # HKL values
         self.hkl_config = None
@@ -132,13 +132,14 @@ class HKLImageWindow(QMainWindow):
         self.viewer_layout.addWidget(self.plotter,1,1)
 
         # pyvista vars
-        self.point_cloud = None
+        # self.point_cloud = None
         self.actor = None
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
+        self.btn_plot_cache.clicked.connect(self.update_image)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
@@ -156,13 +157,13 @@ class HKLImageWindow(QMainWindow):
         Starts timers for updating labels and plotting at specified frequencies.
         """
         self.timer_labels.start(int(1000/100))
-        self.timer_plot.start(int(1000/self.plotting_frequency.value()))
+        # self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self) -> None:
         """
         Stops the updating of main window labels and plots.
         """
-        self.timer_plot.stop()
+        # self.timer_plot.stop()
         self.timer_labels.stop()
 
     #TODO: CHECK With 4id network camera to test if
@@ -265,6 +266,15 @@ class HKLImageWindow(QMainWindow):
         """
         self.first_plot = True
 
+    def reset_camera(self) -> None:
+        """
+        Resets plot view
+        """
+        if self.reader is not None:
+            if self.plotter is not None:
+                bounds = self.plotter.bounds
+                self.plotter.set_position(bounds)
+
     def update_pv_prefix(self) -> None:
         """
         Updates the input channel prefix based on the value entered in the prefix field.
@@ -328,9 +338,9 @@ class HKLImageWindow(QMainWindow):
                     else:
                         self.plotter.mesh.points = points
                         self.cloud['intensity'] = flat_intensity
-                        # self.lut.scalar_range = (min, max)
-                        # self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
-                        # self.lut.apply_opacity([0,1])
+                        self.lut.scalar_range = (min, max)
+                        self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
+                        self.lut.apply_opacity([0,1])
                     
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                     self.plotter.render()

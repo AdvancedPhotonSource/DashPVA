@@ -220,12 +220,30 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-142</y>
+           <y>0</y>
            <width>335</width>
-           <height>1000</height>
+           <height>1100</height>
           </rect>
          </property>
-         <layout class="QVBoxLayout" name="verticalLayout_3">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <layout class="QVBoxLayout" name="vLayoutScrollArea">
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetDefaultConstraint</enum>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
           <item>
            <widget class="QGroupBox" name="group_box_stats">
             <property name="sizePolicy">
@@ -243,7 +261,7 @@ QPushButton:pressed {
             <property name="maximumSize">
              <size>
               <width>400</width>
-              <height>320</height>
+              <height>325</height>
              </size>
             </property>
             <property name="font">
@@ -633,10 +651,16 @@ QPushButton:pressed {
           </item>
           <item>
            <widget class="QGroupBox" name="gbox_img_info">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>450</height>
+             </size>
+            </property>
             <property name="maximumSize">
              <size>
               <width>16777215</width>
-              <height>375</height>
+              <height>475</height>
              </size>
             </property>
             <property name="title">
@@ -720,6 +744,9 @@ QPushButton:pressed {
               </item>
               <item row="1" column="0">
                <widget class="QLabel" name="image_lbl_plotting_rate">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
                 <property name="minimumSize">
                  <size>
                   <width>28</width>
@@ -738,6 +765,9 @@ QPushButton:pressed {
               </item>
               <item row="1" column="1">
                <widget class="QSpinBox" name="plotting_frequency">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
                 <property name="sizePolicy">
                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                   <horstretch>0</horstretch>
@@ -988,6 +1018,38 @@ QPushButton::pressed {
                <widget class="QLabel" name="label">
                 <property name="text">
                  <string>Image Pixel Order:</string>
+                </property>
+               </widget>
+              </item>
+              <item row="7" column="1">
+               <widget class="QPushButton" name="btn_reset_camera">
+                <property name="text">
+                 <string>Reset Camera</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="verticalLayoutWidget_2">
+             <property name="geometry">
+              <rect>
+               <x>9</x>
+               <y>380</y>
+               <width>301</width>
+               <height>80</height>
+              </rect>
+             </property>
+             <layout class="QVBoxLayout" name="vLayoutPlotButton">
+              <item>
+               <widget class="QPushButton" name="btn_plot_cache">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Minimum" vsizetype="MinimumExpanding">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="text">
+                 <string>Plot Cache</string>
                 </property>
                </widget>
               </item>
