@@ -115,6 +115,8 @@ class DiffractionImageWindow(QMainWindow):
         self.first_plot = True
         self.image_is_transposed = False
         self.rot_num = 0
+        self.mouse_x = 0
+        self.mouse_y = 0
         self.rois: list[pg.ROI] = []
         self.stats_dialog = {}
         self.stats_data = {}
@@ -640,16 +642,20 @@ class DiffractionImageWindow(QMainWindow):
             if self.reader is not None:
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
-                x, y = q_pointer.x(), q_pointer.y() 
+                self.mouse_x, self.mouse_y = int(q_pointer.x()), int(q_pointer.y())
+                self.update_mouse_labels()
+    
+    def update_mouse_labels(self) -> None:
+            if self.reader is not None:
                 if self.image is not None:
-                    if 0 <= x < self.image.shape[0] and 0 <= y < self.image.shape[1]:
-                        self.mouse_x_val.setText(f"{x:.3f}")
-                        self.mouse_y_val.setText(f"{y:.3f}")
-                        self.mouse_px_val.setText(f'{self.image[int(x)][int(y)]}')
+                    if 0 <= self.mouse_x < self.image.shape[0] and 0 <= self.mouse_y < self.image.shape[1]:
+                        self.mouse_x_val.setText(f"{self.mouse_x}")
+                        self.mouse_y_val.setText(f"{self.mouse_y}")
+                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
                         if self.hkl_data:
-                            self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
-                            self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
-                            self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
+                            self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]}')
+                            self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]}')
+                            self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]}')
 
     def update_labels(self) -> None:
         """
@@ -663,6 +669,7 @@ class DiffractionImageWindow(QMainWindow):
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             self.plot_call_id.setText(f'{self.call_id_plot:d}')
+            self.update_mouse_labels()
             if len(self.reader.shape):
                 self.size_x_val.setText(f'{self.reader.shape[0]:d}')
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
