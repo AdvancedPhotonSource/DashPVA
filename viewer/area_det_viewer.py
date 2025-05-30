@@ -264,6 +264,8 @@ class DiffractionImageWindow(QMainWindow):
                 self.set_pixel_ordering()
                 self.transpose_image_checked()
                 self.reader.start_channel_monitor()
+            
+            self.btn_save_caches.clicked.connect(self.reader.save_caches_to_h5)
         except:
             print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()

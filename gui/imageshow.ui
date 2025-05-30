@@ -220,9 +220,9 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-315</y>
+           <y>-453</y>
            <width>335</width>
-           <height>1911</height>
+           <height>2000</height>
           </rect>
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -639,7 +639,7 @@ QPushButton:pressed {
             <property name="minimumSize">
              <size>
               <width>0</width>
-              <height>421</height>
+              <height>311</height>
              </size>
             </property>
             <property name="font">
@@ -977,31 +977,6 @@ QPushButton:pressed {
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="verticalLayoutWidget_2">
-             <property name="geometry">
-              <rect>
-               <x>9</x>
-               <y>309</y>
-               <width>301</width>
-               <height>101</height>
-              </rect>
-             </property>
-             <layout class="QVBoxLayout" name="verticalLayout_2">
-              <item>
-               <widget class="QPushButton" name="btn_hkl_viewer">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <property name="text">
-                 <string>HKL 3D Viewer</string>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </widget>
            </widget>
           </item>
           <item>
@@ -1015,7 +990,7 @@ QPushButton:pressed {
             <property name="minimumSize">
              <size>
               <width>0</width>
-              <height>370</height>
+              <height>450</height>
              </size>
             </property>
             <property name="font">
@@ -1031,8 +1006,8 @@ QPushButton:pressed {
               <rect>
                <x>10</x>
                <y>30</y>
-               <width>304</width>
-               <height>331</height>
+               <width>303</width>
+               <height>411</height>
               </rect>
              </property>
              <layout class="QFormLayout" name="image_layout">
@@ -1046,7 +1021,7 @@ QPushButton:pressed {
                <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
               </property>
               <property name="horizontalSpacing">
-               <number>8</number>
+               <number>0</number>
               </property>
               <property name="verticalSpacing">
                <number>12</number>
@@ -1333,8 +1308,8 @@ QPushButton:pressed {
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>0</width>
-                  <height>30</height>
+                  <width>140</width>
+                  <height>50</height>
                  </size>
                 </property>
                 <property name="font">
@@ -1347,17 +1322,7 @@ QPushButton:pressed {
                  </font>
                 </property>
                 <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}
+                 <string notr="true">
 </string>
                 </property>
                 <property name="text">
@@ -1376,6 +1341,38 @@ QPushButton::pressed {
                <widget class="QCheckBox" name="stop_hkl">
                 <property name="text">
                  <string>Stop HKL</string>
+                </property>
+               </widget>
+              </item>
+              <item row="8" column="0">
+               <widget class="QPushButton" name="btn_hkl_viewer">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>140</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>HKL 3D Viewer</string>
+                </property>
+               </widget>
+              </item>
+              <item row="8" column="1">
+               <widget class="QPushButton" name="btn_save_caches">
+                <property name="minimumSize">
+                 <size>
+                  <width>140</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>Save Cache</string>
                 </property>
                </widget>
               </item>

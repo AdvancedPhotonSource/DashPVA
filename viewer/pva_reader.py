@@ -318,7 +318,6 @@ class PVAReader:
             self.frames_received += 1
             if 'dimension' in self.pva_object:
                 # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
-                # print('empty shape:', self.empty_array.shape)
 
                 if self.pva_object['codec']['name'] == 'bslz4':
                     # Handle BSLZ4 compressed data
@@ -342,7 +341,6 @@ class PVAReader:
                 elif self.pva_object['codec']['name'] == '':
                     # Handle uncompressed data
                     self.image = np.array(self.pva_object['value'][0][self.data_type]) 
-                    # print('img:shape:', self.image.shape)                       
 
                 # Check for missed frame starts here
                 current_array_id = self.pva_object['uniqueId']
@@ -361,15 +359,16 @@ class PVAReader:
 
                 self.last_array_id = current_array_id
                             
-                if self.viewer_type == 'r' and self.HKL_IN_CONFIG:
+                if self.MAX_CACHE_SIZE > 0:
                     self.cache_images = np.roll(self.cache_images, -1, axis=0)
                     self.cache_images[-1] = np.array(self.image, dtype = np.float32)
-                    self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
-                    self.cache_qx[-1] = self.rsm_attributes['qx']
-                    self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
-                    self.cache_qy[-1] = self.rsm_attributes['qy']
-                    self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
-                    self.cache_qz[-1] = self.rsm_attributes['qz']
+                    if self.HKL_IN_CONFIG: # self.viewer_type == 'r' and 
+                        self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
+                        self.cache_qx[-1] = self.rsm_attributes['qx']
+                        self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
+                        self.cache_qy[-1] = self.rsm_attributes['qy']
+                        self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
+                        self.cache_qz[-1] = self.rsm_attributes['qz']
 
                 self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
 
@@ -425,11 +424,11 @@ class PVAReader:
             filename (str): The output HDF5 file name.
         """
         try:
-            if self.cache_images is None or self.cache_qx is None or self.cache_qy is None or self.cache_qz is None:
+            if self.cache_images is None:
                 raise ValueError("Caches cannot be empty.")
             n = len(self.cache_images)
-            if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == len(self.cache_attributes) == n) or n == 0:
-                raise ValueError("All four caches must have the same number of elements.")
+            if not (len(self.cache_images) == len(self.cache_attributes) == n) or n == 0:
+                raise ValueError("All caches must have the same number of elements.")
             print('attempting save')
             cache_metadata = self.cache_attributes
             merged_metadata = {}
@@ -451,9 +450,9 @@ class PVAReader:
                 data_grp = images_grp.create_group('data')
                 data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images]))
                 print('images written')
-                metadata_grp = images_grp.create_group("metadata")
+                metadata_grp = data_grp.create_group("metadata")
                 motor_pos_grp = metadata_grp.create_group('motor_positions')
-                rois_grp = images_grp.create_group('rois')
+                rois_grp = data_grp.create_group('rois')
                 print('metadata, rois, and motorposistion groups created')
                 for key, values in merged_metadata.items():
                     if all(isinstance(v, (int, float, np.number)) for v in values):
@@ -472,17 +471,20 @@ class PVAReader:
                         metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
                     else:
                         print(value)
-
                         print(f'{key}: {type(value)}')
                 print('metadata saved')
 
-                # Create HKL subgroup under images if HKL caches exist
-                hkl_grp = images_grp.create_group("HKL")
+            # Create HKL subgroup under images if HKL caches exist
+            if self.HKL_IN_CONFIG:
+                if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
+                    raise ValueError("qx, qy, and qz caches must have the same number of elements.")
+                
+                hkl_grp = data_grp.create_group("HKL")
                 hkl_grp.create_dataset("qx", data=self.cache_qx)
                 hkl_grp.create_dataset("qy", data=self.cache_qy)
                 hkl_grp.create_dataset("qz", data=self.cache_qz)
                 print('hkl vars written')
-                    
+    
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:
             print(f"Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
