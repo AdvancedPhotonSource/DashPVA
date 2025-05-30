@@ -711,7 +711,7 @@ class DiffractionImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                self.image = np.rot90(m=image, k=self.rot_num).T if self.image_is_transposed else np.rot90(m=image, k=self.rot_num)
+                self.image = np.transpose(np.rot90(m=image, k=self.rot_num)) if self.image_is_transposed else np.rot90(m=image, k=self.rot_num)
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
