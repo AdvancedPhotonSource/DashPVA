@@ -246,6 +246,7 @@ class DiffractionImageWindow(QMainWindow):
         """
         try:
             # A double check to make sure there isn't a connection already when starting
+            self.image_view.clear()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
@@ -254,11 +255,13 @@ class DiffractionImageWindow(QMainWindow):
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
-                self.reader.stop_channel_monitor()
+                if self.reader.channel.isMonitorActive():
+                    self.reader.stop_channel_monitor()
                 del self.reader
                 for roi in self.rois:
                     self.image_view.getView().removeItem(roi)
                 self.rois = []
+                self.reset_rsm_vars()
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.set_pixel_ordering()
@@ -270,6 +273,7 @@ class DiffractionImageWindow(QMainWindow):
             print(f'Failed to Connect to {self._input_channel}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.reset_rsm_vars()
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
@@ -606,6 +610,12 @@ class DiffractionImageWindow(QMainWindow):
                 return
         else:
             return
+        
+    def reset_rsm_vars(self) -> None:
+        del self.qx, self.qy, self.qz
+        self.qx = None
+        self.qy = None
+        self.qz = None
 
     def update_rois(self) -> None:
         """
@@ -654,7 +664,7 @@ class DiffractionImageWindow(QMainWindow):
                         self.mouse_x_val.setText(f"{self.mouse_x}")
                         self.mouse_y_val.setText(f"{self.mouse_y}")
                         self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
-                        if self.hkl_data:
+                        if self.qx is not None:
                             self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]}')
                             self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]}')
                             self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]}')
@@ -701,7 +711,7 @@ class DiffractionImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                self.image = np.rot90(m=image, k=self.rot_num).T if self.image_is_transposed else np.rot90(m=image, k=self.rot_num)
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():

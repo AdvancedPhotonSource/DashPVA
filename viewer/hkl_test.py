@@ -98,8 +98,8 @@ class HKLImageWindow(QMainWindow):
             file_path (str): The file path for loading configuration.
         """
         super(HKLImageWindow, self).__init__()
-        uic.loadUi('gui/HKL Viewer.ui', self)
-        self.setWindowTitle('Image Viewer with PVAaccess')
+        uic.loadUi('gui/hkl_viewer_window.ui', self)
+        self.setWindowTitle('HKL Viewer')
         self.show()
 
         # Initializing Viewer variables
