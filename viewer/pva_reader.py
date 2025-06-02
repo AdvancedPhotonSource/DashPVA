@@ -362,7 +362,7 @@ class PVAReader:
                 if self.MAX_CACHE_SIZE > 0:
                     self.cache_images = np.roll(self.cache_images, -1, axis=0)
                     self.cache_images[-1] = np.array(self.image, dtype = np.float32)
-                    if self.HKL_IN_CONFIG and self.viewer_type == 'r':
+                    if self.HKL_IN_CONFIG and self.caches_initialized:
                         self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
                         self.cache_qx[-1] = self.rsm_attributes['qx']
                         self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
@@ -476,7 +476,7 @@ class PVAReader:
                 print('metadata saved')
 
             # Create HKL subgroup under images if HKL caches exist
-            if self.HKL_IN_CONFIG and self.viewer_type == 'r':
+            if self.HKL_IN_CONFIG and self.caches_initialized:
                 if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
                     raise ValueError("qx, qy, and qz caches must have the same number of elements.")
                 

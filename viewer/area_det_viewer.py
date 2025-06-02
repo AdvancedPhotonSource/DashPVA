@@ -37,7 +37,7 @@ class ConfigDialog(QDialog):
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
         self.input_channel = ''
-        self.onfig_path = ''
+        self.config_path = ''
         # class can be prefilled with text
         self.init_ui()
         

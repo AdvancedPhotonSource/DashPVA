@@ -137,7 +137,7 @@ class AnalysisWindow(QMainWindow):
 
         # self.btn_create_hdf5.clicked.connect(self.save_hdf5)
         self.calc_freq.valueChanged.connect(self.frequency_changed)
-        self.cbox_select_roi.activated.connect(self.roi_selection_changed)
+        # self.cbox_select_roi.activated.connect(self.roi_selection_changed)
         self.chk_freeze.stateChanged.connect(self.freeze_plotting_checked)
         self.btn_reset.clicked.connect(self.reset_plot)
         self.sbox_intensity_min.valueChanged.connect(self.min_max_changed)
@@ -212,26 +212,26 @@ class AnalysisWindow(QMainWindow):
             for i in range(num_rois):
                 self.cbox_select_roi.addItem(f'ROI{i+1}')
 
-    def roi_selection_changed(self) -> None:
-        """
-        Updates the ROI selection based on the user's choice in the dropdown.
-        """
-        text = self.cbox_select_roi.currentText()
-        if text.startswith('ROI'):
-            x = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinX"]
-            y = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinY"]
-            w= self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeX"]
-            h = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeY"]
-            #change the roi values being analyzed
-            self.parent.roi_x = x
-            self.parent.roi_y = y
-            self.parent.roi_width = w
-            self.parent.roi_height = h
-            # Make changes seen in the text boxes
-            self.roi_x.setValue(x)
-            self.roi_y.setValue(y)
-            self.roi_width.setValue(w)
-            self.roi_height.setValue(h)
+    # def roi_selection_changed(self) -> None:
+    #     """
+    #     Updates the ROI selection based on the user's choice in the dropdown.
+    #     """
+    #     text = self.cbox_select_roi.currentText()
+    #     if text.startswith('ROI'):
+    #         x = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinX"]
+    #         y = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:MinY"]
+    #         w= self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeX"]
+    #         h = self.parent.reader.metadata[f"{self.parent.reader.pva_prefix}:{text}:SizeY"]
+    #         #change the roi values being analyzed
+    #         self.parent.roi_x = x
+    #         self.parent.roi_y = y
+    #         self.parent.roi_width = w
+    #         self.parent.roi_height = h
+    #         # Make changes seen in the text boxes
+    #         self.roi_x.setValue(x)
+    #         self.roi_y.setValue(y)
+    #         self.roi_width.setValue(w)
+    #         self.roi_height.setValue(h)
         
     # def roi_boxes_changed(self) -> None:
     #     """
@@ -432,8 +432,6 @@ class AnalysisWindow(QMainWindow):
         self.grid_c.addWidget(self.view_comy,0,0)
         self.view_comy.view.getAxis('left').setLabel('Scan Position Rows')
         self.view_comy.view.getAxis('bottom').setLabel('Scan Position Cols')
-
-
 
     def closeEvent(self, event):
         """
