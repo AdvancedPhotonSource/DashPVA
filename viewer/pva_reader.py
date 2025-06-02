@@ -174,7 +174,7 @@ class PVAReader:
             if self.rsm_index != None:
                 self.parse_rsm_attributes()
 
-        self.pva_to_image()
+        self.pva_to_image(pv)
 
 
         if self.caches_initialized:
@@ -249,15 +249,15 @@ class PVAReader:
             shape = (self.MAX_CACHE_SIZE, self.shape[0]*self.shape[1])
 
             #initialize all the caches to be that shape
-            self.cache_images = np.zeros(shape, dtype=np.float32)
-            self.cache_qx = np.zeros(shape, dtype=np.float32)
-            self.cache_qy = np.zeros(shape, dtype=np.float32)
-            self.cache_qz = np.zeros(shape, dtype=np.float32)
+            self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
             self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
 
             # empty array for when we miss a frame
             self.empty_arr = np.zeros(self.shape[0]*self.shape[1], dtype=self.numpy_dtype)
-            
+
             self.caches_initialized = True
             
     
@@ -269,9 +269,7 @@ class PVAReader:
             int: The index of the analysis attribute or None if not found.
         """
         if self.attributes:
-            # for i in range(len(self.attributes))
             for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
-                # attr_pv: dict = self.attributes[i]
                 if attr_pv.get("name", "") == "Analysis":
                     return i
             else:
@@ -279,9 +277,7 @@ class PVAReader:
             
     def locate_rsm_index(self) -> int|None:
         if self.attributes:
-            # for i in range(len(self.attributes))
             for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
-                # attr_pv: dict = self.attributes[i]
                 if attr_pv.get("name", "") == "RSM":
                     return i
             else:
@@ -309,41 +305,43 @@ class PVAReader:
                     # then adds the key to the inner dictionary with update
                     self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
             
-    def pva_to_image(self) -> None:
+    def pva_to_image(self, pva_object) -> None:
         """
         Converts the PVA Object to an image array and determines if a frame was missed.
         Handles bslz4 and lz4 compressed image data.
+
+        image is of type np.ndarray
         """
         try:
             self.frames_received += 1
-            if 'dimension' in self.pva_object:
+            if 'dimension' in pva_object:
                 # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
 
-                if self.pva_object['codec']['name'] == 'bslz4':
+                if pva_object['codec']['name'] == 'bslz4':
                     # Handle BSLZ4 compressed data
-                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
-                    uncompressed_size = self.pva_object['uncompressedSize'] // dtype.itemsize # size has to be divided by bytes needed to store dtype in bitshuffle
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
+                    uncompressed_size = pva_object['uncompressedSize'] // dtype.itemsize # size has to be divided by bytes needed to store dtype in bitshuffle
                     uncompressed_shape = (uncompressed_size,)
-                    compressed_image = self.pva_object['value'][0][self.data_type]
+                    compressed_image = pva_object['value'][0][self.data_type]
                     # Decompress numpy array to correct datatype
-                    self.image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
+                    image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
 
-                elif self.pva_object['codec']['name'] == 'lz4':
+                elif pva_object['codec']['name'] == 'lz4':
                     # Handle LZ4 compressed data
-                    dtype = self.NUMPY_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
-                    uncompressed_size = self.pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
-                    compressed_image = self.pva_object['value'][0][self.data_type]
+                    dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
+                    uncompressed_size = pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
+                    compressed_image = pva_object['value'][0][self.data_type]
                     # Decompress using lz4.block
                     decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
                     # Convert bytes to numpy array with correct dtype
-                    self.image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype is used to convert from buffer to correct dtype from bytes
+                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype is used to convert from buffer to correct dtype from bytes
 
-                elif self.pva_object['codec']['name'] == '':
+                elif pva_object['codec']['name'] == '':
                     # Handle uncompressed data
-                    self.image = np.array(self.pva_object['value'][0][self.data_type]) 
+                    image = pva_object['value'][0][self.data_type]
 
                 # Check for missed frame starts here
-                current_array_id = self.pva_object['uniqueId']
+                current_array_id = pva_object['uniqueId']
                 if self.last_array_id is not None: 
                     self.id_diff = current_array_id - self.last_array_id - 1
                     if (self.id_diff > 0):
@@ -360,17 +358,13 @@ class PVAReader:
                 self.last_array_id = current_array_id
                             
                 if self.MAX_CACHE_SIZE > 0:
-                    self.cache_images = np.roll(self.cache_images, -1, axis=0)
-                    self.cache_images[-1] = np.array(self.image, dtype = np.float32)
+                    self.cache_images.append(image)
                     if self.HKL_IN_CONFIG and self.caches_initialized:
-                        self.cache_qx = np.roll(self.cache_qx, -1, axis=0)
-                        self.cache_qx[-1] = self.rsm_attributes['qx']
-                        self.cache_qy = np.roll(self.cache_qy, -1, axis=0)
-                        self.cache_qy[-1] = self.rsm_attributes['qy']
-                        self.cache_qz = np.roll(self.cache_qz, -1, axis=0)
-                        self.cache_qz[-1] = self.rsm_attributes['qz']
+                        self.cache_qx.append(self.rsm_attributes['qx'])
+                        self.cache_qy.append(self.rsm_attributes['qy'])
+                        self.cache_qz.append(self.rsm_attributes['qz'])
 
-                self.image = self.image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else self.image.reshape(self.shape, order=self.pixel_ordering)
+                self.image = image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
 
             else:
                 self.image = None
@@ -448,7 +442,7 @@ class PVAReader:
                 print(f'creating file at :{self.OUTPUT_FILE_LOCATION}')
                 images_grp = h5f.create_group("entry")
                 data_grp = images_grp.create_group('data')
-                data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images]))
+                data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images], dtype=self.numpy_dtype))
                 print('images written')
                 metadata_grp = data_grp.create_group("metadata")
                 motor_pos_grp = metadata_grp.create_group('motor_positions')

@@ -297,10 +297,10 @@ class HKLImageWindow(QMainWindow):
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
                 try:    
                     # Collect all cached data
-                    flat_intensity = self.reader.cache_images.ravel()
-                    qx = self.reader.cache_qx.ravel()
-                    qy = self.reader.cache_qy.ravel()
-                    qz = self.reader.cache_qz.ravel()
+                    flat_intensity = np.vstack([*self.reader.cache_images], dtype=np.float32).ravel()
+                    qx = np.vstack([*self.reader.cache_qx], dtype=np.float32).ravel()
+                    qy = np.vstack([*self.reader.cache_qy], dtype=np.float32).ravel()
+                    qz = np.vstack([*self.reader.cache_qz], dtype=np.float32).ravel()
 
                     points = np.column_stack((
                         qx, qy, qz
