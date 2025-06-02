@@ -30,7 +30,7 @@
    <property name="title">
     <string>Optional Setup</string>
    </property>
-   <widget class="QLineEdit" name="le_roi_config">
+   <widget class="QLineEdit" name="le_config">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -83,9 +83,9 @@ QPushButton::pressed {
      <bool>false</bool>
     </property>
    </widget>
-   <widget class="QPushButton" name="btn_create">
+   <widget class="QPushButton" name="btn_clear">
     <property name="enabled">
-     <bool>false</bool>
+     <bool>true</bool>
     </property>
     <property name="geometry">
      <rect>
@@ -109,39 +109,10 @@ QPushButton::pressed {
 }</string>
     </property>
     <property name="text">
-     <string>Create</string>
+     <string>Clear</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="btn_edit">
-    <property name="enabled">
-     <bool>false</bool>
-    </property>
-    <property name="geometry">
-     <rect>
-      <x>270</x>
-      <y>110</y>
-      <width>80</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-    </property>
-    <property name="text">
-     <string>Edit</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="lbl_roi_config">
+   <widget class="QLabel" name="lbl_config">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -151,7 +122,7 @@ QPushButton::pressed {
      </rect>
     </property>
     <property name="text">
-     <string>Config</string>
+     <string>Config TOML</string>
     </property>
    </widget>
   </widget>
@@ -236,9 +207,8 @@ border-radius:3;
  <tabstops>
   <tabstop>le_input_channel</tabstop>
   <tabstop>btn_browse</tabstop>
-  <tabstop>le_roi_config</tabstop>
-  <tabstop>btn_edit</tabstop>
-  <tabstop>btn_create</tabstop>
+  <tabstop>le_config</tabstop>
+  <tabstop>btn_clear</tabstop>
  </tabstops>
  <resources/>
  <connections>

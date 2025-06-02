@@ -30,21 +30,20 @@ class ConfigDialog(QDialog):
 
         Attributes:
             input_channel (str): Input channel for PVA.
-            roi_config (str): Path to the ROI configuration file.
+            config_path (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.input_channel = ""
-        self.roi_config =  ""
+        self.input_channel = ''
+        self.onfig_path = ''
         # class can be prefilled with text
         self.init_ui()
         
         # Connecting signasl to 
-        # self.btn_edit.clicked.connect(self.json_open_file_dialog)
+        self.btn_clear.clicked.connect(self.clear_pv_setup)
         self.btn_browse.clicked.connect(self.browse_file_dialog)
-        # self.btn_create.clicked.connect(self.new_pv_setup)
         self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
     def init_ui(self) -> None:
@@ -52,7 +51,7 @@ class ConfigDialog(QDialog):
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_roi_config.setText(self.le_roi_config.text())
+        self.le_config.setText(self.le_config.text())
 
     def browse_file_dialog(self) -> None:
         """
@@ -60,22 +59,13 @@ class ConfigDialog(QDialog):
         """
         self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
 
-        self.le_roi_config.setText(self.pvs_path)
+        self.le_config.setText(self.pvs_path)
 
-    # def new_pv_setup(self) -> None:
-    #     """
-    #     Opens a new window for setting up a new PV configuration within the UI.
-    #     """
-    #     self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
-    
-    # def edit_pv_setup(self) -> None:
-    #     """
-    #     Opens a window for editing an existing PV configuration.
-    #     """
-    #     if self.le_edit_file_path.text() != '':
-    #         self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
-    #     else:
-    #         print('file path empty')
+    def clear_pv_setup(self) -> None:
+        """
+        Clears line edit that tells image view where the config file is.
+        """
+        self.le_config.clear()
 
     def dialog_accepted(self) -> None:
         """
@@ -83,10 +73,10 @@ class ConfigDialog(QDialog):
         Starts the DiffractionImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
-        self.roi_config = self.le_roi_config.text()
-        if osp.isfile(self.roi_config) or (self.roi_config == ''):
+        self.config_path = self.le_config.text()
+        if osp.isfile(self.config_path) or (self.config_path == ''):
             self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel,
-                                            file_path=self.roi_config,) 
+                                            file_path=self.config_path,) 
         else:
             print('File Path Doesn\'t Exitst')  
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
@@ -402,16 +392,6 @@ class DiffractionImageWindow(QMainWindow):
         """
         self.rot_num = next(rot_gen)
 
-    # def rotate_rois(self) -> None:
-    #     img_center = img_center = np.array(self.image_view.image.shape[::-1]) / 2.0 # width, height
-
-    #     for roi in self.rois:
-    #         roi_center = np.array(roi.pos()) + np.array(roi.size()) / 2.0
-    #         roi.setPos(pos=img_center)
-    #         roi.rotate(-90)
-    #         roi_pos = roi.pos()
-    #         roi.setPos(pos=roi_pos[0]-img_center[0], y=roi_pos[1]-img_center[1]/2)
-
     def add_rois(self) -> None:
         """
         Adds ROIs to the image viewer and assigns them color codes.
@@ -454,7 +434,7 @@ class DiffractionImageWindow(QMainWindow):
                 # np.save('qz.npy', qz)
                 # np.save('intensity.npy', intensity)
 
-                cmd = ['python', 'viewer/hkl_test.py',]
+                cmd = ['python', 'viewer/hkl_3d_viewer.py',]
                 #        '--qx-file', 'qx.npy',
                 #        '--qy-file', 'qy.npy',
                 #        '--qz-file', 'qz.npy',
