@@ -1,8 +1,8 @@
 # Required Setup
 DETECTOR_PREFIX = 'dp-ADSim'
-CONSUMER_MODE = 'continuous'
-# must be a squared number when CONSUMER_MODE = 'vectorized'
-MAX_CACHE_SIZE = 20
+CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how conumer is performing analysis calculations
+MAX_CACHE_SIZE = 40
+CACHING_MODE = 'alignment' # options: alignment or scan, describes whether the caching should be done the entire time or when a flag is seen
 OUTPUT_FILE_LOCATION = ''
 
 # Section used specifically for Metadata Pvs
