@@ -44,7 +44,7 @@ class ConfigDialog(QDialog):
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_config.setText(self.le_onfig.text())
+        self.le_config.setText(self.le_config.text())
 
     def browse_file_dialog(self) -> None:
         """
@@ -297,11 +297,11 @@ class HKLImageWindow(QMainWindow):
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
                 try:    
                     # Collect all cached data
-                    flat_intensity = np.vstack([*self.reader.cache_images], dtype=np.float32).ravel()
-                    qx = np.vstack([*self.reader.cache_qx], dtype=np.float32).ravel()
-                    qy = np.vstack([*self.reader.cache_qy], dtype=np.float32).ravel()
-                    qz = np.vstack([*self.reader.cache_qz], dtype=np.float32).ravel()
-
+                    flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
+                    qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
+                    qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
+                    qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
+                    
                     points = np.column_stack((
                         qx, qy, qz
                     ))
@@ -333,7 +333,7 @@ class HKLImageWindow(QMainWindow):
                         self.lut.apply_opacity([0,1])
                     
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
-                    self.plotter.render()
+                    # self.plotter.render()
 
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")
