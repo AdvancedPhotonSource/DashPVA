@@ -226,7 +226,8 @@ class PVAReader:
     def parse_attributes(self, pva_object) -> dict:
         pv_attributes = {}
         if pva_object != None and 'attribute' in pva_object:
-            pv_attributes['timeStamp'] = pva_object['timeStamp']
+            pv_attributes['timeStamp-secondsPastEpoch'] = pva_object['timeStamp']['secondsPastEpoch']
+            pv_attributes['timeStamp-nanoseconds'] = pva_object['timeStamp']['nanoseconds']
             attributes = pva_object['attribute']
             for attr in attributes:
                 name = attr['name']
@@ -398,9 +399,7 @@ class PVAReader:
 
     def save_caches_to_h5(self) -> None:
         # TODO:
-        # add motor positions
-        # add timestamps
-        # add analysis and rest of metadata
+        # add analysis
         """
         Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
         The file structure is as follows:
@@ -463,21 +462,17 @@ class PVAReader:
                     elif all(isinstance(v, str) for v in values):
                         dt = h5py.string_dtype(encoding='utf-8')
                         metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
-                    else:
-                        pass
-                        # print(value)
-                        # print(f'{key}: {type(value)}')
                 print('metadata saved')
+                print(cache_metadata.popleft())
 
             # Create HKL subgroup under images if HKL caches exist
             if self.HKL_IN_CONFIG and self.caches_initialized:
                 if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
                     raise ValueError("qx, qy, and qz caches must have the same number of elements.")
-                
                 hkl_grp = data_grp.create_group("HKL")
-                hkl_grp.create_dataset("qx", data=self.cache_qx)
-                hkl_grp.create_dataset("qy", data=self.cache_qy)
-                hkl_grp.create_dataset("qz", data=self.cache_qz)
+                hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx], dtype=np.float32))
+                hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy], dtype=np.float32))
+                hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz], dtype=np.float32))
                 print('hkl vars written')
     
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
