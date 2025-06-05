@@ -463,17 +463,16 @@ class PVAReader:
                         dt = h5py.string_dtype(encoding='utf-8')
                         metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
                 print('metadata saved')
-                print(cache_metadata.popleft())
 
-            # Create HKL subgroup under images if HKL caches exist
-            if self.HKL_IN_CONFIG and self.caches_initialized:
-                if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
-                    raise ValueError("qx, qy, and qz caches must have the same number of elements.")
-                hkl_grp = data_grp.create_group("HKL")
-                hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx], dtype=np.float32))
-                hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy], dtype=np.float32))
-                hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz], dtype=np.float32))
-                print('hkl vars written')
+                # Create HKL subgroup under images if HKL caches exist
+                if self.HKL_IN_CONFIG and self.caches_initialized:
+                    if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
+                        raise ValueError("qx, qy, and qz caches must have the same number of elements.")
+                    hkl_grp = data_grp.create_group(name="hkl")
+                    hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx]), dtype=np.float32)
+                    hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy]), dtype=np.float32)
+                    hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz]), dtype=np.float32)
+                    print('qx, qy, qz written')
     
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:
