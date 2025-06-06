@@ -81,6 +81,7 @@ class PVAReader:
         self.CONSUMER_MODE = ''
         self.MAX_CACHE_SIZE = 0
         self.OUTPUT_FILE_LOCATION = ''
+        self.CACHING_MODE = ''
 
         # variables that will store pva data
         self.pva_object = None
@@ -133,6 +134,7 @@ class PVAReader:
         self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
         self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
         self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
+        self.CACHING_MODE = self.config.get('CACHING_MODE', '')
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
         self.HKL_IN_CONFIG = ('HKL' in self.config)
 
@@ -251,10 +253,11 @@ class PVAReader:
 
             #initialize all the caches to be that shape
             self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
-            self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
-            self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
-            self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
             self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
+            if 'RSM' in self.pv_attributes:
+                self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
 
             # empty array for when we miss a frame
             self.empty_arr = np.zeros(self.shape[0]*self.shape[1], dtype=self.numpy_dtype)
@@ -361,9 +364,13 @@ class PVAReader:
                 if self.MAX_CACHE_SIZE > 0:
                     self.cache_images.append(image)
                     if self.HKL_IN_CONFIG and self.caches_initialized:
-                        self.cache_qx.append(self.rsm_attributes['qx'])
-                        self.cache_qy.append(self.rsm_attributes['qy'])
-                        self.cache_qz.append(self.rsm_attributes['qz'])
+                    # TODO: ADD caching mode check here to see if we are looking for a flag pv or caching indiscriminately.
+                        if 'RSM' in self.pv_attributes:
+                            self.cache_qx.append(self.rsm_attributes['qx'])
+                            self.cache_qy.append(self.rsm_attributes['qy'])
+                            self.cache_qz.append(self.rsm_attributes['qz'])
+                        elif 'RSM' not in self.attributes and self.viewer_type == 'r':
+                            raise AttributeError('Could not find \'RSM\' in pv')
 
                 self.image = image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
 
@@ -466,13 +473,14 @@ class PVAReader:
 
                 # Create HKL subgroup under images if HKL caches exist
                 if self.HKL_IN_CONFIG and self.caches_initialized:
-                    if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
-                        raise ValueError("qx, qy, and qz caches must have the same number of elements.")
-                    hkl_grp = data_grp.create_group(name="hkl")
-                    hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx]), dtype=np.float32)
-                    hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy]), dtype=np.float32)
-                    hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz]), dtype=np.float32)
-                    print('qx, qy, qz written')
+                    if 'RSM' in self.pv_attributes:
+                        if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
+                            raise ValueError("qx, qy, and qz caches must have the same number of elements.")
+                        hkl_grp = data_grp.create_group(name="hkl")
+                        hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx]), dtype=np.float32)
+                        hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy]), dtype=np.float32)
+                        hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz]), dtype=np.float32)
+                        print('qx, qy, qz written')
     
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:
