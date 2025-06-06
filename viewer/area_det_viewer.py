@@ -176,8 +176,9 @@ class DiffractionImageWindow(QMainWindow):
         """
         Starts timers for updating labels and plotting at specified frequencies.
         """
-        self.timer_labels.start(int(1000/100))
-        self.timer_plot.start(int(1000/self.plotting_frequency.value()))
+        if self.reader is not None and self.reader.channel.isMonitorActive():
+            self.timer_labels.start(int(1000/100))
+            self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self) -> None:
         """
@@ -245,6 +246,7 @@ class DiffractionImageWindow(QMainWindow):
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
+                self.btn_save_caches.clicked.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
                 del self.reader
@@ -271,8 +273,8 @@ class DiffractionImageWindow(QMainWindow):
         
         if self.reader is not None:
             if not(self.reader.rois):
-                    if ('ROI' in self.reader.config):
-                        self.reader.start_roi_backup_monitor()
+                if ('ROI' in self.reader.config):
+                    self.reader.start_roi_backup_monitor()
             self.start_stats_monitors()
             self.add_rois()
             self.start_timers()
@@ -300,8 +302,8 @@ class DiffractionImageWindow(QMainWindow):
             for roi in self.rois:
                 self.image_view.getView().removeItem(roi)
             self.rois = []
-            del self.reader
-            self.reader = None
+            # del self.reader
+            # self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
