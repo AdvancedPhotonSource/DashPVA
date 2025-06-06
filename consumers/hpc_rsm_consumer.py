@@ -176,7 +176,7 @@ class HpcRsmProcessor(AdImageProcessor):
             angles = [*sample_circle_positions, *det_circle_positions]
             return hxrd.Ang2Q.area(*angles, UB=ub_matrix)
         except Exception as e:
-            with open("error_output.txt", "w") as f:
+            with open("error_output1.txt", "w") as f:
                 f.write(str(e))
             return None, None, None
         
@@ -234,14 +234,17 @@ class HpcRsmProcessor(AdImageProcessor):
             
                 rsm_object = PvObject(self.type_dict, rsm_attribute) 
                 rsm_attribute = NtAttribute('RSM', rsm_object)
-
+                
                 frameAttributes = pvObject['attribute']
                 frameAttributes.append(rsm_attribute)
                 pvObject['attribute'] = frameAttributes
 
             except Exception as e:
-                with open("error_output.txt", "w") as f:
-                    f.writelines([str(np.shape(rsm_data['qx']))+'\n', str(type(rsm_data['qx']))+'\n', str(e)])
+                with open("error_output2.txt", "w") as f:
+                    f.writelines([str(time.time())+'\n',
+                                  str(np.shape(rsm_data['qx']))+'\n',
+                                  str(type(rsm_data['qx']))+'\n', 
+                                  str(e)])
                 return pvObject
             
             self.nFramesProcessed += 1
