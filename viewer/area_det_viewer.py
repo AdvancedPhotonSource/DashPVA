@@ -560,33 +560,33 @@ class DiffractionImageWindow(QMainWindow):
         The conversion uses the current sample and detector angles along with the UB matrix
         to transform from angular to reciprocal space coordinates.
         """
-        if self.hkl_data and (not self.stop_hkl.isChecked()):
+        if self.reader is not None and self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
                 hxrd = xu.HXRD(self.inplane_reference_directions,
                             self.sample_surface_normal_directions, 
                             en=self.energy, 
                             qconv=self.q_conv)
 
-                if self.stats_data:
-                    if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
-                        roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                        cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
-                        cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
-                        distance = self.hkl_data['DetectorSetup:Distance'] # Distance
-                        pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
-                        pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
-                        nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
-                        nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
-                        pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
-                        pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
+                # if self.stats_data:
+                #     if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
+                roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
+                cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
+                distance = self.hkl_data['DetectorSetup:Distance'] # Distance
+                pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
+                pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
+                nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
+                pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
+                pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
 
-                        hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
-                                            Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
-                                            pwidth2=pixel_width2, distance=distance, roi=roi)
-                        
-                        angles = [*self.sample_circle_positions, *self.det_circle_positions]
+                hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                    Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
+                                    pwidth2=pixel_width2, distance=distance, roi=roi)
+                
+                angles = [*self.sample_circle_positions, *self.det_circle_positions]
 
-                        return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+                return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
             except Exception as e:
                 print(f'Error Creating RSM: {e}')
                 return
@@ -647,9 +647,9 @@ class DiffractionImageWindow(QMainWindow):
                         self.mouse_y_val.setText(f"{self.mouse_y}")
                         self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
                         if self.qx is not None:
-                            self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]}')
-                            self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]}')
-                            self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]}')
+                            self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]:.7f}')
+                            self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]:.7f}')
+                            self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]:.7f}')
 
     def update_labels(self) -> None:
         """

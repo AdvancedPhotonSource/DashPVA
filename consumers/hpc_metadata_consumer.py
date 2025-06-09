@@ -89,16 +89,16 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                 pv = pva.PvScalarArray(pva.DOUBLE)
                 pv.set(mdValue.tolist())
                 nt_attribute = {'name': mdChannel, 'value': pv}
+
+            frameAttributes.append(nt_attribute)
         except ValueError:
             self.logger.error(f"Failed to set ndAttribute {mdChannel}: {mdValue}")
-
             return False
         
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
         # Here is where any logic with time offsets would go
         # Attach Metadata no matter what
-        frameAttributes.append(nt_attribute)
         self.nMetadataProcessed += 1
         return True
         

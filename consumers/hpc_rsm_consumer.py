@@ -7,6 +7,7 @@ from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 # import logging
+import traceback
 import xrayutilities as xu
 import toml
 
@@ -28,12 +29,11 @@ class HpcRsmProcessor(AdImageProcessor):
 
         # PV attributes
         self.shape : tuple = (0,0)
-        self.type_dict = {'value':{
+        self.type_dict = {
             'qx': [pva.DOUBLE],
             'qy': [pva.DOUBLE],
-            'qz': [pva.DOUBLE],
-            # 'attributes_diff': pva.BOOLEAN
-            }}                   
+            'qz': [pva.DOUBLE]
+            }                   
         
         # HKL parameters
         self.all_attributes = {}
@@ -206,6 +206,10 @@ class HpcRsmProcessor(AdImageProcessor):
         if 'timeStamp' not in pvObject:
             # No timestamp, just return the object
             return pvObject
+        
+        if 'attribute' not in pvObject:
+            print('attributes not in pvObject')
+            return pvObject
                 
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
         self.shape = tuple([dim['size'] for dim in dims])
@@ -220,49 +224,51 @@ class HpcRsmProcessor(AdImageProcessor):
             # Only recalculate qxyz if there are new attributes
             self.qx, self.qy, self.qz = self.create_rsm(self.hkl_attributes, self.shape)
         
-        if self.qx is not None:
+   
+        try:
             # Create RSM data structure
             rsm_data = {
-                'qx': self.qx.flatten().tolist(),
-                'qy': self.qy.flatten().tolist(),
-                'qz': self.qz.flatten().tolist(),
-                # 'attributes_diff': attributes_diff
+                'qx': np.ravel(self.qx),
+                'qy': np.ravel(self.qy),
+                'qz': np.ravel(self.qz)
             }
-            try:
-                # Create attribute
-                rsm_attribute = {'value': rsm_data}
-            
-                rsm_object = PvObject(self.type_dict, rsm_attribute) 
-                rsm_attribute = NtAttribute('RSM', rsm_object)
-                
-                frameAttributes = pvObject['attribute']
-                frameAttributes.append(rsm_attribute)
-                pvObject['attribute'] = frameAttributes
+            print('rsm data created')
 
-            except Exception as e:
-                with open("error_output2.txt", "w") as f:
-                    f.writelines([str(time.time())+'\n',
-                                  str(np.shape(rsm_data['qx']))+'\n',
-                                  str(type(rsm_data['qx']))+'\n', 
-                                  str(e)])
-                return pvObject
-            
+            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
+            print('pvObject created')
+
+            # pv_attribute = NtAttribute('RSM', rsm_object)
+            # print('NtAttribute created')
+
+
+            frameAttributes = pvObject['attribute']
+            frameAttributes.append(rsm_object)
+            print('RSM attributes appended')
+
+            pvObject['attribute'] = frameAttributes
+            print('New attributes attached to PV')
             self.nFramesProcessed += 1
-        else:
+ 
+            # Update stats
+            frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
+            self.lastFrameTimestamp = frameTimestamp
+            self.nFramesProcessed += 1
+
+            # Update output channel if needed
+            self.updateOutputChannel(pvObject)
+
+            # Update processing time
+            t1 = time.time()
+            self.processingTime += (t1 - t0)
+
+            return pvObject
+
+        except Exception as e:
             self.nFrameErrors += 1
-        # Update stats
-        frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
-        self.lastFrameTimestamp = frameTimestamp
-        self.nFramesProcessed += 1
-
-        # Update output channel if needed
-        self.updateOutputChannel(pvObject)
-
-        # Update processing time
-        t1 = time.time()
-        self.processingTime += (t1 - t0)
-
-        return pvObject
+            with open("error_output2.txt", "w") as f:
+                f.writelines([str(time.time())+'\n',
+                                  ''.join(traceback.format_exception(None, e, e.__traceback__))])
+            return pvObject
 
     def resetStats(self):
         """
