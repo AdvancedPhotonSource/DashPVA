@@ -51,7 +51,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>/home/beams/JULIO.RODRIGUEZ/Codebase/Lab_Software/area_det_PVA_viewer/pv_configs/metadata_pvs.toml</string>
+     <string>/home/beams18/USER6IDB/DashPVA/pv_configs/6id_config.toml</string>
     </property>
    </widget>
    <widget class="QPushButton" name="btn_browse">
@@ -160,7 +160,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>processor:1:analysis</string>
+     <string>s6lambda1:Pva1:Image</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_input_channel">
