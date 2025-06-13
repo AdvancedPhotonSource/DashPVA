@@ -350,7 +350,6 @@ class PVAReader:
                     self.id_diff = current_array_id - self.last_array_id - 1
                     if (self.id_diff > 0):
                         self.frames_missed += self.id_diff 
-                        self.id_diff = 0
                         # if self.HKL_IN_CONFIG:
                             # for i in range(self.id_diff):
                             #     if self.HKL_IN_CONFIG:
@@ -360,7 +359,8 @@ class PVAReader:
                             #         self.cache_qz.append(self.empty_array)
 
                 self.last_array_id = current_array_id
-                            
+                self.id_diff = 0
+    
                 if self.MAX_CACHE_SIZE > 0:
                     self.cache_images.append(image)
                     if self.HKL_IN_CONFIG and self.caches_initialized:

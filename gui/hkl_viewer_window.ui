@@ -220,7 +220,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-315</y>
+           <y>0</y>
            <width>360</width>
            <height>1200</height>
           </rect>
@@ -669,7 +669,14 @@ QPushButton:pressed {
                </widget>
               </item>
               <item row="7" column="1">
-               <widget class="QDoubleSpinBox" name="sbox_min_opacity"/>
+               <widget class="QDoubleSpinBox" name="sbox_min_opacity">
+                <property name="maximum">
+                 <double>1.000000000000000</double>
+                </property>
+                <property name="singleStep">
+                 <double>0.100000000000000</double>
+                </property>
+               </widget>
               </item>
               <item row="8" column="1">
                <widget class="QDoubleSpinBox" name="sbox_max_opacity">
