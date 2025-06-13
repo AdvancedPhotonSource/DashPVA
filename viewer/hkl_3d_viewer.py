@@ -280,7 +280,6 @@ class HKLImageWindow(QMainWindow):
             self.is_connected.setText(is_connected)
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
-            self.plot_call_id.setText(f'{self.call_id_plot:d}')
             
     def update_image(self) -> None:
         """
