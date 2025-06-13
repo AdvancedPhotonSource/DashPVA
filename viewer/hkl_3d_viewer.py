@@ -141,8 +141,7 @@ class HKLImageWindow(QMainWindow):
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         # self.log_image.clicked.connect(self.reset_first_plot)
-        self.freeze_image.stateChanged.connect(self.freeze_image_checked)
-        self.plotting_frequency.valueChanged.connect(self.start_timers)
+        # self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.sbox_min_intensity.valueChanged.connect(self.update_intensity)
         self.sbox_max_intensity.valueChanged.connect(self.update_intensity)
@@ -247,16 +246,16 @@ class HKLImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
-    def freeze_image_checked(self) -> None:
-        """
-        Toggles freezing/unfreezing of the plot based on the checked state
-        without stopping the collection of PVA objects.
-        """
-        if self.reader is not None:
-            if self.freeze_image.isChecked():
-                self.stop_timers()
-            else:
-                self.start_timers()
+    # def freeze_image_checked(self) -> None:
+    #     """
+    #     Toggles freezing/unfreezing of the plot based on the checked state
+    #     without stopping the collection of PVA objects.
+    #     """
+    #     if self.reader is not None:
+    #         if self.freeze_image.isChecked():
+    #             self.stop_timers()
+    #         else:
+    #             self.start_timers()
 
     def reset_first_plot(self) -> None:
         """
