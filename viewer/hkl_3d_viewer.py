@@ -354,10 +354,14 @@ class HKLImageWindow(QMainWindow):
         if self.actor is not None:
             self.min_opacity = self.sbox_min_opacity.value()
             self.max_opacity = self.sbox_max_opacity.value()
+            if self.min_opacity > self.max_opacity:
+                self.min_opacity, self.max_opacity = self.max_opacity, self.min_opacity
+                self.sbox_min_opacity.setValue(self.min_opacity)
+                self.sbox_max_opacity.setValue(self.max_opacity)
             # TODO: Check which way of applying opacity is better. 
             self.lut.apply_opacity([self.min_opacity,self.max_opacity])
             # self.lut.alpha_range = (self.min_opacity, self.max_opacity)
-            self.plotter.render()
+            # self.plotter.render()
 
     def update_intensity(self) -> None:
         """
@@ -366,10 +370,14 @@ class HKLImageWindow(QMainWindow):
         if self.actor is not None:
             self.min_intensity = self.sbox_min_intensity.value()
             self.max_intensity = self.sbox_max_intensity.value()
+            if self.min_intensity > self.max_intensity:
+                self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
+                self.sbox_min_intensity.setValue(self.min_intensity)
+                self.sbox_max_intensity.setValue(self.max_intensity)
             #TODO: Check which scalar range needs to change and which doesn't
             self.lut.scalar_range = (self.min_intensity, self.max_intensity)
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
-            self.plotter.render()
+            # self.plotter.render()
     
     # def closeEvent(self, event):
     #     """
