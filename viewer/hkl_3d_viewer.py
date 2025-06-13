@@ -143,10 +143,10 @@ class HKLImageWindow(QMainWindow):
         # self.log_image.clicked.connect(self.reset_first_plot)
         # self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
-        self.sbox_min_intensity.returnPressed.connect(self.update_intensity)
-        self.sbox_max_intensity.returnPressed.connect(self.update_intensity)
-        self.sbox_min_opacity.returnPressed.connect(self.update_opacity)
-        self.sbox_max_opacity.returnPressed.connect(self.update_opacity)
+        self.sbox_min_intensity.editingFinished.connect(self.update_intensity)
+        self.sbox_max_intensity.editingFinished.connect(self.update_intensity)
+        self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
+        self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
         # self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def start_timers(self) -> None:
