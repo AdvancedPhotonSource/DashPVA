@@ -220,7 +220,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>-453</y>
+           <y>-491</y>
            <width>335</width>
            <height>2000</height>
           </rect>
@@ -253,13 +253,13 @@ QPushButton:pressed {
               <rect>
                <x>10</x>
                <y>30</y>
-               <width>302</width>
+               <width>304</width>
                <height>281</height>
               </rect>
              </property>
              <layout class="QFormLayout" name="stats_layout">
               <property name="labelAlignment">
-               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
               </property>
               <property name="formAlignment">
                <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -512,7 +512,7 @@ QPushButton:pressed {
                  </font>
                 </property>
                 <property name="text">
-                 <string>Data Type:</string>
+                 <string>Image Data Type:</string>
                 </property>
                </widget>
               </item>
@@ -560,7 +560,7 @@ QPushButton:pressed {
                  </font>
                 </property>
                 <property name="text">
-                 <string>Set Max:</string>
+                 <string>Set Max Intensity:</string>
                 </property>
                </widget>
               </item>
@@ -617,7 +617,7 @@ QPushButton:pressed {
                  </font>
                 </property>
                 <property name="text">
-                 <string>Set Min:</string>
+                 <string>Set Min Intensity:</string>
                 </property>
                </widget>
               </item>
@@ -1322,8 +1322,7 @@ QPushButton:pressed {
                  </font>
                 </property>
                 <property name="styleSheet">
-                 <string notr="true">
-</string>
+                 <string notr="true"/>
                 </property>
                 <property name="text">
                  <string>Rotate 90° CCW</string>

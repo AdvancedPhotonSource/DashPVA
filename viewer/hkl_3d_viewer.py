@@ -124,6 +124,12 @@ class HKLImageWindow(QMainWindow):
 
         # pyvista vars
         self.actor = None
+        self.lut = None
+        self.cloud = None
+        self.min_intensity = 0.0
+        self.max_intensity = 0.0
+        self.min_opacity = 0.0
+        self.max_opacity = 1.0
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 
         # Connecting the signals to the code that will be executed
@@ -138,9 +144,10 @@ class HKLImageWindow(QMainWindow):
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
-        # TODO: create a spinbox that changes min and max setting for intensities 
-        # self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
-        # self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.sbox_min_intensity.valueChanged.connect(self.update_intensity)
+        self.sbox_max_intensity.valueChanged.connect(self.update_intensity)
+        self.sbox_min_opacity.valueChanged.connect(self.update_opacity)
+        self.sbox_max_opacity.valueChanged.connect(self.update_opacity)
         # self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
     def start_timers(self) -> None:
@@ -257,15 +264,6 @@ class HKLImageWindow(QMainWindow):
         """
         self.first_plot = True
 
-    def reset_camera(self) -> None:
-        """
-        Resets plot view
-        """
-        if self.reader is not None:
-            if self.plotter is not None:
-                bounds = self.plotter.bounds
-                self.plotter.set_position(bounds)
-
     def update_pv_prefix(self) -> None:
         """
         Updates the input channel prefix based on the value entered in the prefix field.
@@ -308,16 +306,23 @@ class HKLImageWindow(QMainWindow):
 
                     # First-time setup
                     if self.first_plot:
-                        min = np.min(flat_intensity)
-                        max = np.max(flat_intensity)
+                        self.min_intensity = np.min(flat_intensity)
+                        self.max_intensity = np.max(flat_intensity)
+                        self.sbox_min_intensity.setValue(self.min_intensity)
+                        self.sbox_max_intensity.setValue(self.max_intensity)
+
                         self.cloud = pyv.PolyData(points)
                         self.cloud['intensity'] = flat_intensity 
 
                         self.lut = pyv.LookupTable(cmap='viridis')
-                        self.lut.scalar_range = (min, max)
-                        self.lut.apply_opacity([0,1])
-                        # self.lut.below_range_color = 'black
-                        # self.lut.above_range_color = 'y'
+                        self.lut.scalar_range = (self.min_intensity, self.min_intensity)
+                        # TODO: Check which way of applying opacity is better. 
+                        self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+                        # self.lut.alpha_range = (self.min_opacity, self.max_opacity)
+                        self.lut.below_range_color = 'black'
+                        self.lut.above_range_color = 'black'
+                        self.lut.below_range_opacity = 0.0
+                        self.lut.above_range_opacity = 0.0
                         
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
@@ -328,46 +333,54 @@ class HKLImageWindow(QMainWindow):
                     else:
                         self.plotter.mesh.points = points
                         self.cloud['intensity'] = flat_intensity
-                        self.lut.scalar_range = (min, max)
-                        self.actor.mapper.scalar_range = (min,max) #self.cloud.get_data_range('intensity')
-                        self.lut.apply_opacity([0,1])
+                        #TODO: Check which scalar range needs to change and which doesn't
+                        self.lut.scalar_range = (self.min_intensity, self.max_intensity)
+                        self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
+                        # TODO: Check which way of applying opacity is better. 
+                        self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+                        # self.lut.alpha_range = (self.min_opacity, self.max_opacity)
                     
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
-                    # self.plotter.render()
 
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")
 
-                    # if self.log_image.isChecked():
-                    #         self.image = np.log1p(self.image + 1)
-                    #         min_level = np.log1p(min_level + 1)
-                    #         max_level = np.log1p(max_level + 1)
-                    # if self.first_plot:
-                    #     # Auto sets the max value based on first incoming image
-                    #     self.max_setting_val.setValue(max_level)
-                    #     self.min_setting_val.setValue(min_level)
-                    #     self.first_plot = False
-                    # else:
-                # self.min_px_val.setText(f"{min_level:.2f}")
-                # self.max_px_val.setText(f"{max_level:.2f}")
 
-    # def update_min_max_setting(self) -> None:
-    #     """
-    #     Updates the min/max pixel levels in the Image Viewer based on UI settings.
-    #     """
-    #     min = self.min_setting_val.value()
-    #     max = self.max_setting_val.value()
-        # self.image_view.setLevels(min, max)
+    def update_opacity(self) -> None:
+        """
+        Updates the min/max intensity levels in the HKL Viewer based on UI settings.
+        """
+        """
+        Updates the min/max intensity levels in the HKL Viewer based on UI settings.
+        """
+        if self.actor is not None:
+            self.min_opacity = self.sbox_min_opacity.value()
+            self.max_opacity = self.sbox_max_opacity.value()
+            # TODO: Check which way of applying opacity is better. 
+            self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+            # self.lut.alpha_range = (self.min_opacity, self.max_opacity)
+            self.plotter.render()
+
+    def update_intensity(self) -> None:
+        """
+        Updates the min/max intensity levels in the HKL Viewer based on UI settings.
+        """
+        if self.actor is not None:
+            self.min_intensity = self.sbox_min_intensity.value()
+            self.max_intensity = self.sbox_max_intensity.value()
+            #TODO: Check which scalar range needs to change and which doesn't
+            self.lut.scalar_range = (self.min_intensity, self.max_intensity)
+            self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
+            self.plotter.render()
     
-    def closeEvent(self, event):
-        """
-        Custom close event to clean up resources, including stat dialogs.
+    # def closeEvent(self, event):
+    #     """
+    #     Custom close event to clean up resources, including stat dialogs.
 
-        Args:
-            event (QCloseEvent): The close event triggered when the main window is closed.
-        """
-        # del self.stats_dialog # otherwise dialogs stay in memory
-        super(HKLImageWindow,self).closeEvent(event)
+    #     Args:
+    #         event (QCloseEvent): The close event triggered when the main window is closed.
+    #     """
+    #     super(HKLImageWindow,self).closeEvent(event)
 
 
 if __name__ == '__main__':

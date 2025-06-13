@@ -426,22 +426,7 @@ class DiffractionImageWindow(QMainWindow):
     def start_hkl_viewer(self) -> None:
         try:
             if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                # qx = self.qx.flatten()
-                # qy = self.qy.flatten()
-                # qz = self.qz.flatten()
-                # intensity = self.reader.image.flatten()
-
-                # np.save('qx.npy', qx)
-                # np.save('qy.npy', qy)
-                # np.save('qz.npy', qz)
-                # np.save('intensity.npy', intensity)
-
                 cmd = ['python', 'viewer/hkl_3d_viewer.py',]
-                #        '--qx-file', 'qx.npy',
-                #        '--qy-file', 'qy.npy',
-                #        '--qz-file', 'qz.npy',
-                #        '--intensity-file', 'intensity.npy']
-
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -449,7 +434,6 @@ class DiffractionImageWindow(QMainWindow):
                     preexec_fn=os.setsid,
                     universal_newlines=True
                 )
-
                 self.processes[process.pid] = process
 
         except Exception as e:
