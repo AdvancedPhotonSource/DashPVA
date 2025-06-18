@@ -212,7 +212,9 @@ class HKLImageWindow(QMainWindow):
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
-                self.reader.stop_channel_monitor()
+                self.btn_save_caches.clicked.disconnect()
+                if self.reader.channel.isMonitorActive():
+                    self.reader.stop_channel_monitor()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
@@ -241,8 +243,6 @@ class HKLImageWindow(QMainWindow):
         if self.reader is not None:
             self.reader.stop_channel_monitor()
             self.stop_timers()
-            del self.reader
-            self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 

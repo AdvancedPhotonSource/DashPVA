@@ -302,8 +302,6 @@ class DiffractionImageWindow(QMainWindow):
             for roi in self.rois:
                 self.image_view.getView().removeItem(roi)
             self.rois = []
-            # del self.reader
-            # self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 

@@ -232,21 +232,14 @@ class HpcRsmProcessor(AdImageProcessor):
                 'qy': np.ravel(self.qy),
                 'qz': np.ravel(self.qz)
             }
-            print('rsm data created')
 
             rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
-            print('pvObject created')
 
             # pv_attribute = NtAttribute('RSM', rsm_object)
-            # print('NtAttribute created')
-
 
             frameAttributes = pvObject['attribute']
             frameAttributes.append(rsm_object)
-            print('RSM attributes appended')
-
             pvObject['attribute'] = frameAttributes
-            print('New attributes attached to PV')
             self.nFramesProcessed += 1
  
             # Update stats
@@ -266,8 +259,7 @@ class HpcRsmProcessor(AdImageProcessor):
         except Exception as e:
             self.nFrameErrors += 1
             with open("error_output2.txt", "w") as f:
-                f.writelines([str(time.time())+'\n',
-                                  ''.join(traceback.format_exception(None, e, e.__traceback__))])
+                f.writelines([''.join(traceback.format_exception(None, e, e.__traceback__))])
             return pvObject
 
     def resetStats(self):
