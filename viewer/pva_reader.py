@@ -171,17 +171,13 @@ class PVAReader:
             self.init_caches()
 
          # Check for HKL attributes from all attributes
-        if self.HKL_IN_CONFIG:
-            self.rsm_index = self.locate_rsm_index()
-            if self.rsm_index != None:
+        if 'RSM' in self.pv_attributes and self.HKL_IN_CONFIG:
                 self.parse_rsm_attributes()
 
         self.pva_to_image(pv)
 
-
         if self.caches_initialized:
             self.cache_attributes.append(self.pv_attributes)
-
 
         if self.ANALYSIS_IN_CONFIG:
             self.analysis_index = self.locate_analysis_index()
@@ -223,7 +219,6 @@ class PVAReader:
     def parse_img_shape(self) -> None:
         if 'dimension' in self.pva_object:
             self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
-            # print('parsing shape:', self.shape)
 
     def parse_attributes(self, pva_object) -> dict:
         pv_attributes = {}
@@ -264,7 +259,6 @@ class PVAReader:
 
             self.caches_initialized = True
             
-    
     def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
@@ -279,16 +273,16 @@ class PVAReader:
             else:
                 return None
             
-    def locate_rsm_index(self) -> int|None:
-        if self.attributes:
-            for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
-                if attr_pv.get("name", "") == "RSM":
-                    return i
-            else:
-                return None
+    # def locate_rsm_index(self) -> int|None:
+    #     if self.attributes:
+    #         for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
+    #             if attr_pv.get("name", "") == "RSM":
+    #                 return i
+    #         else:
+    #             return None
     
     def parse_rsm_attributes(self) -> None:
-        rsm_attributes = self.attributes[self.rsm_index]
+        rsm_attributes = self.pv_attributes['RSM']
         self.rsm_attributes = rsm_attributes['value'][0].get('value', {})
               
     def parse_roi_pvs(self) -> None:
@@ -360,7 +354,7 @@ class PVAReader:
 
                 self.last_array_id = current_array_id
                 self.id_diff = 0
-    
+                            
                 if self.MAX_CACHE_SIZE > 0:
                     self.cache_images.append(image)
                     if self.HKL_IN_CONFIG and self.caches_initialized:
