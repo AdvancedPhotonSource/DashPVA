@@ -258,7 +258,7 @@ class PVAReader:
             self.empty_arr = np.zeros(self.shape[0]*self.shape[1], dtype=self.numpy_dtype)
 
             self.caches_initialized = True
-            
+
     def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
@@ -282,8 +282,7 @@ class PVAReader:
     #             return None
     
     def parse_rsm_attributes(self) -> None:
-        rsm_attributes = self.pv_attributes['RSM']
-        self.rsm_attributes = rsm_attributes['value'][0].get('value', {})
+        self.rsm_attributes = self.pv_attributes['RSM']
               
     def parse_roi_pvs(self) -> None:
         """
