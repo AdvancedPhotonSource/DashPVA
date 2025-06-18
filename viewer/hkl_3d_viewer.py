@@ -212,7 +212,7 @@ class HKLImageWindow(QMainWindow):
                 self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
-                self.btn_save_caches.clicked.disconnect()
+                self.btn_save_h5.clicked.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
                 del self.reader
@@ -223,7 +223,6 @@ class HKLImageWindow(QMainWindow):
                 self.reader.start_channel_monitor()
 
             self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
-
         except:
             print(f'Failed to Connect to {self._input_channel}')
             del self.reader
@@ -335,14 +334,12 @@ class HKLImageWindow(QMainWindow):
                         #TODO: Check which scalar range needs to change and which doesn't
                         self.update_intensity()
                         self.update_opacity()
+                    self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                         # self.lut.scalar_range = (self.min_intensity, self.max_intensity)
                         # self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
                         # # TODO: Check which way of applying opacity is better. 
                         # self.lut.apply_opacity([self.min_opacity,self.max_opacity])
                         # # self.lut.alpha_range = (self.min_opacity, self.max_opacity)
-                    
-                    self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
-
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")
 
