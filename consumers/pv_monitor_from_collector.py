@@ -103,8 +103,8 @@ def monitor_callback(data):
 
 # collector_channel = pva.Channel('processor:1:output', pva.PVA)
 # collector_channel = pva.Channel("processor:10:analysis", pva.PVA)
-# collector_channel = pva.Channel("collector:1:output", pva.PVA)
-collector_channel = pva.Channel("collector2:1:output", pva.PVA)
+collector_channel = pva.Channel("collector:1:output", pva.PVA)
+# collector_channel = pva.Channel("collector2:1:output", pva.PVA)
 
 collector_channel.subscribe("monitor", monitor_callback)
 collector_channel.startMonitor()
