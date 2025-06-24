@@ -18,7 +18,7 @@ from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
 
 
-max_cache_size = 900 #TODO: Put this in the config file 
+max_cache_size = 2 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
 
 
@@ -670,9 +670,13 @@ class ImageWindow(QMainWindow):
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            self.image = np.log1p(self.image + 1)
-                            min_level = np.log1p(min_level + 1)
-                            max_level = np.log1p(max_level + 1)
+                            # Ensure non-negative values before log transformation
+                            self.image = np.maximum(self.image, 0)
+                            # Add small epsilon to avoid log(0) and ensure reasonable range
+                            epsilon = 1e-10
+                            self.image = np.log10(self.image + epsilon + 1)
+                            min_level = np.log10(max(min_level, epsilon) + 1)
+                            max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(self.image, 
                                                  autoRange=False, 
