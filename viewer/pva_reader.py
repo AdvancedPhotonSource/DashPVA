@@ -79,9 +79,10 @@ class PVAReader:
         self.rois = {}
         self.stats = {}
         self.CONSUMER_MODE = ''
-        self.MAX_CACHE_SIZE = 0
         self.OUTPUT_FILE_LOCATION = ''
+        self.CACHE_OPTIONS = {}
         self.CACHING_MODE = ''
+        self.MAX_CACHE_SIZE = 0
 
         # variables that will store pva data
         self.pva_object = None
@@ -130,80 +131,117 @@ class PVAReader:
                 # loads toml config into a python dict
                 self.config:dict = toml.load(toml_file)
 
-        self.stats:dict = self.config.get('STATS', {})
-        self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
         self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
-        self.MAX_CACHE_SIZE = self.config.get('MAX_CACHE_SIZE', 0)
-        self.CACHING_MODE = self.config.get('CACHING_MODE', '')
+        self.stats:dict = self.config.get('STATS', {})
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
         self.HKL_IN_CONFIG = ('HKL' in self.config)
-
 
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
 
-        if self.MAX_CACHE_SIZE > 0:
-            self.caches_needed = True
-
-        if self.CONSUMER_MODE == "continuous":
-            self.analysis_cache_dict = {"Intensity": {},
-                                        "ComX": {},
-                                        "ComY": {},
-                                        "Position": {}}
-        
-    def pva_callbackSuccess(self, pv) -> None:
-        """
-        Callback for handling monitored PV changes.
-
-        Args:
-            pv (PvaObject): The PV object received by the channel monitor.
-        """
-        self.pva_object = pv
-
-        # parsing important sections
-        self.parse_image_data_type()
-        self.parse_img_shape()
-        self.parse_pva_attributes()
-        self.pv_attributes = self.parse_attributes(pv)
-        self.parse_roi_pvs()
+        # Configuring Cache settings
+        self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
+        self.set_cache_options()
 
         if self.caches_needed != self.caches_initialized:
             self.init_caches()
-
-         # Check for HKL attributes from all attributes
-        if 'RSM' in self.pv_attributes and self.HKL_IN_CONFIG:
-                self.parse_rsm_attributes()
-
-        self.pva_to_image(pv)
-
-        if self.caches_initialized:
-            self.cache_attributes.append(self.pv_attributes)
-
+        
         if self.ANALYSIS_IN_CONFIG:
-            self.analysis_index = self.locate_analysis_index()
-            # Only runs if an analysis index was found
-            if self.analysis_index is not None:
-                self.analysis_attributes = self.attributes[self.analysis_index]
-                if self.config["CONSUMER_MODE"] == "continuous":
-                    # turns axis1 and axis2 into a tuple
-                    incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
-                                    self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
-                    # use a tuple as a key so that we can check if there is a repeat position
-                    self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
-                    self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
-                    self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
-                    # double storing of the postion, will find out if needed
-                    self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-    
-    def roi_backup_callback(self, pvname, value, **kwargs) -> None:
-        name_components = pvname.split(":")
-        roi_key = name_components[1]
-        pv_key = name_components[2]
-        pv_value = value
-        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
-        # then adds the key to the inner dictionary with update
-        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
-    
+            self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
+            if self.CONSUMER_MODE == "continuous":
+                self.analysis_cache_dict = {"Intensity": {},
+                                            "ComX": {},
+                                            "ComY": {},
+                                            "Position": {}}
+    def set_cache_options(self) -> None:
+        self.CACHING_MODE = self.CACHE_OPTIONS.get('CACHING_MODE', '')
+        if self.CACHING_MODE != '':
+            self.caches_needed = True
+            if self.CACHING_MODE == 'alignment':
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+            elif self.CACHING_MODE == 'scan':
+                self.FLAG_PV = self.CACHE_OPTIONS.setdefault('SCAN', {'FLAG_PV': ''}).get('FLAG_PV')
+                self.START_VALUE = self.CACHE_OPTIONS.setdefault('SCAN', {'START_VALUE': 0}).get('START_VALUE')
+                self.END_VALUE = self.CACHE_OPTIONS.setdefault('SCAN', {'END_VALUE': 100}).get('END_VALUE')
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+            elif self.CACHING_MODE == 'bin':
+                self.BIN_COUNT = self.CACHE_OPTIONS.setdefault('BIN', {'COUNT': 10}).get('COUNT')
+                self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 16}).get('SIZE')
+
+    def init_caches(self) -> None:
+        #initialize all the caches to be that shape
+        if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
+            self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
+            if 'RSM' in self.pv_attributes:
+                self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
+                self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
+
+        elif self.CACHING_MODE == 'bin':
+            # TODO: when creating the h5 file, have one entry called data that is the average of each bin
+            # and then an entry for each bin that lines up with the attributes and rsm attributes
+            self.cache_images = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+            self.cache_attributes = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+            if 'RSM' in self.pv_attributes:
+                self.cache_qx = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+                self.cache_qy = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+                self.cache_qz = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]               
+
+        self.caches_initialized = True
+        
+    def pva_callbackSuccess(self, pv) -> None:
+        """
+        Callback for handling monitored PVA changes.
+
+        Args:
+            pv (PvaObject): The PVA object received by the channel monitor.
+        """
+        try:
+            self.frames_received += 1
+
+            self.pva_object = pv
+
+            # parsing important sections
+            self.parse_image_data_type()
+            self.parse_img_shape()
+            self.parse_pva_attributes() 
+            self.pv_attributes = self.parse_attributes(pv)
+            self.parse_roi_pvs()
+            
+            if self.caches_initialized:
+                if self.CACHING_MODE == 'bin':
+                    bin_index = (self.frames_received + self.frames_missed -1) % self.BIN_COUNT
+                    self.cache_attributes[bin_index].append(self.pv_attributes)
+                self.cache_attributes.append(self.pv_attributes)
+
+            # Check for HKL attributes from all attributes
+            if self.HKL_IN_CONFIG and 'RSM' in self.pv_attributes:
+                    self.parse_rsm_attributes()
+
+            self.pva_to_image(pv)
+
+            #TODO: change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
+            if self.ANALYSIS_IN_CONFIG:
+                self.analysis_index = self.locate_analysis_index()
+                # Only runs if an analysis index was found
+                if self.analysis_index is not None:
+                    self.analysis_attributes = self.attributes[self.analysis_index]
+                    if self.config["CONSUMER_MODE"] == "continuous":
+                        # turns axis1 and axis2 into a tuple
+                        incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
+                                        self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
+                        # use a tuple as a key so that we can check if there is a repeat position
+                        self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
+                        self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
+                        self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
+                        # double storing of the postion, will find out if needed
+                        self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+        except Exception as e:
+            print(f'Failed to execute callback: {e}')
+            self.frames_received -= 1
+            self.frames_missed += 1
+
     def parse_image_data_type(self) -> None:
         """
         Parses the PVA Object to determine the incoming data type.
@@ -240,24 +278,6 @@ class PVAReader:
         """
         if self.pva_object is not None:
             self.attributes: list = self.pva_object.get().get("attribute", [])
-
-    def init_caches(self) -> None:
-        if self.shape is not None:
-            #Get the correct shape of the caches
-            shape = (self.MAX_CACHE_SIZE, self.shape[0]*self.shape[1])
-
-            #initialize all the caches to be that shape
-            self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
-            self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
-            if 'RSM' in self.pv_attributes:
-                self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
-                self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
-                self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
-
-            # empty array for when we miss a frame
-            self.empty_arr = np.zeros(self.shape[0]*self.shape[1], dtype=self.numpy_dtype)
-
-            self.caches_initialized = True
 
     def locate_analysis_index(self) -> int|None:
         """
@@ -310,7 +330,6 @@ class PVAReader:
         image is of type np.ndarray
         """
         try:
-            self.frames_received += 1
             if 'dimension' in pva_object:
                 # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
 
@@ -353,28 +372,34 @@ class PVAReader:
 
                 self.last_array_id = current_array_id
                 self.id_diff = 0
-                            
-                if self.MAX_CACHE_SIZE > 0:
-                    self.cache_images.append(image)
-                    if self.HKL_IN_CONFIG and self.caches_initialized:
-                    # TODO: ADD caching mode check here to see if we are looking for a flag pv or caching indiscriminately.
-                        if 'RSM' in self.pv_attributes:
-                            self.cache_qx.append(self.rsm_attributes['qx'])
-                            self.cache_qy.append(self.rsm_attributes['qy'])
-                            self.cache_qz.append(self.rsm_attributes['qz'])
-                        elif 'RSM' not in self.attributes and self.viewer_type == 'r':
-                            raise AttributeError('Could not find \'RSM\' in pv')
 
+                #TODO: separate image caching and attribute caching into their own function 
+                if self.caches_initialized:
+                    if self.CACHING_MODE == 'alignment':# TODO: ADD caching mode check here to see if we are looking for a flag pv or caching indiscriminately.
+                        self.cache_images.append(image)
+                        if self.HKL_IN_CONFIG:
+                            if 'RSM' in self.pv_attributes:
+                                self.cache_qx.append(self.rsm_attributes['qx'])
+                                self.cache_qy.append(self.rsm_attributes['qy'])
+                                self.cache_qz.append(self.rsm_attributes['qz'])
+                            elif 'RSM' not in self.attributes and self.viewer_type == 'r':
+                                raise AttributeError('Could not find \'RSM\' in pv')
+                    elif self.CACHING_MODE == 'scan':
+                        pass
+                    elif self.CACHING_MODE == 'bin':
+                        if self.viewer_type == 'i':
+                            bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
+                            self.cache_images[bin_index].append(image)
+                        
                 self.image = image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
-
+                return
             else:
                 self.image = None
                 raise ValueError("Image data could not be processed.")
                 
         except Exception as e:
             print(f"Failed to process image: {e}")
-            self.frames_received -= 1
-            self.frames_missed += 1
+
             
     def start_channel_monitor(self) -> None:
         """
@@ -396,6 +421,15 @@ class PVAReader:
                     camonitor(pvname=pv_name, callback=self.roi_backup_callback)
         except Exception as e:
             print(f'Failed to setup backup ROI monitor: {e}')
+
+    def roi_backup_callback(self, pvname, value, **kwargs) -> None:
+        name_components = pvname.split(":")
+        roi_key = name_components[1]
+        pv_key = name_components[2]
+        pv_value = value
+        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
+        # then adds the key to the inner dictionary with update
+        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
 
     def save_caches_to_h5(self) -> None:
         # TODO:

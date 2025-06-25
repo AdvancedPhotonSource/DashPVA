@@ -1,5 +1,6 @@
 import os
 import sys
+import toml
 import subprocess
 import numpy as np
 import os.path as osp
@@ -8,8 +9,8 @@ import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor, caget
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QSlider
 # Custom imported classes
 from generators import rotation_cycle
 from pva_reader import PVAReader
@@ -113,18 +114,20 @@ class DiffractionImageWindow(QMainWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
-        # self.timer_rsm = QTimer()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
+
         # For testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+
         # HKL values
         self.hkl_config = None
         self.hkl_data = {}
@@ -136,7 +139,7 @@ class DiffractionImageWindow(QMainWindow):
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        self.viewer_layout.addWidget(self.image_view,1,1)
+        self.viewer_layout.addWidget(self.image_view,0,1)
         self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
         # second is a separate plot to show the horiontal avg of peaks in the image
@@ -144,7 +147,7 @@ class DiffractionImageWindow(QMainWindow):
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
-        self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
+        self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -226,7 +229,7 @@ class DiffractionImageWindow(QMainWindow):
         if self.reader is not None:
             if self.reader.image is not None:
                 self.analysis_window = AnalysisWindow(parent=self)
-                self.analysis_window.show()
+                self.analysis_window.show()        
 
     def start_live_view_clicked(self) -> None:
         """
@@ -241,9 +244,6 @@ class DiffractionImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering()
-                self.transpose_image_checked()
-                self.reader.start_channel_monitor()
             else:
                 self.stop_timers()
                 self.btn_save_caches.clicked.disconnect()
@@ -256,10 +256,18 @@ class DiffractionImageWindow(QMainWindow):
                 self.reset_rsm_vars()
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering()
-                self.transpose_image_checked()
-                self.reader.start_channel_monitor()
-            
+                
+            if self.reader.CACHING_MODE == 'bin':
+                self.slider = QSlider()
+                self.slider.setRange(0, self.reader.BIN_COUNT-1)
+                self.slider.setValue(0)
+                self.slider.setOrientation(Qt.Horizontal) 
+                self.slider.setTickPosition(QSlider.TicksAbove)
+                self.viewer_layout.addWidget(self.slider, 1, 1)
+                
+            self.set_pixel_ordering()
+            self.transpose_image_checked()
+            self.reader.start_channel_monitor()
             self.btn_save_caches.clicked.connect(self.reader.save_caches_to_h5)
         except:
             print(f'Failed to Connect to {self._input_channel}')
@@ -273,7 +281,7 @@ class DiffractionImageWindow(QMainWindow):
         
         if self.reader is not None:
             if not(self.reader.rois):
-                if ('ROI' in self.reader.config):
+                if 'ROI' in self.reader.config:
                     self.reader.start_roi_backup_monitor()
             self.start_stats_monitors()
             self.add_rois()
@@ -437,7 +445,6 @@ class DiffractionImageWindow(QMainWindow):
         except Exception as e:
             print(f'Failed to load HKL Viewer:{e}')
 
-
     def start_hkl_monitors(self) -> None:
         """
         Initializes camonitors for HKL values and stores them in a dictionary.
@@ -521,7 +528,6 @@ class DiffractionImageWindow(QMainWindow):
             except Exception as e:
                 print(f'Error Setting up HKL: {e}')
                 return
-         
 
     def create_rsm(self) -> np.ndarray:
         """
@@ -673,7 +679,12 @@ class DiffractionImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.call_id_plot +=1
-            image = self.reader.image
+            if self.reader.CACHING_MODE in ['', 'alignment', 'scan']:
+                image = self.reader.image
+            elif self.reader.CACHING_MODE == 'bin':
+                index = self.slider.value()
+                image = np.reshape(np.mean(np.stack(self.reader.cache_images[index]), axis=0), (self.reader.shape))
+
             if image is not None:
                 self.image = np.transpose(np.rot90(m=image, k=self.rot_num)) if self.image_is_transposed else np.rot90(m=image, k=self.rot_num)
                 if len(self.image.shape) == 2:
@@ -684,10 +695,10 @@ class DiffractionImageWindow(QMainWindow):
                             max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(self.image, 
-                                                 autoRange=False, 
-                                                 autoLevels=False, 
-                                                 levels=(min_level, max_level),
-                                                 autoHistogramRange=False) 
+                                                autoRange=False, 
+                                                autoLevels=False, 
+                                                levels=(min_level, max_level),
+                                                autoHistogramRange=False) 
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
                         self.min_setting_val.setValue(min_level)
@@ -699,8 +710,8 @@ class DiffractionImageWindow(QMainWindow):
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
-                                              y=np.arange(0,self.image.shape[1]), 
-                                              clear=True)
+                                            y=np.arange(0,self.image.shape[1]), 
+                                            clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
