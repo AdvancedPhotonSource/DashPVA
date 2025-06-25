@@ -690,8 +690,11 @@ class DiffractionImageWindow(QMainWindow):
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
+                            # Ensure non negative values
+                            self.image = np.maximum(self.image, 0)
+                            epsilon = 1e-10
                             self.image = np.log10(self.image + 1)
-                            min_level = np.log10(min_level + 1)
+                            min_level = np.log10(max(min_level, epsilon) + 1)
                             max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(self.image, 
