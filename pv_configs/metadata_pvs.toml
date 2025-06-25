@@ -1,11 +1,25 @@
 # Required Setup
 DETECTOR_PREFIX = 'dp-ADSim'
-CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how conumer is performing analysis calculations
-MAX_CACHE_SIZE = 40
-CACHING_MODE = 'alignment' # options: alignment or scan, describes whether the caching should be done the entire time or when a flag is seen
-OUTPUT_FILE_LOCATION = 'TEST.h5' # file must end with .h5
+OUTPUT_FILE_LOCATION = 'NEW_TEST.h5' # file must end with .h5
+CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how consumer is performing analysis calculations
 
-# Section used specifically for Metadata Pvs
+[CACHE_OPTIONS]
+CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describes whether the caching should be done the entire time, when a flag is seen, or if it should be put into bins based on number of frames
+
+    [CACHE_OPTIONS.ALIGNMENT]
+    MAX_CACHE_SIZE = 1000
+
+    [CACHE_OPTIONS.SCAN]
+    FLAG_PV = '' # a PV that will act as a flag to start caching
+    START_VALUE = 0
+    END_VALUE = 100
+    MAX_CACHE_SIZE = 1000
+
+    [CACHE_OPTIONS.BIN]
+    COUNT = 16
+    SIZE = 16
+
+# Section for Metadata PVs
 [METADATA]
 
     [METADATA.CA]
@@ -14,7 +28,7 @@ OUTPUT_FILE_LOCATION = 'TEST.h5' # file must end with .h5
 
     [METADATA.PVA]
 
-# Section specifically for ROI PVs
+# Section for ROI PVs
 [ROI]
 
     [ROI.ROI1]
@@ -41,9 +55,10 @@ OUTPUT_FILE_LOCATION = 'TEST.h5' # file must end with .h5
     SIZE_X = 'dp-ADSim:ROI4:SizeX'
     SIZE_Y = 'dp-ADSim:ROI4:SizeY'
 
+# Section for Stats PVs
 [STATS]
 
-[STATS.STATS1]
+    [STATS.STATS1]
     TOTAL = 'dp-ADSim:Stats1:Total_RBV'
     MIN = 'dp-ADSim:Stats1:MinValue_RBV'
     MAX = 'dp-ADSim:Stats1:MaxValue_RBV'
@@ -57,11 +72,12 @@ OUTPUT_FILE_LOCATION = 'TEST.h5' # file must end with .h5
     SIGMA = 'dp-ADSim:Stats4:Sigma_RBV'
     MEAN = 'dp-ADSim:Stats4:MeanValue_RBV'
 
-# For use in the analysis server, not on the client side.
-# [ANALYSIS]
-#     # substitute with real PVs that are also in Metadata
-#     AXIS1 = 'x'
-#     AXIS2 = 'y'
+# Section for Analysis PVs
+# These PVs are used in the analysis server, not on the client side.
+[ANALYSIS]
+    # Make sure to use PVs that are also in METADATA section
+    # AXIS1 = 'x'
+    # AXIS2 = 'y'
 
 # [HKL]
 
@@ -110,9 +126,6 @@ OUTPUT_FILE_LOCATION = 'TEST.h5' # file must end with .h5
 #     [HKL.SPEC]
 #     ENERGY_VALUE = '6idb:spec:Energy:Value'
 #     UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
-
-# #TODO: make RSM consumer
-# # These values will not change often so they can be changed to values and read in by the rsm consumer
 
 #     [HKL.DETECTOR_SETUP]
 #     CENTER_CHANNEL_PIXEL = 'DetectorSetup:CenterChannelPixel'
