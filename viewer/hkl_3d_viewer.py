@@ -204,25 +204,24 @@ class HKLImageWindow(QMainWindow):
         """
         try:
             # A double check to make sure there isn't a connection already when starting
+            self.plotter.clear()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
-                                         viewer_type='rsm')
-                self.set_pixel_ordering()
-                self.reader.start_channel_monitor()
+                                         viewer_type='rsm')          
             else:
                 self.stop_timers()
                 self.btn_save_h5.clicked.disconnect()
+                self.btn_plot_cache.clicked.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
                                          viewer_type='rsm')
-                self.set_pixel_ordering()
-                self.reader.start_channel_monitor()
 
             self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
+            self.btn_plot_cache.clicked.connect(self.update_image)
         except:
             print(f'Failed to Connect to {self._input_channel}')
             del self.reader
@@ -231,6 +230,8 @@ class HKLImageWindow(QMainWindow):
             self.is_connected.setText('Disconnected')
         
         if self.reader is not None:
+            self.set_pixel_ordering()
+            self.reader.start_channel_monitor()
             self.start_timers()
 
     def stop_live_view_clicked(self) -> None:
@@ -290,7 +291,11 @@ class HKLImageWindow(QMainWindow):
         if self.reader is not None:
             self.call_id_plot +=1
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
-                try:    
+                try:
+                    num_images = len(self.reader.cache_images)
+                    num_rsm = len(self.reader.cache_qx)
+                    if num_images !=  num_rsm:
+                        raise ValueError(f'Size of caches are uneven: \nimages:{num_images}\nqxyz: {num_rsm}')
                     # Collect all cached data
                     flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
                     qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
@@ -307,34 +312,34 @@ class HKLImageWindow(QMainWindow):
                         self.max_intensity = np.max(flat_intensity)
                         self.sbox_min_intensity.setValue(self.min_intensity)
                         self.sbox_max_intensity.setValue(self.max_intensity)
-
+                        
                         self.cloud = pyv.PolyData(points)
                         self.cloud['intensity'] = flat_intensity 
 
-                        self.lut = pyv.LookupTable(cmap='viridis')                        
+                        self.lut = pyv.LookupTable(cmap='viridis')  
+                        self.lut.below_range_color = 'black'
+                        self.lut.above_range_color = 'black'
+                        self.lut.below_range_opacity = 0
+                        self.lut.above_range_opacity = 0 
+                        self.lut.scalar_range = (self.min_intensity, self.max_intensity)
+                        self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
                             scalars='intensity',
                             cmap=self.lut
                         )
+                        self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
                         
-                        self.lut.below_range_color = 'black'
-                        self.lut.above_range_color = 'black'
-                        self.lut.below_range_opacity = 0
-                        self.lut.above_range_opacity = 0
-                        self.update_intensity()
-                        self.update_opacity()
                         self.first_plot = False
                     else:
                         self.plotter.mesh.points = points
                         self.cloud['intensity'] = flat_intensity
-                        #TODO: Check which scalar range needs to change and which doesn't
                         self.update_intensity()
                         self.update_opacity()
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                 except Exception as e:
                     print(f"[Viewer] Failed to update 3D plot: {e}")
-
 
     def update_opacity(self) -> None:
         """
@@ -351,20 +356,19 @@ class HKLImageWindow(QMainWindow):
                 self.sbox_min_opacity.setValue(self.min_opacity)
                 self.sbox_max_opacity.setValue(self.max_opacity)
             self.lut.apply_opacity([self.min_opacity,self.max_opacity])
-            
 
     def update_intensity(self) -> None:
         """
         Updates the min/max intensity levels in the HKL Viewer based on UI settings.
         """
+        self.min_intensity = self.sbox_min_intensity.value()
+        self.max_intensity = self.sbox_max_intensity.value()
+        if self.min_intensity > self.max_intensity:
+            self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
+            self.sbox_min_intensity.setValue(self.min_intensity)
+            self.sbox_max_intensity.setValue(self.max_intensity)
+        self.lut.scalar_range = (self.min_intensity, self.max_intensity)
         if self.actor is not None:
-            self.min_intensity = self.sbox_min_intensity.value()
-            self.max_intensity = self.sbox_max_intensity.value()
-            if self.min_intensity > self.max_intensity:
-                self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
-                self.sbox_min_intensity.setValue(self.min_intensity)
-                self.sbox_max_intensity.setValue(self.max_intensity)
-            self.lut.scalar_range = (self.min_intensity, self.max_intensity)
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
     
     # def closeEvent(self, event):
