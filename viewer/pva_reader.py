@@ -267,8 +267,9 @@ class PVAReader:
             attributes = pva_object['attribute']
             for attr in attributes:
                 name = attr['name']
-                value = attr['value'][0]['value']
-                pv_attributes[name] = value
+                value = attr['value'][0].get('value', None)
+                if value is not None:
+                    pv_attributes[name] = value
             return pv_attributes
         else:
             return {}
