@@ -484,6 +484,10 @@ class DiffractionImageWindow(QMainWindow):
     def hkl_setup(self) -> None:
         if (self.hkl_config is not None) and (not self.stop_hkl.isChecked()):
             try:
+                # After starting the HKL Monitors PV Channel Names 
+                # are now the keys for where the data is stored in self.hkl_data
+                # so reading the values from the config allows us to find where the
+
                 # Get everything for the sample circles
                 sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
                 self.sample_circle_directions = []
@@ -666,6 +670,8 @@ class DiffractionImageWindow(QMainWindow):
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
             if self.hkl_data:
                 self.hkl_setup()
+                # TODO: change to only 1 call to create_rsm and then get the correct index
+                # similar to line 292
                 self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
                 self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
                 self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
