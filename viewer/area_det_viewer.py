@@ -5,6 +5,7 @@ import numpy as np
 import os.path as osp
 import pyqtgraph as pg
 import xrayutilities as xu
+import json
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor, caget
@@ -18,7 +19,7 @@ from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
 
 
-max_cache_size = 900 #TODO: Put this in the config file 
+max_cache_size = 2 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
 
 
@@ -107,7 +108,7 @@ class ImageWindow(QMainWindow):
         """
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
-        self.setWindowTitle('Image Viewer with PVAaccess')
+        self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
         self.reader = None
@@ -141,6 +142,10 @@ class ImageWindow(QMainWindow):
         self.qy = None
         self.qz = None
         self.processes = {}
+        # Bad pixel masking
+        self.bad_pixel_mask = None
+        self.bad_pixel_path = "/home/beams/MQICHU/Tools_cloud/areaDetectorBlemish/8idLambda2m/latest_badpixel_gaps.json"
+        self.apply_bad_pixel_mask = True
         
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
@@ -148,6 +153,8 @@ class ImageWindow(QMainWindow):
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
+        # Set Viridis as the default colormap
+        self.image_view.setColorMap(pg.colormap.get('viridis'))
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
@@ -267,6 +274,8 @@ class ImageWindow(QMainWindow):
                         self.reader.start_roi_backup_monitor()
             self.start_stats_monitors()
             self.add_rois()
+            # Load bad pixel mask after reader is initialized
+            self.load_bad_pixel_mask()
             self.start_timers()
             try:
                 self.init_hkl()
@@ -339,14 +348,24 @@ class ImageWindow(QMainWindow):
     def show_rois_checked(self) -> None:
         """
         Toggles visibility of ROIs based on the checked state of the display checkbox.
+        Only shows ROIs that are within image bounds.
         """
         if self.reader is not None:
             if self.display_rois.isChecked():
-                for roi in self.rois:
-                    roi.show()
+                for i, (roi, roi_dict) in enumerate(zip(self.rois, self.reader.rois.values())):
+                    if roi is not None:  # Skip None ROIs
+                        # Check if ROI is still within bounds before showing
+                        x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
+                        y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
+                        width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
+                        height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
+                        
+                        if self.is_roi_within_image_bounds(x_pos, y_pos, width, height):
+                            roi.show()
             else:
                 for roi in self.rois:
-                    roi.hide()
+                    if roi is not None:  # Skip None ROIs
+                        roi.hide()
 
     def freeze_image_checked(self) -> None:
         """
@@ -381,9 +400,113 @@ class ImageWindow(QMainWindow):
         """
         self.rot_num = next(rot_gen)
 
+    def load_bad_pixel_mask(self) -> None:
+        """
+        Loads bad pixel coordinates from JSON file and creates a vectorized mask.
+        
+        This method reads the bad pixel JSON file, extracts pixel coordinates,
+        and creates a boolean mask for efficient vectorized masking of images.
+        The mask is cached to avoid reloading on each image update.
+        """
+        if not osp.exists(self.bad_pixel_path):
+            print(f"Bad pixel file not found: {self.bad_pixel_path}")
+            self.apply_bad_pixel_mask = False
+            return
+            
+        if self.reader is None or self.reader.shape is None:
+            return
+            
+        try:
+            print(f"Loading bad pixel mask from: {self.bad_pixel_path}")
+            
+            with open(self.bad_pixel_path, 'r') as f:
+                bad_pixel_data = json.load(f)
+            
+            # Extract pixel coordinates
+            bad_pixels = bad_pixel_data.get("Bad pixels", [])
+            if not bad_pixels:
+                print("No bad pixels found in JSON file")
+                self.apply_bad_pixel_mask = False
+                return
+            
+            # Get image dimensions
+            img_height, img_width = self.reader.shape
+            
+            # Create boolean mask (True = good pixel, False = bad pixel)
+            self.bad_pixel_mask = np.ones((img_height, img_width), dtype=bool)
+            
+            # Extract coordinates and apply mask vectorized
+            bad_coords = np.array([[pixel["Pixel"][1], pixel["Pixel"][0]] 
+                                  for pixel in bad_pixels])  # Note: JSON has [x,y], array needs [y,x]
+            
+            # Filter coordinates that are within image bounds
+            valid_coords = bad_coords[
+                (bad_coords[:, 0] >= 0) & (bad_coords[:, 0] < img_height) &
+                (bad_coords[:, 1] >= 0) & (bad_coords[:, 1] < img_width)
+            ]
+            
+            # Set bad pixels to False (vectorized operation)
+            if len(valid_coords) > 0:
+                self.bad_pixel_mask[valid_coords[:, 0], valid_coords[:, 1]] = False
+            
+            n_bad_pixels = len(valid_coords)
+            n_total_pixels = img_height * img_width
+            print(f"Bad pixel mask created: {n_bad_pixels} bad pixels out of {n_total_pixels} total pixels "
+                  f"({100.0 * n_bad_pixels / n_total_pixels:.3f}%)")
+            
+        except Exception as e:
+            print(f"Failed to load bad pixel mask: {e}")
+            self.apply_bad_pixel_mask = False
+            self.bad_pixel_mask = None
+
+    def apply_bad_pixels(self, image: np.ndarray) -> np.ndarray:
+        """
+        Applies bad pixel mask to an image using vectorized operations.
+        
+        Args:
+            image (np.ndarray): Input image array
+            
+        Returns:
+            np.ndarray: Image with bad pixels set to zero
+        """
+        if not self.apply_bad_pixel_mask or self.bad_pixel_mask is None:
+            return image
+        
+        # Apply mask: set bad pixels to 0 (vectorized operation)
+        image[~self.bad_pixel_mask] = 0
+        
+        return image
+
+    def is_roi_within_image_bounds(self, x, y, width, height) -> bool:
+        """
+        Checks if an ROI is within the current image bounds.
+        
+        Args:
+            x (int): ROI x position
+            y (int): ROI y position  
+            width (int): ROI width
+            height (int): ROI height
+            
+        Returns:
+            bool: True if ROI is within image bounds, False otherwise
+        """
+        if self.reader is None or self.reader.shape is None:
+            return False
+            
+        img_width, img_height = self.reader.shape
+        
+        # Check if ROI is completely within image bounds
+        if (x >= 0 and y >= 0 and 
+            x + width <= img_width and 
+            y + height <= img_height and
+            width > 0 and height > 0):
+            return True
+        return False
+
     def add_rois(self) -> None:
         """
         Adds ROIs to the image viewer and assigns them color codes.
+        Only shows ROIs that are within the image bounds.
 
         Color Codes:
             ROI1 -- Red (#ff0000)
@@ -399,14 +522,21 @@ class ImageWindow(QMainWindow):
                 y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
                 width = roi.get("SizeX", 0) if not(self.image_is_transposed) else roi.get('SizeY',0)
                 height = roi.get("SizeY", 0) if not(self.image_is_transposed) else roi.get('SizeX',0)
-                roi_color = int(roi_num[-1]) - 1 
-                roi = pg.ROI(pos=[x,y],
-                            size=[width, height],
-                            movable=False,
-                            pen=pg.mkPen(color=roi_colors[roi_color]))
-                self.rois.append(roi)
-                self.image_view.addItem(roi)
-                roi.sigRegionChanged.connect(self.update_roi_region)
+                
+                # Only add ROI if it's within image bounds
+                if self.is_roi_within_image_bounds(x, y, width, height):
+                    roi_color = int(roi_num[-1]) - 1 
+                    roi = pg.ROI(pos=[x,y],
+                                size=[width, height],
+                                movable=False,
+                                pen=pg.mkPen(color=roi_colors[roi_color]))
+                    self.rois.append(roi)
+                    self.image_view.addItem(roi)
+                    roi.sigRegionChanged.connect(self.update_roi_region)
+                else:
+                    # Add None placeholder to maintain indexing consistency
+                    self.rois.append(None)
+                    print(f'ROI {roi_num} is outside image bounds (pos: {x},{y}, size: {width}x{height}) - not displayed')
         except Exception as e:
             print(f'Failed to add ROIs:{e}')
 
@@ -583,16 +713,30 @@ class ImageWindow(QMainWindow):
     def update_rois(self) -> None:
         """
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
+        Hides ROIs that go outside image bounds.
 
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
+            # Skip None ROIs (those that were out of bounds when added)
+            if roi is None:
+                continue
+                
             x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
             y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
             width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
             height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
-            roi.setPos(pos=x_pos, y=y_pos)
-            roi.setSize(size=(width, height))
+            
+            # Check if updated ROI is still within bounds
+            if self.is_roi_within_image_bounds(x_pos, y_pos, width, height):
+                roi.setPos(pos=x_pos, y=y_pos)
+                roi.setSize(size=(width, height))
+                # Show ROI if it was hidden and display_rois is checked
+                if self.display_rois.isChecked():
+                    roi.show()
+            else:
+                # Hide ROI if it goes out of bounds
+                roi.hide()
 
     def update_roi_region(self) -> None:
         """
@@ -666,13 +810,19 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
+                # Apply bad pixel mask first (vectorized operation)
+                image = self.apply_bad_pixels(image)
                 self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            self.image = np.log1p(self.image + 1)
-                            min_level = np.log1p(min_level + 1)
-                            max_level = np.log1p(max_level + 1)
+                            # Ensure non-negative values before log transformation
+                            self.image = np.maximum(self.image, 0)
+                            # Add small epsilon to avoid log(0) and ensure reasonable range
+                            epsilon = 1e-10
+                            self.image = np.log10(self.image + epsilon + 1)
+                            min_level = np.log10(max(min_level, epsilon) + 1)
+                            max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(self.image, 
                                                  autoRange=False, 
