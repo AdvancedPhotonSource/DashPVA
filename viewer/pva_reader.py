@@ -139,12 +139,11 @@ class PVAReader:
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
 
+        #TODO: make it so that file location can be parsed as a pv with a function
+
         # Configuring Cache settings
         self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
         self.set_cache_options()
-
-        if self.caches_needed != self.caches_initialized:
-            self.init_caches()
         
         if self.ANALYSIS_IN_CONFIG:
             self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
@@ -198,8 +197,10 @@ class PVAReader:
             pv (PvaObject): The PVA object received by the channel monitor.
         """
         try:
-            self.frames_received += 1
+            if self.caches_needed != self.caches_initialized:
+                self.init_caches()
 
+            self.frames_received += 1
             self.pva_object = pv
 
             # parsing important sections
