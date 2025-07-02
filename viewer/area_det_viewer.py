@@ -107,7 +107,7 @@ class ImageWindow(QMainWindow):
         """
         super(ImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
-        self.setWindowTitle('Image Viewer with PVAaccess')
+        self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
         self.reader = None
@@ -148,6 +148,7 @@ class ImageWindow(QMainWindow):
         self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
+        self.image_view.setColorMap(pg.colormap.get('viridis'))
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
