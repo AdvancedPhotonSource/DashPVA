@@ -295,7 +295,7 @@ class HKLImageWindow(QMainWindow):
                     num_images = len(self.reader.cache_images)
                     num_rsm = len(self.reader.cache_qx)
                     if num_images !=  num_rsm:
-                        raise ValueError(f'Size of caches are uneven: \nimages:{num_images}\nqxyz: {num_rsm}')
+                        raise ValueError(f'Size of caches are uneven:\nimages:{num_images}\nqxyz: {num_rsm}')
                     # Collect all cached data
                     flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
                     qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
@@ -312,7 +312,9 @@ class HKLImageWindow(QMainWindow):
                         self.max_intensity = np.max(flat_intensity)
                         self.sbox_min_intensity.setValue(self.min_intensity)
                         self.sbox_max_intensity.setValue(self.max_intensity)
-                        
+                        self.min_opacity = self.sbox_min_opacity.value()
+                        self.max_opacity = self.sbox_max_opacity.value()
+
                         self.cloud = pyv.PolyData(points)
                         self.cloud['intensity'] = flat_intensity 
 
@@ -322,7 +324,7 @@ class HKLImageWindow(QMainWindow):
                         self.lut.below_range_opacity = 0
                         self.lut.above_range_opacity = 0 
                         self.lut.scalar_range = (self.min_intensity, self.max_intensity)
-                        self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+                        self.lut.alpha_range = (self.min_opacity,self.max_opacity)
 
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
@@ -348,13 +350,13 @@ class HKLImageWindow(QMainWindow):
         """
         Updates the min/max intensity levels in the HKL Viewer based on UI settings.
         """
-        if self.actor is not None:
-            self.min_opacity = self.sbox_min_opacity.value()
-            self.max_opacity = self.sbox_max_opacity.value()
-            if self.min_opacity > self.max_opacity:
-                self.min_opacity, self.max_opacity = self.max_opacity, self.min_opacity
-                self.sbox_min_opacity.setValue(self.min_opacity)
-                self.sbox_max_opacity.setValue(self.max_opacity)
+        self.min_opacity = self.sbox_min_opacity.value()
+        self.max_opacity = self.sbox_max_opacity.value()
+        if self.min_opacity > self.max_opacity:
+            self.min_opacity, self.max_opacity = self.max_opacity, self.min_opacity
+            self.sbox_min_opacity.setValue(self.min_opacity)
+            self.sbox_max_opacity.setValue(self.max_opacity)
+        if self.lut is not None:
             self.lut.apply_opacity([self.min_opacity,self.max_opacity])
 
     def update_intensity(self) -> None:
@@ -367,8 +369,8 @@ class HKLImageWindow(QMainWindow):
             self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
             self.sbox_min_intensity.setValue(self.min_intensity)
             self.sbox_max_intensity.setValue(self.max_intensity)
-        self.lut.scalar_range = (self.min_intensity, self.max_intensity)
         if self.actor is not None:
+            self.lut.scalar_range = (self.min_intensity, self.max_intensity)
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
     
     # def closeEvent(self, event):
