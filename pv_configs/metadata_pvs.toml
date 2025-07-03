@@ -46,7 +46,21 @@ CONSUMER_TYPE = "spontaneous"
     SIGMA = "8idEiger4m:Stats1:Sigma_RBV"
     MEAN = "8idEiger4m:Stats1:MeanValue_RBV"
 
-    [STATS.STATS4]
+[STATS.STATS2]
+    TOTAL = "8idEiger4m:Stats2:Total_RBV"
+    MIN = "8idEiger4m:Stats2:MinValue_RBV"
+    MAX = "8idEiger4m:Stats2:MaxValue_RBV"
+    SIGMA = "8idEiger4m:Stats2:Sigma_RBV"
+    MEAN = "8idEiger4m:Stats2:MeanValue_RBV"
+
+[STATS.STATS3]
+    TOTAL = "8idEiger4m:Stats3:Total_RBV"
+    MIN = "8idEiger4m:Stats3:MinValue_RBV"
+    MAX = "8idEiger4m:Stats3:MaxValue_RBV"
+    SIGMA = "8idEiger4m:Stats3:Sigma_RBV"
+    MEAN = "8idEiger4m:Stats3:MeanValue_RBV"
+
+[STATS.STATS4]
     TOTAL = "8idEiger4m:Stats4:Total_RBV"
     MIN = "8idEiger4m:Stats4:MinValue_RBV"
     MAX = "8idEiger4m:Stats4:MaxValue_RBV"

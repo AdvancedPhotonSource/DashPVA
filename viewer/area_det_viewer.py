@@ -144,7 +144,14 @@ class ImageWindow(QMainWindow):
         self.processes = {}
         # Bad pixel masking
         self.bad_pixel_mask = None
-        self.bad_pixel_path = "/home/beams/MQICHU/Tools_cloud/areaDetectorBlemish/8idLambda2m/latest_badpixel_gaps.json"
+        # Set bad pixel path based on detector type
+        if self._input_channel == "8idLambda2m:Pva1:Image":
+            self.bad_pixel_path = "/home/beams4/MQICHU/Tools_cloud/areaDetectorBlemish/8idLambda2m/latest_badpixel_gaps.json"
+        elif self._input_channel == "8idEiger4m:Pva1:Image":
+            self.bad_pixel_path = "/home/beams4/MQICHU/Tools_cloud/areaDetectorBlemish/8idEiger4m/latest_badpixel_gaps.json"
+        else:
+            # No blemish is applied
+            self.bad_pixel_path = None
         self.apply_bad_pixel_mask = True
         
         # Adding widgets manually to have better control over them
