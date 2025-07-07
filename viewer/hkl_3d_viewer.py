@@ -312,8 +312,6 @@ class HKLImageWindow(QMainWindow):
                         self.max_intensity = np.max(flat_intensity)
                         self.sbox_min_intensity.setValue(self.min_intensity)
                         self.sbox_max_intensity.setValue(self.max_intensity)
-                        self.min_opacity = self.sbox_min_opacity.value()
-                        self.max_opacity = self.sbox_max_opacity.value()
 
                         self.cloud = pyv.PolyData(points)
                         self.cloud['intensity'] = flat_intensity 
@@ -323,15 +321,14 @@ class HKLImageWindow(QMainWindow):
                         self.lut.above_range_color = 'black'
                         self.lut.below_range_opacity = 0
                         self.lut.above_range_opacity = 0 
-                        self.lut.scalar_range = (self.min_intensity, self.max_intensity)
-                        self.lut.alpha_range = (self.min_opacity,self.max_opacity)
-
+                        self.update_opacity()
+                        self.update_intensity()
+                       
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
                             scalars='intensity',
                             cmap=self.lut
                         )
-                        self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
                         
                         self.first_plot = False
                     else:
@@ -369,8 +366,9 @@ class HKLImageWindow(QMainWindow):
             self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
             self.sbox_min_intensity.setValue(self.min_intensity)
             self.sbox_max_intensity.setValue(self.max_intensity)
-        if self.actor is not None:
+        if self.lut is not None:
             self.lut.scalar_range = (self.min_intensity, self.max_intensity)
+        if self.actor is not None:
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
     
     # def closeEvent(self, event):
