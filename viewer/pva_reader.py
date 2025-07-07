@@ -105,7 +105,7 @@ class PVAReader:
         self.analysis_attributes = {}
 
         # variables used for parsing hkl data
-        self.rsm_index = None
+        # self.rsm_index = None
         self.rsm_attributes = {}
 
         # variables used for frame count
@@ -130,7 +130,9 @@ class PVAReader:
             with open(config_path, 'r') as toml_file:
                 # loads toml config into a python dict
                 self.config:dict = toml.load(toml_file)
-
+        
+        #TODO: make it so that file location can be parsed as a pv with a function
+        # using something like caget or parse the pv attributes
         self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
         self.stats:dict = self.config.get('STATS', {})
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
@@ -138,8 +140,6 @@ class PVAReader:
 
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
-
-        #TODO: make it so that file location can be parsed as a pv with a function
 
         # Configuring Cache settings
         self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
@@ -206,9 +206,9 @@ class PVAReader:
             # parsing important sections
             self.parse_image_data_type()
             self.parse_img_shape()
-            self.parse_pva_attributes() 
+            self.parse_pva_attributes() #TODO: depreciated, use self.parse_attributes
             self.pv_attributes = self.parse_attributes(pv)
-            self.parse_roi_pvs()
+            self.parse_roi_pvs() #TODO: depreciated, needs update using new parse_attributes
             
             if self.caches_initialized:
                 if self.CACHING_MODE == 'bin':
@@ -222,7 +222,7 @@ class PVAReader:
 
             self.pva_to_image(pv)
 
-            #TODO: change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
+            #TODO: depreciated change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
             if self.ANALYSIS_IN_CONFIG:
                 self.analysis_index = self.locate_analysis_index()
                 # Only runs if an analysis index was found
