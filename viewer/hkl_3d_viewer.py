@@ -219,7 +219,7 @@ class HKLImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
                                          viewer_type='rsm')
-
+            self.reset_first_plot()
             self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
             self.btn_plot_cache.clicked.connect(self.update_image)
         except:
@@ -327,7 +327,8 @@ class HKLImageWindow(QMainWindow):
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
                             scalars='intensity',
-                            cmap=self.lut
+                            cmap=self.lut,
+                            point_size=10
                         )
                         
                         self.first_plot = False
