@@ -197,9 +197,6 @@ class PVAReader:
             pv (PvaObject): The PVA object received by the channel monitor.
         """
         try:
-            if self.caches_needed != self.caches_initialized:
-                self.init_caches()
-
             self.frames_received += 1
             self.pva_object = pv
 
@@ -209,6 +206,9 @@ class PVAReader:
             self.parse_pva_attributes() #TODO: depreciated, use self.parse_attributes
             self.pv_attributes = self.parse_attributes(pv)
             self.parse_roi_pvs() #TODO: depreciated, needs update using new parse_attributes
+            
+            if self.caches_needed != self.caches_initialized:
+                self.init_caches()
             
             if self.caches_initialized:
                 if self.CACHING_MODE == 'bin':
@@ -294,14 +294,6 @@ class PVAReader:
                     return i
             else:
                 return None
-            
-    # def locate_rsm_index(self) -> int|None:
-    #     if self.attributes:
-    #         for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
-    #             if attr_pv.get("name", "") == "RSM":
-    #                 return i
-    #         else:
-    #             return None
     
     def parse_rsm_attributes(self) -> None:
         self.rsm_attributes = self.pv_attributes['RSM']
@@ -384,7 +376,7 @@ class PVAReader:
                                 self.cache_qx.append(self.rsm_attributes['qx'])
                                 self.cache_qy.append(self.rsm_attributes['qy'])
                                 self.cache_qz.append(self.rsm_attributes['qz'])
-                            elif 'RSM' not in self.attributes and self.viewer_type == 'r':
+                            elif 'RSM' not in self.pv_attributes and self.viewer_type == 'r':
                                 raise AttributeError('Could not find \'RSM\' in pv')
                     elif self.CACHING_MODE == 'scan':
                         pass
@@ -548,4 +540,4 @@ class PVAReader:
         Returns:
             list: The attributes of the current PVA object.
         """
-        return self.attributesa
+        return self.attributes
