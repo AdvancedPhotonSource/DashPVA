@@ -222,6 +222,9 @@ class HKLImageWindow(QMainWindow):
             self.reset_first_plot()
             self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
             self.btn_plot_cache.clicked.connect(self.update_image)
+            if self.reader.CACHING_MODE == 'scan':
+                self.reader.add_on_scan_complete_callback(self.update_image)
+                self.reader.add_on_scan_complete_callback(self.reader.save_caches_to_h5)
         except:
             print(f'Failed to Connect to {self._input_channel}')
             del self.reader
