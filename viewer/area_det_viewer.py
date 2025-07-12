@@ -257,7 +257,9 @@ class DiffractionImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 
-            if self.reader.CACHING_MODE == 'bin':
+            if self.reader.CACHING_MODE == 'scan':
+                self.reader.add_on_scan_complete_callback(self.reader.save_caches_to_h5)
+            elif self.reader.CACHING_MODE == 'bin':
                 self.slider = QSlider()
                 self.slider.setRange(0, self.reader.BIN_COUNT-1)
                 self.slider.setValue(0)
