@@ -1,4 +1,6 @@
 import toml
+import time
+import threading
 import numpy as np
 import pvaccess as pva
 import h5py
@@ -77,12 +79,18 @@ class PVAReader:
         # variables setup using config
         self.config = {}
         self.rois = {}
+        self._roi_names = []
         self.stats = {}
         self.CONSUMER_MODE = ''
         self.OUTPUT_FILE_LOCATION = ''
+        self.ROI_IN_CONFIG = False
+        self.ANALYSIS_IN_CONFIG = False
+        self.HKL_IN_CONFIG = False
         self.CACHE_OPTIONS = {}
         self.CACHING_MODE = ''
         self.MAX_CACHE_SIZE = 0
+        self.is_caching = False
+        self.is_scan_complete = False
 
         # variables that will store pva data
         self.pva_object = None
@@ -122,9 +130,11 @@ class PVAReader:
         self.cache_qx = None
         self.cache_qy = None
         self.cache_qz = None
+        self._on_scan_complete_callbacks = []
 
         self._configure(config_filepath)
 
+    ############### Configuration ###############
     def _configure(self, config_path: str) -> None:
         if config_path != '':
             with open(config_path, 'r') as toml_file:
@@ -135,16 +145,24 @@ class PVAReader:
         # using something like caget or parse the pv attributes
         self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
         self.stats:dict = self.config.get('STATS', {})
+        self.ROI_IN_CONFIG = ('ROI' in self.config)
         self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
         self.HKL_IN_CONFIG = ('HKL' in self.config)
 
         if self.config.get('DETECTOR_PREFIX', ''):
             self.pva_prefix = self.config['DETECTOR_PREFIX']
 
+        if self.ROI_IN_CONFIG:
+            for roi in self.config['ROI']:
+                self.roi_names.append(roi)
+
         # Configuring Cache settings
         self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
         self.set_cache_options()
+        if self.caches_needed != self.caches_initialized:
+                self.init_caches()
         
+        # Configuring Analysis Caches
         if self.ANALYSIS_IN_CONFIG:
             self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
             if self.CONSUMER_MODE == "continuous":
@@ -160,67 +178,68 @@ class PVAReader:
                 self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'scan':
                 self.FLAG_PV = self.CACHE_OPTIONS.setdefault('SCAN', {'FLAG_PV': ''}).get('FLAG_PV')
-                self.START_VALUE = self.CACHE_OPTIONS.setdefault('SCAN', {'START_VALUE': 0}).get('START_VALUE')
-                self.END_VALUE = self.CACHE_OPTIONS.setdefault('SCAN', {'END_VALUE': 100}).get('END_VALUE')
+                self.START_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'START_SCAN': True}).get('START_SCAN')
+                self.STOP_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'STOP_SCAN': False}).get('STOP_SCAN')
                 self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'bin':
                 self.BIN_COUNT = self.CACHE_OPTIONS.setdefault('BIN', {'COUNT': 10}).get('COUNT')
                 self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 16}).get('SIZE')
 
     def init_caches(self) -> None:
-        #initialize all the caches to be that shape
         if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
             self.cache_images = deque(maxlen=self.MAX_CACHE_SIZE)
             self.cache_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
-            if 'RSM' in self.pv_attributes:
+            if self.HKL_IN_CONFIG:
                 self.cache_qx = deque(maxlen=self.MAX_CACHE_SIZE)
                 self.cache_qy = deque(maxlen=self.MAX_CACHE_SIZE)
                 self.cache_qz = deque(maxlen=self.MAX_CACHE_SIZE)
-
         elif self.CACHING_MODE == 'bin':
             # TODO: when creating the h5 file, have one entry called data that is the average of each bin
             # and then an entry for each bin that lines up with the attributes and rsm attributes
             self.cache_images = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
             self.cache_attributes = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
-            if 'RSM' in self.pv_attributes:
+            if self.HKL_IN_CONFIG:
                 self.cache_qx = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
                 self.cache_qy = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
                 self.cache_qz = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]               
 
         self.caches_initialized = True
+
+    ########## Class and PVA Channel Callbacks ##########
+    def add_on_scan_complete_callback(self, callback_func):
+        if callable(callback_func):
+            self._on_scan_complete_callbacks.append(callback_func)
         
     def pva_callbackSuccess(self, pv) -> None:
         """
         Callback for handling monitored PVA changes.
 
         Args:
-            pv (PvaObject): The PVA object received by the channel monitor.
+            pv (PvObject): The PVA object received by the channel monitor.
         """
         try:
             self.frames_received += 1
             self.pva_object = pv
 
-            # parsing important sections
-            self.parse_image_data_type()
-            self.parse_img_shape()
-            self.parse_pva_attributes() #TODO: depreciated, use self.parse_attributes
+            # parse data required to manipulate pv image
+            self.parse_image_data_type(pv)
+            self.shape = self.parse_img_shape(pv)
+            self.image = self.pva_to_image(pv)
+
+            # update with latest pv metadata
             self.pv_attributes = self.parse_attributes(pv)
-            self.parse_roi_pvs() #TODO: depreciated, needs update using new parse_attributes
             
-            if self.caches_needed != self.caches_initialized:
-                self.init_caches()
+            # Check for any roi pvs in metadata
+            if self.ROI_IN_CONFIG:
+                self.parse_roi_pvs(self.pv_attributes) 
+
+            # Check for rsm attributes in metadata
+            if self.HKL_IN_CONFIG and 'RSM' in self.pv_attributes:
+                    self.parse_rsm_attributes(self.pv_attributes)
             
             if self.caches_initialized:
-                if self.CACHING_MODE == 'bin':
-                    bin_index = (self.frames_received + self.frames_missed -1) % self.BIN_COUNT
-                    self.cache_attributes[bin_index].append(self.pv_attributes)
-                self.cache_attributes.append(self.pv_attributes)
-
-            # Check for HKL attributes from all attributes
-            if self.HKL_IN_CONFIG and 'RSM' in self.pv_attributes:
-                    self.parse_rsm_attributes()
-
-            self.pva_to_image(pv)
+                self.cache_pv_attributes(self.pv_attributes, self.rsm_attributes)
+                self.cache_image(np.ravel(self.image))
 
             #TODO: depreciated change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
             if self.ANALYSIS_IN_CONFIG:
@@ -238,26 +257,58 @@ class PVAReader:
                         self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                         # double storing of the postion, will find out if needed
                         self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+
+            if self.is_scan_complete == True:
+                print('Scan Complete')
+                print('Stopping Monitor...')
+                self.stop_channel_monitor()
+                time.sleep(1)
+                for callable in self._on_scan_complete_callbacks:
+                    threading.Thread(target=callable,).start()
+
         except Exception as e:
             print(f'Failed to execute callback: {e}')
             self.frames_received -= 1
             self.frames_missed += 1
 
-    def parse_image_data_type(self) -> None:
+    def roi_backup_callback(self, pvname, value, **kwargs) -> None:
+        name_components = pvname.split(":")
+        roi_key = name_components[1]
+        pv_key = name_components[2]
+        pv_value = value
+        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
+        # then adds the key to the inner dictionary with update
+        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+    
+    def locate_analysis_index(self) -> int|None:
+        """
+        Locates the index of the analysis attribute in the PVA attributes.
+
+        Returns:
+            int: The index of the analysis attribute or None if not found.
+        """
+        if self.pv_attributes:
+            for i, attr_name in enumerate(self.pv_attributes.keys()): 
+                if attr_name == "Analysis":
+                    return i
+            else:
+                return None
+
+    def parse_image_data_type(self, pva_object) -> None:
         """
         Parses the PVA Object to determine the incoming data type.
         """
-        if self.pva_object is not None:
+        if pva_object is not None:
             try:
-                self.data_type = list(self.pva_object['value'][0].keys())[0]
-                self.display_dtype = self.data_type if self.pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(self.pva_object['codec']['parameters'][0]['value'])
+                self.data_type = list(pva_object['value'][0].keys())[0]
+                self.display_dtype = self.data_type if pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
                 self.numpy_dtype = self.NTNDA_NUMPY_MAP.get(self.display_dtype, np.dtype('float32'))
             except:
                 self.display_dtype = "could not detect"
 
-    def parse_img_shape(self) -> None:
-        if 'dimension' in self.pva_object:
-            self.shape = tuple([dim['size'] for dim in self.pva_object['dimension']])
+    def parse_img_shape(self, pva_object) -> None:
+        if 'dimension' in pva_object:
+            return tuple([dim['size'] for dim in pva_object['dimension']])
 
     def parse_attributes(self, pva_object) -> dict:
         pv_attributes = {}
@@ -272,49 +323,23 @@ class PVAReader:
                     pv_attributes[name] = value
             return pv_attributes
         else:
-            return {}
+            return {}    
     
-    def parse_pva_attributes(self) -> None:
-        """
-        Converts the PVA object to a Python dictionary and extracts its attributes.
-        """
-        if self.pva_object is not None:
-            self.attributes: list = self.pva_object.get().get("attribute", [])
-
-    def locate_analysis_index(self) -> int|None:
-        """
-        Locates the index of the analysis attribute in the PVA attributes.
-
-        Returns:
-            int: The index of the analysis attribute or None if not found.
-        """
-        if self.attributes:
-            for i, attr_pv in enumerate(self.attributes): # attr_pv : dict
-                if attr_pv.get("name", "") == "Analysis":
-                    return i
-            else:
-                return None
-    
-    def parse_rsm_attributes(self) -> None:
-        self.rsm_attributes = self.pv_attributes['RSM']
+    def parse_rsm_attributes(self, pv_attributes: dict) -> None:
+        self.rsm_attributes = pv_attributes['RSM']
               
-    def parse_roi_pvs(self) -> None:
+    def parse_roi_pvs(self, pv_attributes: dict) -> None:
         """
         Parses attributes to extract ROI-specific PV information.
         """
-        if self.attributes:
-            for i in range(len(self.attributes)):
-                attr_pv: dict = self.attributes[i]
-                attr_name:str = attr_pv.get("name", "")
-                if "ROI" in attr_name:
-                    name_components = attr_name.split(":")
-                    prefix = name_components[0]
-                    roi_key = name_components[1]
-                    pv_key = name_components[2]
-                    pv_value = attr_pv["value"][0]["value"]
-                    # can't append simply by using 2 keys in a row, there must be a value to call to then add to
-                    # then adds the key to the inner dictionary with update
-                    self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+        for roi in self._roi_names:
+            for dimension in ['MinX', 'MinY', 'SizeX', 'SizeY']:
+                pv_key = f'{self.pva_prefix}:{roi}:{dimension}'
+                pv_value = pv_attributes.get(pv_key, None)
+                # If a dictionary is empty, can't create an inner dictionary by using another [] at the end, there must be a dict to call to.
+                # To make sure there is an inner dictionary, we use .setdefault() to initialize the inner dictionary
+                if pv_value is not None:
+                    self.rois.setdefault(roi, {}).update({dimension: pv_value})
             
     def pva_to_image(self, pva_object) -> None:
         """
@@ -330,7 +355,8 @@ class PVAReader:
                 if pva_object['codec']['name'] == 'bslz4':
                     # Handle BSLZ4 compressed data
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
-                    uncompressed_size = pva_object['uncompressedSize'] // dtype.itemsize # size has to be divided by bytes needed to store dtype in bitshuffle
+                    # size has to be divided by bytes needed to store corresponding output dtype
+                    uncompressed_size = pva_object['uncompressedSize'] // dtype.itemsize 
                     uncompressed_shape = (uncompressed_size,)
                     compressed_image = pva_object['value'][0][self.data_type]
                     # Decompress numpy array to correct datatype
@@ -341,16 +367,16 @@ class PVAReader:
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
                     uncompressed_size = pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
                     compressed_image = pva_object['value'][0][self.data_type]
-                    # Decompress using lz4.block
                     decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
                     # Convert bytes to numpy array with correct dtype
-                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype is used to convert from buffer to correct dtype from bytes
+                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct 
 
                 elif pva_object['codec']['name'] == '':
                     # Handle uncompressed data
                     image = pva_object['value'][0][self.data_type]
 
                 # Check for missed frame starts here
+                # TODO: can be it's own function
                 current_array_id = pva_object['uniqueId']
                 if self.last_array_id is not None: 
                     self.id_diff = current_array_id - self.last_array_id - 1
@@ -363,44 +389,83 @@ class PVAReader:
                             #         self.cache_qx.append(self.empty_array)
                             #         self.cache_qy.append(self.empty_array)
                             #         self.cache_qz.append(self.empty_array)
-
                 self.last_array_id = current_array_id
                 self.id_diff = 0
-
-                #TODO: separate image caching and attribute caching into their own function 
-                if self.caches_initialized:
-                    if self.CACHING_MODE == 'alignment':# TODO: ADD caching mode check here to see if we are looking for a flag pv or caching indiscriminately.
-                        self.cache_images.append(image)
-                        if self.HKL_IN_CONFIG:
-                            if 'RSM' in self.pv_attributes:
-                                self.cache_qx.append(self.rsm_attributes['qx'])
-                                self.cache_qy.append(self.rsm_attributes['qy'])
-                                self.cache_qz.append(self.rsm_attributes['qz'])
-                            elif 'RSM' not in self.pv_attributes and self.viewer_type == 'r':
-                                raise AttributeError('Could not find \'RSM\' in pv')
-                    elif self.CACHING_MODE == 'scan':
-                        pass
-                    elif self.CACHING_MODE == 'bin':
-                        if self.viewer_type == 'i':
-                            bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
-                            self.cache_images[bin_index].append(image)
-                        
-                self.image = image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
-                return
+                
+                return image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
             else:
                 self.image = None
                 raise ValueError("Image data could not be processed.")
                 
         except Exception as e:
             print(f"Failed to process image: {e}")
+            return None
 
-            
+    ########## Caching ##########
+    def cache_pv_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> None:
+        if self.CACHING_MODE == 'alignment': 
+            self.cache_attributes.append(pv_attributes)
+            if rsm_attributes:
+                self.cache_qx.append(rsm_attributes['qx'])
+                self.cache_qy.append(rsm_attributes['qy'])
+                self.cache_qz.append(rsm_attributes['qz'])
+            elif not self.rsm_attributes and self.viewer_type == 'r':
+                raise AttributeError('[PVA Reader] Could not find \'RSM\' attribute')
+            return
+        elif self.CACHING_MODE == 'scan':
+            # TODO: create different scan functions for if a flag pv is bool/binary vs not
+            # currently only works with binary/boolean flag pvs
+            if self.FLAG_PV in pv_attributes:
+                flag_value = pv_attributes[self.FLAG_PV]
+                if flag_value == self.START_SCAN:
+                    self.is_caching = True
+                    self.cache_attributes.append(pv_attributes)
+                    if rsm_attributes:
+                        self.cache_qx.append(rsm_attributes['qx'])
+                        self.cache_qy.append(rsm_attributes['qy'])
+                        self.cache_qz.append(rsm_attributes['qz'])
+                    elif not rsm_attributes and self.viewer_type == 'r':
+                        raise AttributeError('[PVA Reader] Could not find \'RSM\' attribute')
+                    return
+                elif (flag_value == self.STOP_SCAN) and self.is_caching == True:
+                    self.is_caching = False
+                    self.is_scan_complete = True
+                else:
+                    return
+            else:
+                raise AttributeError('[PVA Reader] Flag_PV not found') 
+        elif self.CACHING_MODE == 'bin':
+            bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
+            self.cache_attributes[bin_index].append(pv_attributes) 
+
+    def cache_image(self, image) -> None:
+        if self.CACHING_MODE == 'alignment':
+            self.cache_images.append(image)
+            return
+        elif self.CACHING_MODE == 'scan':
+            if self.is_caching:
+                self.cache_images.append(image)
+                return
+        elif self.CACHING_MODE == 'bin':
+            if self.viewer_type == 'i':
+                bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
+                self.cache_images[bin_index].append(image)
+                return     
+
+    ########## Start and Stop Channel Monitors ##########           
     def start_channel_monitor(self) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
         """
         self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
         self.channel.startMonitor()
+
+    def stop_channel_monitor(self) -> None:
+        """
+        Stops all monitoring and callback functions.
+        """
+        self.channel.unsubscribe('pva callback success')
+        self.channel.stopMonitor()
 
     def start_roi_backup_monitor(self) -> None:
         try:
@@ -416,18 +481,8 @@ class PVAReader:
         except Exception as e:
             print(f'Failed to setup backup ROI monitor: {e}')
 
-    def roi_backup_callback(self, pvname, value, **kwargs) -> None:
-        name_components = pvname.split(":")
-        roi_key = name_components[1]
-        pv_key = name_components[2]
-        pv_value = value
-        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
-        # then adds the key to the inner dictionary with update
-        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
-
     def save_caches_to_h5(self) -> None:
-        # TODO:
-        # add analysis
+        # TODO: add analysis
         """
         Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
         The file structure is as follows:
@@ -448,7 +503,7 @@ class PVAReader:
             if self.cache_images is None:
                 raise ValueError("Caches cannot be empty.")
             n = len(self.cache_images)
-            if not (len(self.cache_images) == len(self.cache_attributes) == n) or n == 0:
+            if not (len(self.cache_attributes) == n) or n == 0:
                 raise ValueError("All caches must have the same number of elements.")
             print('attempting save')
             cache_metadata = self.cache_attributes
@@ -506,14 +561,6 @@ class PVAReader:
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
         except Exception as e:
             print(f"Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
-
-        
-    def stop_channel_monitor(self) -> None:
-        """
-        Stops all monitoring and callback functions.
-        """
-        self.channel.unsubscribe('pva callback success')
-        self.channel.stopMonitor()
 
     def get_frames_missed(self) -> int:
         """
