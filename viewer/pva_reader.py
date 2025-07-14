@@ -154,22 +154,22 @@ class PVAReader:
 
         if self.ROI_IN_CONFIG:
             for roi in self.config['ROI']:
-                self.roi_names.append(roi)
+                self._roi_names.append(roi)
 
         # Configuring Cache settings
         self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
         self.set_cache_options()
         if self.caches_needed != self.caches_initialized:
-                self.init_caches()
+            self.init_caches()
         
         # Configuring Analysis Caches
         if self.ANALYSIS_IN_CONFIG:
             self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
             if self.CONSUMER_MODE == "continuous":
-                self.analysis_cache_dict = {"Intensity": {},
+                self.analysis_cache_dict = {"Position": set(),
+                                            "Intensity": {},
                                             "ComX": {},
-                                            "ComY": {},
-                                            "Position": {}}
+                                            "ComY": {}}
     def set_cache_options(self) -> None:
         self.CACHING_MODE = self.CACHE_OPTIONS.get('CACHING_MODE', '')
         if self.CACHING_MODE != '':
@@ -235,7 +235,11 @@ class PVAReader:
 
             # Check for rsm attributes in metadata
             if self.HKL_IN_CONFIG and 'RSM' in self.pv_attributes:
-                    self.parse_rsm_attributes(self.pv_attributes)
+                self.parse_rsm_attributes(self.pv_attributes)
+
+            if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
+                pass
+                self.parse_analysis_attributes()
             
             if self.caches_initialized:
                 self.cache_pv_attributes(self.pv_attributes, self.rsm_attributes)
@@ -323,7 +327,10 @@ class PVAReader:
                     pv_attributes[name] = value
             return pv_attributes
         else:
-            return {}    
+            return {}
+
+    def parse_analysis_attributes(self, pv_attributes: dict) -> None:
+        pass    
     
     def parse_rsm_attributes(self, pv_attributes: dict) -> None:
         self.rsm_attributes = pv_attributes['RSM']
@@ -350,29 +357,28 @@ class PVAReader:
         """
         try:
             if 'dimension' in pva_object:
-                # self.empty_array = np.zeros(self.shape[0]*self.shape[1])
-
+                # Handle BSLZ4 compressed data
                 if pva_object['codec']['name'] == 'bslz4':
-                    # Handle BSLZ4 compressed data
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
-                    # size has to be divided by bytes needed to store corresponding output dtype
+                    # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
                     uncompressed_size = pva_object['uncompressedSize'] // dtype.itemsize 
                     uncompressed_shape = (uncompressed_size,)
                     compressed_image = pva_object['value'][0][self.data_type]
                     # Decompress numpy array to correct datatype
                     image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
-
+                # Handle LZ4 compressed data
                 elif pva_object['codec']['name'] == 'lz4':
-                    # Handle LZ4 compressed data
                     dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
                     uncompressed_size = pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
                     compressed_image = pva_object['value'][0][self.data_type]
                     decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
                     # Convert bytes to numpy array with correct dtype
-                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct 
-
+                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
+                # handle BLOSC compressed data 
+                elif pva_object['codec']['name'] == 'blosc':
+                    pass
+                # Handle uncompressed data
                 elif pva_object['codec']['name'] == '':
-                    # Handle uncompressed data
                     image = pva_object['value'][0][self.data_type]
 
                 # Check for missed frame starts here
