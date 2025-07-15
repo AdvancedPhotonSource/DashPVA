@@ -149,6 +149,9 @@ class HKLImageWindow(QMainWindow):
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
         # self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
 
+        # Opening the 3d Slice 
+        self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
+
     def start_timers(self) -> None:
         """
         Starts timers for updating labels and plotting at specified frequencies.
@@ -373,7 +376,7 @@ class HKLImageWindow(QMainWindow):
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
     
     # def closeEvent(self, event):
-    #     """
+    #     """pass
     #     Custom close event to clean up resources, including stat dialogs.
 
     #     Args:
@@ -381,6 +384,82 @@ class HKLImageWindow(QMainWindow):
     #     """
     #     super(HKLImageWindow,self).closeEvent(event)
 
+    def open_3d_slice_window(self) -> None:
+        self.slice_window = HKL3DSliceWindow(self) 
+        self.slice_window.show()
+
+
+class HKL3DSliceWindow(QMainWindow):
+    def __init__(self, parent):
+        """Initializes the viewing window for the 3D slicer"""
+
+        # Initialize the window
+        super(HKL3DSliceWindow, self).__init__()
+        self.parent = parent
+        uic.loadUi('gui/hkl_3d_slice_window.ui', self)
+        self.setWindowTitle('3D Slice')
+        pyv.set_plot_theme('dark')
+
+
+        # Retrieve data from parent
+        self.cloud_copy = self.parent.cloud.copy(deep=True)
+        # self.slice_plotter = self.copy_parent_plotter(self.parent.plotter)
+        self.plotter = QtInteractor()
+
+        self.grid = self.cloud_copy.cast_to_unstructured_grid()
+        vol = self.grid.sample(self.cloud_copy)
+
+        # self.slice_actor = self.plotter.add_mesh(
+        #     self.cloud_copy,
+        #     scalars="intensity",
+        #     cmap="jet",
+        #     point_size=1.0,
+        #     render_points_as_spheres = True,
+        #     name="slice_points"
+        # )
+        
+        init_origin = self.cloud_copy.center
+        init_norm = (1,1,0)
+        vol_slice = vol.clip(normal=init_norm, origin=init_origin)
+
+        # Stopped here and got the point arrays to work, have to see point_arrays and array names!
+        
+        self.plotter.add_mesh(vol_slice)
+        # self.plotter.show_bounds()
+
+
+        self.plotter.add_mesh_clip_plane(
+            mesh = vol_slice,
+            normal=init_norm,
+            origin=init_origin,
+            cmap="jet"
+        )
+
+
+        self.viewer_3d_slicer_layout.addWidget(self.plotter)
+        self.apply_clipping([0,-1,0])
+
+
+        #Errors encountered: 
+        # Reason: Whenever you start the live view, but don't plot before opening the 3d viewer
+        # Error: PyVistaPipelineError('The passed algorithm is failing to produce an output.')
+
+
+    def update_slice_from_plane(normal, origin):
+        pass
+        
+
+    def apply_clipping(self, normal):
+        """
+        Updates the clipped mesh of the plane
+        """
+        clipped_mesh = self.cloud_copy
+        self.plotter.clear()
+        self.plotter.add_mesh(clipped_mesh, name="clipped_hkl")
+        self.plotter.add_mesh_clip_plane(
+            mesh = clipped_mesh,
+            normal=normal
+        )
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
