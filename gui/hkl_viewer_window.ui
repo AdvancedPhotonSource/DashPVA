@@ -220,7 +220,7 @@ QPushButton:pressed {
          <property name="geometry">
           <rect>
            <x>0</x>
-           <y>0</y>
+           <y>-320</y>
            <width>360</width>
            <height>1200</height>
           </rect>
@@ -286,8 +286,8 @@ QPushButton:pressed {
               <rect>
                <x>10</x>
                <y>30</y>
-               <width>321</width>
-               <height>351</height>
+               <width>340</width>
+               <height>352</height>
               </rect>
              </property>
              <layout class="QFormLayout" name="stats_layout">
@@ -717,7 +717,7 @@ QPushButton:pressed {
               <rect>
                <x>10</x>
                <y>30</y>
-               <width>321</width>
+               <width>349</width>
                <height>81</height>
               </rect>
              </property>
@@ -838,7 +838,24 @@ QPushButton:pressed {
                <height>361</height>
               </rect>
              </property>
-             <layout class="QGridLayout" name="gridLayout_2"/>
+             <layout class="QGridLayout" name="gridLayout_2">
+              <property name="verticalSpacing">
+               <number>0</number>
+              </property>
+              <item row="0" column="0">
+               <widget class="QPushButton" name="btn_3d_slice_window">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="text">
+                 <string>Open Slice 3D Window</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
             </widget>
             <widget class="QWidget" name="verticalLayoutWidget">
              <property name="geometry">
