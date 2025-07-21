@@ -672,11 +672,10 @@ class DiffractionImageWindow(QMainWindow):
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
             if self.hkl_data:
                 self.hkl_setup()
-                # TODO: change to only 1 call to create_rsm and then get the correct index
-                # similar to line 292
-                self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
-                self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
-                self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
+                qxyz = self.create_rsm()
+                self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
+                self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
+                self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
 
     def update_image(self) -> None:
         """
