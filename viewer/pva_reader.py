@@ -238,7 +238,6 @@ class PVAReader:
                 self.parse_rsm_attributes(self.pv_attributes)
 
             if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
-                pass
                 self.parse_analysis_attributes()
             
             if self.caches_initialized:
@@ -264,12 +263,9 @@ class PVAReader:
 
             if self.is_scan_complete == True:
                 print('Scan Complete')
-                print('Stopping Monitor...')
-                self.stop_channel_monitor()
-                time.sleep(1)
                 for callable in self._on_scan_complete_callbacks:
                     threading.Thread(target=callable,).start()
-
+                    
         except Exception as e:
             print(f'Failed to execute callback: {e}')
             self.frames_received -= 1
@@ -283,6 +279,8 @@ class PVAReader:
         # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
         # then adds the key to the inner dictionary with update
         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+        
+#################### PVA PARSING ##########################
     
     def locate_analysis_index(self) -> int|None:
         """
@@ -306,11 +304,11 @@ class PVAReader:
             try:
                 self.data_type = list(pva_object['value'][0].keys())[0]
                 self.display_dtype = self.data_type if pva_object['codec']['name'] == '' else self.NTNDA_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
-                self.numpy_dtype = self.NTNDA_NUMPY_MAP.get(self.display_dtype, np.dtype('float32'))
+                self.numpy_dtype = self.NTNDA_NUMPY_MAP.get(self.display_dtype, None)
             except:
                 self.display_dtype = "could not detect"
 
-    def parse_img_shape(self, pva_object) -> None:
+    def parse_img_shape(self, pva_object) -> tuple:
         if 'dimension' in pva_object:
             return tuple([dim['size'] for dim in pva_object['dimension']])
 
@@ -333,8 +331,27 @@ class PVAReader:
         pass    
     
     def parse_rsm_attributes(self, pv_attributes: dict) -> None:
-        self.rsm_attributes = pv_attributes['RSM']
-              
+        rsm_attributes: dict = pv_attributes['RSM']
+        codec = rsm_attributes['codec'].get('name', '')
+        if  codec !=  '':
+            dtype = self.NUMPY_DATA_TYPE_MAP.get(rsm_attributes['codec']['parameters'])
+            self.rsm_attributes = {'qx' : self.decompress_array(compressed_array=rsm_attributes['qx']['value'], 
+                                                                codec=codec, 
+                                                                uncompressed_size=rsm_attributes['qx']['uncompressedSize'],
+                                                                dtype=dtype),
+                                   'qy' : self.decompress_array(compressed_array=rsm_attributes['qy']['value'], 
+                                                                codec=codec, 
+                                                                uncompressed_size=rsm_attributes['qy']['uncompressedSize'],
+                                                                dtype=dtype),
+                                   'qz' : self.decompress_array(compressed_array=rsm_attributes['qz']['value'], 
+                                                                codec=codec, 
+                                                                uncompressed_size=rsm_attributes['qz']['uncompressedSize'],
+                                                                dtype=dtype)}
+        else:
+            self.rsm_attributes = {'qx' : rsm_attributes['qx']['value'], 
+                                   'qy' : rsm_attributes['qy']['value'],
+                                   'qz' : rsm_attributes['qz']['value']}
+                          
     def parse_roi_pvs(self, pv_attributes: dict) -> None:
         """
         Parses attributes to extract ROI-specific PV information.
@@ -348,7 +365,7 @@ class PVAReader:
                 if pv_value is not None:
                     self.rois.setdefault(roi, {}).update({dimension: pv_value})
             
-    def pva_to_image(self, pva_object) -> None:
+    def pva_to_image(self, pva_object) -> np.ndarray:
         """
         Converts the PVA Object to an image array and determines if a frame was missed.
         Handles bslz4 and lz4 compressed image data.
@@ -357,29 +374,14 @@ class PVAReader:
         """
         try:
             if 'dimension' in pva_object:
-                # Handle BSLZ4 compressed data
-                if pva_object['codec']['name'] == 'bslz4':
-                    dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
-                    # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
-                    uncompressed_size = pva_object['uncompressedSize'] // dtype.itemsize 
-                    uncompressed_shape = (uncompressed_size,)
-                    compressed_image = pva_object['value'][0][self.data_type]
-                    # Decompress numpy array to correct datatype
-                    image = bitshuffle.decompress_lz4(compressed_image, uncompressed_shape, dtype, 0)
-                # Handle LZ4 compressed data
-                elif pva_object['codec']['name'] == 'lz4':
-                    dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value'])
-                    uncompressed_size = pva_object['uncompressedSize'] # raw size is used to decompress it into an lz4 buffer
-                    compressed_image = pva_object['value'][0][self.data_type]
-                    decompressed_bytes = lz4.block.decompress(compressed_image, uncompressed_size)
-                    # Convert bytes to numpy array with correct dtype
-                    image = np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
-                # handle BLOSC compressed data 
-                elif pva_object['codec']['name'] == 'blosc':
-                    pass
-                # Handle uncompressed data
-                elif pva_object['codec']['name'] == '':
-                    image = pva_object['value'][0][self.data_type]
+                if pva_object['codec']['name'] != '':
+                    image: np.ndarray = self.decompress_array(compressed_array=pva_object['value'][0][self.data_type],
+                                                  codec=pva_object['codec']['name'],
+                                                  uncompressed_size=pva_object['uncompressedSize'],
+                                                  dtype=self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value']))
+                else:
+                    # Handle uncompressed data  
+                    image: np.ndarray = pva_object['value'][0][self.data_type]
 
                 # Check for missed frame starts here
                 # TODO: can be it's own function
@@ -405,9 +407,28 @@ class PVAReader:
                 
         except Exception as e:
             print(f"Failed to process image: {e}")
-            return None
+            self.frames_received -= 1
+            self.frames_missed += 1
+            
+    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size, dtype: np.dtype) -> np.ndarray: 
+        # Handle BSLZ4 compressed data
+        if codec == 'bslz4':
+            # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
+            uncompressed_shape = (uncompressed_size // dtype.itemsize,)
+            # Decompress numpy array to correct datatype
+            return bitshuffle.decompress_lz4(compressed_array, uncompressed_shape, dtype)
+        # Handle LZ4 compressed data
+        elif codec == 'lz4':
+            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
+            # Convert bytes to numpy array with correct dtype
+            return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
+        # handle BLOSC compressed data 
+        elif codec == 'blosc':
+            decompressed_bytes = blosc2.decompress(compressed_array)
+            return np.frombuffer(decompressed_bytes, dtype=dtype)
+        
 
-    ########## Caching ##########
+    #################### Caching ########################
     def cache_pv_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> None:
         if self.CACHING_MODE == 'alignment': 
             self.cache_attributes.append(pv_attributes)
@@ -425,6 +446,12 @@ class PVAReader:
                 flag_value = pv_attributes[self.FLAG_PV]
                 if flag_value == self.START_SCAN:
                     self.is_caching = True
+                    self.is_scan_complete = False
+                elif (flag_value == self.STOP_SCAN) and self.is_caching == True:
+                    self.is_caching = False
+                    self.is_scan_complete = True
+                    
+                if self.is_caching:
                     self.cache_attributes.append(pv_attributes)
                     if rsm_attributes:
                         self.cache_qx.append(rsm_attributes['qx'])
@@ -432,12 +459,6 @@ class PVAReader:
                         self.cache_qz.append(rsm_attributes['qz'])
                     elif not rsm_attributes and self.viewer_type == 'r':
                         raise AttributeError('[PVA Reader] Could not find \'RSM\' attribute')
-                    return
-                elif (flag_value == self.STOP_SCAN) and self.is_caching == True:
-                    self.is_caching = False
-                    self.is_scan_complete = True
-                else:
-                    return
             else:
                 raise AttributeError('[PVA Reader] Flag_PV not found') 
         elif self.CACHING_MODE == 'bin':
@@ -527,7 +548,7 @@ class PVAReader:
             
             with h5py.File(self.OUTPUT_FILE_LOCATION, 'w') as h5f:
                 # Create the main "images" group
-                print(f'creating file at :{self.OUTPUT_FILE_LOCATION}')
+                print(f'creating file at: {self.OUTPUT_FILE_LOCATION}')
                 images_grp = h5f.create_group("entry")
                 data_grp = images_grp.create_group('data')
                 data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images], dtype=self.numpy_dtype))
@@ -565,6 +586,8 @@ class PVAReader:
                         print('qx, qy, qz written')
     
             print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
+            #reset caches
+            self.init_caches()
         except Exception as e:
             print(f"Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
 
