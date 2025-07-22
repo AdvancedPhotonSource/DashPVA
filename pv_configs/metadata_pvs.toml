@@ -28,48 +28,48 @@ CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describe
     [METADATA.PVA]
 
 # Section for ROI PVs
-[ROI]
+# [ROI]
 
-    [ROI.ROI1]
-    MIN_X = 'dp-ADSim:ROI1:MinX'
-    MIN_Y = 'dp-ADSim:ROI1:MinY'
-    SIZE_X = 'dp-ADSim:ROI1:SizeX'
-    SIZE_Y = 'dp-ADSim:ROI1:SizeY'
+#     [ROI.ROI1]
+#     MIN_X = 'dp-ADSim:ROI1:MinX'
+#     MIN_Y = 'dp-ADSim:ROI1:MinY'
+#     SIZE_X = 'dp-ADSim:ROI1:SizeX'
+#     SIZE_Y = 'dp-ADSim:ROI1:SizeY'
 
-    [ROI.ROI2]
-    MIN_X = 'dp-ADSim:ROI2:MinX'
-    MIN_Y = 'dp-ADSim:ROI2:MinY'
-    SIZE_X = 'dp-ADSim:ROI2:SizeX'
-    SIZE_Y = 'dp-ADSim:ROI2:SizeY'
+#     [ROI.ROI2]
+#     MIN_X = 'dp-ADSim:ROI2:MinX'
+#     MIN_Y = 'dp-ADSim:ROI2:MinY'
+#     SIZE_X = 'dp-ADSim:ROI2:SizeX'
+#     SIZE_Y = 'dp-ADSim:ROI2:SizeY'
 
-    [ROI.ROI3]
-    MIN_X = 'dp-ADSim:ROI3:MinX'
-    MIN_Y = 'dp-ADSim:ROI3:MinY'
-    SIZE_X = 'dp-ADSim:ROI3:SizeX'
-    SIZE_Y = 'dp-ADSim:ROI3:SizeY'
+#     [ROI.ROI3]
+#     MIN_X = 'dp-ADSim:ROI3:MinX'
+#     MIN_Y = 'dp-ADSim:ROI3:MinY'
+#     SIZE_X = 'dp-ADSim:ROI3:SizeX'
+#     SIZE_Y = 'dp-ADSim:ROI3:SizeY'
 
-    [ROI.ROI4]
-    MIN_X = 'dp-ADSim:ROI4:MinX'
-    MIN_Y = 'dp-ADSim:ROI4:MinY'
-    SIZE_X = 'dp-ADSim:ROI4:SizeX'
-    SIZE_Y = 'dp-ADSim:ROI4:SizeY'
+#     [ROI.ROI4]
+#     MIN_X = 'dp-ADSim:ROI4:MinX'
+#     MIN_Y = 'dp-ADSim:ROI4:MinY'
+#     SIZE_X = 'dp-ADSim:ROI4:SizeX'
+#     SIZE_Y = 'dp-ADSim:ROI4:SizeY'
 
 # Section for Stats PVs
-[STATS]
+# [STATS]
 
-    [STATS.STATS1]
-    TOTAL = 'dp-ADSim:Stats1:Total_RBV'
-    MIN = 'dp-ADSim:Stats1:MinValue_RBV'
-    MAX = 'dp-ADSim:Stats1:MaxValue_RBV'
-    SIGMA = 'dp-ADSim:Stats1:Sigma_RBV'
-    MEAN = 'dp-ADSim:Stats1:MeanValue_RBV'
+#     [STATS.STATS1]
+#     TOTAL = 'dp-ADSim:Stats1:Total_RBV'
+#     MIN = 'dp-ADSim:Stats1:MinValue_RBV'
+#     MAX = 'dp-ADSim:Stats1:MaxValue_RBV'
+#     SIGMA = 'dp-ADSim:Stats1:Sigma_RBV'
+#     MEAN = 'dp-ADSim:Stats1:MeanValue_RBV'
 
-    [STATS.STATS4]
-    TOTAL = 'dp-ADSim:Stats4:Total_RBV'
-    MIN = 'dp-ADSim:Stats4:MinValue_RBV'
-    MAX = 'dp-ADSim:Stats4:MaxValue_RBV'
-    SIGMA = 'dp-ADSim:Stats4:Sigma_RBV'
-    MEAN = 'dp-ADSim:Stats4:MeanValue_RBV'
+#     [STATS.STATS4]
+#     TOTAL = 'dp-ADSim:Stats4:Total_RBV'
+#     MIN = 'dp-ADSim:Stats4:MinValue_RBV'
+#     MAX = 'dp-ADSim:Stats4:MaxValue_RBV'
+#     SIGMA = 'dp-ADSim:Stats4:Sigma_RBV'
+#     MEAN = 'dp-ADSim:Stats4:MeanValue_RBV'
 
 # Section for Analysis PVs
 # These PVs are used in the analysis server, not on the client side.

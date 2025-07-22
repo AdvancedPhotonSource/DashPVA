@@ -1,11 +1,11 @@
-import sys
+import sys, pathlib
 import subprocess
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
 import pyvista as pyv
 import pyvistaqt as pyvqt
-from pyvistaqt import QtInteractor
+from pyvistaqt import QtInteractor, BackgroundPlotter
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor, caget
@@ -13,6 +13,9 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 # Custom imported classes
 from pva_reader import PVAReader
+# Add the parent directory to the path so the font_scaling.py file can be imported
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from font_scaling import GlobalFontScaling
 
 class ConfigDialog(QDialog):
 
@@ -291,6 +294,7 @@ class HKLImageWindow(QMainWindow):
         Processes the image data according to main window settings, such as rotation
         and log transformations. Also sets initial min/max pixel values in the UI.
         """
+        print('Updating Image')
         if self.reader is not None:
             self.call_id_plot +=1
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
@@ -304,11 +308,10 @@ class HKLImageWindow(QMainWindow):
                     qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
                     qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
                     qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
-                    
+
                     points = np.column_stack((
                         qx, qy, qz
                     ))
-
                     # First-time setup
                     if self.first_plot:
                         self.min_intensity = np.min(flat_intensity)
@@ -336,6 +339,7 @@ class HKLImageWindow(QMainWindow):
                         
                         self.first_plot = False
                     else:
+                        print(f'Updating Image')
                         self.plotter.mesh.points = points
                         self.cloud['intensity'] = flat_intensity
                         self.update_intensity()
@@ -393,6 +397,7 @@ class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent):
         """Initializes the viewing window for the 3D slicer"""
 
+
         # Initialize the window
         super(HKL3DSliceWindow, self).__init__()
         self.parent = parent
@@ -401,43 +406,65 @@ class HKL3DSliceWindow(QMainWindow):
         pyv.set_plot_theme('dark')
 
 
+        # Connecting the signals to the code that will be executed
+        self.btnZoomIn.clicked.connect(self.zoom_in)
+        self.btnZoomOut.clicked.connect(self.zoom_out)
+        
+
         # Retrieve data from parent
         self.cloud_copy = self.parent.cloud.copy(deep=True)
-        # self.slice_plotter = self.copy_parent_plotter(self.parent.plotter)
+        self.cloud_copy['intensity'] = self.parent.cloud['intensity']
+
+
+        # Creating the lookup table
+        self.lut = pyv.LookupTable(cmap='viridis')  
+        self.lut.below_range_color = 'black'
+        self.lut.above_range_color = 'black'
+        self.lut.below_range_opacity = 0
+        self.lut.above_range_opacity = 0 
+        self.lut.apply_opacity([0,1]) # intensity change to Julio
+
+
+        # Creating the plotter for the 3d slicer
         self.plotter = QtInteractor()
+        # self.grid = self.cloud_copy.cast_to_unstructured_grid()
+        # vol = self.cloud_copy.cast_to_unstructured_grid()
 
-        self.grid = self.cloud_copy.cast_to_unstructured_grid()
-        vol = self.grid.sample(self.cloud_copy)
+        s
 
-        # self.slice_actor = self.plotter.add_mesh(
-        #     self.cloud_copy,
-        #     scalars="intensity",
-        #     cmap="jet",
-        #     point_size=1.0,
-        #     render_points_as_spheres = True,
-        #     name="slice_points"
-        # )
+
+        self.plotter.add_mesh(
+            self.cloud_copy,
+            scalars="intensity",
+            cmap= self.lut,  # set flat intesnity
+            point_size=5.0,
+            render_points_as_spheres=True,
+            name="points"
+        )
         
+
+        # Set origin and normal for the plane
         init_origin = self.cloud_copy.center
         init_norm = (1,1,0)
-        vol_slice = vol.clip(normal=init_norm, origin=init_origin)
-
-        # Stopped here and got the point arrays to work, have to see point_arrays and array names!
-        
-        self.plotter.add_mesh(vol_slice)
-        # self.plotter.show_bounds()
+        init_slice = vol.clip(normal=init_norm, origin=init_origin)
+        self.plotter.add_mesh(init_slice, cmap="jet", name="slice", show_edges=False)
 
 
-        self.plotter.add_mesh_clip_plane(
-            mesh = vol_slice,
-            normal=init_norm,
-            origin=init_origin,
-            cmap="jet"
+        # Adding the sphere and line to the plotter
+        sphere = pyv.Sphere(radius=0.1, center=init_origin)
+        line = pyv.Line(
+            pointa=init_origin,
+            pointb=np.array(init_origin) + np.array(init_norm) * 2
         )
+        self.plotter.add_mesh(sphere, color='red', name="origin_sphere", pickable=False)
+        self.plotter.add_mesh(line, color='white', name="normal_line", pickable=False)
+        self.plotter.renderer._actors["origin_sphere"].SetVisibility(False)
+        self.plotter.renderer._actors["normal_line"].SetVisibility(False)
+
+        self.toggle_state = {"visible": False}
 
 
         self.viewer_3d_slicer_layout.addWidget(self.plotter)
-        self.apply_clipping([0,-1,0])
 
 
         #Errors encountered: 
@@ -445,8 +472,12 @@ class HKL3DSliceWindow(QMainWindow):
         # Error: PyVistaPipelineError('The passed algorithm is failing to produce an output.')
 
 
-    def update_slice_from_plane(normal, origin):
+    def add_plane():
         pass
+
+
+    def update_slice_from_plane(self):
+        print('normal and origin')
         
 
     def apply_clipping(self, normal):
@@ -461,9 +492,22 @@ class HKL3DSliceWindow(QMainWindow):
             normal=normal
         )
 
+
+    def zoom_in(self):
+        camera = self.plotter.camera
+        camera.zoom(-0.5)
+        self.plotter.render()
+
+
+    def zoom_out(self):
+        camera = self.plotter.camera
+        camera.zoom(0.5)
+        self.plotter.render()
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = ConfigDialog()
+    #GlobalFontScaling(app)
     window.show()
-
     sys.exit(app.exec_())

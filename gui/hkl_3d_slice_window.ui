@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1267</width>
+    <width>1271</width>
     <height>1194</height>
    </rect>
   </property>
@@ -25,14 +25,40 @@
     </property>
     <layout class="QGridLayout" name="viewer_3d_slicer_layout"/>
    </widget>
+   <widget class="QWidget" name="horizontalLayoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>120</x>
+      <y>1050</y>
+      <width>168</width>
+      <height>80</height>
+     </rect>
+    </property>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="btnZoomIn">
+       <property name="text">
+        <string>Zoom In</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnZoomOut">
+       <property name="text">
+        <string>Zoom Out</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1267</width>
-     <height>27</height>
+     <width>1271</width>
+     <height>20</height>
     </rect>
    </property>
   </widget>
