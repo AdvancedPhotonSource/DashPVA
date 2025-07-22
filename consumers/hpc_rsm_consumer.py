@@ -48,12 +48,6 @@ class HpcRsmProcessor(AdImageProcessor):
         # PV attributes
         self.shape : tuple = (0,0)
         self.type_dict = {
-            'qx': [pva.DOUBLE],
-            'qy': [pva.DOUBLE],
-            'qz': [pva.DOUBLE]
-            } 
-        
-        self.type_dict2 = {
             'codec':{
                 'name': pva.STRING, 
                 'parameters': pva.INT},
@@ -68,7 +62,25 @@ class HpcRsmProcessor(AdImageProcessor):
             'qz': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[pva.DOUBLE]},
+                'value':[pva.DOUBLE]}
+            } 
+        
+        self.type_dict_compressed = {
+            'codec':{
+                'name': pva.STRING, 
+                'parameters': pva.INT},
+            'qx': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.INT]},
+            'qy': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.INT]},
+            'qz': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.INT]}
             }                   
         
         # HKL parameters
@@ -321,8 +333,13 @@ class HpcRsmProcessor(AdImageProcessor):
                             'uncompressedSize': int(self.uncompressed_size),
                             'value':self.qz},
                         } 
+            
+            if self.codec_name != '':
+                rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict_compressed}, {'value': rsm_data})}
+            else:
+                rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
 
-            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict2}, {'value': rsm_data})}
+                
 
             # pv_attribute = NtAttribute('RSM', rsm_object)
 
