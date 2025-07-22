@@ -89,10 +89,14 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                 pv = pva.PvScalarArray(pva.DOUBLE)
                 pv.set(mdValue.tolist())
                 nt_attribute = {'name': mdChannel, 'value': pv}
+            elif isinstance(mdValue, bool):
+                nt_attribute = {'name':mdChannel, 'value': pva.PvBoolean(mdValue)}
+            else:
+                raise ValueError(f'Failed to create metadata attribute: {mdChannel}: {mdValue}')
 
             frameAttributes.append(nt_attribute)
-        except ValueError:
-            self.logger.error(f"Failed to set ndAttribute {mdChannel}: {mdValue}")
+        except Exception as e:
+            self.logger.error(f"[Metadata Associator] Error associatating metadata {e}")
             return False
         
         diff = abs(frameTimestamp - mdTimestamp2)

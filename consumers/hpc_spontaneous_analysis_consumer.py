@@ -164,13 +164,13 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # Now create a PvObject with the analysis results
         # We will send out a single data point (X, Y, Intensity, ComX, ComY)
         analysis_object = PvObject({'value':{'Axis1': DOUBLE, 'Axis2': DOUBLE,
-                                    'Intensity': DOUBLE, 
-                                    'ComX': DOUBLE, 
-                                    'ComY': DOUBLE}},
+                                             'Intensity': DOUBLE, 
+                                             'ComX': DOUBLE, 
+                                             'ComY': DOUBLE}},
                                    {'value':{'Axis1': float(x_value),'Axis2': float(y_value),
-                                    'Intensity': float(intensity),
-                                    'ComX': float(com_x),
-                                    'ComY': float(com_y)}})
+                                             'Intensity': float(intensity),
+                                             'ComX': float(com_x),
+                                             'ComY': float(com_y)}})
 
         # Create an NtAttribute to hold this analysis data
         pvAttr = pva.NtAttribute('Analysis', analysis_object)
