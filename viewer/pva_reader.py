@@ -134,7 +134,7 @@ class PVAReader:
 
         self._configure(config_filepath)
 
-    ############### Configuration ###############
+############################# Configuration #############################
     def _configure(self, config_path: str) -> None:
         if config_path != '':
             with open(config_path, 'r') as toml_file:
@@ -205,7 +205,7 @@ class PVAReader:
 
         self.caches_initialized = True
 
-    ########## Class and PVA Channel Callbacks ##########
+#################### Class and PVA Channel Callbacks ########################
     def add_on_scan_complete_callback(self, callback_func):
         if callable(callback_func):
             self._on_scan_complete_callbacks.append(callback_func)
@@ -280,8 +280,7 @@ class PVAReader:
         # then adds the key to the inner dictionary with update
         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
         
-#################### PVA PARSING ##########################
-    
+########################### PVA PARSING ##################################
     def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
@@ -426,9 +425,8 @@ class PVAReader:
         elif codec == 'blosc':
             decompressed_bytes = blosc2.decompress(compressed_array)
             return np.frombuffer(decompressed_bytes, dtype=dtype)
-        
 
-    #################### Caching ########################
+################################## Caching ####################################
     def cache_pv_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> None:
         if self.CACHING_MODE == 'alignment': 
             self.cache_attributes.append(pv_attributes)
@@ -479,7 +477,7 @@ class PVAReader:
                 self.cache_images[bin_index].append(image)
                 return     
 
-    ########## Start and Stop Channel Monitors ##########           
+########################### Start and Stop Channel Monitors ##########################    
     def start_channel_monitor(self) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
