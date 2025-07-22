@@ -63,7 +63,9 @@ class HpcRsmProcessor(AdImageProcessor):
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
                 'value':[pva.DOUBLE]}
-            } 
+            }
+        
+        compressed_dtype = self.CODEC_PARAMETERS_MAP[np.dtype('uint8')] 
         
         self.type_dict_compressed = {
             'codec':{
@@ -72,15 +74,15 @@ class HpcRsmProcessor(AdImageProcessor):
             'qx': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[pva.INT]},
+                'value':[compressed_dtype]},
             'qy': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[pva.INT]},
+                'value':[compressed_dtype]},
             'qz': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[pva.INT]}
+                'value':[compressed_dtype]}
             }                   
         
         # HKL parameters
