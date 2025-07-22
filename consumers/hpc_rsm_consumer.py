@@ -1,15 +1,18 @@
 import time
 import copy
+import toml
+import bitshuffle
+import blosc2
+import lz4.block
 import numpy as np
 import pvaccess as pva
+import xrayutilities as xu
 from pvaccess import PvObject, NtAttribute
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
-# import logging
+# logging
 import traceback
-import xrayutilities as xu
-import toml
 
 class HpcRsmProcessor(AdImageProcessor):
 
@@ -27,12 +30,45 @@ class HpcRsmProcessor(AdImageProcessor):
         self.nMetadataDiscarded = 0
         self.processingTime = 0
 
+        # Type Mapping
+        self.CODEC_PARAMETERS_MAP = {
+            np.dtype('uint8'): pva.UBYTE,
+            np.dtype('int8'): pva.BYTE,
+            np.dtype('uint16'): pva.USHORT,
+            np.dtype('int16'): pva.SHORT,
+            np.dtype('uint32'): pva.UINT,
+            np.dtype('int32'): pva.INT,
+            np.dtype('uint64'): pva.ULONG,
+            np.dtype('int64'): pva.LONG,
+            np.dtype('float32'): pva.FLOAT,
+            np.dtype('float64'): pva.DOUBLE,
+
+        }
+
         # PV attributes
         self.shape : tuple = (0,0)
         self.type_dict = {
             'qx': [pva.DOUBLE],
             'qy': [pva.DOUBLE],
             'qz': [pva.DOUBLE]
+            } 
+        
+        self.type_dict2 = {
+            'codec':{
+                'name': pva.STRING, 
+                'parameters': pva.INT},
+            'qx': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.DOUBLE]},
+            'qy': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.DOUBLE]},
+            'qz': {
+                'compressedSize': pva.LONG,
+                'uncompressedSize': pva.LONG,
+                'value':[pva.DOUBLE]},
             }                   
         
         # HKL parameters
@@ -193,6 +229,29 @@ class HpcRsmProcessor(AdImageProcessor):
                 return True
         else:
             return False
+        
+    def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
+        if not isinstance(hkl_array, np.ndarray):
+            raise TypeError("hkl_array must be a numpy array")
+        if hkl_array.ndim != 1:
+            raise ValueError("hkl_array must be a 1D numpy array")
+        byte_data = hkl_array.tobytes()
+        typesize = hkl_array.dtype.itemsize
+
+        if codec_name == 'lz4':
+            compressed = lz4.block.compress(byte_data)
+        elif codec_name == 'bslz4':
+            compressed = bitshuffle.compress_lz4(hkl_array)
+        elif codec_name == 'blosc':
+            compressed = blosc2.compress(
+                byte_data,
+                typesize=typesize
+            )
+        else:
+            raise ValueError(f"Unsupported codec: {codec_name}")
+
+        # Convert compressed bytes to a uint8 numpy array
+        return np.frombuffer(compressed, dtype=np.uint8)
 
     def process(self, pvObject):
         t0 = time.time()
@@ -222,18 +281,48 @@ class HpcRsmProcessor(AdImageProcessor):
 
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes
-            self.qx, self.qy, self.qz = self.create_rsm(self.hkl_attributes, self.shape)
-        
+            qxyz = self.create_rsm(self.hkl_attributes, self.shape)
+            self.qx = np.ravel(qxyz[0])
+            self.qy = np.ravel(qxyz[1])
+            self.qz = np.ravel(qxyz[2])
+            self.codec_name = pvObject['codec']['name']
+            self.original_dtype = self.qx.dtype if self.qx.dtype == self.qy.dtype == self.qz.dtype else np.dtype('float64')
+            self.codec_parameters = int(self.CODEC_PARAMETERS_MAP.get(self.original_dtype, None)) if self.codec_name else -1
+            self.uncompressed_size = np.prod(self.shape) * self.original_dtype.itemsize
+            self.compressed_size_qx = self.uncompressed_size
+            self.compressed_size_qy = self.uncompressed_size
+            self.compressed_size_qz = self.uncompressed_size
+            
+            if self.codec_name != '':
+                self.qx = self.compress_array(self.qx, self.codec_name)
+                self.qy = self.compress_array(self.qy, self.codec_name)
+                self.qz = self.compress_array(self.qz, self.codec_name)
+                self.compressed_size_qx = self.qx.shape[0]
+                self.compressed_size_qy = self.qy.shape[0]
+                self.compressed_size_qz = self.qz.shape[0]
+
    
         try:
             # Create RSM data structure
             rsm_data = {
-                'qx': np.ravel(self.qx),
-                'qy': np.ravel(self.qy),
-                'qz': np.ravel(self.qz)
-            }
+                        'codec':{
+                            'name': self.codec_name, 
+                            'parameters': self.codec_parameters},
+                        'qx': {
+                            'compressedSize': int(self.compressed_size_qx),
+                            'uncompressedSize': int(self.uncompressed_size),
+                            'value':self.qx},
+                        'qy': {
+                            'compressedSize': int(self.compressed_size_qy),
+                            'uncompressedSize': int(self.uncompressed_size),
+                            'value':self.qy},
+                        'qz': {
+                            'compressedSize': int(self.compressed_size_qz),
+                            'uncompressedSize': int(self.uncompressed_size),
+                            'value':self.qz},
+                        } 
 
-            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
+            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict2}, {'value': rsm_data})}
 
             # pv_attribute = NtAttribute('RSM', rsm_object)
 

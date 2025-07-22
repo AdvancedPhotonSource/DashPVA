@@ -106,6 +106,9 @@ detector_setup_record = {
     "Distance": 400.644,
     "Units": "mm"
 }
+scan_on_record = {
+    'Value': False
+}
 
 # -------------------------------
 # Helper: Convert to Valid EPICS Record Name
@@ -140,6 +143,12 @@ def get_record_definition(name, value_type) -> str:
             field(VAL, "")
         }
         """ % name
+    elif isinstance(value_type, bool):
+        return """
+        record(longout, "%s") {
+            field(DTYP, "Soft Channel")
+        }
+        """ % name
     elif isinstance(value_type, list) and all(isinstance(x, (int, float)) for x in value_type):
         # For numeric arrays (like UB_matrix)
         return """
@@ -149,6 +158,7 @@ def get_record_definition(name, value_type) -> str:
             field(NELM, "9")
         }
         """ % name
+
 
 def setup_ca_ioc(records_dict) -> pva.CaIoc:
     """
@@ -199,8 +209,9 @@ def update_ca_record_field(caIoc, base_name, field_name, value) -> None:
     record_name = "%s:%s" % (valid_base, field_name)
     
     try:
-        # print(record_name, value)
-        if isinstance(value, (list, np.ndarray)) and all(isinstance(x, (int, float, np.float32)) for x in value):
+        if isinstance(value, bool):
+            value = int(value)  # Cast True/False to 1/0
+        elif isinstance(value, (list, np.ndarray)) and all(isinstance(x, (int, float, np.float32)) for x in value):
             # For numeric arrays
             value = [int(val) for val in value]
             caIoc.putField(record_name, value)
@@ -230,7 +241,8 @@ def main() -> None:
         "PrimaryBeamDirection": primary_beam_direction_record,
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
-        "DetectorSetup": detector_setup_record
+        "DetectorSetup": detector_setup_record,
+        "ScanOn": scan_on_record
     }
     print(axis_records)
     
@@ -255,27 +267,30 @@ def main() -> None:
     base_positions = {name: rec['Position'] for name, rec in axis_records.items()}
     dynamic_records = {**axis_records, '6idb:spec:Energy':13.0,} #'6idb:spec:UB_matrix': caget('6idb:spec:UB_matrix')}
 
-    # amplitude = 0.5        # Amplitude of the sine-wave update
-    # update_interval = 0.5  # Seconds between updates
-    # start_time = time.time()
+    amplitude = 0.5        # Amplitude of the sine-wave update
+    update_interval = 0.5  # Seconds between updates
+    start_time = time.time()
 
     try:
         while True:
-            # elapsed = time.time() - start_time
+            elapsed = time.time() - start_time
             for name, rec in dynamic_records.items():
                 # Update the Position field with a sine offset
-                new_position = caget(name) #+ amplitude * math.sin(elapsed)
+                new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
                 if isinstance(rec, dict):
-                    # if rec["SpecMotorName"] == "Eta":
-                    #     # Only Update Eta Position
-                    update_ca_record_field(caIoc, name, 'Position', new_position)
+                    if rec["SpecMotorName"] == "Eta":
+                        # Only Update Eta Position
+                        update_ca_record_field(caIoc, name, 'Position', new_position)
+                    if rec["SpecMotorName"] == "Delta":
+                        # Only Update Eta Position
+                        update_ca_record_field(caIoc, name, 'Position', new_position)
                 elif name == '6idb:spec:Energy':
                     update_ca_record_field(caIoc, name, 'Value', new_position)
                 # elif name == '6idb:spec:UB_matrix':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)
             
-            # time.sleep(update_interval)
+            time.sleep(update_interval)
     except KeyboardInterrupt:
         print("Shutting down CA IOC updates.")
 
