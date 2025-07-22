@@ -428,13 +428,16 @@ class HKL3DSliceWindow(QMainWindow):
         # Creating the plotter for the 3d slicer
         self.plotter = QtInteractor()
         # self.grid = self.cloud_copy.cast_to_unstructured_grid()
-        # vol = self.cloud_copy.cast_to_unstructured_grid()
+        vol = self.cloud_copy.cast_to_unstructured_grid()
 
-        s
+        sphere = pyv.Sphere(radius=1.0)
+        interpolated = self.cloud_copy.sample(sphere)
+        # interpolated['intensity'] = interpolated['intensity'] * 1000000
+        
 
 
         self.plotter.add_mesh(
-            self.cloud_copy,
+            vol,
             scalars="intensity",
             cmap= self.lut,  # set flat intesnity
             point_size=5.0,
@@ -446,7 +449,7 @@ class HKL3DSliceWindow(QMainWindow):
         # Set origin and normal for the plane
         init_origin = self.cloud_copy.center
         init_norm = (1,1,0)
-        init_slice = vol.clip(normal=init_norm, origin=init_origin)
+        init_slice = interpolated.slice(normal=init_norm, origin=init_origin)
         self.plotter.add_mesh(init_slice, cmap="jet", name="slice", show_edges=False)
 
 
