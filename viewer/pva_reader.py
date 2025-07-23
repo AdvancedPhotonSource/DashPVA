@@ -406,8 +406,6 @@ class PVAReader:
                 
         except Exception as e:
             print(f"Failed to process image: {e}")
-            self.frames_received -= 1
-            self.frames_missed += 1
             
     def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
         # Handle BSLZ4 compressed data
