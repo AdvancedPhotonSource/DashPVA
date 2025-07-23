@@ -134,7 +134,7 @@ class PVAReader:
 
         self._configure(config_filepath)
 
-    ############### Configuration ###############
+############################# Configuration #############################
     def _configure(self, config_path: str) -> None:
         if config_path != '':
             with open(config_path, 'r') as toml_file:
@@ -205,7 +205,7 @@ class PVAReader:
 
         self.caches_initialized = True
 
-    ########## Class and PVA Channel Callbacks ##########
+#################### Class and PVA Channel Callbacks ########################
     def add_on_scan_complete_callback(self, callback_func):
         if callable(callback_func):
             self._on_scan_complete_callbacks.append(callback_func)
@@ -280,8 +280,7 @@ class PVAReader:
         # then adds the key to the inner dictionary with update
         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
         
-#################### PVA PARSING ##########################
-    
+########################### PVA PARSING ##################################
     def locate_analysis_index(self) -> int|None:
         """
         Locates the index of the analysis attribute in the PVA attributes.
@@ -407,28 +406,25 @@ class PVAReader:
                 
         except Exception as e:
             print(f"Failed to process image: {e}")
-            self.frames_received -= 1
-            self.frames_missed += 1
             
-    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size, dtype: np.dtype) -> np.ndarray: 
+    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
         # Handle BSLZ4 compressed data
-        if codec == 'bslz4':
+        if codec == 'lz4':
+            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
+            # Convert bytes to numpy array with correct dtype
+            return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
+        elif codec == 'bslz4':
             # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
             uncompressed_shape = (uncompressed_size // dtype.itemsize,)
             # Decompress numpy array to correct datatype
             return bitshuffle.decompress_lz4(compressed_array, uncompressed_shape, dtype)
         # Handle LZ4 compressed data
-        elif codec == 'lz4':
-            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
-            # Convert bytes to numpy array with correct dtype
-            return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
         # handle BLOSC compressed data 
         elif codec == 'blosc':
             decompressed_bytes = blosc2.decompress(compressed_array)
             return np.frombuffer(decompressed_bytes, dtype=dtype)
-        
 
-    #################### Caching ########################
+################################## Caching ####################################
     def cache_pv_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> None:
         if self.CACHING_MODE == 'alignment': 
             self.cache_attributes.append(pv_attributes)
@@ -479,7 +475,7 @@ class PVAReader:
                 self.cache_images[bin_index].append(image)
                 return     
 
-    ########## Start and Stop Channel Monitors ##########           
+########################### Start and Stop Channel Monitors ##########################    
     def start_channel_monitor(self) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
