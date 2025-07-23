@@ -65,8 +65,6 @@ class HpcRsmProcessor(AdImageProcessor):
                 'value':[pva.DOUBLE]}
             }
         
-        compressed_dtype = self.CODEC_PARAMETERS_MAP[np.dtype('uint8')] 
-        
         self.type_dict_compressed = {
             'codec':{
                 'name': pva.STRING, 
@@ -74,15 +72,15 @@ class HpcRsmProcessor(AdImageProcessor):
             'qx': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[compressed_dtype]},
+                'value':[pva.UBYTE,]},
             'qy': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[compressed_dtype]},
+                'value':[pva.UBYTE,]},
             'qz': {
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
-                'value':[compressed_dtype]}
+                'value':[pva.UBYTE,]}
             }                   
         
         # HKL parameters
@@ -253,7 +251,7 @@ class HpcRsmProcessor(AdImageProcessor):
         typesize = hkl_array.dtype.itemsize
 
         if codec_name == 'lz4':
-            compressed = lz4.block.compress(byte_data)
+            compressed = lz4.block.compress(byte_data, store_size=False)
         elif codec_name == 'bslz4':
             compressed = bitshuffle.compress_lz4(hkl_array)
         elif codec_name == 'blosc':
@@ -296,13 +294,13 @@ class HpcRsmProcessor(AdImageProcessor):
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
-            self.qx = np.ravel(qxyz[0])
-            self.qy = np.ravel(qxyz[1])
-            self.qz = np.ravel(qxyz[2])
+            self.qx: np.ndarray = np.ravel(qxyz[0])
+            self.qy: np.ndarray = np.ravel(qxyz[1])
+            self.qz: np.ndarray = np.ravel(qxyz[2])
             self.codec_name = pvObject['codec']['name']
             self.original_dtype = self.qx.dtype if self.qx.dtype == self.qy.dtype == self.qz.dtype else np.dtype('float64')
             self.codec_parameters = int(self.CODEC_PARAMETERS_MAP.get(self.original_dtype, None)) if self.codec_name else -1
-            self.uncompressed_size = np.prod(self.shape) * self.original_dtype.itemsize
+            self.uncompressed_size = self.qx.nbytes if self.qx.nbytes == self.qy.nbytes == self.qz.nbytes else np.prod(self.shape) * self.original_dtype.itemsize
             self.compressed_size_qx = self.uncompressed_size
             self.compressed_size_qy = self.uncompressed_size
             self.compressed_size_qz = self.uncompressed_size
@@ -315,7 +313,6 @@ class HpcRsmProcessor(AdImageProcessor):
                 self.compressed_size_qy = self.qy.shape[0]
                 self.compressed_size_qz = self.qz.shape[0]
 
-   
         try:
             # Create RSM data structure
             rsm_data = {
@@ -336,15 +333,13 @@ class HpcRsmProcessor(AdImageProcessor):
                             'value':self.qz},
                         } 
             
+            # Create PV object to hold RSM attributes
             if self.codec_name != '':
                 rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict_compressed}, {'value': rsm_data})}
             else:
                 rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
 
-                
-
-            # pv_attribute = NtAttribute('RSM', rsm_object)
-
+            # append the new attributes
             frameAttributes = pvObject['attribute']
             frameAttributes.append(rsm_object)
             pvObject['attribute'] = frameAttributes

@@ -409,18 +409,18 @@ class PVAReader:
             self.frames_received -= 1
             self.frames_missed += 1
             
-    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size, dtype: np.dtype) -> np.ndarray: 
+    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
         # Handle BSLZ4 compressed data
-        if codec == 'bslz4':
+        if codec == 'lz4':
+            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
+            # Convert bytes to numpy array with correct dtype
+            return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
+        elif codec == 'bslz4':
             # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
             uncompressed_shape = (uncompressed_size // dtype.itemsize,)
             # Decompress numpy array to correct datatype
             return bitshuffle.decompress_lz4(compressed_array, uncompressed_shape, dtype)
         # Handle LZ4 compressed data
-        elif codec == 'lz4':
-            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
-            # Convert bytes to numpy array with correct dtype
-            return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
         # handle BLOSC compressed data 
         elif codec == 'blosc':
             decompressed_bytes = blosc2.decompress(compressed_array)
