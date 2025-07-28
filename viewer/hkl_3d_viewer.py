@@ -334,7 +334,7 @@ class HKLImageWindow(QMainWindow):
                             self.cloud,
                             scalars='intensity',
                             cmap=self.lut,
-                            point_size=10
+                            point_size=3
                         )
                         
                         self.first_plot = False
