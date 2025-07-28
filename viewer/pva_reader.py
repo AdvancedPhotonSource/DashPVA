@@ -1,6 +1,7 @@
 import toml
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pvaccess as pva
 import h5py
@@ -11,7 +12,7 @@ from collections import deque
 from epics import camonitor, caget
 
 class PVAReader:
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml', viewer_type='image'):
+    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml', viewer_type:str='image', lock:threading.Lock=None):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
 
@@ -75,6 +76,7 @@ class PVAReader:
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
         self.pva_prefix = input_channel.split(":")[0]
+        self.lock = lock
 
         # variables setup using config
         self.config = {}
@@ -262,12 +264,16 @@ class PVAReader:
                         self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
 
             if self.is_scan_complete == True:
+                self.is_scan_complete = False
                 print('Scan Complete')
-                for callable in self._on_scan_complete_callbacks:
-                    threading.Thread(target=callable,).start()
+                
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    for callable in self._on_scan_complete_callbacks:
+                        executor.submit(callable)
+                        # threading.Thread(target=callable,).start()
                     
         except Exception as e:
-            print(f'Failed to execute callback: {e}')
+            print(f'[PVA Reader] Failed to execute callback: {e}')
             self.frames_received -= 1
             self.frames_missed += 1
 
@@ -402,23 +408,23 @@ class PVAReader:
                 return image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
             else:
                 self.image = None
-                raise ValueError("Image data could not be processed.")
+                raise ValueError("[PV Parsing] Image data could not be processed.")
                 
         except Exception as e:
-            print(f"Failed to process image: {e}")
+            print(f"[PVA Reader] Failed to process image: {e}")
             
     def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
-        # Handle BSLZ4 compressed data
+        # Handle LZ4 compressed data
         if codec == 'lz4':
             decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
             # Convert bytes to numpy array with correct dtype
             return np.frombuffer(decompressed_bytes, dtype=dtype) # dtype makes sure we use the correct
+        # Handle BSLZ4 compressed data
         elif codec == 'bslz4':
             # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
             uncompressed_shape = (uncompressed_size // dtype.itemsize,)
             # Decompress numpy array to correct datatype
             return bitshuffle.decompress_lz4(compressed_array, uncompressed_shape, dtype)
-        # Handle LZ4 compressed data
         # handle BLOSC compressed data 
         elif codec == 'blosc':
             decompressed_bytes = blosc2.decompress(compressed_array)
@@ -433,7 +439,7 @@ class PVAReader:
                 self.cache_qy.append(rsm_attributes['qy'])
                 self.cache_qz.append(rsm_attributes['qz'])
             elif not self.rsm_attributes and self.viewer_type == 'r':
-                raise AttributeError('[PVA Reader] Could not find \'RSM\' attribute')
+                raise AttributeError('[Caching Attributes] Could not find \'RSM\' attribute')
             return
         elif self.CACHING_MODE == 'scan':
             # TODO: create different scan functions for if a flag pv is bool/binary vs not
@@ -454,9 +460,9 @@ class PVAReader:
                         self.cache_qy.append(rsm_attributes['qy'])
                         self.cache_qz.append(rsm_attributes['qz'])
                     elif not rsm_attributes and self.viewer_type == 'r':
-                        raise AttributeError('[PVA Reader] Could not find \'RSM\' attribute')
+                        raise AttributeError('[Caching Attributes] Could not find \'RSM\' attribute')
             else:
-                raise AttributeError('[PVA Reader] Flag_PV not found') 
+                raise AttributeError('[Caching Attributes] Flag_PV not found') 
         elif self.CACHING_MODE == 'bin':
             bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
             self.cache_attributes[bin_index].append(pv_attributes) 
@@ -502,7 +508,7 @@ class PVAReader:
                     self.rois.setdefault(roi_key, {}).update({pv_key: caget(pv_name)})
                     camonitor(pvname=pv_name, callback=self.roi_backup_callback)
         except Exception as e:
-            print(f'Failed to setup backup ROI monitor: {e}')
+            print(f'[PVA Reader] Failed to setup backup ROI monitor: {e}')
 
     def save_caches_to_h5(self) -> None:
         # TODO: add analysis
@@ -522,70 +528,73 @@ class PVAReader:
         Args:
             filename (str): The output HDF5 file name.
         """
-        try:
-            if self.cache_images is None:
-                raise ValueError("Caches cannot be empty.")
-            n = len(self.cache_images)
-            if not (len(self.cache_attributes) == n) or n == 0:
-                raise ValueError("All caches must have the same number of elements.")
-            print('attempting save')
-            cache_metadata = self.cache_attributes
-            merged_metadata = {}
-            print('merging attributes')
-            for attribute_dict in cache_metadata:
-                for key, value in attribute_dict.items():
-                    if key != 'RSM' and key != 'Analysis':
-                        if key not in merged_metadata:
-                            merged_metadata[key] = []
-                            merged_metadata[key].append(value)
-                        else:
-                            merged_metadata[key].append(value)
-            print('merging complete')
-            
-            with h5py.File(self.OUTPUT_FILE_LOCATION, 'w') as h5f:
-                # Create the main "images" group
-                print(f'creating file at: {self.OUTPUT_FILE_LOCATION}')
-                images_grp = h5f.create_group("entry")
-                data_grp = images_grp.create_group('data')
-                data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images], dtype=self.numpy_dtype))
-                print('images written')
-                metadata_grp = data_grp.create_group("metadata")
-                motor_pos_grp = metadata_grp.create_group('motor_positions')
-                rois_grp = data_grp.create_group('rois')
-                print('metadata, rois, and motorposistion groups created')
-                for key, values in merged_metadata.items():
-                    if all(isinstance(v, (int, float, np.number)) for v in values):
-                        if 'ROI' in key:
-                            parts = key.split(':')
-                            roi = parts[1]
-                            if roi not in rois_grp.keys():
-                                rois_grp.create_group(name=roi)
-                            rois_grp[roi].create_dataset(key, data=np.array(values))
-                        elif 'Position' in key:
-                            motor_pos_grp.create_dataset(key, data=np.array(values))
-                        else:
-                            metadata_grp.create_dataset(key, data=np.array(values))
-                    elif all(isinstance(v, str) for v in values):
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
-                print('metadata saved')
+        if self.lock is None:
+            self.lock = threading.Lock()
+        with self.lock:
+            try:
+                if self.cache_images is None:
+                    raise ValueError("[Saving Caches] Caches cannot be empty.")
+                n = len(self.cache_images)
+                if not (len(self.cache_attributes) == n) or n == 0:
+                    raise ValueError("[Saving Caches] All caches must have the same number of elements.")
+                print('attempting save')
+                cache_metadata = self.cache_attributes
+                merged_metadata = {}
+                print('merging attributes')
+                for attribute_dict in cache_metadata:
+                    for key, value in attribute_dict.items():
+                        if key != 'RSM' and key != 'Analysis':
+                            if key not in merged_metadata:
+                                merged_metadata[key] = []
+                                merged_metadata[key].append(value)
+                            else:
+                                merged_metadata[key].append(value)
+                print('merging complete')
+                
+                with h5py.File(self.OUTPUT_FILE_LOCATION, 'w') as h5f:
+                    # Create the main "images" group
+                    print(f'creating file at: {self.OUTPUT_FILE_LOCATION}')
+                    images_grp = h5f.create_group("entry")
+                    data_grp = images_grp.create_group('data')
+                    data_grp.create_dataset("data", data=np.array([np.reshape(img,self.shape) for img in self.cache_images], dtype=self.numpy_dtype))
+                    print('images written')
+                    metadata_grp = data_grp.create_group("metadata")
+                    motor_pos_grp = metadata_grp.create_group('motor_positions')
+                    rois_grp = data_grp.create_group('rois')
+                    print('metadata, rois, and motorposistion groups created')
+                    for key, values in merged_metadata.items():
+                        if all(isinstance(v, (int, float, np.number)) for v in values):
+                            if 'ROI' in key:
+                                parts = key.split(':')
+                                roi = parts[1]
+                                if roi not in rois_grp.keys():
+                                    rois_grp.create_group(name=roi)
+                                rois_grp[roi].create_dataset(key, data=np.array(values))
+                            elif 'Position' in key:
+                                motor_pos_grp.create_dataset(key, data=np.array(values))
+                            else:
+                                metadata_grp.create_dataset(key, data=np.array(values))
+                        elif all(isinstance(v, str) for v in values):
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
+                    print('metadata saved')
 
-                # Create HKL subgroup under images if HKL caches exist
-                if self.HKL_IN_CONFIG and self.caches_initialized:
-                    if 'RSM' in self.pv_attributes:
-                        if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
-                            raise ValueError("qx, qy, and qz caches must have the same number of elements.")
-                        hkl_grp = data_grp.create_group(name="hkl")
-                        hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx]), dtype=np.float32)
-                        hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy]), dtype=np.float32)
-                        hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz]), dtype=np.float32)
-                        print('qx, qy, qz written')
-    
-            print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
-            #reset caches
-            self.init_caches()
-        except Exception as e:
-            print(f"Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
+                    # Create HKL subgroup under images if HKL caches exist
+                    if self.HKL_IN_CONFIG and self.caches_initialized:
+                        if 'RSM' in self.pv_attributes:
+                            if not (len(self.cache_qx) == len(self.cache_qy) == len(self.cache_qz) == n):
+                                raise ValueError("[Saving Caches] qx, qy, and qz caches must have the same number of elements.")
+                            hkl_grp = data_grp.create_group(name="hkl")
+                            hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx,self.shape) for qx in self.cache_qx]), dtype=np.float32)
+                            hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy,self.shape) for qy in self.cache_qy]), dtype=np.float32)
+                            hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz,self.shape) for qz in self.cache_qz]), dtype=np.float32)
+                            print('qx, qy, qz written')
+        
+                print(f"Caches successfully saved in a branch structure to {self.OUTPUT_FILE_LOCATION}")
+                #reset caches
+                self.init_caches()
+            except Exception as e:
+                print(f"[PVA Reader] Failed to save caches to {self.OUTPUT_FILE_LOCATION}: {e}")
 
     def get_frames_missed(self) -> int:
         """
