@@ -2,6 +2,7 @@ import os
 import sys
 import toml
 import subprocess
+import threading
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
@@ -114,6 +115,7 @@ class DiffractionImageWindow(QMainWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
+        self._lock = threading.Lock()
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -243,7 +245,8 @@ class DiffractionImageWindow(QMainWindow):
             self.image_view.clear()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                                         config_filepath=self._file_path,
+                                         lock=self._lock)
             else:
                 self.stop_timers()
                 self.btn_save_caches.clicked.disconnect()
@@ -255,7 +258,8 @@ class DiffractionImageWindow(QMainWindow):
                 self.rois = []
                 self.reset_rsm_vars()
                 self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                                         config_filepath=self._file_path,
+                                         lock=self._lock)
                 
             if self.reader.CACHING_MODE == 'scan':
                 self.reader.add_on_scan_complete_callback(self.reader.save_caches_to_h5)
@@ -271,8 +275,8 @@ class DiffractionImageWindow(QMainWindow):
             self.transpose_image_checked()
             self.reader.start_channel_monitor()
             self.btn_save_caches.clicked.connect(self.reader.save_caches_to_h5)
-        except:
-            print(f'Failed to Connect to {self._input_channel}')
+        except Exception as e:
+            print(f'Failed to Connect to {self._input_channel}: {e}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             self.reset_rsm_vars()
@@ -296,7 +300,7 @@ class DiffractionImageWindow(QMainWindow):
                     self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
                     self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
             except Exception as e:
-                print('failed to create rsm: %s' % e)
+                print(f'[Diffraction Image Viewer] Failed to create rsm: {e}')
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -329,8 +333,8 @@ class DiffractionImageWindow(QMainWindow):
                         pv = f"{self.reader.stats[stat_num][stat]}"
                         self.stats_data[pv] = caget(pv)
                         camonitor(pvname=pv, callback=self.stats_ca_callback)
-        except:
-            print("Failed to Connect to Stats CA Monitors")
+        except Exception as e:
+            print(f"[Diffraction Image Viewer] Failed to Connect to Stats CA Monitors: {e}")
 
     def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -429,7 +433,7 @@ class DiffractionImageWindow(QMainWindow):
                 self.image_view.addItem(roi)
                 roi.sigRegionChanged.connect(self.update_roi_region)
         except Exception as e:
-            print(f'Failed to add ROIs:{e}')
+            print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
 
     def start_hkl_viewer(self) -> None:
         try:
@@ -445,7 +449,7 @@ class DiffractionImageWindow(QMainWindow):
                 self.processes[process.pid] = process
 
         except Exception as e:
-            print(f'Failed to load HKL Viewer:{e}')
+            print(f'[Diffraction Image Viewer] Failed to load HKL Viewer:{e}')
 
     def start_hkl_monitors(self) -> None:
         """
@@ -461,7 +465,7 @@ class DiffractionImageWindow(QMainWindow):
                         self.hkl_data[pv_name] = caget(pv_name)
                         camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
         except Exception as e:
-            print(f"Failed to initialize HKL monitors: {e}")
+            print(f"[Diffraction Image Viewer] Failed to initialize HKL monitors: {e}")
 
     def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -532,7 +536,7 @@ class DiffractionImageWindow(QMainWindow):
                                                             self.det_circle_directions, 
                                                             self.primary_beam_directions)
             except Exception as e:
-                print(f'Error Setting up HKL: {e}')
+                print(f'[Diffraction Image Viewer] Error Setting up HKL: {e}')
                 return
 
     def create_rsm(self) -> np.ndarray:
@@ -582,7 +586,7 @@ class DiffractionImageWindow(QMainWindow):
 
                 return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
             except Exception as e:
-                print(f'Error Creating RSM: {e}')
+                print(f'[Diffration Image Viewer] Error Creating RSM: {e}')
                 return
         else:
             return
