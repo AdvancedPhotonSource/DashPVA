@@ -1,5 +1,6 @@
 import sys
-import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
@@ -60,7 +61,6 @@ class ConfigDialog(QDialog):
         """
         self.le_config.clear()
 
-
     def dialog_accepted(self) -> None:
         """
         Handles the final step when the dialog's accept button is pressed.
@@ -102,6 +102,7 @@ class HKLImageWindow(QMainWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
+        self._lock = threading.Lock()
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -135,7 +136,7 @@ class HKLImageWindow(QMainWindow):
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
-        self.btn_plot_cache.clicked.connect(self.update_image)
+        # self.btn_plot_cache.clicked.connect(self.update_image)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
@@ -163,8 +164,6 @@ class HKLImageWindow(QMainWindow):
         # self.timer_plot.stop()
         self.timer_labels.stop()
 
-    #TODO: CHECK With 4id network camera to test if
-    # start of X,Y and size of X,Y line up when transposed
     def set_pixel_ordering(self) -> None:
         """
         Checks which pixel ordering is selected on startup
@@ -208,7 +207,8 @@ class HKLImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
-                                         viewer_type='rsm')          
+                                         viewer_type='rsm',
+                                         lock=self._lock)          
             else:
                 self.stop_timers()
                 self.btn_save_h5.clicked.disconnect()
@@ -218,7 +218,8 @@ class HKLImageWindow(QMainWindow):
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
-                                         viewer_type='rsm')
+                                         viewer_type='rsm',
+                                         lock=self._lock)
             self.reset_first_plot()
             self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
             self.btn_plot_cache.clicked.connect(self.update_image)
@@ -294,26 +295,28 @@ class HKLImageWindow(QMainWindow):
         if self.reader is not None:
             self.call_id_plot +=1
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
+                with self._lock:
+                    try:
+                        num_images = len(self.reader.cache_images)
+                        num_rsm = len(self.reader.cache_qx)
+                        if num_images !=  num_rsm:
+                            raise ValueError(f'Size of caches are uneven:\nimages:{num_images}\nqxyz: {num_rsm}')
+                        # Collect all cached data
+                        flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
+                        qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
+                        qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
+                        qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
+                        
+                        points = np.column_stack((
+                            qx, qy, qz
+                        ))
+                    except Exception as e:
+                        print('[HKL Viewer] Failed to concatenate caches')
                 try:
-                    num_images = len(self.reader.cache_images)
-                    num_rsm = len(self.reader.cache_qx)
-                    if num_images !=  num_rsm:
-                        raise ValueError(f'Size of caches are uneven:\nimages:{num_images}\nqxyz: {num_rsm}')
-                    # Collect all cached data
-                    flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
-                    qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
-                    qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
-                    qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
-                    
-                    points = np.column_stack((
-                        qx, qy, qz
-                    ))
-
                     # First-time setup
                     if self.first_plot:
                         self.min_intensity = np.min(flat_intensity)
                         self.max_intensity = np.max(flat_intensity)
-                        self.sbox_min_intensity.setValue(self.min_intensity)
                         self.sbox_max_intensity.setValue(self.max_intensity)
 
                         self.cloud = pyv.PolyData(points)
@@ -326,7 +329,7 @@ class HKLImageWindow(QMainWindow):
                         self.lut.above_range_opacity = 0 
                         self.update_opacity()
                         self.update_intensity()
-                       
+                    
                         self.actor = self.plotter.add_mesh(
                             self.cloud,
                             scalars='intensity',
@@ -342,7 +345,7 @@ class HKLImageWindow(QMainWindow):
                         self.update_opacity()
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                 except Exception as e:
-                    print(f"[Viewer] Failed to update 3D plot: {e}")
+                    print(f"[HKL Viewer] Failed to update 3D plot: {e}")
 
     def update_opacity(self) -> None:
         """
@@ -374,16 +377,6 @@ class HKLImageWindow(QMainWindow):
             self.lut.scalar_range = (self.min_intensity, self.max_intensity)
         if self.actor is not None:
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
-    
-    # def closeEvent(self, event):
-    #     """
-    #     Custom close event to clean up resources, including stat dialogs.
-
-    #     Args:
-    #         event (QCloseEvent): The close event triggered when the main window is closed.
-    #     """
-    #     super(HKLImageWindow,self).closeEvent(event)
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
