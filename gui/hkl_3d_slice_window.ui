@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1271</width>
+    <width>1749</width>
     <height>1194</height>
    </rect>
   </property>
@@ -14,42 +14,180 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QWidget" name="gridLayoutWidget">
+   <widget class="QWidget" name="verticalLayoutWidget_2">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>10</y>
-      <width>1161</width>
-      <height>1031</height>
+      <x>1240</x>
+      <y>50</y>
+      <width>381</width>
+      <height>245</height>
      </rect>
     </property>
-    <layout class="QGridLayout" name="viewer_3d_slicer_layout"/>
-   </widget>
-   <widget class="QWidget" name="horizontalLayoutWidget">
-    <property name="geometry">
-     <rect>
-      <x>120</x>
-      <y>1050</y>
-      <width>168</width>
-      <height>80</height>
-     </rect>
-    </property>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QVBoxLayout" name="cameraLayout">
+     <property name="spacing">
+      <number>15</number>
+     </property>
      <item>
-      <widget class="QPushButton" name="btnZoomIn">
+      <widget class="QLabel" name="lblCamera">
+       <property name="font">
+        <font>
+         <pointsize>20</pointsize>
+        </font>
+       </property>
        <property name="text">
-        <string>Zoom In</string>
+        <string>Camera Position</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="btnZoomOut">
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QPushButton" name="btnZoomIn">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Zoom In</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnZoomOut">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Zoom Out</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="horizontalLayout_2">
+       <item>
+        <widget class="QLabel" name="label">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Set Position</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="cbSetCamPos">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <item>
+          <property name="text">
+           <string>HK(xy)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>KL(yz)</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>HL(xz)</string>
+          </property>
+         </item>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnSetCamPos">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Set</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnResetCamera">
+       <property name="font">
+        <font>
+         <pointsize>12</pointsize>
+        </font>
+       </property>
        <property name="text">
-        <string>Zoom Out</string>
+        <string>Reset Camera</string>
        </property>
       </widget>
+     </item>
+     <item>
+      <layout class="QVBoxLayout" name="verticalLayout">
+       <item>
+        <widget class="Line" name="line">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <item>
+          <widget class="QPushButton" name="btnLoadHD5">
+           <property name="text">
+            <string>Load Data</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="lineEditFileLocation"/>
+         </item>
+        </layout>
+       </item>
+      </layout>
      </item>
     </layout>
+   </widget>
+   <widget class="QGroupBox" name="groupBox3DViewer">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>30</y>
+      <width>1201</width>
+      <height>1101</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Viewing 0 Image(s)</string>
+    </property>
+    <widget class="QWidget" name="gridLayoutWidget">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>40</y>
+       <width>1151</width>
+       <height>1051</height>
+      </rect>
+     </property>
+     <layout class="QGridLayout" name="viewer_3d_slicer_layout">
+      <property name="sizeConstraint">
+       <enum>QLayout::SetMaximumSize</enum>
+      </property>
+      <property name="spacing">
+       <number>5</number>
+      </property>
+     </layout>
+    </widget>
    </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
@@ -57,8 +195,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1271</width>
-     <height>20</height>
+     <width>1749</width>
+     <height>23</height>
     </rect>
    </property>
   </widget>
