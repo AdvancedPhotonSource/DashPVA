@@ -17,7 +17,6 @@ from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
 # from unused_files.pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
-from size_manager import SizeManger
 
 
 rot_gen = rotation_cycle(1,5)         
@@ -748,7 +747,6 @@ class DiffractionImageWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    size_manager = SizeManger(app=app)
     window = ConfigDialog()
     window.show()
 
