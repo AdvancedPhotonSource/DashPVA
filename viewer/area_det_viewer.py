@@ -17,6 +17,7 @@ from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
 from .roi_stats_dialog import RoiStatsDialog
 from .analysis_window import AnalysisWindow 
+from utils.size_manager import SizeManager
 
 
 rot_gen = rotation_cycle(1,5)         
@@ -830,6 +831,7 @@ class DiffractionImageWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()
 

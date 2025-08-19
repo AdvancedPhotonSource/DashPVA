@@ -251,6 +251,7 @@ class NumpyRandomGenerator(FrameGenerator):
         self.maximum = maximum
         self.x_positions, self.y_positions = self.generate_raster_scan_positions(size=self.nscans)
         self.scan_gen_instance = self.scan_gen(self.x_positions, self.y_positions)
+        print(f'x_positions: {self.x_positions}')
         self.generateFrames()
         np.save('xpos.npy', self.x_positions)
         np.save('ypos.npy', self.y_positions)

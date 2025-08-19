@@ -376,10 +376,13 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Collector is already running.')
             return
 
+        producer_id_list = [str(i) for i in range(1, int(self.lineEditProducerIdList.text())+1)]
+        producer_id_list = ','.join(producer_id_list)
+
         cmd = [
             'pvapy-hpc-collector',
             '--collector-id', str(self.spinBoxCollectorId.value()),
-            '--producer-id-list', self.lineEditProducerIdList.text(),
+            '--producer-id-list', producer_id_list,
             '--input-channel', self.lineEditInputChannelCollector.text(),
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),

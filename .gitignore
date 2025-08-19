@@ -5,3 +5,5 @@
 visualization_learning
 collector_tests
 unused_files
+test/
+fix.md

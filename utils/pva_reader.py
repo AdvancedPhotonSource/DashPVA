@@ -269,12 +269,7 @@ class PVAReader(QObject):
                 #TODO: add a check before emitting the signal to make sure the caches are all same length
                 # make into a function
                 self.reader_scan_complete.emit()
-                # for func in self._on_scan_complete_callbacks:
-                #     if callable(func):
-                #         if isinstance(func, QWidget):
-                #             QTimer.singleShot(0,func)
-                #         else:
-                #             func()
+
         except Exception as e:
             print(f'[PVA Reader] Failed to execute callback: {e}')
             self.frames_received -= 1
