@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
 from pva_reader import PVAReader
 # Add the parent directory to the path so the font_scaling.py file can be imported
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from size_manager import SizeManager
+from utils.size_manager import SizeManager
 
 import h5py
 import numpy as np
@@ -303,7 +303,6 @@ class HKLImageWindow(QMainWindow):
         Processes the image data according to main window settings, such as rotation
         and log transformations. Also sets initial min/max pixel values in the UI.
         """
-        print('Updating Image')
         if self.reader is not None:
             self.call_id_plot +=1
             if self.reader.cache_images is not None and self.reader.cache_qx is not None:
@@ -398,8 +397,13 @@ class HKLImageWindow(QMainWindow):
     #     super(HKLImageWindow,self).closeEvent(event)
 
     def open_3d_slice_window(self) -> None:
-        self.slice_window = HKL3DSliceWindow(self) 
-        self.slice_window.show()
+        try:
+            self.slice_window = HKL3DSliceWindow(self) 
+            self.slice_window.show()
+        except Exception as e:
+            import traceback
+            with open('error_output2.txt','w') as f:
+                f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
 
 
 class HKL3DSliceWindow(QMainWindow):
@@ -417,7 +421,6 @@ class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent):
         """Initializes the viewing window for the 3D slicer"""
 
-
         # -------- Initialize the window
         super(HKL3DSliceWindow, self).__init__()
         self.parent = parent
@@ -425,90 +428,311 @@ class HKL3DSliceWindow(QMainWindow):
         self.setWindowTitle('3D Slice')
         pyv.set_plot_theme('dark')
 
-
         # ------ Connecting the signals to the code that will be executed
         self.btnZoomIn.clicked.connect(self.zoom_in)
         self.btnZoomOut.clicked.connect(self.zoom_out)
         self.btnResetCamera.clicked.connect(self.reset_camera)
         self.btnSetCamPos.clicked.connect(self.set_camera_position)
-
-        self.btnLoadHD5.clicked.connect(self.load_data)
         
-
-        # ------ Retrieve data from parent ----- (Initially set to copy the data from the parent)
-        # Change to create the points instead of copying so that there is no need to plot
-        self.cloud_copy = self.parent.cloud.copy(deep=True)
-        self.cloud_copy['intensity'] = self.parent.cloud['intensity']
-
+        self.cbToggleCloud.clicked.connect(self.toggle_cloud)
+        self.cbToggleCloudVolume.clicked.connect(self.toggle_cloud_vol)
+        self.cbColorMapSelect.currentIndexChanged.connect(self.change_color_map)
+        
+        self.cbbReductionFactor.currentIndexChanged.connect(self.reduction_factor)
+        
+        self.btnLoadHD5.clicked.connect(self.load_data)
+        self.btnUseParentData.clicked.connect(self._load_parent_data)
+        
+        # variables to be used
+        self.grid = None
+        self.cloud_copy = None
+        self.orig_shape = ()
+        self.curr_shape = ()
 
         # ------- Look up table & Opacity
         self.lut = pyv.LookupTable(cmap='magma')  
-        min_intensity = np.max(self.cloud_copy['intensity']) / 2
-        # May not need to do these portions
-        max_intensity = np.max(self.cloud_copy['intensity'])
-        masked_scalar = np.copy(self.cloud_copy['intensity']).astype(float)
-        masked_scalar[masked_scalar < min_intensity] = np.nan
-        masked_scalar[masked_scalar > max_intensity] = np.nan
-        self.cloud_copy['intensity'] = masked_scalar
-
-        self.lut.scalar_range = (
-            min_intensity, 
-            np.nanmax(self.cloud_copy['intensity'])
-        )
-
-        self.cloud_copy = self.cloud_copy.threshold([min_intensity,max_intensity])
-
 
         # ------- Creating the plotter for the 3d slicer
         self.plotter = QtInteractor()
-        self.create_3D(cloud=self.cloud_copy.points, intensity=self.cloud_copy['intensity'], num_of_img=len(self.parent.reader.cache_images))
+        self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        
+        
         self.viewer_3d_slicer_layout.addWidget(self.plotter,1,1)
         # -------------------------------------------------------------------- #
 
 
-    # ================ METHODS ======================= #
-    def lower_res(self, factor:int=2) -> None:
-        """ 
-        Lower the resolution of an image
-
-        Args:: 
-        How It Works::
+    # ********* METHODS ******* #
+    # ================ RESOLUTION PROCESSING METHODS ======================= #
+    def lower_res(self, points, voxel_size=1.0) -> tuple:
         """
-        start_time = time.time()
-        # Get the shape and set the variables 
-        factor = factor
-        #! Reshape here by getting the dims
-        # H, W, D = self.cloud_copy.points
-        # Create the bins
-        # bin_w = None // factor
-        # bin_h = None // factor
-        # Trim the original image res to a factor of the res
-        # trim_w = bin_w * factor
-        # trim_h = bin_h * factor
-        # trim_orig = None
-        # Mask values using np.mask to prevent unwanted values from being averaging
-        # target_img = None
-        # downsampled_image = target_img.mean(axis=(1, 3))
-        end_time = time.time()
+        Lower resolution by voxelizing point cloud
         
-        # create the new points
-        # Set the new poly data to the new res 
-        print(f'\
-            Time: {(end_time-start_time).real} \n\
-            Factor: {factor} \n\
-            Original Points: {self.cloud_copy.points[:2]} \n\
-        ')
+        Args:
+            points (ndarray, optional): The points of the cloud. Defaults to None.
+            voxel_size (float, optional): the size of each voxel. Defaults to 1.0.
 
+        Returns:
+            unique_centers (np.ndarray): The calculated unique center points
+            averaged_intensities (np.ndarray): averaged intensities
+        """
+        # Add empty points catch case
+        if points is None or len(points) == 0:
+            return np.array([]), np.array([])
+        
+        coords = points[:, :3]
+        intensities = points[:, 3]
 
-    # Callback for updating the size of the points
+        voxel_indices = np.round(coords / voxel_size) * voxel_size
+
+        unique_centers, inverse_indices = np.unique(
+            voxel_indices, axis=0, return_inverse=True
+        )
+
+        summed_intensities = np.bincount(inverse_indices, weights=intensities)
+        point_counts = np.bincount(inverse_indices)
+
+        averaged_intensities = summed_intensities / point_counts
+        
+        return unique_centers, averaged_intensities
+
+    def calculate_voxel_size(self, cloud, reduction_factor=2):
+        """
+        Calculate voxel size based on desired reduction factor
+        
+        Args:
+            cloud: Point cloud data
+            reduction_factor: Factor by which to reduce resolution (2 = half points, 4 = quarter points, etc.)
+        
+        Returns:
+            voxel_size: Calculated voxel size
+        """
+        if hasattr(cloud, 'points'):
+            # It's a PyVista object, get the points
+            cloud_points = cloud.points
+        else:
+            # It's already a numpy array
+            cloud_points = cloud     
+        
+        # Get original image resolution
+        original_res_x = self.parent.reader.shape[0]
+        original_res_y = self.parent.reader.shape[1]
+        
+        # Calculate target resolution
+        target_res_x = original_res_x // reduction_factor
+        target_res_y = original_res_y // reduction_factor
+        self.curr_shape = (target_res_x, target_res_y)
+        
+        # Get physical bounds of the data
+        data_range = np.ptp(cloud_points, axis=0)  # [x_range, y_range, z_range]
+        
+        # Calculate voxel size needed to achieve target resolution
+        voxel_size_x = data_range[0] / target_res_x
+        voxel_size_y = data_range[1] / target_res_y
+        
+        # Use the larger voxel size to ensure we don't exceed target resolution
+        suggested_voxel_size = max(voxel_size_x, voxel_size_y)
+        return suggested_voxel_size
+
+    def process_3d_to_lower_res(self, cloud, intensity, reduction_factor=2):
+        """Function that lowers the resolutions"""
+        # Extract points from PyVista object
+        if hasattr(cloud, 'points'):
+            cloud_points = cloud.points  # Get numpy array of points
+        else:
+            cloud_points = np.asarray(cloud)
+        
+        suggested_voxel_size = self.calculate_voxel_size(cloud_points, reduction_factor=reduction_factor)
+        cloud_with_intensities = np.concatenate([cloud_points, intensity.reshape(-1, 1)], axis=1)
+        voxel_centers, final_intensities = self.lower_res(points=cloud_with_intensities, voxel_size=suggested_voxel_size)
+        
+        return voxel_centers, final_intensities
+
+    def reduction_factor(self):
+        """Handle reduction factor changes"""
+        try:
+            print('Reducing Res')
+            reduction_factor = self.cbbReductionFactor.currentText()
+            import re
+            match = re.search(r'x(\d+(?:\.\d+)?)', reduction_factor)
+            factor = float(match.group(1)) if match else 1.0
+            cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'], reduction_factor=factor)
+            self.create_3D(cloud=cloud, intensity=intensity)
+            
+        except Exception as e:
+            import traceback
+            with open('error_output2.txt','w') as f:
+                f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
+
+    # ================ DATA SETUP METHODS ======================= #
+    def setup_3d_cloud(self, cloud, intensity):
+        """Sets the cloud and intensity that will be used"""
+        if not np.all(cloud):
+            # need to create the 3d cloud in this case or call 
+            # the update function in the parent
+            self.cloud_copy = self.parent.cloud.copy(deep=True)
+            self.cloud_copy['intensity'] = self.parent.cloud['intensity']
+            
+        # Check if cloud is numpy array, convert to PyVista if needed
+        if isinstance(cloud, np.ndarray):
+            self.cloud_copy = pyv.PolyData(cloud)
+            self.cloud_copy['intensity'] = intensity
+        else:
+            # Already PyVista object
+            self.cloud_copy = cloud
+            self.cloud_copy['intensity'] = intensity
+
+    # ================ 3D VISUALIZATION METHODS ======================= #
+    def create_3D(self, cloud=None, intensity=None):
+        self.plotter.clear()
+        # ------ Initialize the cloud ------ #
+        
+        self.cloud_mesh = pyv.PolyData(cloud)
+        self.cloud_mesh['intensity'] = intensity
+        
+        # ------- Look up table & Opacity ---- #
+        # min_intensity = np.max(self.cloud_copy['intensity']) / 4
+        # # May not need to do these portions
+        # max_intensity = np.max(self.cloud_copy['intensity'])
+        # masked_scalar = np.copy(self.cloud_copy['intensity']).astype(float)
+        # masked_scalar[masked_scalar < min_intensity] = np.nan
+        # masked_scalar[masked_scalar > max_intensity] = np.nan
+        # self.cloud_copy['intensity'] = masked_scalar
+
+        # self.lut.scalar_range = (
+        #     min_intensity, 
+        #     np.nanmax(self.cloud_copy['intensity'])
+        # )
+
+        # self.cloud_copy = self.cloud_copy.threshold([min_intensity,max_intensity])
+        
+        # ----- Adding the point cloud data ----- #
+        self.plotter.add_mesh(
+            self.cloud_mesh,
+            scalars="intensity",
+            cmap=self.lut,
+            point_size=6.0,
+            name="points",
+            reset_camera=False,
+            nan_color=None,
+            nan_opacity=0.0
+        )
+        
+        # -------- Reset Camera Focus & Plotter Bounds ----- #
+        self.plotter.set_focus(self.cloud_mesh.center)
+        self.plotter.reset_camera()
+
+        # --------- Create grid  --------- #
+        min_bounds = self.cloud_mesh.points.min(axis=0)
+        max_bounds = self.cloud_mesh.points.max(axis=0)
+        data_range = max_bounds - min_bounds
+        padding_scale = 0.1
+        padding = data_range * padding_scale  # Use data_range, not (max_bounds - min_bounds)
+        grid_min = min_bounds - padding
+        grid_max = max_bounds + padding
+        grid_range = grid_max - grid_min
+
+        target_cells = 300
+
+        # FIX: Use axis-specific spacing instead of uniform spacing
+        spacing_per_axis = grid_range / target_cells
+        dimensions = np.ceil(grid_range / spacing_per_axis).astype(int) + 1
+
+        # create and set grid dims with NON-UNIFORM spacing
+        self.grid = pyv.ImageData()
+        self.grid.origin = grid_min
+        self.grid.spacing = spacing_per_axis
+        self.grid.dimensions = dimensions
+        
+        # Calculate optimal radius based on grid spacing
+        grid_spacing = np.array(self.grid.spacing)
+        optimal_radius = np.mean(grid_spacing) * 2.5  # 2.5x average spacing
+
+        self.vol = self.grid.interpolate(
+            self.cloud_mesh, 
+            radius=optimal_radius,
+            sharpness=1.5,
+            null_value=0.0
+        )
+        
+        self.plotter.add_volume(
+            volume= self.vol,
+            scalars="intensity",
+            name="cloud_volume"
+        )
+        
+        self.plotter.renderer._actors["cloud_volume"].SetVisibility(False)
+
+        self.plotter.show_bounds(
+            mesh=self.cloud_mesh, 
+            xtitle='H Axis', 
+            ytitle='K Axis', 
+            ztitle='L Axis', 
+            bounds=self.cloud_mesh.bounds,
+        )
+
+        # ------- Adding the initial slice -------- #
+        slice_normal = (0, 0, 1)
+        slice_origin = self.cloud_mesh.center
+        vol_slice = self.vol.slice(normal=slice_normal, origin=slice_origin)
+
+        # Check if slice has data before adding
+        if vol_slice.n_points > 0:
+            self.plotter.add_mesh(vol_slice, scalars="intensity", name="slice", show_edges=False, reset_camera=False)
+        else:
+            print("Warning: Slice is empty!")
+
+        # ---- Add the interactive slicing plane widget
+        self.plotter.add_plane_widget(
+            callback=self.update_slice_from_plane,
+            normal=slice_normal,
+            origin=slice_origin,
+            bounds=self.vol.bounds,
+            factor=1.0,
+            implicit=True,
+            assign_to_axis=None,
+            tubing=False,
+            origin_translation=True
+        )
+
+        # -------- Adding the arrow -------------- #
+        sphere = pyv.Sphere(radius=0.3, center=slice_origin)
+        line = pyv.Line(
+            pointa=slice_origin,
+            pointb=np.array(slice_origin) + np.array(slice_normal) * 2
+        )
+        self.plotter.add_mesh(sphere, color='red', name="origin_sphere", pickable=False)
+        self.plotter.add_mesh(line, color='green', name="normal_line", pickable=False)
+
+        # Hide them manually after adding
+        self.plotter.renderer._actors["origin_sphere"].SetVisibility(False)
+        self.plotter.renderer._actors["normal_line"].SetVisibility(False)
+
+        # Store toggle visibility state
+        self.toggle_state = {"visible": False}
+
+        # ------- Point size slider ------------ #
+        self.plotter.add_slider_widget(
+            self.update_point_size,
+            rng=[1, 20],
+            value=5,
+            title="Point Size",
+            pointa=(0.01, .90),
+            pointb=(0.21, .90)
+        )
+        
+        # --------- Adjust Labels -------------- #
+        self.lbCurrentPointSizeNum.setText(str(len(cloud)))
+        self.lbCurrentResolutionX.setText(str(self.curr_shape[0]))
+        self.lbCurrentResolutionY.setText(str(self.curr_shape[1]))
+
+    # ================ CALLBACK METHODS ======================= #
     def update_point_size(self, size):
+        """Callback for updating the size of the points"""
         actor = self.plotter.renderer._actors["points"]
         actor.GetProperty().SetPointSize(size)
 
-
-    # Callback for updating the slice and vector visuals
     def update_slice_from_plane(self, normal, origin):
-        # Todo: Doesn't interpolate only overlays
+        """Callback for updating the slice and vector visuals"""
         # Update slice
         new_slice = self.vol.slice(normal=normal, origin=origin)
         self.plotter.add_mesh(new_slice, scalars="intensity", cmap=self.lut, name="slice", show_edges=False, reset_camera=False)
@@ -528,148 +752,42 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.renderer._actors["origin_sphere"].SetVisibility(self.toggle_state["visible"])
         self.plotter.renderer._actors["normal_line"].SetVisibility(self.toggle_state["visible"])
 
-
+    # ================ DATA LOADING ======================= #
+    def _load_parent_data(self):
+        """Check if parent has the required data available"""
+        if hasattr(self.parent, 'cloud') and self.parent.cloud is not None and hasattr(self.parent, 'reader') and self.parent.reader is not None:
+            self.setup_3d_cloud(cloud=self.parent.cloud.copy(deep=True), intensity=self.parent.cloud['intensity'])
+            cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'])
+            self.create_3D(cloud=cloud, intensity=intensity)
+            self.groupBox3DViewer.setTitle(f'Viewing {len(self.parent.reader.cache_images)} Image(s)')
+            self.lbOriginalPointSizeNum.setText(str(self.cloud_copy.n_points))
+            self.lbOriginalResolutionX.setText(str(self.parent.reader.shape[0]))
+            self.lbOriginalResolutionY.setText(str(self.parent.reader.shape[1]))
+            
+    
     def load_data(self):
+        """Load data from HD5 file"""
         # ToDo: When trying to load from the application it does not load
-        file_name, _ = QFileDialog.getOpenFileName(self, 'Select an HD5 File')
+        file_name, _ = QFileDialog.getOpenFileName(self, 'Select an HD5 File','','HDF5 Files (*.h5 *.hdf5);;All Files (*)')
         if file_name:
             self.lineEditFileLocation.setText(file_name)
-        # Temp fix
-        target = 'DashPVA'
-        parts = file_name.split(os.sep)
-        new_file = ''
-        if target in parts:
-            idx = parts.index(target)
-            sub_path = os.sep.join(parts[idx+1:])
-
-            new_file = os.path.join("..", sub_path)
-
-        result = self.load_h5_to_3d()
-        self.create_3D(cloud=result[0], intensity=result[1], num_of_img=result[2])
-
-
-    def create_3D(self, cloud=None, intensity=None ,num_of_img=0):
-        self.plotter.clear()
-        # Check if there is cloud data present if not 
-        # set the cloud to copy the parents image
-        if not np.all(cloud):
-            # need to create the 3d cloud in this case or call 
-            # the update function in the parent
-            cloud = self.cloud_copy
-            num_of_img = self.cloud_copy.shape[0]
-            intensity = self.parent.cloud['intensity']
-            print(f'\n\nNo cloud data present, using parent cloud data: {num_of_img} images\n\n')
         
-        
-        self.groupBox3DViewer.setTitle(f'Viewing {num_of_img} Image(s)')
-        self.cloud_copy = pyv.PolyData(cloud)
-        self.cloud_copy['intensity'] = intensity
-
-        # ------- Lower the resolution ------- #
-        self.lower_res()
-
-
-        # ------- Look up table & Opacity ---- #
-        min_intensity = np.max(self.cloud_copy['intensity']) / 4
-        # May not need to do these portions
-        max_intensity = np.max(self.cloud_copy['intensity'])
-        masked_scalar = np.copy(self.cloud_copy['intensity']).astype(float)
-        masked_scalar[masked_scalar < min_intensity] = np.nan
-        masked_scalar[masked_scalar > max_intensity] = np.nan
-        self.cloud_copy['intensity'] = masked_scalar
-
-        self.lut.scalar_range = (
-            min_intensity, 
-            np.nanmax(self.cloud_copy['intensity'])
-        )
-
-        self.cloud_copy = self.cloud_copy.threshold([min_intensity,max_intensity])
-
-        #self.lut.apply_opacity([0.0,1.0])
-        
-
-        # ----- Adding the point cloud data ----- #
-        self.plotter.add_mesh(
-            self.cloud_copy,
-            scalars="intensity",
-            cmap=self.lut,
-            point_size=6.0,
-            name="points",
-            reset_camera=False,
-            nan_color=None,
-            nan_opacity=0.0
-        )
-        
-        # -------- Reset Camera Focus & Plotter Bounds ----- #
-        self.plotter.set_focus(self.cloud_copy.center)
-        self.plotter.reset_camera()
+        try:
+            result = self.load_h5_to_3d(file_name)
+            self.setup_3d_cloud(cloud=result[0], intensity=result[1])
+            cloud, intensity = self.process_3d_to_lower_res(cloud=result[0], intensity=result[1])
+            self.create_3D(cloud=cloud, intensity=intensity)
+            
+            self.groupBox3DViewer.setTitle(f'Viewing {result[2]} Image(s)')
+            self.lbOriginalPointSizeNum.setText(str(len(result[0])))
+        except Exception as e:
+            import traceback
+            with open('error_output1.txt', 'w') as f:
+                f.write(f"Traceback:\n{traceback.format_exc()}")
+                f.write(str(e))
 
 
-        # ------- Adding the initial slice -------- #
-        bounds = None
-        spacing = None
-        dimensions = None
-        origin = self.cloud_copy.center
-        
-        self.grid = pyv.ImageData()
-        self.grid.spacing = (.008,.008,.008)
-        self.grid.dimensions = np.ceil((self.cloud_copy.points.max(axis=0) - self.cloud_copy.points.min(axis=0))*.5 / self.grid.spacing).astype(int) + 2
-        self.grid.origin = origin
-
-        self.vol = self.grid.interpolate(self.cloud_copy, radius=.5, sharpness=2)
-        self.plotter.show_bounds(mesh=self.cloud_copy, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis', bounds=self.vol.bounds)
-
-        initial_normal = (0, 0, 1)
-        initial_origin = self.cloud_copy.center
-        initial_origin = np.array(self.vol.bounds[::2]) + (np.array(self.vol.bounds[1::2]) - np.array(self.vol.bounds[::2])) / 2
-        initial_slice = self.vol.slice(normal=initial_normal, origin=initial_origin)
-        self.plotter.add_mesh(initial_slice, scalars="intensity", name="slice", show_edges=False,reset_camera=False)
-
-
-        # ---- Add the interactive slicing plane widget
-        self.plotter.add_plane_widget(
-            callback=self.update_slice_from_plane,
-            normal=initial_normal,
-            origin=initial_origin,
-            bounds=self.vol.bounds,
-            factor=1.0,
-            implicit=True,
-            assign_to_axis=None,
-            tubing=False,
-            origin_translation=True
-        )
-
-
-        # -------- Adding the arrow -------------- #
-        sphere = pyv.Sphere(radius=0.3, center=initial_origin)
-        line = pyv.Line(
-            pointa=initial_origin,
-            pointb=np.array(initial_origin) + np.array(initial_normal) * 2
-        )
-        self.plotter.add_mesh(sphere, color='red', name="origin_sphere", pickable=False)
-        self.plotter.add_mesh(line, color='green', name="normal_line", pickable=False)
-
-        # Hide them manually after adding
-        self.plotter.renderer._actors["origin_sphere"].SetVisibility(False)
-        self.plotter.renderer._actors["normal_line"].SetVisibility(False)
-
-        # Store toggle visibility state
-        self.toggle_state = {"visible": False}
-
-
-        # ------- Point size slider ------------ #
-        self.plotter.add_slider_widget(
-            self.update_point_size,
-            rng=[1, 20],
-            value=5,
-            title="Point Size",
-            pointa=(0.01, .90),
-            pointb=(0.21, .90)
-        )
-
-
-    # ---- Load From HD5 ---- #
-    def load_h5_to_3d(self, file:str='./6idxrayeye_scan.h5'):
+    def load_h5_to_3d(self, file:str='') -> tuple:
         """
         Loads .h5 file to 3D points 
 
@@ -743,27 +861,27 @@ class HKL3DSliceWindow(QMainWindow):
         except Exception as e:
             print('Error',e)
             return (points, flat_intensity, num_of_images)
-              
 
-    # ---- Camera position ---- #
+    # ================ CAMERA CONTROL METHODS ======================= #
     def zoom_in(self):
+        """Zoom camera in"""
         camera = self.plotter.camera
         camera.zoom(1.5)
         self.plotter.render()
 
-
     def zoom_out(self):
+        """Zoom camera out"""
         camera = self.plotter.camera
         camera.zoom(0.5)
         self.plotter.render()
 
-
     def reset_camera(self):
+        """Reset camera to default position"""
         self.plotter.reset_camera()
         self.plotter.render()
 
-
     def set_camera_position(self):
+        """Set camera to predefined positions"""
         pos = self.cbSetCamPos.currentText().lower()
         if 'xy' in pos:
             self.plotter.view_xy()   
@@ -773,25 +891,88 @@ class HKL3DSliceWindow(QMainWindow):
             self.plotter.view_xz()   
         self.plotter.render()
 
-
-    def closeEvent(self, event):
-        """
-        Handles cleanup operations when the HKL3DSliceWindow window is closed.
-
-        Args:
-            event (QCloseEvent): The close event triggered when the window is closed.
-        """
+    # ================ VISIBILITY TOGGLE METHODS ======================= #
+    def toggle_cloud(self):
+        """Toggle visibility of the cloud mesh"""
+        # Check if checkbox is checked
+        is_visible = self.cbToggleCloud.isChecked()
+        cloud_actor = self.plotter.actors["points"]
+        cloud_actor.visibility = is_visible
         
-        del self.parent.slice_window
+    def toggle_cloud_vol(self):
+        """Toggle visibility of the cloud volume"""
+        is_visible = self.cbToggleCloudVolume.isChecked()
+        self.plotter.renderer._actors["cloud_volume"].SetVisibility(is_visible)
+
+    def change_color_map(self):
+        color_map_select = self.cbColorMapSelect.currentText()
+        print(f"Changing color to {color_map_select}")
+        
+        try:
+            # Create new lookup table
+            new_lut = pyv.LookupTable(cmap=color_map_select)
+            self.lut = new_lut
+            
+            # Update all actors in plotter.actors (PyVista managed)
+            for actor_name, actor in self.plotter.actors.items():
+                if hasattr(actor, 'mapper') and hasattr(actor.mapper, 'lookup_table'):
+                    print(f"Updating LUT for actor: {actor_name}")
+                    actor.mapper.lookup_table = new_lut
+                    actor.mapper.update()
+            
+            # Update all actors in renderer._actors (VTK managed)
+            for actor_name, actor in self.plotter.renderer._actors.items():
+                # Check if it's a volume or other VTK actor with LUT
+                if hasattr(actor, 'GetMapper') and actor.GetMapper():
+                    mapper = actor.GetMapper()
+                    if hasattr(mapper, 'SetLookupTable'):
+                        print(f"Updating VTK LUT for actor: {actor_name}")
+                        mapper.SetLookupTable(new_lut)
+                        mapper.Update()
+                
+                # Check for volume actors (different property structure)
+                elif hasattr(actor, 'GetProperty') and hasattr(actor.GetProperty(), 'SetLookupTable'):
+                    print(f"Updating Volume LUT for actor: {actor_name}")
+                    actor.GetProperty().SetLookupTable(new_lut)
+            
+            # Force render
+            self.plotter.render()
+            
+        except Exception as e:
+            print(f"Error changing colormap: {e}")
+
+
+    # ================ CLEANUP METHODS ======================= #
+    def closeEvent(self, event):
+        """Clean shutdown of 3D viewer without affecting parent"""
+        try:
+            # Clear the main troublemakers
+            if hasattr(self, 'plotter'):
+                self.plotter.clear()
+                self.plotter.close()
+                self.plotter = None
+            
+            # Clear data objects that hold memory
+            for attr in ['cloud_copy', 'cloud_mesh', 'vol', 'grid']:
+                if hasattr(self, attr):
+                    setattr(self, attr, None)
+            
+            # Remove parent's reference to this window
+            if hasattr(self.parent, 'slice_window'):
+                self.parent.slice_window = None
+                
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+        
         event.accept()
-        super(HKL3DSliceWindow, self).closeEvent(event)
+
 
 
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
         window = ConfigDialog()
-        #SizeManager()
+        size_manager = SizeManager(app=app)
         window.show()
         sys.exit(app.exec_())
     except KeyboardInterrupt:
