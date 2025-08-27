@@ -331,7 +331,10 @@ class PVAReader(QObject):
             return {}
 
     def parse_analysis_attributes(self, pv_attributes: dict) -> None:
-        pass    
+        pass
+        # analysis_attributes: dict = pv_attributes['Analysis']
+        # axis_pos = (analysis_attributes['Axis1'], analysis_attributes['Axis2'])
+        # intensity = analysis_attributes['Intensity']
     
     def parse_rsm_attributes(self, pv_attributes: dict) -> None:
         rsm_attributes: dict = pv_attributes['RSM']
@@ -393,13 +396,6 @@ class PVAReader(QObject):
                     self.id_diff = current_array_id - self.last_array_id - 1
                     if (self.id_diff > 0):
                         self.frames_missed += self.id_diff 
-                        # if self.HKL_IN_CONFIG:
-                            # for i in range(self.id_diff):
-                            #     if self.HKL_IN_CONFIG:
-                            #         self.cached_images.append(self.empty_array)
-                            #         self.cached_qx.append(self.empty_array)
-                            #         self.cached_qy.append(self.empty_array)
-                            #         self.cached_qz.append(self.empty_array)
                 self.last_array_id = current_array_id
                 self.id_diff = 0
                 
