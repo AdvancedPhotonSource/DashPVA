@@ -10,14 +10,14 @@ from PyQt5 import uic
 # from epics import caget
 from epics import PV, pv
 from epics import camonitor, caget
-from PyQt5.QtCore import Qt, QTimer, QThread, QMutex, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
 # Custom imported classes
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
 from .roi_stats_dialog import RoiStatsDialog
 from .analysis_window import AnalysisWindow 
-from utils.size_manager import SizeManager
+# from ..utils.size_manager import SizeManager
 
 
 rot_gen = rotation_cycle(1,5)         
@@ -120,10 +120,10 @@ class DiffractionImageWindow(QMainWindow):
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
+        self.file_writer_thread = QThread()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
-        self.mutex = QMutex()
 
         # For testing ROIs being sent from analysis window
         self.roi_x = 100
@@ -151,7 +151,6 @@ class DiffractionImageWindow(QMainWindow):
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(200)
-        self.horizontal_avg_plot.setYLink(self.image_view.getView())
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
 
@@ -213,7 +212,7 @@ class DiffractionImageWindow(QMainWindow):
     def trigger_save_caches(self) -> None:
         if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
-        self.file_writer.save_caches_to_h5()
+        self.file_writer.save_caches_to_h5(clear_caches=True)
 
     def c_ordering_clicked(self) -> None:
         """
@@ -256,7 +255,6 @@ class DiffractionImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
-                self.file_writer_thread = QThread()
                 self.file_writer.moveToThread(self.file_writer_thread)
                 self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             else:
@@ -270,13 +268,14 @@ class DiffractionImageWindow(QMainWindow):
                 self.rois.clear()
                 self.btn_save_caches.clicked.disconnect()
                 # self.reader.reader_scan_complete.disconnect()
-                # self.file_writer.hdf5_writer_finished.disconnect()
+                self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
+            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             self.btn_save_caches.clicked.connect(self.save_caches_clicked)
 
             if self.reader.CACHING_MODE == 'scan':
@@ -359,7 +358,7 @@ class DiffractionImageWindow(QMainWindow):
         if not self.reader.channel.isMonitorActive():  
             if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
-            self.file_writer.save_caches_to_h5()
+            self.file_writer.save_caches_to_h5(clear_caches=True)
         else:
             QMessageBox.critical(None,
                                 'Error',
@@ -827,11 +826,14 @@ class DiffractionImageWindow(QMainWindow):
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
         del self.stats_dialogs # otherwise dialogs stay in memory
+        if self.file_writer_thread.isRunning():
+            self.file_writer_thread.quit()
+            self.file_writer_thread
         super(DiffractionImageWindow,self).closeEvent(event)
 
 def main():
     app = QApplication(sys.argv)
-    size_manager = SizeManager(app=app)
+    # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()
 

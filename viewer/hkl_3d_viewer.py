@@ -12,7 +12,7 @@ import pyvistaqt as pyvqt
 from pyvistaqt import QtInteractor, BackgroundPlotter
 from PyQt5 import uic
 # from epics import caget
-from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QMessageBox
 # Custom imported classes
 from utils import PVAReader, HDF5Writer
@@ -85,6 +85,7 @@ class ConfigDialog(QDialog):
 
 
 class HKLImageWindow(QMainWindow):
+    images_plotted = pyqtSignal(bool)
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
@@ -141,8 +142,6 @@ class HKLImageWindow(QMainWindow):
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.rbtn_C.clicked.connect(self.c_ordering_clicked)
-        self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         # self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.sbox_min_intensity.editingFinished.connect(self.update_intensity)
@@ -163,36 +162,6 @@ class HKLImageWindow(QMainWindow):
         """
         self.timer_labels.stop()
 
-    # def set_pixel_ordering(self) -> None:
-    #     """
-    #     Checks which pixel ordering is selected on startup
-    #     """
-    #     if self.reader is not None:
-    #         if self.rbtn_C.isChecked():
-    #             self.reader.pixel_ordering = 'C'
-    #             self.reader.image_is_transposed = True 
-    #         elif self.rbtn_F.isChecked():
-    #             self.reader.pixel_ordering = 'F'
-    #             self.image_is_transposed = False
-    #             self.reader.image_is_transposed = False
-
-    # def c_ordering_clicked(self) -> None:
-    #     """
-    #     Sets the pixel ordering to C style.
-    #     """
-    #     if self.reader is not None:
-    #         self.reader.pixel_ordering = 'C'
-    #         self.reader.image_is_transposed = True
-
-    # def f_ordering_clicked(self) -> None:
-    #     """
-    #     Sets the pixel ordering to Fortran style.
-    #     """
-    #     if self.reader is not None:
-    #         self.reader.pixel_ordering = 'F'
-    #         self.image_is_transposed = False
-    #         self.reader.image_is_transposed = False
-
     def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
@@ -202,6 +171,7 @@ class HKLImageWindow(QMainWindow):
         """
         try:
             # A double check to make sure there isn't a connection already when starting
+            self.stop_timers()
             self.plotter.clear()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
@@ -211,9 +181,9 @@ class HKLImageWindow(QMainWindow):
                 self.file_writer.moveToThread(self.file_writer_thread)
                 self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)         
             else:
-                self.stop_timers()
                 self.btn_save_h5.clicked.disconnect()
                 self.btn_plot_cache.clicked.disconnect()
+                self.file_writer.hdf5_writer_finished.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
                 if self.file_writer_thread.isRunning():
@@ -223,14 +193,16 @@ class HKLImageWindow(QMainWindow):
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
                                          viewer_type='rsm')
-            self.btn_save_h5.clicked.clicked.connect(self.save_caches_clicked)
-            self.reader.reader_scan_complete.connect(self.trigger_save_caches)
-            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
+                self.file_writer.pva_reader = self.reader
+            self.btn_save_h5.clicked.connect(self.save_caches_clicked)
             self.btn_plot_cache.clicked.connect(self.update_image)
+            self.reader.reader_scan_complete.connect(self.update_image)
+            self.images_plotted.connect(self.trigger_save_caches)
+            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             if self.reader.CACHING_MODE == 'scan':
                 self.file_writer_thread.start()
-        except:
-            print(f'Failed to Connect to {self._input_channel}')
+        except Exception as e:
+            print(f'Failed to Connect to {self._input_channel}: {e}')
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
@@ -253,10 +225,10 @@ class HKLImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
-    def trigger_save_caches(self) -> None:
+    def trigger_save_caches(self, clear_caches:bool=True) -> None:
         if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
-        self.file_writer.save_caches_to_h5()
+        self.file_writer.save_caches_to_h5(clear_caches=clear_caches)
 
     def save_caches_clicked(self) -> None:
         if not self.reader.channel.isMonitorActive():  
@@ -303,7 +275,7 @@ class HKLImageWindow(QMainWindow):
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             
-    def update_image(self) -> None:
+    def update_image(self, clicked:bool=True) -> None:
         """
         Redraws plots based on the configured update rate.
 
@@ -329,8 +301,12 @@ class HKLImageWindow(QMainWindow):
                         qx, qy, qz
                     ))
                 except Exception as e:
-                    print('[HKL Viewer] Failed to concatenate caches')
-               
+                    print(f'[HKL Viewer] Failed to concatenate caches: {e}')
+
+                if not clicked:
+                    clear_caches = True
+                    self.images_plotted.emit(clear_caches)
+
                 try:
                     self.min_intensity = np.min(flat_intensity)
                     self.max_intensity = np.max(flat_intensity)

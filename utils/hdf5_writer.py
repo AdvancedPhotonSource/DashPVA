@@ -12,7 +12,7 @@ class HDF5Writer(QObject):
         self.pva_reader = pva_reader
 
     @pyqtSlot()
-    def save_caches_to_h5(self) -> None:
+    def save_caches_to_h5(self, clear_caches:bool=True) -> None:
         # TODO: add analysis
         """
         Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
@@ -35,7 +35,7 @@ class HDF5Writer(QObject):
             config = self.pva_reader.get_config_settings()
             OUTPUT_FILE_LOCATION = config.get('OUTPUT_FILE_LOCATION', 'output.h5')
             HKL_IN_CONFIG = config.get('HKL_IN_CONFIG', False)
-            all_caches = self.pva_reader.get_all_caches(clear_caches=True)
+            all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
             images = all_caches['images']
             attributes = all_caches['attributes']
             rsm = all_caches['rsm']
