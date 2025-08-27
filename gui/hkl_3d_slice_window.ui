@@ -111,7 +111,7 @@
              </widget>
             </item>
             <item>
-             <widget class="QLineEdit" name="lineEditFileLocation"/>
+             <widget class="QLineEdit" name="lineEditLoadDataFile"/>
             </item>
            </layout>
           </item>
@@ -461,22 +461,7 @@
              <widget class="QComboBox" name="cbColorMapSelect">
               <item>
                <property name="text">
-                <string>magma</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>PuRd</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>spring</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>plasma</string>
+                <string>jet</string>
                </property>
               </item>
               <item>
@@ -486,12 +471,22 @@
               </item>
               <item>
                <property name="text">
-                <string>cool</string>
+                <string>plasma</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>magma</string>
                </property>
               </item>
               <item>
                <property name="text">
                 <string>hot</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>PuRd</string>
                </property>
               </item>
              </widget>
@@ -532,6 +527,42 @@
                <string>Cloud Volume</string>
               </property>
              </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_4">
+            <item>
+             <widget class="QLabel" name="lbIntensity">
+              <property name="font">
+               <font>
+                <pointsize>12</pointsize>
+               </font>
+              </property>
+              <property name="text">
+               <string>Intensity</string>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignRight">
+             <widget class="QLabel" name="lbMinIntensity">
+              <property name="text">
+               <string>Min</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="sbMinIntensity"/>
+            </item>
+            <item alignment="Qt::AlignRight">
+             <widget class="QLabel" name="lbMaxIntensity">
+              <property name="text">
+               <string>Max</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="sbMaxIntensity"/>
             </item>
            </layout>
           </item>
