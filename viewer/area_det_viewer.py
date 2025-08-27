@@ -17,8 +17,9 @@ from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
 # from unused_files.pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils.size_manager import SizeManager
-
 
 rot_gen = rotation_cycle(1,5)         
 
