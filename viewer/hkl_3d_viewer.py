@@ -179,7 +179,6 @@ class HKLImageWindow(QMainWindow):
                                          viewer_type='rsm') 
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
-                self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)         
             else:
                 self.btn_save_h5.clicked.disconnect()
                 self.btn_plot_cache.clicked.disconnect()
@@ -195,8 +194,8 @@ class HKLImageWindow(QMainWindow):
                                          viewer_type='rsm')
                 self.file_writer.pva_reader = self.reader
             self.btn_save_h5.clicked.connect(self.save_caches_clicked)
-            self.btn_plot_cache.clicked.connect(self.update_image)
-            self.reader.reader_scan_complete.connect(self.update_image)
+            self.btn_plot_cache.clicked.connect(self.update_image_from_button)
+            self.reader.reader_scan_complete.connect(self.update_image_from_scan)
             self.images_plotted.connect(self.trigger_save_caches)
             self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             if self.reader.CACHING_MODE == 'scan':
@@ -274,8 +273,14 @@ class HKLImageWindow(QMainWindow):
             self.is_connected.setText(is_connected)
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+
+    def update_image_from_scan(self) -> None:
+        self.update_image(clear_caches=True)
+
+    def update_image_from_button(self) -> None:
+        self.update_image(clear_caches=False)
             
-    def update_image(self, clicked:bool=True) -> None:
+    def update_image(self, clear_caches:bool=False) -> None:
         """
         Redraws plots based on the configured update rate.
 
@@ -303,8 +308,7 @@ class HKLImageWindow(QMainWindow):
                 except Exception as e:
                     print(f'[HKL Viewer] Failed to concatenate caches: {e}')
 
-                if not clicked:
-                    clear_caches = True
+                if clear_caches:
                     self.images_plotted.emit(clear_caches)
 
                 try:
