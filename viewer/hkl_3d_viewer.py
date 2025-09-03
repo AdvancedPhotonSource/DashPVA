@@ -275,12 +275,12 @@ class HKLImageWindow(QMainWindow):
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
 
     def update_image_from_scan(self) -> None:
-        self.update_image(clear_caches=True)
+        self.update_image(is_scan_signal=True)
 
     def update_image_from_button(self) -> None:
-        self.update_image(clear_caches=False)
+        self.update_image(is_scan_signal=False)
             
-    def update_image(self, clear_caches:bool=False) -> None:
+    def update_image(self, is_scan_signal:bool=False) -> None:
         """
         Redraws plots based on the configured update rate.
 
@@ -296,7 +296,7 @@ class HKLImageWindow(QMainWindow):
                     num_rsm = len(self.reader.cached_qx)
                     if num_images !=  num_rsm:
                         raise ValueError(f'Size of caches are uneven:\nimages:{num_images}\nqxyz: {num_rsm}')
-                    # Collect all cached data
+                    # connect all cached data
                     flat_intensity = np.concatenate(self.reader.cached_images, dtype=np.float32)
                     qx = np.concatenate(self.reader.cached_qx, dtype=np.float32)
                     qy = np.concatenate(self.reader.cached_qy, dtype=np.float32)
@@ -308,10 +308,12 @@ class HKLImageWindow(QMainWindow):
                 except Exception as e:
                     print(f'[HKL Viewer] Failed to concatenate caches: {e}')
 
-                if clear_caches:
-                    self.images_plotted.emit(clear_caches)
 
                 try:
+                    if is_scan_signal:
+                        clear_caches = True
+                        self.images_plotted.emit(clear_caches)
+                        
                     self.min_intensity = np.min(flat_intensity)
                     self.max_intensity = np.max(flat_intensity)
                     self.sbox_max_intensity.setValue(self.max_intensity)
