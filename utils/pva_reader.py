@@ -543,10 +543,37 @@ class PVAReader(QObject):
         else:
             raise ValueError("[PVA Reader] Cached data must have the same length.")
         
+        
         if clear_caches:
             self.reset_caches()
 
         return data
+    
+    def get_output_file_location(self) -> dict:
+        if self.caches_initialized:   
+            latest_attribute: dict = self.cached_attributes[-1]
+        else:
+            latest_attribute: dict = self.pv_attributes
+            
+        file_path_pv = latest_attribute.get('FilePath:Value', '')
+        file_name_pv = latest_attribute.get('FileName:Value', '')
+        
+        if file_path_pv != '' and file_name_pv != '':
+            return {'FilePath': file_path_pv,
+                    'FileName': file_name_pv}
+        else:
+            return {'FilePath': self.OUTPUT_FILE_LOCATION}
+       
+    
+    def get_config_settings(self) -> dict:
+        config_settings = {'OUTPUT_FILE_CONFIG' : self.get_output_file_location(),
+                        'ROI_IN_CONFIG' : self.ROI_IN_CONFIG,
+                        'ANALYSIS_IN_CONFIG' : self.ANALYSIS_IN_CONFIG,
+                        'HKL_IN_CONFIG' : self.HKL_IN_CONFIG,
+                        'CACHE_OPTIONS' : self.CACHE_OPTIONS,
+                        'caches_initialized' : self.caches_initialized}
+        
+        return config_settings
     
     def get_frames_missed(self) -> int:
         """
@@ -578,13 +605,4 @@ class PVAReader(QObject):
     def get_shape(self) -> tuple[int]:
         return self.shape
 
-    def get_config_settings(self) -> dict:
-        config_settings = {'OUTPUT_FILE_LOCATION' : self.OUTPUT_FILE_LOCATION,
-                        'ROI_IN_CONFIG' : self.ROI_IN_CONFIG,
-                        'ANALYSIS_IN_CONFIG' : self.ANALYSIS_IN_CONFIG,
-                        'HKL_IN_CONFIG' : self.HKL_IN_CONFIG,
-                        'CACHE_OPTIONS' : self.CACHE_OPTIONS,
-                        'caches_initialized' : self.caches_initialized}
-        
-        return config_settings
 
