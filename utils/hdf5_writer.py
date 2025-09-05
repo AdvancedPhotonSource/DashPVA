@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 # from utils import PVAReader
 
@@ -10,6 +11,7 @@ class HDF5Writer(QObject):
         super(HDF5Writer, self).__init__()
         self.file_path = file_path
         self.pva_reader = pva_reader
+        self.default_output_file_config = {'FilePath': 'SCAN_OUTPUT.h5'}
 
     @pyqtSlot()
     def save_caches_to_h5(self, clear_caches:bool=True) -> None:
@@ -33,7 +35,7 @@ class HDF5Writer(QObject):
         print('Calling HDF5Writer')
         try:
             config = self.pva_reader.get_config_settings()
-            OUTPUT_FILE_LOCATION = config.get('OUTPUT_FILE_LOCATION', 'output.h5')
+            OUTPUT_FILE_CONFIG= config.get('OUTPUT_FILE_CONFIG', self.default_output_file_config)
             HKL_IN_CONFIG = config.get('HKL_IN_CONFIG', False)
             all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
             images = all_caches['images']
@@ -44,7 +46,18 @@ class HDF5Writer(QObject):
             len_images = len(images)
             len_attributes = len(attributes)
             len_rsm = len(rsm[0])
-
+            
+            if len(OUTPUT_FILE_CONFIG) == 2:
+                file_path = Path(OUTPUT_FILE_CONFIG['FilePath']).expanduser()
+                if not file_path.exists():
+                    file_path.mkdir(parents=True)
+                file_name = Path(OUTPUT_FILE_CONFIG['FileName'])
+                OUTPUT_FILE_LOCATION = file_path.joinpath(file_name)
+            else:
+                OUTPUT_FILE_LOCATION = Path(OUTPUT_FILE_CONFIG['FilePath']).expanduser()
+                if not OUTPUT_FILE_LOCATION.parent.exists():
+                    OUTPUT_FILE_LOCATION.parent.mkdir(parents=True, exist_ok=True) # ensures directory exists before writing any files.
+                    
             if len_images != len_attributes:
                 raise ValueError("[Saving Caches] All caches must have the same number of elements.")
             if images is None or len_images == 0:
