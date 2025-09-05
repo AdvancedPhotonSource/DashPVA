@@ -109,6 +109,12 @@ detector_setup_record = {
 scan_on_record = {
     'Value': False
 }
+file_path_record = {
+    'Value': ''
+}
+file_name_record = {
+    'Value': ''
+}
 
 # -------------------------------
 # Helper: Convert to Valid EPICS Record Name
@@ -242,7 +248,9 @@ def main() -> None:
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
         "DetectorSetup": detector_setup_record,
-        "ScanOn": scan_on_record
+        "ScanOn": scan_on_record,
+        "FilePath": file_path_record,
+        "FileName": file_name_record
     }
     print(axis_records)
     
