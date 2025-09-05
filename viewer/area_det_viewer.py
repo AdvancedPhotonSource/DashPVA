@@ -87,7 +87,7 @@ class ConfigDialog(QDialog):
 
 
 class DiffractionImageWindow(QMainWindow):
-    hkl_data_updated = pyqtSignal()
+    hkl_data_updated = pyqtSignal(bool)
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
@@ -256,7 +256,6 @@ class DiffractionImageWindow(QMainWindow):
                                          config_filepath=self._file_path)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
-                self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             else:
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
@@ -492,7 +491,6 @@ class DiffractionImageWindow(QMainWindow):
         Initializes camonitors for HKL values and stores them in a dictionary.
         """
         try:
-            print('in hkl monitor starter')
             if self.reader.HKL_IN_CONFIG:
                 self.hkl_config = self.reader.config["HKL"]
                 if not self.hkl_pvs:
@@ -503,7 +501,7 @@ class DiffractionImageWindow(QMainWindow):
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get() # Get current value
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
-                self.hkl_data_updated.emit()
+                self.hkl_data_updated.emit(True)
         except Exception as e:
             print(f"[Diffraction Image Viewer] Failed to initialize HKL monitors: {e}")
 
@@ -517,7 +515,8 @@ class DiffractionImageWindow(QMainWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.hkl_data[pvname] = value
-        self.hkl_data_updated.emit()
+        if self.qx is not None and self.qy is not None and self.qz is not None:
+            self.hkl_data_updated.emit(True)
 
     def handle_hkl_data_update(self):
         if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
