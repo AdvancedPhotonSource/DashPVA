@@ -5,13 +5,14 @@ import pyvista as pyv
 from pyvistaqt import QtInteractor
 from PyQt5 import uic
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QErrorMessage
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QErrorMessage, QMessageBox
 import h5py
 import os
 import time
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import SizeManager
+from PyQt5.QtWidgets import QSizePolicy
 
 class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -41,25 +42,22 @@ class HKL3DSliceWindow(QMainWindow):
         self.sbMinIntensity.editingFinished.connect(self.update_intensity)
         self.sbMaxIntensity.editingFinished.connect(self.update_intensity)
         
-        self.btnLoadHD5.clicked.connect(self.load_data)
+        #TODO: these functions
+        self.actionLoadData.triggered.connect(self.load_data)
+        self.actionExtractSlice.triggered.connect(self.extract_slice)
         
-        # This section will determine if the application is a standalone application
+        
+        # Determines if application is standalone mode
         if self.parent: 
             self.btnUseParentData.clicked.connect(self._load_parent_data)
-            self.btnLoadHD5.setVisible(False)
+            self.actionSave.triggered.connect(self.save_data)
         else:
             # Hide the button AND TEXT BOX for standalone mode
-            self.btnLoadHD5.clicked.connect(self.load_data)
+            self.fgbLoadData.setVisible(False)
             self.btnUseParentData.setVisible(False)
-            self.lineEditLoadDataFile.setVisible(False)
-            
-            # Optionally, you could also hide the related label if there is one
-            # self.labelUseParentData.setVisible(False)  # if such label exists
-            
-            # Or change window title to indicate standalone mode
             self.setWindowTitle('3D Slice -- Standalone Mode')
         
-        # variables to be used
+        # Variables to be used
         self.grid = None
         self.cloud_copy = None
         self.orig_shape = (0,0)
@@ -72,6 +70,8 @@ class HKL3DSliceWindow(QMainWindow):
         # ------- Creating the plotter for the 3d slicer
         self.plotter = QtInteractor()
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        self.plotter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.plotter.setMinimumSize(500, 500)
         
         self.viewer_3d_slicer_layout.addWidget(self.plotter,1,1)
         
@@ -83,6 +83,7 @@ class HKL3DSliceWindow(QMainWindow):
     def lower_res(self, points, voxel_size=1.0) -> tuple:
         """
         Lower resolution by voxelizing point cloud
+        Performance: O(n log n)
         
         Args:
             points (ndarray, optional): The points of the cloud. Defaults to None.
@@ -157,11 +158,11 @@ class HKL3DSliceWindow(QMainWindow):
             cloud_points = cloud.points  # Get numpy array of points
         else:
             cloud_points = np.asarray(cloud)
-        
+        start_time = time.time()
         suggested_voxel_size = self.calculate_voxel_size(cloud_points, reduction_factor=reduction_factor)
         cloud_with_intensities = np.concatenate([cloud_points, intensity.reshape(-1, 1)], axis=1)
         voxel_centers, final_intensities = self.lower_res(points=cloud_with_intensities, voxel_size=suggested_voxel_size)
-        
+        self.lbRenderTimeNum.setText(f"{time.time() - start_time:.4f}")
         return voxel_centers, final_intensities
 
 
@@ -217,22 +218,6 @@ class HKL3DSliceWindow(QMainWindow):
         
         self.cloud_mesh = pyv.PolyData(cloud)
         self.cloud_mesh['intensity'] = intensity
-        
-        # ------- Look up table & Opacity ---- #
-        # min_intensity = np.max(self.cloud_copy['intensity']) / 4
-        # # May not need to do these portions
-        # max_intensity = np.max(self.cloud_copy['intensity'])
-        # masked_scalar = np.copy(self.cloud_copy['intensity']).astype(float)
-        # masked_scalar[masked_scalar < min_intensity] = np.nan
-        # masked_scalar[masked_scalar > max_intensity] = np.nan
-        # self.cloud_copy['intensity'] = masked_scalar
-
-        # self.lut.scalar_range = (
-        #     min_intensity, 
-        #     np.nanmax(self.cloud_copy['intensity'])
-        # )
-
-        # self.cloud_copy = self.cloud_copy.threshold([min_intensity,max_intensity])
         
         # ----- Adding the point cloud data ----- #
         self.plotter.add_mesh(
@@ -485,121 +470,124 @@ class HKL3DSliceWindow(QMainWindow):
     def load_data(self):
         """Load data from HD5 file"""
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select an HD5 File','','HDF5 Files (*.h5 *.hdf5);;All Files (*)')
-        if file_name:
-            self.lineEditLoadDataFile.setText(file_name)
+        if not file_name:
+            QMessageBox.warning(self, "File", "No Valid File Selected")
         
         try:
-            result = self.load_h5_to_3d(file_name)
-            # Check if we got valid data
-            if result[0] is None or result[1] is None:
-                return
-                
-            # Try to setup the cloud
-            success = self.setup_3d_cloud(cloud=result[0], intensity=result[1], shape=result[2])
+            from utils import HDF5Loader
+            loader = HDF5Loader()
+            points, intensities, num_images, shape = loader.load_h5_to_3d(file_name)
             
-            if not success or self.cloud_copy is None:
+            #result = self.load_h5_to_3d(file_name)
+            # Check if we got valid data
+            print(f"Loader returned: points.shape={points.shape}, intensities.shape={intensities.shape}")
+            print(f"Points size check: {points.size}, empty check: {points.size == 0}")
+            
+            # Check if we got valid data
+            if points.size == 0 or intensities.size == 0:
+                print("ERROR: No valid data found")
+                print(f"Points size: {points.size}, Intensities size: {intensities.size}")
+                QMessageBox.warning(self, "Loading Warning", f"No valid data found in HDF5 file\nError: {loader.last_error}")
                 return
                 
-            # Process and create 3D visualization
-            self.orig_shape = result[3]
-            cloud, intensity = self.process_3d_to_lower_res(cloud=result[0], intensity=result[1])
-            self.create_3D(cloud=cloud, intensity=intensity)
+            # Setup and process
+            if self.setup_3d_cloud(cloud=points, intensity=intensities, shape=num_images):
+                self.orig_shape = shape
+                cloud, intensity = self.process_3d_to_lower_res(cloud=points, intensity=intensities)
+                self.create_3D(cloud=cloud, intensity=intensity)
+                
+                # Update UI
+                self.groupBox3DViewer.setTitle(f'Viewing {num_images} Image(s)')
+                self.lbOriginalPointSizeNum.setText(str(len(points)))
+                self.lbOriginalResolutionX.setText(str(shape[0]))
+                self.lbOriginalResolutionY.setText(str(shape[1]))
+                
+                print(f"Successfully loaded {len(points)} points from {num_images} images")
+            else:
+                QMessageBox.warning(self, "Setup Error", "Failed to setup 3D cloud")
             
             # Update UI labels
-            self.groupBox3DViewer.setTitle(f'Viewing {result[2]} Image(s)')
-            self.lbOriginalPointSizeNum.setText(str(len(result[0])))
-            self.lbOriginalResolutionX.setText(str(result[3][0]))
-            self.lbOriginalResolutionY.setText(str(result[3][1]))
+            self.groupBox3DViewer.setTitle(f'Viewing {num_images} Image(s)')
+            self.lbOriginalPointSizeNum.setText(str(len(points)))
+            self.lbOriginalResolutionX.setText(str(shape[0]))
+            self.lbOriginalResolutionY.setText(str(shape[1]))
             
+        except ImportError:
+            QMessageBox.critical(self, "Import Error", "Could not import HDF5Loader utility")
         except Exception as e:
             import traceback
             error_msg = f"Error loading data: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
-            
-            
-            # Optionally show error to user
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error Loading Data", f"Failed to load H5 file:\n{str(e)}")
+            QMessageBox.critical(self, "Error Loading Data", f"Failed to load H5 file:\n{str(e)}\n\n\n{error_msg}")
     
-
-    def load_h5_to_3d(self, file:str='') -> tuple[np.ndarray, np.ndarray, int, tuple]:
+    def save_data(self):
+        """Only used for the parent"""
+        pass
+    
+    def extract_slice(self):
         """
-        Loads .h5 file to 3D points 
-
-        Args: 
-            file (str): String path to .h5 file
-
-        Returns: 
-            tuple: 
-                points(np.ndarray) - the 3D points to be plotted, stacked 2-d array
-                flat_intensity(np.ndarray) - Intensity of the image
-                num_of_images(int) - Number of images in the .h5 file
-                shape(tuple) - Shape of the image
-            
-        Example: 
-            result = load_h5_to_3d('path/to/file')\n
-            pd = pyvista.PolyData(result[0])
+        Extract the current slice data from the 3D viewer and save it using HDF5Loader
         """
-        # 
-        # Set the variables that will be returned
-        num_of_images = 0
-        points = None
-        flat_intensity = None
-        shape = ()
         try:
-            with h5py.File(file, 'r') as f:
-
-                # q is for quaternion
-                # Grab the data needed in order to create 3D data
-                qx = f['entry/data/hkl/qx']
-                qy = f['entry/data/hkl/qy']
-                qz = f['entry/data/hkl/qz']
-                images = f['/entry/data/data']
-                num_of_images = f['entry/data/data'].shape[0]
-                shape = f['entry/data/data'].shape[1], f['entry/data/data'].shape[2]
+            default_name = f"slice_extract_{np.datetime64('now').astype('datetime64[s]').astype(str).replace(':', '-')}.h5"
+        
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                f"Save hkl Slice Data", 
+                default_name,
+                "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+            )
+            # Check if we have a current slice
+            if not hasattr(self, 'plotter') or 'slice' not in self.plotter.actors:
+                QMessageBox.warning(self, "No Slice", "No slice data available to extract")
+                return
+            
+            # Get the current slice mesh
+            slice_mesh:pyv.Actor = self.plotter.actors['slice'].GetMapper().GetInput()
+            
+            # Extract slice points and intensities
+            slice_points = np.array(slice_mesh.points) # 3D coordinates of slice
+            slice_intensities = np.array(slice_mesh['intensity'])  # Intensity values
+            
+            # Get current plane widget information
+            if self.plotter.plane_widgets:
+                plane_widget = self.plotter.plane_widgets[0]
+                slice_normal = plane_widget.GetNormal()
+                slice_origin = plane_widget.GetOrigin()
+            else:
+                slice_normal = (0, 0, 1)
+                slice_origin = (0, 0, 0)
+            
+            # Prepare slice metadata
+            slice_metadata = {
+                'slice_normal': slice_normal,
+                'slice_origin': slice_origin,
+                'num_points': len(slice_points),
+                'original_file': getattr(self, 'current_file_path', 'unknown'),
+                'original_shape': getattr(self, 'orig_shape', (0, 0)),
+                'extraction_timestamp': str(np.datetime64('now')),
+                'volume_bounds': self.vol.bounds if hasattr(self, 'vol') else None
+            }
+            # Use HDF5Loader to save the slice have a dialog for where to save
+            # should also use the same save as h5 so that it can be used in 3d or 2d
+            from utils.hdf5_loader import HDF5Loader
+            loader = HDF5Loader()
+            
+            success = loader.save_3d_to_h5(
+                file_path=file_path,
+                points=slice_points,
+                intensities=slice_intensities,
+                metadata=slice_metadata
+            )
+            
+            if success:
+                QMessageBox.information(self, "Success", f"Slice extracted and saved successfully!\n{len(slice_points)} points saved.")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to save slice: {loader.get_last_error()}")
                 
-                # Check that its not an empty images or data
-                if not qx or not qy or not qz:
-                    raise ValueError('No data/# of images is 0')
-                
-
-                # Turn the q's into a 1D array into 3D
-                # shape that can be concatenated store
-                # the data in a dict that can be accessed
-                q_dict = {}
-                for data in (qx, qy, qz):
-                    q_data_list = []
-                    
-                    # Reshape to a 1D array and store it in an array list
-                    for i in data:
-                        q_d = np.reshape(i, -1)
-                        q_data_list.append(q_d)
-                    
-                    # Create a numpy array of the list
-                    q_array = np.array(q_data_list)
-
-                    # Get the name of the vector being processed
-                    name = data.name.split('/')[-1]
-                    q_dict[name] = q_array 
-
-                # Reshape the number of images to a one dimensional image 
-                flat_intensity = np.reshape(images,-1)
-
-                # Concatenate each images and column stack in order to create the image in 3D
-                qx_con = np.concatenate(q_dict["qx"])
-                qy_con = np.concatenate(q_dict["qy"])
-                qz_con = np.concatenate(q_dict["qz"])
-                points = np.column_stack([
-                    qx_con, qy_con, qz_con
-                ])
-                return (points, flat_intensity, num_of_images,shape)
-
-        # Prevent crashing by checking file exists, not empty, etc
-        # and return the empty points and 0 images
         except Exception as e:
-            import traceback
-            with open('error_output2.txt', 'w') as f:
-                f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
-            return (points, flat_intensity, num_of_images, shape)
+            QMessageBox.critical(self, "Extract Error", f"Error extracting slice:\n{str(e)}")
+
+            
 
     # ================ CAMERA CONTROL METHODS ======================= #
     def zoom_in(self):
@@ -708,8 +696,8 @@ if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
         window = HKL3DSliceWindow()
-        size_manager = SizeManager(app=app)
         window.show()
+        size_manager = SizeManager(app=app)
         sys.exit(app.exec_())
     except KeyboardInterrupt:
         sys.exit(0)

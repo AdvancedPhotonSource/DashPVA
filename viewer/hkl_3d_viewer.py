@@ -405,13 +405,12 @@ class HKLImageWindow(QMainWindow):
                 f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
 
 
-
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
         window = ConfigDialog()
-        size_manager = SizeManager(app=app)
         window.show()
+        size_manager = SizeManager(app=app)
         sys.exit(app.exec_())
     except KeyboardInterrupt:
         sys.exit(0)

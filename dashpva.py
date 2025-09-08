@@ -7,11 +7,15 @@ def cli():
 
 @cli.command()
 def hkl3d():
+    """Launch HKL 3D Slicer - Interactive 3D visualization with real-time slicing
+    """
     click.echo('Running HKL 3D Viewer')
     subprocess.run(['python', 'viewer/hkl_3d_viewer.py'])
 
 @cli.command()
 def slice3d():
+    """(Standalone Mode) Launch HKL 3D Slicer - Interactive 3D visualization with real-time slicing
+    """
     click.echo('Running HKL 3D Slicer -- Standalone')
     subprocess.run(['python', 'viewer/hkl_3d_slice_window.py'])
 
