@@ -6,6 +6,8 @@ import numpy as np
 import os.path as osp
 import pvaccess as pva
 import pyqtgraph as pg
+from pyqtgraph.colormap import get as get_colormap
+from pyqtgraph.colormap import listMaps
 from PyQt5 import uic
 # from epics import caget
 from epics import camonitor
@@ -328,6 +330,23 @@ class ImageWindow(QMainWindow):
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+        # Initialize colormap once for better performance
+        try:
+            # List available colormaps for debugging
+            local_maps = listMaps()
+            # print(f"Available local colormaps: {[m for m in local_maps if 'CET' in m or 'L6' in m]}")
+            
+            # Try local CET-L6 first
+            self.cet_colormap = get_colormap('CET-L6')
+            # print("CET-L6 colormap loaded successfully from local")
+        except Exception:
+            try:
+                # Try from colorcet source
+                self.cet_colormap = get_colormap('CET-L6', source='colorcet')
+                # print("CET-L6 colormap loaded from colorcet source")
+            except Exception:
+                self.cet_colormap = get_colormap('viridis')  # fallback
+                # print("viridis colormap loaded as fallback")
         # Adding widgets manually to have better control over them
         # First is a Image View with a plot to view incoming images with axes shown
         plot = pg.PlotItem()        
@@ -364,8 +383,17 @@ class ImageWindow(QMainWindow):
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
+        self.image_view.getView().mouseDoubleClickEvent = self.on_double_click
 
         self.analysis_window = None  # Initialize as None
+        
+        # Initialize crosshair lines (hidden initially)
+        self.crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('red', width=2))
+        self.crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('red', width=2))
+        self.image_view.addItem(self.crosshair_v, ignoreBounds=True)
+        self.image_view.addItem(self.crosshair_h, ignoreBounds=True)
+        self.crosshair_v.hide()
+        self.crosshair_h.hide()
     
 
     def start_timers(self):
@@ -553,6 +581,29 @@ class ImageWindow(QMainWindow):
     def update_pv_prefix(self):
         self._input_channel = self.pv_prefix.text()
     
+    def on_double_click(self, event):
+        """
+        Handle double-click events on the image view to place crosshairs.
+        
+        Args:
+        event -- Mouse event containing position information
+        """
+        if self.reader is not None and self.reader.image is not None:
+            # Get the position in scene coordinates, then map to view coordinates
+            scene_pos = event.scenePos()
+            view_box = self.image_view.getView().getViewBox()
+            view_pos = view_box.mapSceneToView(scene_pos)
+            
+            # Set crosshair positions
+            self.crosshair_v.setPos(view_pos.x())
+            self.crosshair_h.setPos(view_pos.y())
+            
+            # Show crosshairs
+            self.crosshair_v.show()
+            self.crosshair_h.show()
+            
+            print(f"Crosshairs placed at: ({view_pos.x():.1f}, {view_pos.y():.1f})")
+    
     def update_mouse_pos(self, pos):
         """
         Receives mouse position signal inside the ImageViewer and maps it 
@@ -609,17 +660,23 @@ class ImageWindow(QMainWindow):
                     height, width = image.shape[:2]
                     # coordinates = pg.QtCore.QRectF(0, 0, width - 1, height - 1)
                     if self.log_image.isChecked():
-                            image = np.log(image + 1)
-                            min_level = np.log(min_level + 1)
-                            max_level = np.log(max_level + 1)
+                            # Ensure non-negative values before log transformation
+                            image = np.maximum(image, 0)
+                            epsilon = 1e-10
+                            image = np.log10(image + epsilon + 1)
+                            min_level = np.log10(max(min_level, epsilon) + 1)
+                            max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(image, 
                                                  autoRange=False, 
                                                  autoLevels=False, 
                                                  levels=(min_level, max_level),
-                                                 autoHistogramRange=False) 
+                                                 autoHistogramRange=False)
+                        # Set colormap separately
+                        self.image_view.setColorMap(self.cet_colormap)
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
+                        self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(image,
@@ -628,7 +685,7 @@ class ImageWindow(QMainWindow):
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(image, axis=0), 
-                                              y=np.arange(0,self.reader.shape[1]), 
+                                              y=np.arange(0,image.shape[1]), 
                                               clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")

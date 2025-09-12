@@ -1048,7 +1048,7 @@ if __name__ == '__main__':
     -nf 20 \
     -rt 7200 \
     -mpv ca://x,ca://y \
-    -if /Users/pmyint/Documents/Analysis/DashPVA/pyFAI/d350_CeO2-000000.tif
+    -if /home/beams/11IDCUSER/Codebase/DashPVA/pyFAI/d350_CeO2-000000.tif
 
 
     """
