@@ -7,3 +7,4 @@ collector_tests
 unused_files
 test/
 fix.md
+error*.txt
