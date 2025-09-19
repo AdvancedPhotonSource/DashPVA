@@ -112,6 +112,7 @@ class ImageWindow(QMainWindow):
         # Initializing important variables
         self.reader = None
         self.image = None
+        self.original_image = None
         self.call_id_plot = 0
         self.first_plot = True
         self.image_is_transposed = False
@@ -619,11 +620,12 @@ class ImageWindow(QMainWindow):
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
                 x, y = q_pointer.x(), q_pointer.y() 
-                if self.image is not None:
-                    if 0 <= x < self.image.shape[0] and 0 <= y < self.image.shape[1]:
+                if self.original_image is not None:
+                    if 0 <= x < self.original_image.shape[0] and 0 <= y < self.original_image.shape[1]:
                         self.mouse_x_val.setText(f"{x:.3f}")
                         self.mouse_y_val.setText(f"{y:.3f}")
-                        self.mouse_px_val.setText(f'{self.image[int(x)][int(y)]}')
+                        # Always show the linear pixel value, regardless of display mode
+                        self.mouse_px_val.setText(f'{self.original_image[int(x)][int(y)]}')
                         if self.hkl_data:
                             self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
                             self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
@@ -667,7 +669,9 @@ class ImageWindow(QMainWindow):
             self.call_id_plot +=1
             image = self.reader.image
             if image is not None:
-                self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                # Store the original linear image for mouse position display
+                self.original_image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+                self.image = self.original_image.copy()
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
