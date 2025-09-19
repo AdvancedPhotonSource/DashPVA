@@ -5,7 +5,15 @@ import pyvista as pyv
 from pyvistaqt import QtInteractor
 from PyQt5 import uic
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QErrorMessage, QMessageBox
+from PyQt5.QtWidgets import (
+    QApplication, 
+    QMainWindow, 
+    QFileDialog, 
+    QErrorMessage, 
+    QMessageBox, 
+    QProgressDialog,
+    QDialog
+    )
 import h5py
 import os
 import time
@@ -473,6 +481,12 @@ class HKL3DSliceWindow(QMainWindow):
         if not file_name:
             QMessageBox.warning(self, "File", "No Valid File Selected")
         
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.setEnabled(False)
+        original_title = self.windowTitle()
+        self.setWindowTitle(f"{original_title} ***** Loading...")
+        QApplication.processEvents()
+        
         try:
             from utils import HDF5Loader
             loader = HDF5Loader()
@@ -493,7 +507,11 @@ class HKL3DSliceWindow(QMainWindow):
             # Setup and process
             if self.setup_3d_cloud(cloud=points, intensity=intensities, shape=num_images):
                 self.orig_shape = shape
-                cloud, intensity = self.process_3d_to_lower_res(cloud=points, intensity=intensities)
+                reduction_factor = self.cbbReductionFactor.currentText()
+                import re
+                match = re.search(r'x(\d+(?:\.\d+)?)', reduction_factor)
+                factor = float(match.group(1)) if match else 1.0
+                cloud, intensity = self.process_3d_to_lower_res(cloud=points, intensity=intensities, reduction_factor=factor)
                 self.create_3D(cloud=cloud, intensity=intensity)
                 
                 # Update UI
@@ -518,7 +536,11 @@ class HKL3DSliceWindow(QMainWindow):
             import traceback
             error_msg = f"Error loading data: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
             QMessageBox.critical(self, "Error Loading Data", f"Failed to load H5 file:\n{str(e)}\n\n\n{error_msg}")
-    
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.setEnabled(True)
+            self.setWindowTitle(original_title)
+            
     def save_data(self):
         """Only used for the parent"""
         pass

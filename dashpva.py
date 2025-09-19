@@ -25,8 +25,15 @@ def detector():
     subprocess.run(['python', 'viewer/area_det_viewer.py'])
      
 @cli.command()
-def sim():
-    click.echo('Running Simulator Setup')
+@click.option('--sim', is_flag=True, help='Run the simulator setup instead of the standard setup.')
+def setup(sim):
+    """Sets up the PVA workflow or the simulator."""
+    # if sim:
+    #     command = ['python', 'consumers/sim_rsm_data.py']
+    #     click.echo('Running simulator setup...')
+    #     subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    click.echo('Running standard PVA setup...')
     subprocess.run(['python', 'pva_setup/pva_workflow_setup_dialog.py'])
     
 if __name__ == '__main__':
