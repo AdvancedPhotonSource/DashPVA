@@ -461,6 +461,11 @@ class HKL3DSliceWindow(QMainWindow):
     def _load_parent_data(self):
         """Check if parent has the required data available"""
         if hasattr(self.parent, 'cloud') and self.parent.cloud is not None and hasattr(self.parent, 'reader') and self.parent.reader is not None:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            self.setEnabled(False)
+            original_title = self.windowTitle()
+            self.setWindowTitle(f"{original_title} ***** Loading...")
+            QApplication.processEvents()
             self.setup_3d_cloud(cloud=self.parent.cloud.copy(deep=True), intensity=self.parent.cloud['intensity'], shape=self.parent.reader.shape)
             cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'])
             self.create_3D(cloud=cloud, intensity=intensity)
@@ -473,6 +478,10 @@ class HKL3DSliceWindow(QMainWindow):
             self.sbMinIntensity.setValue(int(np.min(intensity)))
             self.sbMaxIntensity.setRange(*intensity_range)
             self.sbMaxIntensity.setValue(int(np.max(intensity)))
+            
+            QApplication.restoreOverrideCursor()
+            self.setEnabled(True)
+            self.setWindowTitle(original_title)
             
     
     def load_data(self):
