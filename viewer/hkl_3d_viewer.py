@@ -1,4 +1,8 @@
 import sys, pathlib
+import os
+import h5py
+import time
+import subprocess
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
@@ -7,20 +11,15 @@ import pyvistaqt as pyvqt
 from pyvistaqt import QtInteractor, BackgroundPlotter
 from PyQt5 import uic
 # from epics import caget
-#from epics import camonitor, caget
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QMessageBox
 # Custom imported classes
-from pva_reader import PVAReader
 # Add the parent directory to the path so the font_scaling.py file can be imported
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils import PVAReader, HDF5Writer
 from utils import SizeManager
 from hkl_3d_slice_window import HKL3DSliceWindow
 
-import h5py
-import numpy as np
-import os
-import time
 
 class ConfigDialog(QDialog):
 
@@ -68,7 +67,6 @@ class ConfigDialog(QDialog):
         """
         self.le_config.clear()
 
-
     def dialog_accepted(self) -> None:
         """
         Handles the final step when the dialog's accept button is pressed.
@@ -80,13 +78,14 @@ class ConfigDialog(QDialog):
             self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel,
                                             file_path=self.config_path,) 
         else:
-            print('File Path Doesn\'t Exitst')  
+            print(f'File Path {self.config_path} Doesn\'t Exitst')  
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
             self.new_dialog = ConfigDialog()
             self.new_dialog.show()    
 
 
 class HKLImageWindow(QMainWindow):
+    images_plotted = pyqtSignal(bool)
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
@@ -105,7 +104,6 @@ class HKLImageWindow(QMainWindow):
         self.reader = None
         self.image = None
         self.call_id_plot = 0
-        self.first_plot = True
         self.image_is_transposed = False
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
@@ -113,9 +111,8 @@ class HKLImageWindow(QMainWindow):
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
-        # self.timer_plot = QTimer()
+        self.file_writer_thread = QThread()
         self.timer_labels.timeout.connect(self.update_labels)
-        # self.timer_plot.timeout.connect(self.update_image)
 
         # HKL values
         self.hkl_config = None
@@ -143,21 +140,14 @@ class HKLImageWindow(QMainWindow):
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
-        self.btn_plot_cache.clicked.connect(self.update_image)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.rbtn_C.clicked.connect(self.c_ordering_clicked)
-        self.rbtn_F.clicked.connect(self.f_ordering_clicked)
-        # self.log_image.clicked.connect(self.reset_first_plot)
         # self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.sbox_min_intensity.editingFinished.connect(self.update_intensity)
         self.sbox_max_intensity.editingFinished.connect(self.update_intensity)
         self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
-        # self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
-
-        # Opening the 3d Slice 
         self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
 
     def start_timers(self) -> None:
@@ -165,46 +155,12 @@ class HKLImageWindow(QMainWindow):
         Starts timers for updating labels and plotting at specified frequencies.
         """
         self.timer_labels.start(int(1000/100))
-        # self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self) -> None:
         """
         Stops the updating of main window labels and plots.
         """
-        # self.timer_plot.stop()
         self.timer_labels.stop()
-
-    #TODO: CHECK With 4id network camera to test if
-    # start of X,Y and size of X,Y line up when transposed
-    def set_pixel_ordering(self) -> None:
-        """
-        Checks which pixel ordering is selected on startup
-        """
-        if self.reader is not None:
-            if self.rbtn_C.isChecked():
-                self.reader.pixel_ordering = 'C'
-                self.reader.image_is_transposed = True 
-            elif self.rbtn_F.isChecked():
-                self.reader.pixel_ordering = 'F'
-                self.image_is_transposed = False
-                self.reader.image_is_transposed = False
-
-    def c_ordering_clicked(self) -> None:
-        """
-        Sets the pixel ordering to C style.
-        """
-        if self.reader is not None:
-            self.reader.pixel_ordering = 'C'
-            self.reader.image_is_transposed = True
-
-    def f_ordering_clicked(self) -> None:
-        """
-        Sets the pixel ordering to Fortran style.
-        """
-        if self.reader is not None:
-            self.reader.pixel_ordering = 'F'
-            self.image_is_transposed = False
-            self.reader.image_is_transposed = False
 
     def start_live_view_clicked(self) -> None:
         """
@@ -215,36 +171,44 @@ class HKLImageWindow(QMainWindow):
         """
         try:
             # A double check to make sure there isn't a connection already when starting
+            self.stop_timers()
             self.plotter.clear()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
-                                         viewer_type='rsm')          
+                                         viewer_type='rsm') 
+                self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
+                self.file_writer.moveToThread(self.file_writer_thread)
             else:
-                self.stop_timers()
                 self.btn_save_h5.clicked.disconnect()
                 self.btn_plot_cache.clicked.disconnect()
+                self.file_writer.hdf5_writer_finished.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
+                if self.file_writer_thread.isRunning():
+                    self.file_writer_thread.quit()
+                    self.file_writer_thread.wait()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path,
                                          viewer_type='rsm')
-            self.reset_first_plot()
-            self.btn_save_h5.clicked.connect(self.reader.save_caches_to_h5)
-            self.btn_plot_cache.clicked.connect(self.update_image)
+                self.file_writer.pva_reader = self.reader
+            self.btn_save_h5.clicked.connect(self.save_caches_clicked)
+            self.btn_plot_cache.clicked.connect(self.update_image_from_button)
+            self.reader.reader_scan_complete.connect(self.update_image_from_scan)
+            self.images_plotted.connect(self.trigger_save_caches)
+            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             if self.reader.CACHING_MODE == 'scan':
-                self.reader.add_on_scan_complete_callback(self.update_image)
-                self.reader.add_on_scan_complete_callback(self.reader.save_caches_to_h5)
-        except:
-            print(f'Failed to Connect to {self._input_channel}')
+                self.file_writer_thread.start()
+        except Exception as e:
+            print(f'Failed to Connect to {self._input_channel}: {e}')
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
         
         if self.reader is not None:
-            self.set_pixel_ordering()
+            # self.set_pixel_ordering()
             self.reader.start_channel_monitor()
             self.start_timers()
 
@@ -260,6 +224,27 @@ class HKLImageWindow(QMainWindow):
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
 
+    def trigger_save_caches(self, clear_caches:bool=True) -> None:
+        if not self.file_writer_thread.isRunning():
+                self.file_writer_thread.start()
+        self.file_writer.save_caches_to_h5(clear_caches=clear_caches)
+
+    def save_caches_clicked(self) -> None:
+        if not self.reader.channel.isMonitorActive():  
+            if not self.file_writer_thread.isRunning():
+                self.file_writer_thread.start()
+            self.file_writer.save_caches_to_h5()
+        else:
+            QMessageBox.critical(None,
+                                'Error',
+                                'Stop Live View to Save Cache',
+                                QMessageBox.Ok)
+    
+    def on_writer_finished(self, message) -> None:
+        print(message)
+        self.file_writer_thread.quit()
+        self.file_writer_thread.wait()
+
     # def freeze_image_checked(self) -> None:
     #     """
     #     Toggles freezing/unfreezing of the plot based on the checked state
@@ -270,12 +255,6 @@ class HKLImageWindow(QMainWindow):
     #             self.stop_timers()
     #         else:
     #             self.start_timers()
-
-    def reset_first_plot(self) -> None:
-        """
-        Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
-        """
-        self.first_plot = True
 
     def update_pv_prefix(self) -> None:
         """
@@ -294,8 +273,14 @@ class HKLImageWindow(QMainWindow):
             self.is_connected.setText(is_connected)
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+
+    def update_image_from_scan(self) -> None:
+        self.update_image(is_scan_signal=True)
+
+    def update_image_from_button(self) -> None:
+        self.update_image(is_scan_signal=False)
             
-    def update_image(self) -> None:
+    def update_image(self, is_scan_signal:bool=False) -> None:
         """
         Redraws plots based on the configured update rate.
 
@@ -304,56 +289,56 @@ class HKLImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.call_id_plot +=1
-            if self.reader.cache_images is not None and self.reader.cache_qx is not None:
+            if self.reader.cached_images is not None and self.reader.cached_qx is not None:
+                self.plotter.clear()
                 try:
-                    num_images = len(self.reader.cache_images)
-                    num_rsm = len(self.reader.cache_qx)
+                    num_images = len(self.reader.cached_images)
+                    num_rsm = len(self.reader.cached_qx)
                     if num_images !=  num_rsm:
                         raise ValueError(f'Size of caches are uneven:\nimages:{num_images}\nqxyz: {num_rsm}')
-                    # Collect all cached data
-                    flat_intensity = np.concatenate(self.reader.cache_images, dtype=np.float32)
-                    qx = np.concatenate(self.reader.cache_qx, dtype=np.float32)
-                    qy = np.concatenate(self.reader.cache_qy, dtype=np.float32)
-                    qz = np.concatenate(self.reader.cache_qz, dtype=np.float32)
-
+                    # connect all cached data
+                    flat_intensity = np.concatenate(self.reader.cached_images, dtype=np.float32)
+                    qx = np.concatenate(self.reader.cached_qx, dtype=np.float32)
+                    qy = np.concatenate(self.reader.cached_qy, dtype=np.float32)
+                    qz = np.concatenate(self.reader.cached_qz, dtype=np.float32)
+                    
                     points = np.column_stack((
                         qx, qy, qz
                     ))
-                    # First-time setup
-                    if self.first_plot:
-                        self.min_intensity = np.min(flat_intensity)
-                        self.max_intensity = np.max(flat_intensity)
-                        self.sbox_min_intensity.setValue(self.min_intensity)
-                        self.sbox_max_intensity.setValue(self.max_intensity)
+                except Exception as e:
+                    print(f'[HKL Viewer] Failed to concatenate caches: {e}')
 
-                        self.cloud = pyv.PolyData(points)
-                        self.cloud['intensity'] = flat_intensity 
 
-                        self.lut = pyv.LookupTable(cmap='viridis')  
-                        self.lut.below_range_color = 'black'
-                        self.lut.above_range_color = 'black'
-                        self.lut.below_range_opacity = 0
-                        self.lut.above_range_opacity = 0 
-                        self.update_opacity()
-                        self.update_intensity()
-                       
-                        self.actor = self.plotter.add_mesh(
-                            self.cloud,
-                            scalars='intensity',
-                            cmap=self.lut,
-                            point_size=10
-                        )
+                try:
+                    if is_scan_signal:
+                        clear_caches = True
+                        self.images_plotted.emit(clear_caches)
                         
-                        self.first_plot = False
-                    else:
-                        print(f'Updating Image')
-                        self.plotter.mesh.points = points
-                        self.cloud['intensity'] = flat_intensity
-                        self.update_intensity()
-                        self.update_opacity()
+                    self.min_intensity = np.min(flat_intensity)
+                    self.max_intensity = np.max(flat_intensity)
+                    self.sbox_max_intensity.setValue(self.max_intensity)
+
+                    self.cloud = pyv.PolyData(points)
+                    self.cloud['intensity'] = flat_intensity 
+
+                    self.lut = pyv.LookupTable(cmap='viridis')  
+                    self.lut.below_range_color = 'black'
+                    self.lut.above_range_color = 'black'
+                    self.lut.below_range_opacity = 0
+                    self.lut.above_range_opacity = 0 
+                    self.update_opacity()
+                    self.update_intensity()
+                
+                    self.actor = self.plotter.add_mesh(
+                        self.cloud,
+                        scalars='intensity',
+                        cmap=self.lut,
+                        point_size=3
+                    )
+
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                 except Exception as e:
-                    print(f"[Viewer] Failed to update 3D plot: {e}")
+                    print(f"[HKL Viewer] Failed to update 3D plot: {e}")
 
     def update_opacity(self) -> None:
         """
@@ -386,14 +371,17 @@ class HKLImageWindow(QMainWindow):
         if self.actor is not None:
             self.actor.mapper.scalar_range = (self.min_intensity,self.max_intensity)
     
-    # def closeEvent(self, event):
-    #     """pass
-    #     Custom close event to clean up resources, including stat dialogs.
+    def closeEvent(self, event):
+        """pass
+        Custom close event to clean up resources, including stat dialogs.
 
-    #     Args:
-    #         event (QCloseEvent): The close event triggered when the main window is closed.
-    #     """
-    #     super(HKLImageWindow,self).closeEvent(event)
+        Args:
+            event (QCloseEvent): The close event triggered when the main window is closed.
+        """
+        if self.file_writer_thread.isRunning():
+            self.file_writer_thread.quit()
+            self.file_writer_thread
+        super(HKLImageWindow,self).closeEvent(event)
 
     def open_3d_slice_window(self) -> None:
         try:

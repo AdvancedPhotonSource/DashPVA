@@ -79,7 +79,7 @@ ub_matrix_record = {
     "Value": [1, 0, 0, 0, 1, 0, 0, 0, 1]
 }
 energy_record = {
-    "Value": 5.212  # keV
+    "Value": 11.212  # keV
 }
 
 # Additional static records based on HKL configuration:
@@ -108,6 +108,12 @@ detector_setup_record = {
 }
 scan_on_record = {
     'Value': False
+}
+file_path_record = {
+    'Value': ''
+}
+file_name_record = {
+    'Value': ''
 }
 
 # -------------------------------
@@ -242,22 +248,14 @@ def main() -> None:
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
         "DetectorSetup": detector_setup_record,
-        "ScanOn": scan_on_record
+        "ScanOn": scan_on_record,
+        "FilePath": file_path_record,
+        "FileName": file_name_record
     }
     print(axis_records)
     
     # Set up the CA IOC with these records
     caIoc = setup_ca_ioc(all_records)
-
-    # Add Name field to all static records
-    static_records = {
-        "6idb:spec:UB_matrix": {**ub_matrix_record, "Name": "6idb:spec:UB_matrix"},
-        "6idb:spec:Energy": {**energy_record, "Name": "6idb:spec:Energy"},
-        "PrimaryBeamDirection": {**primary_beam_direction_record, "Name": "PrimaryBeamDirection"},
-        "InplaneReferenceDirection": {**inplane_reference_direction_record, "Name": "InplaneReferenceDirection"},
-        "SampleSurfaceNormalDirection": {**sample_surface_normal_direction_record, "Name": "SampleSurfaceNormalDirection"},
-        "DetectorSetup": {**detector_setup_record, "Name": "DetectorSetup"}
-    }
     
     # Update static records (they remain constant)
     for rec_name, rec_data in all_records.items():
@@ -285,8 +283,8 @@ def main() -> None:
                     if rec["SpecMotorName"] == "Delta":
                         # Only Update Eta Position
                         update_ca_record_field(caIoc, name, 'Position', new_position)
-                elif name == '6idb:spec:Energy':
-                    update_ca_record_field(caIoc, name, 'Value', new_position)
+                # elif name == '6idb:spec:Energy':
+                #     update_ca_record_field(caIoc, name, 'Value', new_position)
                 # elif name == '6idb:spec:UB_matrix':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)
             
