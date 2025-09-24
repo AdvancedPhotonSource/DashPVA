@@ -183,6 +183,7 @@ class HKLImageWindow(QMainWindow):
             else:
                 self.btn_save_h5.clicked.disconnect()
                 self.btn_plot_cache.clicked.disconnect()
+                self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
