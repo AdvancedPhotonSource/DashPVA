@@ -14,9 +14,9 @@ from PyQt5 import uic
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QMessageBox
 # Custom imported classes
-from utils import PVAReader, HDF5Writer
 # Add the parent directory to the path so the font_scaling.py file can be imported
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils import PVAReader, HDF5Writer
 from utils import SizeManager
 from hkl_3d_slice_window import HKL3DSliceWindow
 
