@@ -1,5 +1,4 @@
 from PyQt5.QtCore import QObject, QEvent
-from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QWidget, QApplication, QScrollArea
 
 class SizeManager(QObject):

@@ -261,7 +261,8 @@ class NumpyRandomGenerator(FrameGenerator):
         return total_intensity * np.exp(-((x - x0)**2 / (2 * sigma_x**2) + (y - y0)**2 / (2 * sigma_y**2)))
     
     def generate_gaussian_peak_array(self,shift_x, shift_y):
-        size=1024
+        sizex = self.nx
+        sizey = self.ny
         sigma_x = 14
         sigma_y = 20
         freq_x = 90
@@ -270,12 +271,12 @@ class NumpyRandomGenerator(FrameGenerator):
         # shift_y = 0 
         total_intensity = 200 
         #array = np.zeros((size, size))
-        x = np.linspace(0, size - 1, size)
-        y = np.linspace(0, size - 1, size)
+        x = np.linspace(0, sizex - 1, sizex)
+        y = np.linspace(0, sizey - 1, sizey)
         x_grid, y_grid = np.meshgrid(x, y)
 
-        x0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_x * (x_grid+ shift_x) / size)) 
-        y0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_y * (y_grid+ shift_y) / size)) 
+        x0 = (sizex / 2) * (1 + np.sin(2 * np.pi * freq_x * (x_grid+ shift_x) / sizex)) 
+        y0 = (sizey / 2) * (1 + np.sin(2 * np.pi * freq_y * (y_grid+ shift_y) / sizey)) 
         # for i in range(size):
         #     for j in range(size):
         #         array[i, j] = gaussian_2d(x_grid[i, j], y_grid[i, j], x0[i, j], y0[i, j], sigma_x, sigma_y, total_intensity)
