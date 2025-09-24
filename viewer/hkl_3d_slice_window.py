@@ -1,24 +1,14 @@
 import sys
+import time
+import pathlib
 import numpy as np
-import os.path as osp
 import pyvista as pyv
 from pyvistaqt import QtInteractor
 from PyQt5 import uic
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import (
-    QApplication, 
-    QMainWindow, 
-    QFileDialog, 
-    QErrorMessage, 
-    QMessageBox, 
-    QProgressDialog,
-    QDialog
-    )
-import h5py
-import os
-import time
-import sys, pathlib
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils import HDF5Loader
 from utils import SizeManager
 from PyQt5.QtWidgets import QSizePolicy
 
@@ -469,7 +459,7 @@ class HKL3DSliceWindow(QMainWindow):
             self.setup_3d_cloud(cloud=self.parent.cloud.copy(deep=True), intensity=self.parent.cloud['intensity'], shape=self.parent.reader.shape)
             cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'])
             self.create_3D(cloud=cloud, intensity=intensity)
-            self.groupBox3DViewer.setTitle(f'Viewing {len(self.parent.reader.cache_images)} Image(s)')
+            self.groupBox3DViewer.setTitle(f'Viewing {len(self.parent.reader.cached_images)} Image(s)')
             self.lbOriginalPointSizeNum.setText(str(self.cloud_copy.n_points))
             self.lbOriginalResolutionX.setText(str(self.parent.reader.shape[0]))
             self.lbOriginalResolutionY.setText(str(self.parent.reader.shape[1]))
@@ -497,7 +487,6 @@ class HKL3DSliceWindow(QMainWindow):
         QApplication.processEvents()
         
         try:
-            from utils import HDF5Loader
             loader = HDF5Loader()
             points, intensities, num_images, shape = loader.load_h5_to_3d(file_name)
             
