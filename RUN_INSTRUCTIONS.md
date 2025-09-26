@@ -38,12 +38,21 @@ conda list
 
 ## Running the Application
 
-### 1. Configuration GUI (ConfigDialog)
-The configuration GUI is used to set up detector prefixes, collector addresses, and PV configurations.
+DashPVA now uses a command-line interface (CLI) for launching different components. All commands use the main `dashpva.py` script.
+
+### Available Commands
+
+#### 1. Setup and Configuration
+Set up PVA workflow and configure the system:
 
 **Run Command**:
 ```bash
-python area_det_viewer.py
+python dashpva.py setup
+```
+
+**With Simulator**:
+```bash
+python dashpva.py setup --sim
 ```
 
 **Key Features**:
@@ -51,15 +60,12 @@ python area_det_viewer.py
 - Load, edit, or create PV configuration files.
 - Input caching frequency for live view.
 
-### 2. Live Viewer GUI (ImageWindow)
-The live image visualization GUI allows users to:
-- Stream live images from a PVA source.
-- View and manipulate regions of interest (ROIs).
-- Monitor statistics for live analysis.
+#### 2. Area Detector Viewer
+Launch the live image visualization GUI:
 
 **Run Command**:
 ```bash
-python area_det_viewer.py
+python dashpva.py detector
 ```
 
 **GUI Features**:
@@ -67,6 +73,50 @@ python area_det_viewer.py
 - **ROI Tools**: Add, view, and manipulate ROIs on the displayed image.
 - **Statistical Monitoring**: View and log key metrics from the live feed.
 - **Frame-by-Frame Processing**: Supports both predetermined and spontaneous scan modes.
+
+#### 3. HKL 3D Viewer
+Launch the interactive 3D visualization tool:
+
+**Run Command**:
+```bash
+python dashpva.py hkl3d
+```
+
+**Features**:
+- Interactive 3D point cloud visualization
+- Real-time data streaming and analysis
+- Integration with PVA data sources
+
+#### 4. HKL 3D Slicer (Standalone)
+Launch the standalone 3D slicer for offline data analysis:
+
+**Run Command**:
+```bash
+python dashpva.py slice3d
+```
+
+**Features**:
+- Interactive 3D visualization with real-time slicing
+- HDF5 data loading capabilities
+- Slice extraction and analysis tools
+- Loading indicators for large datasets
+- Configurable reduction factors for performance optimization
+
+### Quick Reference
+```bash
+# Setup the system
+python dashpva.py setup
+
+# Launch area detector viewer
+python dashpva.py detector
+
+# Launch 3D visualization tools
+python dashpva.py hkl3d
+python dashpva.py slice3d
+
+# Get help on available commands
+python dashpva.py --help
+```
 
 ---
 
@@ -163,4 +213,3 @@ To use a custom configuration, load the file through the ConfigDialog GUI or pla
 
 ## Need Help?
 Refer to the [README.md](README.md) for an overview of the project or contact the repository maintainer for assistance.
-
