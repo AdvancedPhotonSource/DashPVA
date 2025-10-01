@@ -4,7 +4,7 @@ import os.path as osp
 import pyvista as pyv
 from pyvistaqt import QtInteractor
 from PyQt5 import uic
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication, 
     QMainWindow, 
@@ -20,6 +20,7 @@ import time
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import SizeManager
+from utils.hdf5_loader import HDF5Loader
 from PyQt5.QtWidgets import QSizePolicy
 
 class HKL3DSliceWindow(QMainWindow):
@@ -41,24 +42,25 @@ class HKL3DSliceWindow(QMainWindow):
         self.btnSetCamPos.clicked.connect(self.set_camera_position)
         
         # Toggle
-        self.cbToggleCloud.clicked.connect(self.toggle_cloud)
+        self.cbToggleSlicePointer.clicked.connect(self.toggle_pointer)
         self.cbToggleCloudVolume.clicked.connect(self.toggle_cloud_vol)
         self.cbColorMapSelect.currentIndexChanged.connect(self.change_color_map)
         
-        # Data alteration
-        self.cbbReductionFactor.currentIndexChanged.connect(self.reduction_factor)
-        self.sbMinIntensity.editingFinished.connect(self.update_intensity)
-        self.sbMaxIntensity.editingFinished.connect(self.update_intensity)
+        # Data alteration (deferred; apply on Render)
+        if hasattr(self, 'btnRender'):
+            self.btnRender.clicked.connect(self._apply_pending_changes)
+        self.cbbReductionFactor.currentIndexChanged.connect(self._mark_reduction_changed)
+        self.sbMinIntensity.editingFinished.connect(self._mark_intensity_changed)
+        self.sbMaxIntensity.editingFinished.connect(self._mark_intensity_changed)
         
         #TODO: these functions
         self.actionLoadData.triggered.connect(self.load_data)
         self.actionExtractSlice.triggered.connect(self.extract_slice)
-        
+        self.actionSave.triggered.connect(self.save_data)
         
         # Determines if application is standalone mode
         if self.parent: 
             self.btnUseParentData.clicked.connect(self._load_parent_data)
-            self.actionSave.triggered.connect(self.save_data)
         else:
             # Hide the button AND TEXT BOX for standalone mode
             self.fgbLoadData.setVisible(False)
@@ -90,7 +92,8 @@ class HKL3DSliceWindow(QMainWindow):
     # ================ RESOLUTION PROCESSING METHODS ======================= #
     def lower_res(self, points, voxel_size=1.0) -> tuple:
         """
-        Lower resolution by voxelizing point cloud
+        Lower resolution by voxelizing point cloud            self._enable_all_widgets()
+
         Performance: O(n log n)
         
         Args:
@@ -227,18 +230,21 @@ class HKL3DSliceWindow(QMainWindow):
         self.cloud_mesh = pyv.PolyData(cloud)
         self.cloud_mesh['intensity'] = intensity
         
-        # ----- Adding the point cloud data ----- #
-        self.plotter.add_mesh(
-            self.cloud_mesh,
-            scalars="intensity",
-            cmap=self.lut,
-            point_size=5.0,
-            name="points",
-            reset_camera=False,
-            nan_color=None,
-            nan_opacity=0.0,
-            show_scalar_bar=True,
-        )
+        # ----- Adding the point cloud data (commented out for performance) ----- #
+        # self.plotter.add_mesh(
+        #     self.cloud_mesh,
+        #     scalars="intensity",
+        #     cmap=self.lut,
+        #     point_size=5.0,
+        #     name="points",
+        #     reset_camera=False,
+        #     nan_color=None,
+        #     nan_opacity=0.0,
+        #     show_scalar_bar=True,
+        # )
+        
+        # # Make points invisible by default for performance
+        # self.plotter.renderer._actors["points"].SetVisibility(False)
         
         # -------- Reset Camera Focus & Plotter Bounds ----- #
         self.plotter.set_focus(self.cloud_mesh.center)
@@ -361,7 +367,7 @@ class HKL3DSliceWindow(QMainWindow):
         self.sbMaxIntensity.setValue(int(np.max(intensity)))
 
     def update_intensity(self):
-        """Updates the min/max intensity levels and filters visible points"""
+        """Updates the min/max intensity levels and scalar bar range"""
         self.min_intensity = self.sbMinIntensity.value()
         self.max_intensity = self.sbMaxIntensity.value()
         
@@ -370,42 +376,12 @@ class HKL3DSliceWindow(QMainWindow):
             self.sbMinIntensity.setValue(self.min_intensity)
             self.sbMaxIntensity.setValue(self.max_intensity)
         
-        # Apply threshold to filter points
-        if hasattr(self, 'cloud_copy') and self.cloud_copy is not None:
-            # Create filtered cloud
-            filtered_cloud = self.cloud_copy.threshold(
-                [self.min_intensity, self.max_intensity],
-                scalars="intensity"
-            )
-            
-            # Update the displayed mesh
-            self.plotter.remove_actor("points", reset_camera=False)
-            self.plotter.add_mesh(
-                filtered_cloud,
-                scalars="intensity",
-                cmap=self.lut,
-                point_size=5.0,
-                name="points",
-                reset_camera=False,
-                show_scalar_bar=True
-            )
-            
-            # Update the cloud_mesh reference for other operations
-            self.cloud_mesh = filtered_cloud
-            if hasattr(self, 'grid') and self.grid is not None:
-                # Calculate optimal radius based on grid spacing
-                grid_spacing = np.array(self.grid.spacing)
-                optimal_radius = np.mean(grid_spacing) * 2.5
-                
-                # Create new interpolated volume
-                self.vol = self.grid.interpolate(
-                    filtered_cloud, 
-                    radius=optimal_radius,
-                    sharpness=1.5,
-                    null_value=0.0
-                )
-                
-                # Update the volume actor
+        # Define the new scalar range
+        new_range = [self.min_intensity, self.max_intensity]
+
+        # Update the volume actor by re-adding with new clim range
+        if hasattr(self, 'vol') and self.vol is not None:
+            if "cloud_volume" in self.plotter.actors:
                 self.plotter.remove_actor("cloud_volume", reset_camera=False)
                 self.plotter.add_volume(
                     volume=self.vol,
@@ -458,6 +434,13 @@ class HKL3DSliceWindow(QMainWindow):
         
 
     # ================ DATA LOADING ======================= #
+    def render_changes(self):
+        """
+        Render the changes to the 
+        """
+        self.update_intensity()
+        
+
     def _load_parent_data(self):
         """Check if parent has the required data available"""
         if hasattr(self.parent, 'cloud') and self.parent.cloud is not None and hasattr(self.parent, 'reader') and self.parent.reader is not None:

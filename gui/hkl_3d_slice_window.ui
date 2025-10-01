@@ -115,7 +115,7 @@
          <string>Info</string>
         </property>
         <layout class="QFormLayout" name="formLayout_4">
-         <item row="0" column="0">
+         <item row="2" column="0">
           <widget class="QLabel" name="lbRenderTime">
            <property name="font">
             <font>
@@ -123,11 +123,11 @@
             </font>
            </property>
            <property name="text">
-            <string>Render Time(s) :</string>
+            <string>Low Resolution Render Time(s) :</string>
            </property>
           </widget>
          </item>
-         <item row="0" column="1">
+         <item row="2" column="1">
           <widget class="QLabel" name="lbRenderTimeNum">
            <property name="font">
             <font>
@@ -139,6 +139,20 @@
            </property>
            <property name="text">
             <string>0</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="lbFilePath">
+           <property name="text">
+            <string>File Path:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="leFilePathStr">
+           <property name="enabled">
+            <bool>false</bool>
            </property>
           </widget>
          </item>
@@ -469,7 +483,7 @@
           </widget>
          </item>
          <item row="3" column="1">
-          <widget class="QCheckBox" name="cbToggleCloud">
+          <widget class="QCheckBox" name="cbToggleSlicePointer">
            <property name="enabled">
             <bool>true</bool>
            </property>
@@ -479,7 +493,7 @@
             </font>
            </property>
            <property name="text">
-            <string>Cloud Points</string>
+            <string>Slice Pointer</string>
            </property>
            <property name="checked">
             <bool>true</bool>
@@ -488,6 +502,9 @@
          </item>
          <item row="3" column="0">
           <widget class="QCheckBox" name="cbToggleCloudVolume">
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
            <property name="font">
             <font>
              <pointsize>12</pointsize>
@@ -495,6 +512,9 @@
            </property>
            <property name="text">
             <string>Cloud Volume</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -537,6 +557,13 @@
             <font>
              <pointsize>12</pointsize>
             </font>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
+          <widget class="QPushButton" name="btnRender">
+           <property name="text">
+            <string>Render Changes</string>
            </property>
           </widget>
          </item>
