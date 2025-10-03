@@ -476,18 +476,22 @@ class PVAReader:
                 return     
 
 ########################### Start and Stop Channel Monitors ##########################    
-    def start_channel_monitor(self) -> None:
+    def start_channel_monitor(self, callback=None) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
+        Args:
+            callback (function, optional): A custom callback to use for the monitor. 
+                                           If None, defaults to self.pva_callbackSuccess.
         """
-        self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
+        monitor_callback = callback if callback is not None else self.pva_callbackSuccess
+        self.channel.subscribe('pva_monitor', monitor_callback)
         self.channel.startMonitor()
 
     def stop_channel_monitor(self) -> None:
         """
         Stops all monitoring and callback functions.
         """
-        self.channel.unsubscribe('pva callback success')
+        self.channel.unsubscribe('pva_monitor')
         self.channel.stopMonitor()
 
     def start_roi_backup_monitor(self) -> None:
