@@ -436,6 +436,7 @@ class HKL3DSliceWindow(QMainWindow):
         self.sbMinIntensity.setValue(int(np.min(intensity)))
         self.sbMaxIntensity.setRange(*intensity_range)
         self.sbMaxIntensity.setValue(int(np.max(intensity)))
+        self.update_intensity()
 
     def update_intensity(self):
         """Updates the min/max intensity levels and scalar bar range"""
