@@ -59,6 +59,12 @@
       <height>1081</height>
      </rect>
     </property>
+    <property name="verticalScrollBarPolicy">
+     <enum>Qt::ScrollBarAlwaysOn</enum>
+    </property>
+    <property name="horizontalScrollBarPolicy">
+     <enum>Qt::ScrollBarAlwaysOff</enum>
+    </property>
     <property name="widgetResizable">
      <bool>true</bool>
     </property>
@@ -67,9 +73,15 @@
       <rect>
        <x>0</x>
        <y>0</y>
-       <width>379</width>
+       <width>365</width>
        <height>1079</height>
       </rect>
+     </property>
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
+       <horstretch>0</horstretch>
+       <verstretch>1</verstretch>
+      </sizepolicy>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
@@ -571,18 +583,496 @@
        </widget>
       </item>
       <item>
-       <widget class="QGroupBox" name="gridGroupBox_2">
+       <widget class="QTabWidget" name="tabsControls">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
+          <horstretch>0</horstretch>
+          <verstretch>1</verstretch>
+         </sizepolicy>
+        </property>
         <property name="font">
          <font>
           <pointsize>14</pointsize>
          </font>
         </property>
-        <property name="title">
-         <string>Camera Position</string>
+        <property name="currentIndex">
+         <number>1</number>
         </property>
-        <layout class="QGridLayout" name="gridLayout_2">
-         <item row="0" column="0">
+        <widget class="QWidget" name="tabSlice">
+         <attribute name="title">
+          <string>Slice</string>
+         </attribute>
+         <widget class="QGroupBox" name="gbSteps">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>10</y>
+            <width>341</width>
+            <height>111</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Steps</string>
+          </property>
+          <widget class="QLabel" name="lblTranslateStep">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>150</width>
+             <height>21</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Translate step</string>
+           </property>
+          </widget>
+          <widget class="QDoubleSpinBox" name="sbSliceTranslateStep">
+           <property name="geometry">
+            <rect>
+             <x>170</x>
+             <y>25</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>6</number>
+           </property>
+           <property name="minimum">
+            <double>0.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>1000000000.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.001000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.010000000000000</double>
+           </property>
+          </widget>
+          <widget class="QLabel" name="lblRotateStep">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>70</y>
+             <width>160</width>
+             <height>21</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Rotation step (deg)</string>
+           </property>
+          </widget>
+          <widget class="QDoubleSpinBox" name="sbSliceRotateStep">
+           <property name="geometry">
+            <rect>
+             <x>170</x>
+             <y>65</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
+           <property name="minimum">
+            <double>0.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>180.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>1.000000000000000</double>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnResetSlice">
+           <property name="geometry">
+            <rect>
+             <x>80</x>
+             <y>90</y>
+             <width>151</width>
+             <height>20</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Reset Slice</string>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QGroupBox" name="gbOrientation">
+          <property name="geometry">
+           <rect>
+            <x>360</x>
+            <y>10</y>
+            <width>341</width>
+            <height>111</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Orientation</string>
+          </property>
+          <widget class="QLabel" name="lblPreset">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>81</width>
+             <height>21</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Preset</string>
+           </property>
+          </widget>
+          <widget class="QComboBox" name="cbSliceOrientation">
+           <property name="geometry">
+            <rect>
+             <x>100</x>
+             <y>25</y>
+             <width>221</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <item>
+            <property name="text">
+             <string>HK(xy)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>KL(yz)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>HL(xz)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Custom</string>
+            </property>
+           </item>
+          </widget>
+          <widget class="QLabel" name="lblCustomNormal">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>70</y>
+             <width>111</width>
+             <height>21</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Custom normal</string>
+           </property>
+          </widget>
+          <widget class="QDoubleSpinBox" name="sbNormH">
+           <property name="geometry">
+            <rect>
+             <x>130</x>
+             <y>65</y>
+             <width>61</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>6</number>
+           </property>
+           <property name="minimum">
+            <double>-1.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.000000000000000</double>
+           </property>
+          </widget>
+          <widget class="QDoubleSpinBox" name="sbNormK">
+           <property name="geometry">
+            <rect>
+             <x>200</x>
+             <y>65</y>
+             <width>61</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>6</number>
+           </property>
+           <property name="minimum">
+            <double>-1.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.000000000000000</double>
+           </property>
+          </widget>
+          <widget class="QDoubleSpinBox" name="sbNormL">
+           <property name="geometry">
+            <rect>
+             <x>270</x>
+             <y>65</y>
+             <width>61</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>6</number>
+           </property>
+           <property name="minimum">
+            <double>-1.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>1.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>1.000000000000000</double>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QGroupBox" name="gbTranslate">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>130</y>
+            <width>341</width>
+            <height>161</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Translate</string>
+          </property>
+          <widget class="QPushButton" name="btnSliceUpNormal">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>161</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Up (normal)</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSliceDownNormal">
+           <property name="geometry">
+            <rect>
+             <x>180</x>
+             <y>30</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>Down (normal)</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSlicePosH">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>70</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+H</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSliceNegH">
+           <property name="geometry">
+            <rect>
+             <x>90</x>
+             <y>70</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>-H</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSlicePosK">
+           <property name="geometry">
+            <rect>
+             <x>170</x>
+             <y>70</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+K</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSliceNegK">
+           <property name="geometry">
+            <rect>
+             <x>250</x>
+             <y>70</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>-K</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSlicePosL">
+           <property name="geometry">
+            <rect>
+             <x>90</x>
+             <y>110</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+L</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnSliceNegL">
+           <property name="geometry">
+            <rect>
+             <x>170</x>
+             <y>110</y>
+             <width>71</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>-L</string>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QGroupBox" name="gbRotate">
+          <property name="geometry">
+           <rect>
+            <x>360</x>
+            <y>130</y>
+            <width>341</width>
+            <height>161</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Rotate</string>
+          </property>
+          <widget class="QPushButton" name="btnRotPlusH">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>161</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+ around H</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnRotMinusH">
+           <property name="geometry">
+            <rect>
+             <x>180</x>
+             <y>30</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>- around H</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnRotPlusK">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>70</y>
+             <width>161</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+ around K</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnRotMinusK">
+           <property name="geometry">
+            <rect>
+             <x>180</x>
+             <y>70</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>- around K</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnRotPlusL">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>110</y>
+             <width>161</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>+ around L</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnRotMinusL">
+           <property name="geometry">
+            <rect>
+             <x>180</x>
+             <y>110</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>- around L</string>
+           </property>
+          </widget>
+         </widget>
+        </widget>
+        <widget class="QWidget" name="tabCamera">
+         <attribute name="title">
+          <string>Camera</string>
+         </attribute>
+         <widget class="QGroupBox" name="gbCamMovements">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>10</y>
+            <width>341</width>
+            <height>211</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Movements</string>
+          </property>
           <widget class="QPushButton" name="btnZoomOut">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>161</width>
+             <height>31</height>
+            </rect>
+           </property>
            <property name="font">
             <font>
              <pointsize>12</pointsize>
@@ -592,9 +1082,15 @@
             <string>Zoom Out</string>
            </property>
           </widget>
-         </item>
-         <item row="0" column="1">
           <widget class="QPushButton" name="btnZoomIn">
+           <property name="geometry">
+            <rect>
+             <x>180</x>
+             <y>30</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
            <property name="font">
             <font>
              <pointsize>12</pointsize>
@@ -604,61 +1100,58 @@
             <string>Zoom In</string>
            </property>
           </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="label">
+          <widget class="QLabel" name="lblZoomStep">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>70</y>
+             <width>150</width>
+             <height>21</height>
+            </rect>
+           </property>
            <property name="font">
             <font>
              <pointsize>12</pointsize>
             </font>
            </property>
            <property name="text">
-            <string>Set Position</string>
+            <string>Zoom step (factor)</string>
            </property>
           </widget>
-         </item>
-         <item row="1" column="1">
-          <layout class="QHBoxLayout" name="horizontalLayout_2">
-           <item>
-            <widget class="QComboBox" name="cbSetCamPos">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
-             <item>
-              <property name="text">
-               <string>HK(xy)</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>KL(yz)</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>HL(xz)</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnSetCamPos">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
-             <property name="text">
-              <string>Set</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item row="2" column="1">
+          <widget class="QDoubleSpinBox" name="sbZoomStep">
+           <property name="geometry">
+            <rect>
+             <x>170</x>
+             <y>65</y>
+             <width>151</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
+           <property name="minimum">
+            <double>1.001000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>5.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.050000000000000</double>
+           </property>
+           <property name="value">
+            <double>1.500000000000000</double>
+           </property>
+          </widget>
           <widget class="QPushButton" name="btnResetCamera">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>110</y>
+             <width>321</width>
+             <height>31</height>
+            </rect>
+           </property>
            <property name="font">
             <font>
              <pointsize>12</pointsize>
@@ -668,8 +1161,192 @@
             <string>Reset Camera</string>
            </property>
           </widget>
-         </item>
-        </layout>
+          <widget class="QPushButton" name="btnHKView">
+           <property name="geometry">
+            <rect>
+             <x>40</x>
+             <y>160</y>
+             <width>80</width>
+             <height>23</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>HK(xy)</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnKLView">
+           <property name="geometry">
+            <rect>
+             <x>140</x>
+             <y>160</y>
+             <width>80</width>
+             <height>23</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>KL(yz)</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btnHLView">
+           <property name="geometry">
+            <rect>
+             <x>230</x>
+             <y>160</y>
+             <width>80</width>
+             <height>23</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>HL(xz)</string>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QGroupBox" name="gbCamPresets">
+          <property name="geometry">
+           <rect>
+            <x>360</x>
+            <y>10</y>
+            <width>341</width>
+            <height>111</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Presets</string>
+          </property>
+          <widget class="QLabel" name="label">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>100</width>
+             <height>21</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>12</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>Set Position</string>
+           </property>
+          </widget>
+          <widget class="QComboBox" name="cbSetCamPos">
+           <property name="geometry">
+            <rect>
+             <x>120</x>
+             <y>25</y>
+             <width>141</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>12</pointsize>
+            </font>
+           </property>
+           <item>
+            <property name="text">
+             <string>HK(xy)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>KL(yz)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>HL(xz)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>H+ (X+)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>H- (X-)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>K+ (Y+)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>K- (Y-)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>L+ (Z+)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>L- (Z-)</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Isometric</string>
+            </property>
+           </item>
+          </widget>
+          <widget class="QPushButton" name="btnSetCamPos">
+           <property name="geometry">
+            <rect>
+             <x>270</x>
+             <y>25</y>
+             <width>61</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>12</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>Set</string>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QGroupBox" name="gbCamSlice">
+          <property name="geometry">
+           <rect>
+            <x>10</x>
+            <y>230</y>
+            <width>331</width>
+            <height>111</height>
+           </rect>
+          </property>
+          <property name="title">
+           <string>Slice-aligned Views</string>
+          </property>
+          <widget class="QPushButton" name="btnViewSliceNormal">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>30</y>
+             <width>311</width>
+             <height>31</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>12</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>View along Slice Normal</string>
+           </property>
+          </widget>
+         </widget>
+        </widget>
        </widget>
       </item>
      </layout>

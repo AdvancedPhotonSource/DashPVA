@@ -12,7 +12,8 @@ from PyQt5.QtWidgets import (
     QErrorMessage, 
     QMessageBox, 
     QProgressDialog,
-    QDialog
+    QDialog,
+    QSizePolicy
     )
 import h5py
 import os
@@ -21,7 +22,6 @@ import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import SizeManager
 from utils.hdf5_loader import HDF5Loader
-from PyQt5.QtWidgets import QSizePolicy
 
 class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -40,6 +40,19 @@ class HKL3DSliceWindow(QMainWindow):
         self.btnZoomOut.clicked.connect(self.zoom_out)
         self.btnResetCamera.clicked.connect(self.reset_camera)
         self.btnSetCamPos.clicked.connect(self.set_camera_position)
+        if hasattr(self, 'btnViewSliceNormal'):
+            self.btnViewSliceNormal.clicked.connect(self.view_slice_normal)
+        
+        # Quick camera preset buttons in Movements group
+        try:
+            if hasattr(self, 'btnHKView'):
+                self.btnHKView.clicked.connect(lambda: self._apply_cam_preset_button('HK(xy)'))
+            if hasattr(self, 'btnKLView'):
+                self.btnKLView.clicked.connect(lambda: self._apply_cam_preset_button('KL(yz)'))
+            if hasattr(self, 'btnHLView'):
+                self.btnHLView.clicked.connect(lambda: self._apply_cam_preset_button('HL(xz)'))
+        except Exception:
+            pass
         
         # Toggle
         self.cbToggleSlicePointer.clicked.connect(self.toggle_pointer)
@@ -74,6 +87,10 @@ class HKL3DSliceWindow(QMainWindow):
         self.curr_shape = (0,0)
         self.num_images = 0
 
+        # Slice control state
+        self._slice_translate_step = 0.01
+        self._slice_rotate_step_deg = 1.0
+
         # Pending-change tracking for batch render
         try:
             self._applied_reduction_text = self.cbbReductionFactor.currentText()
@@ -99,6 +116,60 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.setMinimumSize(500, 500)
         
         self.viewer_3d_slicer_layout.addWidget(self.plotter,1,1)
+        # Setup Slice Lock overlay in-plot HUD
+        try:
+            self._setup_slice_lock_overlay()
+        except Exception:
+            pass
+
+        # -------- Wire Slice/Camera controls defined in the .ui (no programmatic creation)
+        # Slice auto-apply handlers
+        if hasattr(self, 'sbSliceTranslateStep'):
+            self.sbSliceTranslateStep.valueChanged.connect(self._on_translate_step_changed)
+        if hasattr(self, 'sbSliceRotateStep'):
+            self.sbSliceRotateStep.valueChanged.connect(self._on_rotate_step_changed)
+        if hasattr(self, 'cbSliceOrientation'):
+            self.cbSliceOrientation.currentIndexChanged.connect(self._on_orientation_changed)
+        if hasattr(self, 'sbNormH'):
+            self.sbNormH.editingFinished.connect(self._on_custom_normal_changed)
+        if hasattr(self, 'sbNormK'):
+            self.sbNormK.editingFinished.connect(self._on_custom_normal_changed)
+        if hasattr(self, 'sbNormL'):
+            self.sbNormL.editingFinished.connect(self._on_custom_normal_changed)
+
+        # Slice translate buttons
+        if hasattr(self, 'btnSliceUpNormal'):
+            self.btnSliceUpNormal.clicked.connect(lambda: self.nudge_along_normal(+1))
+        if hasattr(self, 'btnSliceDownNormal'):
+            self.btnSliceDownNormal.clicked.connect(lambda: self.nudge_along_normal(-1))
+        if hasattr(self, 'btnSlicePosH'):
+            self.btnSlicePosH.clicked.connect(lambda: self.nudge_along_axis('H', +1))
+        if hasattr(self, 'btnSliceNegH'):
+            self.btnSliceNegH.clicked.connect(lambda: self.nudge_along_axis('H', -1))
+        if hasattr(self, 'btnSlicePosK'):
+            self.btnSlicePosK.clicked.connect(lambda: self.nudge_along_axis('K', +1))
+        if hasattr(self, 'btnSliceNegK'):
+            self.btnSliceNegK.clicked.connect(lambda: self.nudge_along_axis('K', -1))
+        if hasattr(self, 'btnSlicePosL'):
+            self.btnSlicePosL.clicked.connect(lambda: self.nudge_along_axis('L', +1))
+        if hasattr(self, 'btnSliceNegL'):
+            self.btnSliceNegL.clicked.connect(lambda: self.nudge_along_axis('L', -1))
+
+        # Slice rotate buttons
+        if hasattr(self, 'btnRotPlusH'):
+            self.btnRotPlusH.clicked.connect(lambda: self.rotate_about_axis('H', +self._slice_rotate_step_deg))
+        if hasattr(self, 'btnRotMinusH'):
+            self.btnRotMinusH.clicked.connect(lambda: self.rotate_about_axis('H', -self._slice_rotate_step_deg))
+        if hasattr(self, 'btnRotPlusK'):
+            self.btnRotPlusK.clicked.connect(lambda: self.rotate_about_axis('K', +self._slice_rotate_step_deg))
+        if hasattr(self, 'btnRotMinusK'):
+            self.btnRotMinusK.clicked.connect(lambda: self.rotate_about_axis('K', -self._slice_rotate_step_deg))
+        if hasattr(self, 'btnRotPlusL'):
+            self.btnRotPlusL.clicked.connect(lambda: self.rotate_about_axis('L', +self._slice_rotate_step_deg))
+        if hasattr(self, 'btnRotMinusL'):
+            self.btnRotMinusL.clicked.connect(lambda: self.rotate_about_axis('L', -self._slice_rotate_step_deg))
+        if hasattr(self, 'btnResetSlice'):
+            self.btnResetSlice.clicked.connect(self._on_reset_slice)
         
         # -------------------------------------------------------------------- #
 
@@ -293,7 +364,24 @@ class HKL3DSliceWindow(QMainWindow):
 
     # ================ 3D VISUALIZATION METHODS ======================= #
     def create_3D(self, cloud=None, intensity=None):
-        self.plotter.clear()
+        # Avoid clearing entire plotter to keep axes stable
+        try:
+            if "cloud_volume" in self.plotter.actors:
+                self.plotter.remove_actor("cloud_volume", reset_camera=False)
+            if "slice" in self.plotter.actors:
+                self.plotter.remove_actor("slice", reset_camera=False)
+            if "origin_sphere" in self.plotter.actors:
+                self.plotter.remove_actor("origin_sphere", reset_camera=False)
+            if "normal_line" in self.plotter.actors:
+                self.plotter.remove_actor("normal_line", reset_camera=False)
+            if hasattr(self.plotter, "plane_widgets") and self.plotter.plane_widgets:
+                for pw in list(self.plotter.plane_widgets):
+                    try:
+                        self.plotter.remove_plane_widget(pw)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         # ------ Initialize the cloud ------ #
         
         self.cloud_mesh = pyv.PolyData(cloud)
@@ -357,7 +445,8 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.add_volume(
             volume=self.vol,
             scalars="intensity",
-            name="cloud_volume"
+            name="cloud_volume",
+            reset_camera=False
         )
         
         self.plotter.renderer._actors["cloud_volume"].SetVisibility(False)
@@ -369,6 +458,9 @@ class HKL3DSliceWindow(QMainWindow):
             ztitle='L Axis', 
             bounds=self.cloud_mesh.bounds
         )
+        
+        # Preserve initial bounds for a stable axes actor that won't move on slice updates
+        self.initial_bounds = self.cloud_mesh.bounds
         
         cube_axes_actor = self.plotter.renderer.cube_axes_actor
         if cube_axes_actor:
@@ -386,6 +478,14 @@ class HKL3DSliceWindow(QMainWindow):
             cube_axes_actor.GetZAxesLinesProperty().SetColor(0.0, 0.0, 1.0)
             cube_axes_actor.GetTitleTextProperty(2).SetColor(0.0, 0.0, 1.0)
             cube_axes_actor.GetLabelTextProperty(2).SetColor(0.0, 0.0, 1.0)
+
+            # Fix axes bounds so they do not change when adding pointer or slice meshes
+            try:
+                b = self.initial_bounds
+                cube_axes_actor.SetBounds(b[0], b[1], b[2], b[3], b[4], b[5])
+                cube_axes_actor.Modified()
+            except Exception:
+                pass
 
         # ------- Adding the initial slice -------- #
         slice_normal = (0, 0, 1)
@@ -410,6 +510,23 @@ class HKL3DSliceWindow(QMainWindow):
             tubing=False,
             origin_translation=True,
         )
+        # Ensure only one interactive plane widget exists (remove any extras)
+        try:
+            if hasattr(self.plotter, "plane_widgets") and len(self.plotter.plane_widgets) > 1:
+                for pw in self.plotter.plane_widgets[:-1]:
+                    try:
+                        self.plotter.remove_plane_widget(pw)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Sync lock state with plane widget and UI
+        try:
+            self._sync_plane_interaction()
+            self._sync_slice_controls()
+            self._sync_lock_message()
+        except Exception:
+            pass
 
         # -------- Adding the arrow -------------- #
         sphere = pyv.Sphere(radius=0.1, center=slice_origin)
@@ -417,12 +534,32 @@ class HKL3DSliceWindow(QMainWindow):
             pointa=slice_origin,
             pointb=np.array(slice_origin) + np.array(slice_normal) * (np.min(data_range))
         )
-        self.plotter.add_mesh(sphere, color='red', name="origin_sphere", pickable=False)
-        self.plotter.add_mesh(line, color='red', name="normal_line", pickable=False)
+        # Capture pointer actors so we can reliably remove/update them later
+        try:
+            self._pointer_sphere = self.plotter.add_mesh(sphere, color='red', name="origin_sphere", pickable=False)
+        except Exception:
+            self._pointer_sphere = None
+        try:
+            self._pointer_line = self.plotter.add_mesh(line, color='red', name="normal_line", pickable=False)
+        except Exception:
+            self._pointer_line = None
 
         # Hide them manually after adding
-        self.plotter.renderer._actors["origin_sphere"].SetVisibility(False)
-        self.plotter.renderer._actors["normal_line"].SetVisibility(False)
+        # Hide pointer visuals by default (use references if available)
+        try:
+            if getattr(self, "_pointer_sphere", None) is not None:
+                self._pointer_sphere.SetVisibility(False)
+            else:
+                self.plotter.renderer._actors["origin_sphere"].SetVisibility(False)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_pointer_line", None) is not None:
+                self._pointer_line.SetVisibility(False)
+            else:
+                self.plotter.renderer._actors["normal_line"].SetVisibility(False)
+        except Exception:
+            pass
 
         # Store toggle visibility state
         self.toggle_state = {"visible": False}
@@ -469,7 +606,7 @@ class HKL3DSliceWindow(QMainWindow):
             if hasattr(self, 'cbToggleCloudVolume') and self.cbToggleCloudVolume.isChecked():
                 self.plotter.renderer._actors["cloud_volume"].SetVisibility(True)
             else:
-                self.plotter.renderer._actors["cloud_volume"].SetVisibility(True)
+                self.plotter.renderer._actors["cloud_volume"].SetVisibility(False)
 
         # Force update of all scalar bars with the new range
         if hasattr(self.plotter, 'scalar_bars'):
@@ -515,20 +652,6 @@ class HKL3DSliceWindow(QMainWindow):
         try:
             changed_any = False
 
-            # Check reduction factor change
-            # current_reduction_text = None
-            # try:
-            #     current_reduction_text = self.cbbReductionFactor.currentText()
-            # except Exception:
-            #     pass
-
-            # if getattr(self, "_pending_reduction", False) or (current_reduction_text is not None and current_reduction_text != getattr(self, "_applied_reduction_text", None)):
-            #     if getattr(self, "cloud_copy", None) is not None:
-            #         self.reduction_factor()
-            #         self._applied_reduction_text = current_reduction_text
-            #         changed_any = True
-            #     self._pending_reduction = False
-
             # Check intensity range change
             cur_min = None
             cur_max = None
@@ -553,38 +676,166 @@ class HKL3DSliceWindow(QMainWindow):
 
     # ================ CALLBACK METHODS ======================= #
     def update_slice_from_plane(self, normal, origin):
-        """Callback for updating the slice and vector visuals"""
-        # Update slice
-        new_slice = self.vol.slice(normal=normal, origin=origin)
-        focused_range = [self.min_intensity, self.max_intensity]
+        """Callback for updating the slice and vector visuals with bounds safety."""
+        # Guard: volume must exist
+        if not hasattr(self, 'vol') or self.vol is None:
+            return
+        # Ignore if slice is locked
+        try:
+            if bool(getattr(self, "_slice_locked", False)):
+                return
+        except Exception:
+            pass
+
+        # Normalize normal and clamp origin within bounds to avoid empty slice
+        n = self.normalize_vector(np.array(normal, dtype=float))
+        o = np.array(origin, dtype=float)
+        try:
+            clamped_origin, was_clamped = self.clamp_plane_origin_within_bounds(n, o)
+        except Exception:
+            clamped_origin, was_clamped = o, False
+
+        # Sync plane widget if we adjusted origin
+        try:
+            if was_clamped and hasattr(self.plotter, 'plane_widgets') and self.plotter.plane_widgets:
+                pw = self.plotter.plane_widgets[0]
+                pw.SetNormal(n)
+                pw.SetOrigin(clamped_origin)
+        except Exception:
+            pass
+
+        # Prepare new slice
+        new_slice = None
+        try:
+            new_slice = self.vol.slice(normal=n, origin=clamped_origin)
+        except Exception:
+            new_slice = None
+
+        # If slice is empty, warn and do not alter existing actors
+        try:
+            if (new_slice is None) or (getattr(new_slice, 'n_points', 0) == 0):
+                QMessageBox.warning(self, "Plane out of bounds",
+                                    "Slice plane is out of bounds. Keeping previous slice and snapping plane just inside bounds.")
+                return
+        except Exception:
+            # Silent fallback if QMessageBox unavailable
+            return
+
+        # Remove previous slice actor only after we have a valid new slice
+        try:
+            if "slice" in self.plotter.actors:
+                self.plotter.remove_actor("slice", reset_camera=False)
+        except Exception:
+            pass
+
         # Add slice without modifying scalar ranges
-        self.plotter.add_mesh(
-            new_slice,
-            scalars="intensity",
-            cmap=self.lut,
-            clim=focused_range,
-            name="slice",
-            show_edges=False,
-            reset_camera=False,
-            pickable=False
-        )
-        self.update_intensity() # Keeps the intensity limits
+        focused_range = [getattr(self, 'min_intensity', 0), getattr(self, 'max_intensity', 0)]
+        try:
+            self.plotter.add_mesh(
+                new_slice,
+                scalars="intensity",
+                cmap=self.lut,
+                clim=focused_range if focused_range[1] >= focused_range[0] else None,
+                name="slice",
+                show_edges=False,
+                reset_camera=False,
+                pickable=False
+            )
+        except Exception:
+            return
+
+        # Avoid re-adding volume/scalar bars during interactive plane moves to keep axes stable
+
         # Remove previous origin and line
-        self.plotter.remove_actor("origin_sphere", reset_camera=False)
-        self.plotter.remove_actor("normal_line", reset_camera=False)
+        # Remove previous pointer actors using stored references if available
+        try:
+            if getattr(self, "_pointer_sphere", None) is not None:
+                try:
+                    self.plotter.remove_actor(self._pointer_sphere)
+                except Exception:
+                    pass
+                self._pointer_sphere = None
+            else:
+                # Fallback by name
+                self.plotter.remove_actor("origin_sphere", reset_camera=False)
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_pointer_line", None) is not None:
+                try:
+                    self.plotter.remove_actor(self._pointer_line)
+                except Exception:
+                    pass
+                self._pointer_line = None
+            else:
+                # Fallback by name
+                self.plotter.remove_actor("normal_line", reset_camera=False)
+        except Exception:
+            pass
 
-        # Create new visuals
-        sphere_radius = (np.min(self.cloud_mesh.points.max(axis=0)-self.cloud_mesh.points.min(axis=0)))*0.002
-        new_sphere = pyv.Sphere(radius=sphere_radius, center=origin)
-        new_line = pyv.Line(pointa=origin, pointb=np.array(origin) + np.array(normal) * (np.min(self.cloud_mesh.points.max(axis=0)-self.cloud_mesh.points.min(axis=0))))
+        # Create new visuals using clamped origin and normalized normal
+        try:
+            bounds_range = (self.cloud_mesh.points.max(axis=0) - self.cloud_mesh.points.min(axis=0))
+            sphere_radius = (np.min(bounds_range)) * 0.002
+        except Exception:
+            sphere_radius = 0.1
+        new_sphere = pyv.Sphere(radius=sphere_radius, center=clamped_origin)
+        try:
+            line_len = float(np.min(self.cloud_mesh.points.max(axis=0) - self.cloud_mesh.points.min(axis=0)))
+        except Exception:
+            line_len = 1.0
+        new_line = pyv.Line(pointa=clamped_origin, pointb=np.array(clamped_origin) + np.array(n) * line_len)
 
-        self.plotter.add_mesh(new_sphere, color='red', name="origin_sphere", pickable=False)
-        self.plotter.add_mesh(new_line, color='red', name="normal_line", pickable=False)
+        # Add new pointer actors and store references
+        try:
+            self._pointer_sphere = self.plotter.add_mesh(new_sphere, color='red', name="origin_sphere", pickable=False)
+        except Exception:
+            self._pointer_sphere = None
+        try:
+            self._pointer_line = self.plotter.add_mesh(new_line, color='red', name="normal_line", pickable=False)
+        except Exception:
+            self._pointer_line = None
 
-        # Set their visibility based on toggle state
-        self.plotter.renderer._actors["origin_sphere"].SetVisibility(self.toggle_state["visible"])
-        self.plotter.renderer._actors["normal_line"].SetVisibility(self.toggle_state["visible"])
-        
+        # Ensure axes bounds remain fixed (avoid axes moving with pointer updates)
+        # try:
+        #     cube_axes_actor = self.plotter.renderer.cube_axes_actor
+        #     if cube_axes_actor and hasattr(self, 'initial_bounds') and self.initial_bounds:
+        #         b = self.initial_bounds
+        #         cube_axes_actor.SetBounds(b[0], b[1], b[2], b[3], b[4], b[5])
+        #         cube_axes_actor.Modified()
+        # except Exception:
+        #     pass
+
+        # Set pointer visibility based on toggle state
+        try:
+            if getattr(self, "_pointer_sphere", None) is not None:
+                self._pointer_sphere.SetVisibility(self.toggle_state.get("visible", False))
+            else:
+                self.plotter.renderer._actors["origin_sphere"].SetVisibility(self.toggle_state.get("visible", False))
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_pointer_line", None) is not None:
+                self._pointer_line.SetVisibility(self.toggle_state.get("visible", False))
+            else:
+                self.plotter.renderer._actors["normal_line"].SetVisibility(self.toggle_state.get("visible", False))
+        except Exception:
+            pass
+
+        # Keep plane widget synchronized (again) to final state
+        try:
+            if hasattr(self.plotter, 'plane_widgets') and self.plotter.plane_widgets:
+                pw = self.plotter.plane_widgets[0]
+                pw.SetNormal(n)
+                pw.SetOrigin(clamped_origin)
+        except Exception:
+            pass
+
+        # Render
+        try:
+            self.plotter.render()
+        except Exception:
+            pass
 
     # ================ DATA LOADING ======================= #
     def render_changes(self):
@@ -710,13 +961,17 @@ class HKL3DSliceWindow(QMainWindow):
                 self.grid = grid
                 self.vol = grid
                 self.plotter.clear()
+                try:
+                    self._slice_lock_overlay_added = False
+                except Exception:
+                    pass
                 
                 # Focus and camera
                 try:
                     self.plotter.set_focus(self.grid.center)
                 except Exception:
                     pass
-                self.plotter.add_volume(volume=self.vol, scalars="intensity", name="cloud_volume")
+                self.plotter.add_volume(volume=self.vol, scalars="intensity", name="cloud_volume", reset_camera=False)
                 self.plotter.renderer._actors["cloud_volume"].SetVisibility(True)
                 self.plotter.reset_camera()
                 
@@ -757,6 +1012,24 @@ class HKL3DSliceWindow(QMainWindow):
                         tubing=False,
                         origin_translation=True,
                     )
+                    # Ensure only one interactive plane widget exists (remove any extras)
+                    try:
+                        if hasattr(self.plotter, "plane_widgets") and len(self.plotter.plane_widgets) > 1:
+                            for pw in self.plotter.plane_widgets[:-1]:
+                                try:
+                                    self.plotter.remove_plane_widget(pw)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    # Sync lock state and recreate overlay after clear()
+                    try:
+                        self._setup_slice_lock_overlay()
+                        self._sync_plane_interaction()
+                        self._sync_slice_controls()
+                        self._sync_lock_message()
+                    except Exception:
+                        pass
                     # Arrow visuals (sphere at origin, line along normal)
                     b = self.grid.bounds
                     min_bounds = np.array([b[0], b[2], b[4]])
@@ -1042,15 +1315,28 @@ class HKL3DSliceWindow(QMainWindow):
 
     # ================ CAMERA CONTROL METHODS ======================= #
     def zoom_in(self):
-        """Zoom camera in"""
+        """Zoom camera in using step factor from UI if available"""
         camera = self.plotter.camera
-        camera.zoom(1.5)
+        try:
+            step = float(self.sbZoomStep.value()) if hasattr(self, 'sbZoomStep') else 1.5
+            if not np.isfinite(step) or step <= 1.0:
+                step = 1.5
+        except Exception:
+            step = 1.5
+        camera.zoom(step)
         self.plotter.render()
 
     def zoom_out(self):
-        """Zoom camera out"""
+        """Zoom camera out using inverse of step factor from UI if available"""
         camera = self.plotter.camera
-        camera.zoom(0.5)
+        try:
+            step = float(self.sbZoomStep.value()) if hasattr(self, 'sbZoomStep') else 1.5
+            if not np.isfinite(step) or step <= 1.0:
+                step = 1.5
+        except Exception:
+            step = 1.5
+        out_factor = 1.0 / step
+        camera.zoom(out_factor)
         self.plotter.render()
 
     def reset_camera(self):
@@ -1059,15 +1345,177 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
 
     def set_camera_position(self):
-        """Set camera to predefined positions"""
-        pos = self.cbSetCamPos.currentText().lower()
-        if 'xy' in pos:
-            self.plotter.view_xy()   
-        elif 'yz' in pos:
-            self.plotter.view_yz()   
-        elif 'xz' in pos:
-            self.plotter.view_xz()   
-        self.plotter.render()
+        """Set camera to predefined positions (use UI combo from slice window)."""
+        # Source text from the UI
+        pos_src = None
+        try:
+            if hasattr(self, 'cbSetCamPos') and self.cbSetCamPos is not None:
+                pos_src = self.cbSetCamPos.currentText()
+            elif hasattr(self, 'camSetPosCombo') and self.camSetPosCombo is not None:
+                pos_src = self.camSetPosCombo.currentText()
+        except Exception:
+            pass
+
+        pos_text = (pos_src or '').strip().lower()
+        p = self.plotter
+        cam = getattr(p, 'camera', None)
+
+        # Helper to center focus for consistent navigation
+        def _set_focus_to_data_center():
+            try:
+                if hasattr(self, 'vol') and self.vol is not None and hasattr(self.vol, 'center'):
+                    p.set_focus(self.vol.center)
+                elif hasattr(self, 'cloud_mesh') and self.cloud_mesh is not None and hasattr(self.cloud_mesh, 'center'):
+                    p.set_focus(self.cloud_mesh.center)
+            except Exception:
+                pass
+
+        # Orthogonal planar presets (existing)
+        if ('xy' in pos_text) or ('hk' in pos_text):
+            _set_focus_to_data_center()
+            p.view_xy()
+        elif ('yz' in pos_text) or ('kl' in pos_text):
+            _set_focus_to_data_center()
+            p.view_yz()
+        elif ('xz' in pos_text) or ('hl' in pos_text):
+            _set_focus_to_data_center()
+            p.view_xz()
+        # Isometric
+        elif 'iso' in pos_text:
+            _set_focus_to_data_center()
+            try:
+                p.view_isometric()
+            except Exception:
+                # Fallback: a generic isometric-looking vector
+                try:
+                    p.view_vector((1.0, 1.0, 1.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                except Exception:
+                    pass
+        else:
+            # Axis-aligned (+/-H/K/L or +/-X/Y/Z)
+            _set_focus_to_data_center()
+            label = (pos_text or '')
+            # Robust substring detection to handle composite labels like "H+ (X+)"
+            try:
+                if ('h+' in label) or ('x+' in label):
+                    p.view_vector((1.0, 0.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif ('h-' in label) or ('x-' in label):
+                    p.view_vector((-1.0, 0.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif ('k+' in label) or ('y+' in label):
+                    p.view_vector((0.0, 1.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif ('k-' in label) or ('y-' in label):
+                    p.view_vector((0.0, -1.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif ('l+' in label) or ('z+' in label):
+                    p.view_vector((0.0, 0.0, 1.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 1.0, 0.0)
+                elif ('l-' in label) or ('z-' in label):
+                    p.view_vector((0.0, 0.0, -1.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 1.0, 0.0)
+            except Exception:
+                pass
+
+        # Keep view_up orthogonal for safety
+        try:
+            if cam is not None and hasattr(cam, 'orthogonalize_view_up'):
+                cam.orthogonalize_view_up()
+        except Exception:
+            pass
+
+        # Render
+        try:
+            p.render()
+        except Exception:
+            pass
+
+    def _apply_cam_preset_button(self, label: str):
+        """
+        Apply camera preset triggered by quick preset buttons.
+        Selects the combo text and delegates to set_camera_position() for mapping and safety.
+        """
+        try:
+            if hasattr(self, 'cbSetCamPos') and (self.cbSetCamPos is not None):
+                self.cbSetCamPos.setCurrentText(label)
+        except Exception:
+            pass
+        try:
+            self.set_camera_position()
+        except Exception:
+            # Fallback directly to orthogonal views
+            try:
+                if 'hk' in label.lower() or 'xy' in label.lower():
+                    self.plotter.view_xy()
+                elif 'kl' in label.lower() or 'yz' in label.lower():
+                    self.plotter.view_yz()
+                elif 'hl' in label.lower() or 'xz' in label.lower():
+                    self.plotter.view_xz()
+                self.plotter.render()
+            except Exception:
+                pass
+
+    def view_slice_normal(self):
+        """Align camera to look along the current slice normal at the slice origin."""
+        try:
+            # Get current slice plane normal and origin
+            normal, origin = self.get_plane_state()
+            normal = self.normalize_vector(np.array(normal, dtype=float))
+            origin = np.array(origin, dtype=float)
+
+            cam = getattr(self.plotter, 'camera', None)
+            if cam is None:
+                return
+
+            # Determine a reasonable camera distance
+            try:
+                pos = np.array(getattr(cam, 'position', origin), dtype=float)
+                focal = np.array(getattr(cam, 'focal_point', origin), dtype=float)
+                distance = float(np.linalg.norm(pos - focal))
+                if not np.isfinite(distance) or distance <= 0.0:
+                    # fallback to data bounds
+                    try:
+                        rng = self.cloud_mesh.points.max(axis=0) - self.cloud_mesh.points.min(axis=0)
+                        distance = float(np.linalg.norm(rng)) * 0.5
+                    except Exception:
+                        distance = 1.0
+            except Exception:
+                distance = 1.0
+
+            # Set camera focal point and position along normal
+            try:
+                cam.focal_point = origin.tolist() if hasattr(origin, 'tolist') else origin
+            except Exception:
+                pass
+            try:
+                cam.position = (origin + normal * distance).tolist()
+            except Exception:
+                pass
+
+            # Keep/upd view-up to avoid degeneracy with normal
+            try:
+                current_up = np.array(getattr(cam, 'view_up', [0.0, 1.0, 0.0]), dtype=float)
+                up_norm = self.normalize_vector(current_up)
+                # If up is nearly parallel to normal, choose an alternate axis
+                if abs(float(np.dot(up_norm, normal))) > 0.99:
+                    # pick Y unless normal's Y is dominant; else pick X
+                    new_up = np.array([0.0, 1.0, 0.0], dtype=float) if abs(normal[1]) < 0.99 else np.array([1.0, 0.0, 0.0], dtype=float)
+                    cam.view_up = new_up.tolist()
+            except Exception:
+                pass
+
+            self.plotter.render()
+        except Exception:
+            pass
 
     # ================ VISIBILITY TOGGLE METHODS ======================= #
     def toggle_pointer(self):
@@ -1075,11 +1523,17 @@ class HKL3DSliceWindow(QMainWindow):
         vis = self.cbToggleSlicePointer.isChecked()
         self.toggle_state["visible"] = vis
         try:
-            self.plotter.renderer._actors["origin_sphere"].SetVisibility(vis)
+            if getattr(self, "_pointer_sphere", None) is not None:
+                self._pointer_sphere.SetVisibility(vis)
+            else:
+                self.plotter.renderer._actors["origin_sphere"].SetVisibility(vis)
         except Exception:
             pass
         try:
-            self.plotter.renderer._actors["normal_line"].SetVisibility(vis)
+            if getattr(self, "_pointer_line", None) is not None:
+                self._pointer_line.SetVisibility(vis)
+            else:
+                self.plotter.renderer._actors["normal_line"].SetVisibility(vis)
         except Exception:
             pass
         self.plotter.render()
@@ -1095,21 +1549,6 @@ class HKL3DSliceWindow(QMainWindow):
         new_lut = pyv.LookupTable(cmap=color_map_select)
         self.lut = new_lut
         
-        # Update all actors in plotter.actors (PyVista managed) - commented out for performance
-        # for actor_name, actor in self.plotter.actors.items():
-        #     if hasattr(actor, 'mapper') and hasattr(actor.mapper, 'lookup_table'):
-        #         actor.mapper.lookup_table = new_lut
-        #         actor.mapper.update()
-        
-        # Update all actors in renderer._actors (VTK managed) - commented out for performance
-        # for actor_name, actor in self.plotter.renderer._actors.items():
-        #     # Check if it's a volume or other VTK actor with LUT
-        #     if hasattr(actor, 'GetMapper') and actor.GetMapper():
-        #         mapper = actor.GetMapper()
-        #         if hasattr(mapper, 'SetLookupTable'):
-        #             mapper.SetLookupTable(new_lut)
-        #             mapper.Update()
-        
         # Update scalar bar's lookup table directly
         if hasattr(self.plotter, 'scalar_bars'):
             for scalar_bar_name, scalar_bar_actor in self.plotter.scalar_bars.items():
@@ -1120,125 +1559,299 @@ class HKL3DSliceWindow(QMainWindow):
         # Force render
         self.plotter.render()
 
-    def set_volume_scalar_bar_range(self, min_val, max_val):
-        """Modify the existing volume scalar bar range"""
-        # Use the existing UI controls and update method
-        self.sbMinIntensity.setValue(min_val)
-        self.sbMaxIntensity.setValue(max_val)
-        self.update_intensity()  # This properly updates the volume scalar bar
+    # HUD overlay for slice lock
+    def _setup_slice_lock_overlay(self):
+        # Ensure minimal, labeled, top-left slice lock HUD
+        try:
+            # initialize state flag
+            self._slice_locked = bool(getattr(self, "_slice_locked", False))
+        except Exception:
+            self._slice_locked = False
 
-    def set_volume_scalar_bar_range_direct(self, min_val, max_val):
-        """Directly modify volume scalar bar by re-adding with clim"""
-        if hasattr(self, 'vol') and self.vol is not None:
-            # Remove existing volume
-            if "cloud_volume" in self.plotter.actors:
-                self.plotter.remove_actor("cloud_volume", reset_camera=False)
-            
-            # Re-add with custom range
-            self.plotter.add_volume(
-                volume=self.vol,
-                scalars="intensity",
-                name="cloud_volume",
-                clim=(min_val, max_val)  # This sets the scalar bar range
-            )
-            
-            # Maintain visibility state
-            if hasattr(self, 'cbToggleCloudVolume') and self.cbToggleCloudVolume.isChecked():
-                self.plotter.renderer._actors["cloud_volume"].SetVisibility(True)
-            else:
-                self.plotter.renderer._actors["cloud_volume"].SetVisibility(True)  # Default visible
+        # Always ensure the label exists and is positioned top-left
+        try:
+            if "slice_lock_label" not in getattr(self.plotter, "actors", {}):
+                try:
+                    # Prefer pixel positioning near the checkbox
+                    self.plotter.add_text("Slice Lock", position=(40, 12), font_size=12, color="white", name="slice_lock_label")
+                except Exception:
+                    # Fallback to a named corner position if pixel positioning unsupported
+                    self.plotter.add_text("Slice Lock", position="upper_left", font_size=12, color="white", name="slice_lock_label")
+        except Exception:
+            pass
 
-    def add_custom_scalar_bar_below(self, min_val, max_val, title="Custom Range"):
-        """Add a custom scalar bar positioned below the existing one"""
-        
-        # Create custom lookup table
-        custom_lut = pyv.LookupTable(cmap='viridis')  # Match existing colormap
-        custom_lut.scalar_range = (min_val, max_val)
-        
-        # Add scalar bar positioned below the existing one
-        self.plotter.add_scalar_bar(
-            title=title,
-            position_x=0.85,    # Same X as existing (right side)
-            position_y=0.02,    # Lower Y position (below existing)
-            width=0.12,         # Same width as existing
-            height=0.3,         # Shorter height to fit below
-            n_labels=5,
-            fmt="%.2f",
-            title_font_size=14,
-            label_font_size=12,
-            color='white'       # Match dark theme
-        )
-        
-        # Configure the new scalar bar
-        if hasattr(self.plotter, 'scalar_bars'):
-            # Get the newly added scalar bar (last one)
-            scalar_bar_keys = list(self.plotter.scalar_bars.keys())
-            if scalar_bar_keys:
-                custom_scalar_bar = self.plotter.scalar_bars[scalar_bar_keys[-1]]
-                custom_scalar_bar.SetLookupTable(custom_lut)
-                custom_scalar_bar.SetRange(min_val, max_val)
-                custom_scalar_bar.SetTitle(title)
-                custom_scalar_bar.Modified()
-        
-        # Force render to show changes
-        self.plotter.render()
-
-    def setup_dual_scalar_bars(self, volume_min, volume_max, custom_min, custom_max):
-        """Setup both volume scalar bar range and add custom scalar bar below"""
-        
-        # 1. Modify existing volume scalar bar range
-        self.set_volume_scalar_bar_range(volume_min, volume_max)
-        
-        # 2. Add custom scalar bar below
-        self.add_custom_scalar_bar_below(
-            custom_min, 
-            custom_max, 
-            title=f"Custom [{custom_min}, {custom_max}]"
-        )
-
-    def remove_custom_scalar_bars(self):
-        """Remove any custom scalar bars (keeping only the volume's original scalar bar)"""
-        if hasattr(self.plotter, 'scalar_bars'):
-            # Get all scalar bar keys
-            scalar_bar_keys = list(self.plotter.scalar_bars.keys())
-            
-            # Remove all but the first one (assuming first is the volume's scalar bar)
-            for i, key in enumerate(scalar_bar_keys):
-                if i > 0:  # Keep the first scalar bar, remove others
+        # Add the checkbox only once per plotter lifecycle unless it was cleared
+        try:
+            if not bool(getattr(self, "_slice_lock_overlay_added", False)):
+                # Attempt to add a slightly smaller checkbox at top-left
+                added = False
+                try:
+                    self.plotter.add_checkbox_button_widget(
+                        self._on_slice_lock_toggled,
+                        value=bool(self._slice_locked),
+                        position=(0.02, 0.96),  # normalized near top-left
+                        size=18
+                    )
+                    added = True
+                except Exception:
                     try:
-                        self.plotter.remove_scalar_bar(key)
+                        # Fallback without size parameter if backend doesn't support it
+                        self.plotter.add_checkbox_button_widget(
+                            self._on_slice_lock_toggled,
+                            value=bool(self._slice_locked),
+                            position=(0.02, 0.96)  # normalized near top-left
+                        )
+                        added = True
                     except Exception:
                         pass
-        
-        self.plotter.render()
+                if added:
+                    self._slice_lock_overlay_added = True
+        except Exception:
+            pass
 
-    def hide_all_scalar_bars(self):
-        """Hide all scalar bars in the plotter"""
-        if hasattr(self.plotter, 'scalar_bars'):
-            for name, scalar_bar in self.plotter.scalar_bars.items():
-                if scalar_bar:
-                    scalar_bar.SetVisibility(False)
-        self.plotter.render()
+        # Apply current state to plane and controls and message
+        try:
+            self._sync_plane_interaction()
+            self._sync_slice_controls()
+            self._sync_lock_message()
+        except Exception:
+            pass
 
-    def show_all_scalar_bars(self):
-        """Show all scalar bars in the plotter"""
-        if hasattr(self.plotter, 'scalar_bars'):
-            for name, scalar_bar in self.plotter.scalar_bars.items():
-                if scalar_bar:
-                    scalar_bar.SetVisibility(True)
-        self.plotter.render()
+    def _on_slice_lock_toggled(self, value: bool):
+        try:
+            self._slice_locked = bool(value)
+        except Exception:
+            self._slice_locked = bool(value)
+        # Sync plane and UI state
+        self._sync_plane_interaction()
+        self._sync_slice_controls()
+        self._sync_lock_message()
 
-    def remove_all_scalar_bars(self):
-        """Remove all scalar bars from the plotter"""
-        if hasattr(self.plotter, 'scalar_bars'):
-            for name in list(self.plotter.scalar_bars.keys()):
+    def _sync_plane_interaction(self):
+        try:
+            widgets = getattr(self.plotter, "plane_widgets", [])
+            for pw in widgets or []:
                 try:
-                    self.plotter.remove_scalar_bar(name)
+                    pw.SetEnabled(not bool(getattr(self, "_slice_locked", False)))
+                except Exception:
+                    try:
+                        if bool(getattr(self, "_slice_locked", False)):
+                            pw.EnabledOff()
+                        else:
+                            pw.EnabledOn()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _sync_slice_controls(self):
+        try:
+            idx = self.tabsControls.indexOf(self.tabSlice)
+            self.tabsControls.setTabEnabled(idx, not bool(getattr(self, "_slice_locked", False)))
+        except Exception:
+            try:
+                self.tabSlice.setEnabled(not bool(getattr(self, "_slice_locked", False)))
+            except Exception:
+                pass
+
+    def _sync_lock_message(self):
+        try:
+            locked = bool(getattr(self, "_slice_locked", False))
+            if locked:
+                # Add text HUD if not present
+                if not ("slice_lock_text" in getattr(self.plotter, "actors", {})):
+                    try:
+                        self.plotter.add_text("Slice Locked", position="upper_edge", font_size=16, color="red", name="slice_lock_text")
+                    except Exception:
+                        pass
+                try:
+                    if hasattr(self, "statusbar") and self.statusbar:
+                        self.statusbar.showMessage("Slice is locked")
                 except Exception:
                     pass
-        self.plotter.render()
-            
+            else:
+                # Remove HUD text if present
+                try:
+                    if "slice_lock_text" in getattr(self.plotter, "actors", {}):
+                        self.plotter.remove_actor("slice_lock_text")
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "statusbar") and self.statusbar:
+                        self.statusbar.clearMessage()
+                except Exception:
+                    pass
+            # Render to update HUD visibility
+            try:
+                self.plotter.render()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
+    # ================ SLICE CONTROL METHODS ======================= #
+    def _on_translate_step_changed(self, val: float):
+        self._slice_translate_step = float(val)
+
+    def _on_rotate_step_changed(self, val: float):
+        self._slice_rotate_step_deg = float(val)
+
+    def _on_orientation_changed(self, idx: int):
+        preset = self.cbSliceOrientation.currentText()
+        self.set_plane_preset(preset)
+
+    def _on_custom_normal_changed(self):
+        # Only respond when Custom is selected
+        if self.cbSliceOrientation.currentText().lower().startswith('custom'):
+            n = np.array([self.sbNormH.value(), self.sbNormK.value(), self.sbNormL.value()], dtype=float)
+            n = self.normalize_vector(n)
+            # Update spinboxes to normalized values
+            self.sbNormH.setValue(float(n[0])); self.sbNormK.setValue(float(n[1])); self.sbNormL.setValue(float(n[2]))
+            # Apply immediately, keep origin
+            _, origin = self.get_plane_state()
+            self.update_slice_from_plane(n, origin)
+
+    def _on_reset_slice(self):
+        # Default to HK(xy)
+        try:
+            center = None
+            if hasattr(self, 'vol') and self.vol is not None and hasattr(self.vol, 'center'):
+                center = np.array(self.vol.center)
+            elif hasattr(self, 'cloud_mesh') and self.cloud_mesh is not None and hasattr(self.cloud_mesh, 'center'):
+                center = np.array(self.cloud_mesh.center)
+            else:
+                center = np.array([0.0, 0.0, 0.0], dtype=float)
+            normal = np.array([0.0, 0.0, 1.0], dtype=float)
+            self.update_slice_from_plane(normal, center)
+        except Exception:
+            pass
+
+    def get_plane_state(self):
+        """Get current plane normal and origin; fall back to defaults."""
+        try:
+            if hasattr(self.plotter, 'plane_widgets') and self.plotter.plane_widgets:
+                pw = self.plotter.plane_widgets[0]
+                normal = np.array(pw.GetNormal(), dtype=float)
+                origin = np.array(pw.GetOrigin(), dtype=float)
+                return normal, origin
+        except Exception:
+            pass
+        # Fallbacks
+        normal = np.array([0.0, 0.0, 1.0], dtype=float)
+        try:
+            origin = np.array(self.cloud_mesh.center, dtype=float)
+        except Exception:
+            origin = np.array([0.0, 0.0, 0.0], dtype=float)
+        return normal, origin
+
+    def set_plane_state(self, normal, origin):
+        """Programmatically set plane state and apply slice."""
+        n = self.normalize_vector(np.array(normal, dtype=float))
+        o = np.array(origin, dtype=float)
+        self.update_slice_from_plane(n, o)
+
+    def normalize_vector(self, v):
+        v = np.array(v, dtype=float)
+        norm = float(np.linalg.norm(v))
+        if norm <= 0.0:
+            return np.array([0.0, 0.0, 1.0], dtype=float)
+        return v / norm
+
+    def _get_bounds_center_half(self):
+        """Return (center, half_extents, margin) for current volume bounds."""
+        try:
+            b = self.vol.bounds
+            minb = np.array([b[0], b[2], b[4]], dtype=float)
+            maxb = np.array([b[1], b[3], b[5]], dtype=float)
+            center = 0.5 * (minb + maxb)
+            half = 0.5 * (maxb - minb)
+            # Margin: 0.5% of smallest non-zero extent
+            extent = np.maximum(maxb - minb, 1e-12)
+            margin = 0.005 * float(np.min(extent))
+            return center, half, margin
+        except Exception:
+            return np.zeros(3, dtype=float), np.ones(3, dtype=float), 1e-3
+
+    def clamp_plane_origin_within_bounds(self, normal, origin):
+        """
+        Clamp plane origin so that the plane intersects the volume AABB with a safety margin.
+        Uses AABB-plane intersection criterion: |n·(c - o)| <= dot(|n|, half_extents).
+        """
+        n = self.normalize_vector(np.array(normal, dtype=float))
+        o = np.array(origin, dtype=float)
+        c, h, margin = self._get_bounds_center_half()
+
+        e = float(np.dot(np.abs(n), h))  # projected half extents along n
+        s = float(np.dot(n, (c - o)))    # signed distance from plane origin to center along n
+
+        # If within band (minus margin), keep origin
+        if abs(s) <= max(e - margin, 0.0):
+            return o, False
+
+        # Snap to just inside bounds along normal direction
+        s_target = np.sign(s) * max(e - margin, 0.0)
+        o_new = c - n * s_target
+        return o_new, True
+
+    def set_plane_preset(self, preset_text: str):
+        """Set plane normal to preset HK/KL/HL immediately."""
+        preset = preset_text.lower()
+        if 'xy' in preset or 'hk' in preset:
+            n = np.array([0.0, 0.0, 1.0], dtype=float)
+        elif 'yz' in preset or 'kl' in preset:
+            n = np.array([1.0, 0.0, 0.0], dtype=float)
+        elif 'xz' in preset or 'hl' in preset:
+            n = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            # Custom uses current spinboxes
+            n = np.array([self.sbNormH.value(), self.sbNormK.value(), self.sbNormL.value()], dtype=float)
+            n = self.normalize_vector(n)
+        _, origin = self.get_plane_state()
+        self.set_plane_state(n, origin)
+
+    def nudge_along_normal(self, sign: int):
+        """Translate plane origin along its normal by translate_step."""
+        normal, origin = self.get_plane_state()
+        step = float(self._slice_translate_step)
+        origin_new = origin + float(sign) * step * normal
+        self.set_plane_state(normal, origin_new)
+
+    def nudge_along_axis(self, axis: str, sign: int):
+        """Translate plane origin along H/K/L axis by translate_step."""
+        axis = axis.upper()
+        if axis == 'H':
+            d = np.array([1.0, 0.0, 0.0], dtype=float)
+        elif axis == 'K':
+            d = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            d = np.array([0.0, 0.0, 1.0], dtype=float)
+        normal, origin = self.get_plane_state()
+        step = float(self._slice_translate_step)
+        origin_new = origin + float(sign) * step * d
+        # Keep current normal; only translate origin along axis
+        self.set_plane_state(normal, origin_new)
+
+    def rotate_about_axis(self, axis: str, deg: float):
+        """Rotate plane normal around H/K/L axis by deg (degrees)."""
+        axis = axis.upper()
+        if axis == 'H':
+            u = np.array([1.0, 0.0, 0.0], dtype=float)
+        elif axis == 'K':
+            u = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            u = np.array([0.0, 0.0, 1.0], dtype=float)
+        normal, origin = self.get_plane_state()
+        theta = float(np.deg2rad(deg))
+        ux, uy, uz = u
+        c, s = np.cos(theta), np.sin(theta)
+        R = np.array([
+            [c+ux*ux*(1-c),    ux*uy*(1-c)-uz*s, ux*uz*(1-c)+uy*s],
+            [uy*ux*(1-c)+uz*s, c+uy*uy*(1-c),    uy*uz*(1-c)-ux*s],
+            [uz*ux*(1-c)-uy*s, uz*uy*(1-c)+ux*s, c+uz*uz*(1-c)]
+        ], dtype=float)
+        new_normal = R @ normal
+        new_normal = self.normalize_vector(new_normal)
+        self.set_plane_state(new_normal, origin)
 
     # ================ CLEANUP METHODS ======================= #
     def closeEvent(self, event):
