@@ -32,6 +32,13 @@ class HKL3DSliceWindow(QMainWindow):
         super(HKL3DSliceWindow, self).__init__()
         self.parent = parent
         uic.loadUi('gui/hkl_3d_slice_window.ui', self)
+        # Initialize availability disabled until data loads
+        try:
+            self.actionSave.setEnabled(False)
+            self.actionExtractSlice.setEnabled(False)
+            self._set_slice_controls_enabled(False)
+        except Exception:
+            pass
         self.setWindowTitle('3D Slice')
         pyv.set_plot_theme('dark')
 
@@ -574,6 +581,11 @@ class HKL3DSliceWindow(QMainWindow):
         self.sbMaxIntensity.setRange(*intensity_range)
         self.sbMaxIntensity.setValue(int(np.max(intensity)))
         self.update_intensity()
+        try:
+            self.update_info_slice_labels()
+            self._refresh_availability()
+        except Exception:
+            pass
 
     def update_intensity(self):
         """Updates the min/max intensity levels and scalar bar range"""
@@ -628,7 +640,131 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
         # avoid the cloud volume reapearing after change intneisity limits
         self.toggle_cloud_vol()
-                    
+
+        # Update Info labels and availability after intensity changes
+        try:
+            self.update_info_slice_labels()
+            self._refresh_availability()
+        except Exception:
+            pass
+
+    # ======= INFO/PRECHECK/AVAILABILITY HELPERS ======= #
+    def _is_data_loaded(self) -> bool:
+        try:
+            return hasattr(self, 'vol') and (self.vol is not None)
+        except Exception:
+            return False
+
+    def _slice_exists(self) -> bool:
+        try:
+            actor = getattr(self.plotter, 'actors', {}).get('slice')
+            if not actor:
+                return False
+            mapper = actor.GetMapper() if hasattr(actor, 'GetMapper') else None
+            inp = mapper.GetInput() if mapper and hasattr(mapper, 'GetInput') else None
+            npts = int(inp.GetNumberOfPoints()) if inp and hasattr(inp, 'GetNumberOfPoints') else 0
+            return npts > 0
+        except Exception:
+            return False
+
+    def _set_slice_controls_enabled(self, enabled: bool):
+        try:
+            for wname in ('gbSteps', 'gbOrientation', 'gbTranslate', 'gbRotate'):
+                w = getattr(self, wname, None)
+                if w:
+                    w.setEnabled(bool(enabled))
+            # Also toggle the Slice tab if available
+            if hasattr(self, 'tabsControls') and hasattr(self, 'tabSlice'):
+                try:
+                    idx = self.tabsControls.indexOf(self.tabSlice)
+                    self.tabsControls.setTabEnabled(idx, bool(enabled))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _refresh_availability(self):
+        try:
+            data_loaded = self._is_data_loaded()
+            slice_exists = self._slice_exists()
+            if hasattr(self, 'actionSave'):
+                self.actionSave.setEnabled(bool(data_loaded))
+            if hasattr(self, 'actionExtractSlice'):
+                self.actionExtractSlice.setEnabled(bool(slice_exists))
+            self._set_slice_controls_enabled(bool(data_loaded))
+        except Exception:
+            pass
+
+    def _ensure_data_loaded_or_warn(self) -> bool:
+        if self._is_data_loaded():
+            return True
+        try:
+            QMessageBox.warning(self, "No Data", "No data is loaded. Load data before adjusting the slice.")
+        except Exception:
+            pass
+        return False
+
+    def update_info_slice_labels(self):
+        """Update labels in Info group with current slice orientation/normal/origin."""
+        try:
+            # Orientation preset text
+            orient_text = "-"
+            try:
+                if hasattr(self, 'cbSliceOrientation') and self.cbSliceOrientation is not None:
+                    orient_text = self.cbSliceOrientation.currentText()
+            except Exception:
+                pass
+            # Plane state
+            normal, origin = self.get_plane_state()
+            n = self.normalize_vector(np.array(normal, dtype=float))
+            o = np.array(origin, dtype=float)
+            # Format strings
+            n_str = f"[{n[0]:0.3f}, {n[1]:0.3f}, {n[2]:0.3f}]"
+            o_str = f"[{o[0]:0.2f}, {o[1]:0.2f}, {o[2]:0.2f}]"
+            # Apply to labels if present
+            try:
+                if hasattr(self, 'lbSliceOrientationVal'):
+                    self.lbSliceOrientationVal.setText(str(orient_text))
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'lbSliceNormalVal'):
+                    self.lbSliceNormalVal.setText(n_str)
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'lbSliceOriginVal'):
+                    self.lbSliceOriginVal.setText(o_str)
+            except Exception:
+                pass
+            # Compute and display Slice Position based on orientation
+            try:
+                pos_text = "-"
+                orient_lower = (str(orient_text) or "").lower()
+                # origin is o = [H, K, L]
+                if ("hk" in orient_lower) or ("xy" in orient_lower):
+                    pos_text = f"L = {o[2]:0.2f}"
+                elif ("kl" in orient_lower) or ("yz" in orient_lower):
+                    pos_text = f"H = {o[0]:0.2f}"
+                elif ("hl" in orient_lower) or ("xz" in orient_lower):
+                    pos_text = f"K = {o[1]:0.2f}"
+                else:
+                    # Custom: scalar position along the current normal
+                    s = float(np.dot(n, o))
+                    pos_text = f"n·origin = {s:0.3f}"
+                if hasattr(self, 'lbSlicePositionVal'):
+                    self.lbSlicePositionVal.setText(pos_text)
+            except Exception:
+                pass
+            # Reflect availability of Extract action based on existence (no Info label)
+            try:
+                if hasattr(self, 'actionExtractSlice'):
+                    self.actionExtractSlice.setEnabled(self._slice_exists())
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     # ================ RENDER APPLY METHODS ======================= #
     def _mark_reduction_changed(self):
         try:
@@ -831,6 +967,12 @@ class HKL3DSliceWindow(QMainWindow):
         except Exception:
             pass
 
+        # Update Info labels and availability
+        try:
+            self.update_info_slice_labels()
+            self._refresh_availability()
+        except Exception:
+            pass
         # Render
         try:
             self.plotter.render()
@@ -879,6 +1021,11 @@ class HKL3DSliceWindow(QMainWindow):
                 self.sbMinIntensity.setValue(int(np.min(intensity)))
                 self.sbMaxIntensity.setRange(*intensity_range)
                 self.sbMaxIntensity.setValue(int(np.max(intensity)))
+                try:
+                    self.update_info_slice_labels()
+                    self._refresh_availability()
+                except Exception:
+                    pass
             finally:
                 # Always restore state
                 QApplication.restoreOverrideCursor()
@@ -1078,6 +1225,12 @@ class HKL3DSliceWindow(QMainWindow):
                 except Exception:
                     pass
                 
+                # Update Info labels and availability for volume mode
+                try:
+                    self.update_info_slice_labels()
+                    self._refresh_availability()
+                except Exception:
+                    pass
                 # Done loading volume
                 return
             
@@ -1116,9 +1269,11 @@ class HKL3DSliceWindow(QMainWindow):
                 self.lbOriginalResolutionY.setText(str(shape[1]))
                 
                 print(f"Successfully loaded {len(points)} points from {num_images} images")
-            else:
-                QMessageBox.warning(self, "Setup Error", "Failed to setup 3D cloud")
-            
+            try:
+                self.update_info_slice_labels()
+                self._refresh_availability()
+            except Exception:
+                pass
             # Update UI labels
             self.groupBox3DViewer.setTitle(f'Viewing {num_images} Image(s)')
             self.lbOriginalPointSizeNum.setText(str(len(points)))
@@ -1140,6 +1295,10 @@ class HKL3DSliceWindow(QMainWindow):
     def save_data(self):
         """Save the entire 3D data when parent is present"""
         print("Saving Volume")
+        # Precheck: require volume/data loaded before prompting save dialog
+        if not self._is_data_loaded():
+            QMessageBox.warning(self, "No Volume", "No volume available to save")
+            return
         try:
             # In volume-only mode, allow saving without parent; require self.vol
             # Parent metadata will be included if available
@@ -1251,6 +1410,11 @@ class HKL3DSliceWindow(QMainWindow):
         Extract the current slice data from the 3D viewer and save it using HDF5Loader
         """
         try:
+            # Precheck: require current slice exists before prompting for save
+            if not self._slice_exists():
+                QMessageBox.warning(self, "No Slice", "No slice data available to extract")
+                return
+
             default_name = f"slice_extract_{np.datetime64('now').astype('datetime64[s]').astype(str).replace(':', '-')}.h5"
         
             file_path, _ = QFileDialog.getSaveFileName(
@@ -1558,6 +1722,10 @@ class HKL3DSliceWindow(QMainWindow):
                     scalar_bar_actor.Modified()
         # Force render
         self.plotter.render()
+        normal, origin = self.get_plane_state()
+        n = self.normalize_vector(np.array(normal, dtype=float))
+        o = np.array(origin, dtype=float)
+        self.update_slice_from_plane(n,o)
 
     # HUD overlay for slice lock
     def _setup_slice_lock_overlay(self):
@@ -1697,10 +1865,14 @@ class HKL3DSliceWindow(QMainWindow):
         self._slice_rotate_step_deg = float(val)
 
     def _on_orientation_changed(self, idx: int):
+        if not self._ensure_data_loaded_or_warn():
+            return
         preset = self.cbSliceOrientation.currentText()
         self.set_plane_preset(preset)
 
     def _on_custom_normal_changed(self):
+        if not self._ensure_data_loaded_or_warn():
+            return
         # Only respond when Custom is selected
         if self.cbSliceOrientation.currentText().lower().startswith('custom'):
             n = np.array([self.sbNormH.value(), self.sbNormK.value(), self.sbNormL.value()], dtype=float)
@@ -1712,6 +1884,8 @@ class HKL3DSliceWindow(QMainWindow):
             self.update_slice_from_plane(n, origin)
 
     def _on_reset_slice(self):
+        if not self._ensure_data_loaded_or_warn():
+            return
         # Default to HK(xy)
         try:
             center = None
@@ -1811,6 +1985,8 @@ class HKL3DSliceWindow(QMainWindow):
 
     def nudge_along_normal(self, sign: int):
         """Translate plane origin along its normal by translate_step."""
+        if not self._ensure_data_loaded_or_warn():
+            return
         normal, origin = self.get_plane_state()
         step = float(self._slice_translate_step)
         origin_new = origin + float(sign) * step * normal
@@ -1818,6 +1994,8 @@ class HKL3DSliceWindow(QMainWindow):
 
     def nudge_along_axis(self, axis: str, sign: int):
         """Translate plane origin along H/K/L axis by translate_step."""
+        if not self._ensure_data_loaded_or_warn():
+            return
         axis = axis.upper()
         if axis == 'H':
             d = np.array([1.0, 0.0, 0.0], dtype=float)
@@ -1833,6 +2011,8 @@ class HKL3DSliceWindow(QMainWindow):
 
     def rotate_about_axis(self, axis: str, deg: float):
         """Rotate plane normal around H/K/L axis by deg (degrees)."""
+        if not self._ensure_data_loaded_or_warn():
+            return
         axis = axis.upper()
         if axis == 'H':
             u = np.array([1.0, 0.0, 0.0], dtype=float)
