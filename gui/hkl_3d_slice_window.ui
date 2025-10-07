@@ -6,1359 +6,697 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1655</width>
-    <height>1194</height>
+    <width>1879</width>
+    <height>1188</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QGroupBox" name="groupBox3DViewer">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>30</y>
-      <width>1201</width>
-      <height>1101</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="title">
-     <string>Viewing 0 Image(s)</string>
-    </property>
-    <widget class="QWidget" name="gridLayoutWidget">
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>40</y>
-       <width>1151</width>
-       <height>1051</height>
-      </rect>
-     </property>
-     <layout class="QGridLayout" name="viewer_3d_slicer_layout">
-      <property name="sizeConstraint">
-       <enum>QLayout::SetMaximumSize</enum>
+   <layout class="QHBoxLayout" name="mainLayout">
+    <item>
+     <widget class="QGroupBox" name="groupBox3DViewer">
+      <property name="minimumSize">
+       <size>
+        <width>1125</width>
+        <height>0</height>
+       </size>
       </property>
-      <property name="spacing">
-       <number>5</number>
+      <property name="font">
+       <font>
+        <pointsize>12</pointsize>
+       </font>
       </property>
-     </layout>
-    </widget>
-   </widget>
-   <widget class="QScrollArea" name="scrollArea">
-    <property name="geometry">
-     <rect>
-      <x>1240</x>
-      <y>50</y>
-      <width>381</width>
-      <height>1081</height>
-     </rect>
-    </property>
-    <property name="verticalScrollBarPolicy">
-     <enum>Qt::ScrollBarAlwaysOn</enum>
-    </property>
-    <property name="horizontalScrollBarPolicy">
-     <enum>Qt::ScrollBarAlwaysOff</enum>
-    </property>
-    <property name="widgetResizable">
-     <bool>true</bool>
-    </property>
-    <widget class="QWidget" name="scrollAreaWidgetContents">
-     <property name="geometry">
-      <rect>
-       <x>0</x>
-       <y>0</y>
-       <width>365</width>
-       <height>1079</height>
-      </rect>
-     </property>
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
-       <horstretch>0</horstretch>
-       <verstretch>1</verstretch>
-      </sizepolicy>
-     </property>
-     <layout class="QVBoxLayout" name="verticalLayout">
-      <item>
-       <widget class="QGroupBox" name="fgbLoadData">
-        <property name="font">
-         <font>
-          <pointsize>14</pointsize>
-         </font>
+      <property name="title">
+       <string>Viewing 0 Image(s)</string>
+      </property>
+      <widget class="QWidget" name="gridLayoutWidget">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>40</y>
+         <width>1101</width>
+         <height>1041</height>
+        </rect>
+       </property>
+       <layout class="QGridLayout" name="viewer_3d_slicer_layout">
+        <property name="sizeConstraint">
+         <enum>QLayout::SetMaximumSize</enum>
         </property>
-        <property name="title">
-         <string>Load Data</string>
+        <property name="spacing">
+         <number>5</number>
         </property>
-        <layout class="QFormLayout" name="formLayout">
-         <item row="0" column="1">
-          <widget class="QPushButton" name="btnUseParentData">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Use Parent Data</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QGroupBox" name="formGroupBox">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>14</pointsize>
-         </font>
-        </property>
-        <property name="title">
-         <string>Info</string>
-        </property>
-        <layout class="QFormLayout" name="formLayout_4">
-         <item row="2" column="0">
-          <widget class="QLabel" name="lbRenderTime">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Low Resolution Render Time(s) :</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <widget class="QLabel" name="lbRenderTimeNum">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="frameShape">
-            <enum>QFrame::Box</enum>
-           </property>
-           <property name="text">
-            <string>0</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="lbFilePath">
-           <property name="text">
-            <string>File Path:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QLineEdit" name="leFilePathStr">
-           <property name="enabled">
-            <bool>false</bool>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QGroupBox" name="formGroupBox">
-        <property name="font">
-         <font>
-          <pointsize>14</pointsize>
-         </font>
-        </property>
-        <property name="title">
-         <string>Image Resolution</string>
-        </property>
-        <layout class="QFormLayout" name="formLayout_2">
-         <item row="0" column="0">
-          <widget class="QLabel" name="lbOriginal">
-           <property name="font">
-            <font>
-             <pointsize>14</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Original</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="lbOriginalPointSize">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Point Size:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QLabel" name="lbOriginalPointSizeNum">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="frameShape">
-            <enum>QFrame::Box</enum>
-           </property>
-           <property name="text">
-            <string>0</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0">
-          <widget class="QLabel" name="lbOriginalResolution">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Resolution:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <layout class="QHBoxLayout" name="horizontalLayout_8">
-           <item>
-            <widget class="QLabel" name="lbOriginalResolutionX">
+       </layout>
+      </widget>
+     </widget>
+    </item>
+    <item>
+     <widget class="QScrollArea" name="scrollArea">
+      <property name="verticalScrollBarPolicy">
+       <enum>Qt::ScrollBarAsNeeded</enum>
+      </property>
+      <property name="horizontalScrollBarPolicy">
+       <enum>Qt::ScrollBarAsNeeded</enum>
+      </property>
+      <property name="widgetResizable">
+       <bool>true</bool>
+      </property>
+      <widget class="QWidget" name="scrollAreaWidgetContents">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>0</y>
+         <width>728</width>
+         <height>1126</height>
+        </rect>
+       </property>
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
+         <horstretch>0</horstretch>
+         <verstretch>1</verstretch>
+        </sizepolicy>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <widget class="QGroupBox" name="fgbLoadData">
+          <property name="font">
+           <font>
+            <pointsize>14</pointsize>
+           </font>
+          </property>
+          <property name="title">
+           <string>Load Data</string>
+          </property>
+          <layout class="QFormLayout" name="formLayout">
+           <item row="0" column="1">
+            <widget class="QPushButton" name="btnUseParentData">
              <property name="font">
               <font>
-               <pointsize>11</pointsize>
+               <pointsize>12</pointsize>
               </font>
              </property>
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
              <property name="text">
-              <string>0</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item alignment="Qt::AlignHCenter">
-            <widget class="QLabel" name="label_3">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
-             <property name="text">
-              <string>x</string>
-             </property>
-            </widget>
-           </item>
-           <item alignment="Qt::AlignHCenter">
-            <widget class="QLabel" name="lbOriginalResolutionY">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
-             <property name="text">
-              <string>0</string>
+              <string>Use Parent Data</string>
              </property>
             </widget>
            </item>
           </layout>
-         </item>
-         <item row="5" column="0">
-          <widget class="QLabel" name="lbReductionFactor">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Reduction Factor</string>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="1">
-          <widget class="QComboBox" name="cbbReductionFactor">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <item>
-            <property name="text">
-             <string>x2</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>x4</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>x6</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>None</string>
-            </property>
-           </item>
-          </widget>
-         </item>
-         <item row="6" column="0">
-          <widget class="QLabel" name="lbCurrentPointSize">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Point Size:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="6" column="1">
-          <widget class="QLabel" name="lbCurrentPointSizeNum">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="frameShape">
-            <enum>QFrame::Box</enum>
-           </property>
-           <property name="text">
-            <string>0</string>
-           </property>
-          </widget>
-         </item>
-         <item row="7" column="0">
-          <widget class="QLabel" name="lbCurrentResolution">
-           <property name="font">
-            <font>
-             <pointsize>11</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Resolution:</string>
-           </property>
-          </widget>
-         </item>
-         <item row="7" column="1">
-          <layout class="QHBoxLayout" name="horizontalLayout_13">
-           <item>
-            <widget class="QLabel" name="lbCurrentResolutionX">
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="formGroupBox">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>14</pointsize>
+           </font>
+          </property>
+          <property name="title">
+           <string>Info</string>
+          </property>
+          <layout class="QFormLayout" name="formLayout_4">
+           <item row="2" column="0">
+            <widget class="QLabel" name="lbRenderTime">
              <property name="font">
               <font>
-               <pointsize>11</pointsize>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Low Resolution Render Time(s) :</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QLabel" name="lbRenderTimeNum">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
               </font>
              </property>
              <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
+              <enum>QFrame::Box</enum>
              </property>
              <property name="text">
               <string>0</string>
              </property>
-             <property name="alignment">
-              <set>Qt::AlignCenter</set>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="lbFilePath">
+             <property name="text">
+              <string>File Path:</string>
              </property>
             </widget>
            </item>
-           <item alignment="Qt::AlignHCenter">
-            <widget class="QLabel" name="label_4">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
-             <property name="text">
-              <string>x</string>
+           <item row="1" column="1">
+            <widget class="QLineEdit" name="leFilePathStr">
+             <property name="enabled">
+              <bool>false</bool>
              </property>
             </widget>
            </item>
-           <item alignment="Qt::AlignHCenter">
-            <widget class="QLabel" name="lbCurrentResolutionY">
+           <item row="3" column="0">
+            <widget class="QLabel" name="lbSliceOrientation">
              <property name="font">
               <font>
-               <pointsize>11</pointsize>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Slice Orientation:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QLabel" name="lbSliceOrientationVal">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
               </font>
              </property>
              <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
+              <enum>QFrame::Box</enum>
              </property>
              <property name="text">
-              <string>0</string>
+              <string>-</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="0">
+            <widget class="QLabel" name="lbSliceNormal">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Slice Normal (H,K,L):</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QLabel" name="lbSliceNormalVal">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Box</enum>
+             </property>
+             <property name="text">
+              <string>[0.000, 0.000, 1.000]</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="0">
+            <widget class="QLabel" name="lbSliceOrigin">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Slice Origin:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QLabel" name="lbSliceOriginVal">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Box</enum>
+             </property>
+             <property name="text">
+              <string>[0.00, 0.00, 0.00]</string>
+             </property>
+            </widget>
+           </item>
+           <item row="6" column="0">
+            <widget class="QLabel" name="lbSlicePosition">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Slice Position:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="6" column="1">
+            <widget class="QLabel" name="lbSlicePositionVal">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Box</enum>
+             </property>
+             <property name="text">
+              <string>-</string>
              </property>
             </widget>
            </item>
           </layout>
-         </item>
-         <item row="4" column="0">
-          <widget class="QLabel" name="lbCurrent">
-           <property name="font">
-            <font>
-             <pointsize>14</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Current</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QGroupBox" name="formGroupBox">
-        <property name="font">
-         <font>
-          <pointsize>14</pointsize>
-         </font>
-        </property>
-        <property name="title">
-         <string>Toggle Visibility</string>
-        </property>
-        <layout class="QFormLayout" name="formLayout_3">
-         <item row="0" column="0">
-          <widget class="QLabel" name="label_2">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Color Map</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="QComboBox" name="cbColorMapSelect">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <item>
-            <property name="text">
-             <string>jet</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>viridis</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>plasma</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>magma</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>hot</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>PuRd</string>
-            </property>
-           </item>
-          </widget>
-         </item>
-         <item row="3" column="1">
-          <widget class="QCheckBox" name="cbToggleSlicePointer">
-           <property name="enabled">
-            <bool>true</bool>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Slice Pointer</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
-          <widget class="QCheckBox" name="cbToggleCloudVolume">
-           <property name="enabled">
-            <bool>true</bool>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Cloud Volume</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QSpinBox" name="sbMinIntensity">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="lbMinIntensity">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Min Intensity</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0">
-          <widget class="QLabel" name="lbMaxIntensity">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Max Intensity</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <widget class="QSpinBox" name="sbMaxIntensity">
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-          </widget>
-         </item>
-         <item row="4" column="0">
-          <widget class="QPushButton" name="btnRender">
-           <property name="text">
-            <string>Render Changes</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QTabWidget" name="tabsControls">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
-          <horstretch>0</horstretch>
-          <verstretch>1</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>14</pointsize>
-         </font>
-        </property>
-        <property name="currentIndex">
-         <number>1</number>
-        </property>
-        <widget class="QWidget" name="tabSlice">
-         <attribute name="title">
-          <string>Slice</string>
-         </attribute>
-         <widget class="QGroupBox" name="gbSteps">
-          <property name="geometry">
-           <rect>
-            <x>10</x>
-            <y>10</y>
-            <width>341</width>
-            <height>111</height>
-           </rect>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="formGroupBox">
+          <property name="font">
+           <font>
+            <pointsize>14</pointsize>
+           </font>
           </property>
           <property name="title">
-           <string>Steps</string>
+           <string>Image Resolution</string>
           </property>
-          <widget class="QLabel" name="lblTranslateStep">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>150</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Translate step</string>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbSliceTranslateStep">
-           <property name="geometry">
-            <rect>
-             <x>170</x>
-             <y>25</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>6</number>
-           </property>
-           <property name="minimum">
-            <double>0.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>1000000000.000000000000000</double>
-           </property>
-           <property name="singleStep">
-            <double>0.001000000000000</double>
-           </property>
-           <property name="value">
-            <double>0.010000000000000</double>
-           </property>
-          </widget>
-          <widget class="QLabel" name="lblRotateStep">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>70</y>
-             <width>160</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Rotation step (deg)</string>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbSliceRotateStep">
-           <property name="geometry">
-            <rect>
-             <x>170</x>
-             <y>65</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>3</number>
-           </property>
-           <property name="minimum">
-            <double>0.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>180.000000000000000</double>
-           </property>
-           <property name="singleStep">
-            <double>1.000000000000000</double>
-           </property>
-           <property name="value">
-            <double>1.000000000000000</double>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnResetSlice">
-           <property name="geometry">
-            <rect>
-             <x>80</x>
-             <y>90</y>
-             <width>151</width>
-             <height>20</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Reset Slice</string>
-           </property>
-          </widget>
+          <layout class="QFormLayout" name="formLayout_2">
+           <item row="0" column="0">
+            <widget class="QLabel" name="lbOriginal">
+             <property name="font">
+              <font>
+               <pointsize>14</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Original</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="lbOriginalPointSize">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Point Size:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLabel" name="lbOriginalPointSizeNum">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Box</enum>
+             </property>
+             <property name="text">
+              <string>0</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="lbOriginalResolution">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Resolution:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <layout class="QHBoxLayout" name="horizontalLayout_8">
+             <item>
+              <widget class="QLabel" name="lbOriginalResolutionX">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>0</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item alignment="Qt::AlignHCenter">
+              <widget class="QLabel" name="label_3">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>x</string>
+               </property>
+              </widget>
+             </item>
+             <item alignment="Qt::AlignHCenter">
+              <widget class="QLabel" name="lbOriginalResolutionY">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>0</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item row="4" column="0">
+            <widget class="QLabel" name="lbCurrent">
+             <property name="font">
+              <font>
+               <pointsize>14</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Current</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="0">
+            <widget class="QLabel" name="lbReductionFactor">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Reduction Factor</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QComboBox" name="cbbReductionFactor">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <item>
+              <property name="text">
+               <string>x2</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>x4</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>x6</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>None</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item row="6" column="0">
+            <widget class="QLabel" name="lbCurrentPointSize">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Point Size:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="6" column="1">
+            <widget class="QLabel" name="lbCurrentPointSizeNum">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Box</enum>
+             </property>
+             <property name="text">
+              <string>0</string>
+             </property>
+            </widget>
+           </item>
+           <item row="7" column="0">
+            <widget class="QLabel" name="lbCurrentResolution">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Resolution:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="7" column="1">
+            <layout class="QHBoxLayout" name="horizontalLayout_13">
+             <item>
+              <widget class="QLabel" name="lbCurrentResolutionX">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>0</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item alignment="Qt::AlignHCenter">
+              <widget class="QLabel" name="label_4">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>x</string>
+               </property>
+              </widget>
+             </item>
+             <item alignment="Qt::AlignHCenter">
+              <widget class="QLabel" name="lbCurrentResolutionY">
+               <property name="font">
+                <font>
+                 <pointsize>11</pointsize>
+                </font>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="text">
+                <string>0</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
          </widget>
-         <widget class="QGroupBox" name="gbOrientation">
-          <property name="geometry">
-           <rect>
-            <x>360</x>
-            <y>10</y>
-            <width>341</width>
-            <height>111</height>
-           </rect>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="formGroupBox">
+          <property name="font">
+           <font>
+            <pointsize>14</pointsize>
+           </font>
           </property>
           <property name="title">
-           <string>Orientation</string>
+           <string>Toggle Visibility</string>
           </property>
-          <widget class="QLabel" name="lblPreset">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>81</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Preset</string>
-           </property>
-          </widget>
-          <widget class="QComboBox" name="cbSliceOrientation">
-           <property name="geometry">
-            <rect>
-             <x>100</x>
-             <y>25</y>
-             <width>221</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <item>
-            <property name="text">
-             <string>HK(xy)</string>
-            </property>
+          <layout class="QFormLayout" name="formLayout_3">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_2">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Color Map</string>
+             </property>
+            </widget>
            </item>
-           <item>
-            <property name="text">
-             <string>KL(yz)</string>
-            </property>
+           <item row="0" column="1">
+            <widget class="QComboBox" name="cbColorMapSelect">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <item>
+              <property name="text">
+               <string>jet</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>viridis</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>plasma</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>magma</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>hot</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>PuRd</string>
+              </property>
+             </item>
+            </widget>
            </item>
-           <item>
-            <property name="text">
-             <string>HL(xz)</string>
-            </property>
+           <item row="3" column="1">
+            <widget class="QCheckBox" name="cbToggleSlicePointer">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Slice Pointer</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
            </item>
-           <item>
-            <property name="text">
-             <string>Custom</string>
-            </property>
+           <item row="3" column="0">
+            <widget class="QCheckBox" name="cbToggleCloudVolume">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Cloud Volume</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
            </item>
-          </widget>
-          <widget class="QLabel" name="lblCustomNormal">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>70</y>
-             <width>111</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Custom normal</string>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbNormH">
-           <property name="geometry">
-            <rect>
-             <x>130</x>
-             <y>65</y>
-             <width>61</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>6</number>
-           </property>
-           <property name="minimum">
-            <double>-1.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>1.000000000000000</double>
-           </property>
-           <property name="value">
-            <double>0.000000000000000</double>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbNormK">
-           <property name="geometry">
-            <rect>
-             <x>200</x>
-             <y>65</y>
-             <width>61</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>6</number>
-           </property>
-           <property name="minimum">
-            <double>-1.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>1.000000000000000</double>
-           </property>
-           <property name="value">
-            <double>0.000000000000000</double>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbNormL">
-           <property name="geometry">
-            <rect>
-             <x>270</x>
-             <y>65</y>
-             <width>61</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>6</number>
-           </property>
-           <property name="minimum">
-            <double>-1.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>1.000000000000000</double>
-           </property>
-           <property name="value">
-            <double>1.000000000000000</double>
-           </property>
-          </widget>
+           <item row="1" column="1">
+            <widget class="QSpinBox" name="sbMinIntensity">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="lbMinIntensity">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Min Intensity</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="lbMaxIntensity">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Max Intensity</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QSpinBox" name="sbMaxIntensity">
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="0">
+            <widget class="QPushButton" name="btnRender">
+             <property name="text">
+              <string>Render Changes</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
-         <widget class="QGroupBox" name="gbTranslate">
-          <property name="geometry">
-           <rect>
-            <x>10</x>
-            <y>130</y>
-            <width>341</width>
-            <height>161</height>
-           </rect>
-          </property>
-          <property name="title">
-           <string>Translate</string>
-          </property>
-          <widget class="QPushButton" name="btnSliceUpNormal">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>161</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Up (normal)</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSliceDownNormal">
-           <property name="geometry">
-            <rect>
-             <x>180</x>
-             <y>30</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>Down (normal)</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSlicePosH">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>70</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+H</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSliceNegH">
-           <property name="geometry">
-            <rect>
-             <x>90</x>
-             <y>70</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>-H</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSlicePosK">
-           <property name="geometry">
-            <rect>
-             <x>170</x>
-             <y>70</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+K</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSliceNegK">
-           <property name="geometry">
-            <rect>
-             <x>250</x>
-             <y>70</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>-K</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSlicePosL">
-           <property name="geometry">
-            <rect>
-             <x>90</x>
-             <y>110</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+L</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnSliceNegL">
-           <property name="geometry">
-            <rect>
-             <x>170</x>
-             <y>110</y>
-             <width>71</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>-L</string>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QGroupBox" name="gbRotate">
-          <property name="geometry">
-           <rect>
-            <x>360</x>
-            <y>130</y>
-            <width>341</width>
-            <height>161</height>
-           </rect>
-          </property>
-          <property name="title">
-           <string>Rotate</string>
-          </property>
-          <widget class="QPushButton" name="btnRotPlusH">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>161</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+ around H</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnRotMinusH">
-           <property name="geometry">
-            <rect>
-             <x>180</x>
-             <y>30</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>- around H</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnRotPlusK">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>70</y>
-             <width>161</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+ around K</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnRotMinusK">
-           <property name="geometry">
-            <rect>
-             <x>180</x>
-             <y>70</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>- around K</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnRotPlusL">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>110</y>
-             <width>161</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>+ around L</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnRotMinusL">
-           <property name="geometry">
-            <rect>
-             <x>180</x>
-             <y>110</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>- around L</string>
-           </property>
-          </widget>
-         </widget>
-        </widget>
-        <widget class="QWidget" name="tabCamera">
-         <attribute name="title">
-          <string>Camera</string>
-         </attribute>
-         <widget class="QGroupBox" name="gbCamMovements">
-          <property name="geometry">
-           <rect>
-            <x>10</x>
-            <y>10</y>
-            <width>341</width>
-            <height>211</height>
-           </rect>
-          </property>
-          <property name="title">
-           <string>Movements</string>
-          </property>
-          <widget class="QPushButton" name="btnZoomOut">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>161</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Zoom Out</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnZoomIn">
-           <property name="geometry">
-            <rect>
-             <x>180</x>
-             <y>30</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Zoom In</string>
-           </property>
-          </widget>
-          <widget class="QLabel" name="lblZoomStep">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>70</y>
-             <width>150</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Zoom step (factor)</string>
-           </property>
-          </widget>
-          <widget class="QDoubleSpinBox" name="sbZoomStep">
-           <property name="geometry">
-            <rect>
-             <x>170</x>
-             <y>65</y>
-             <width>151</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="decimals">
-            <number>3</number>
-           </property>
-           <property name="minimum">
-            <double>1.001000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>5.000000000000000</double>
-           </property>
-           <property name="singleStep">
-            <double>0.050000000000000</double>
-           </property>
-           <property name="value">
-            <double>1.500000000000000</double>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnResetCamera">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>110</y>
-             <width>321</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Reset Camera</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnHKView">
-           <property name="geometry">
-            <rect>
-             <x>40</x>
-             <y>160</y>
-             <width>80</width>
-             <height>23</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>HK(xy)</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnKLView">
-           <property name="geometry">
-            <rect>
-             <x>140</x>
-             <y>160</y>
-             <width>80</width>
-             <height>23</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>KL(yz)</string>
-           </property>
-          </widget>
-          <widget class="QPushButton" name="btnHLView">
-           <property name="geometry">
-            <rect>
-             <x>230</x>
-             <y>160</y>
-             <width>80</width>
-             <height>23</height>
-            </rect>
-           </property>
-           <property name="text">
-            <string>HL(xz)</string>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QGroupBox" name="gbCamPresets">
-          <property name="geometry">
-           <rect>
-            <x>360</x>
-            <y>10</y>
-            <width>341</width>
-            <height>111</height>
-           </rect>
-          </property>
-          <property name="title">
-           <string>Presets</string>
-          </property>
-          <widget class="QLabel" name="label">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>100</width>
-             <height>21</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Set Position</string>
-           </property>
-          </widget>
-          <widget class="QComboBox" name="cbSetCamPos">
-           <property name="geometry">
-            <rect>
-             <x>120</x>
-             <y>25</y>
-             <width>141</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <item>
-            <property name="text">
-             <string>HK(xy)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>KL(yz)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>HL(xz)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>H+ (X+)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>H- (X-)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>K+ (Y+)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>K- (Y-)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>L+ (Z+)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>L- (Z-)</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Isometric</string>
-            </property>
-           </item>
-          </widget>
-          <widget class="QPushButton" name="btnSetCamPos">
-           <property name="geometry">
-            <rect>
-             <x>270</x>
-             <y>25</y>
-             <width>61</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>Set</string>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QGroupBox" name="gbCamSlice">
-          <property name="geometry">
-           <rect>
-            <x>10</x>
-            <y>230</y>
-            <width>331</width>
-            <height>111</height>
-           </rect>
-          </property>
-          <property name="title">
-           <string>Slice-aligned Views</string>
-          </property>
-          <widget class="QPushButton" name="btnViewSliceNormal">
-           <property name="geometry">
-            <rect>
-             <x>10</x>
-             <y>30</y>
-             <width>311</width>
-             <height>31</height>
-            </rect>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>12</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>View along Slice Normal</string>
-           </property>
-          </widget>
-         </widget>
-        </widget>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </widget>
+        </item>
+        <!-- Removed tabsControls (Slice/Camera tabs) -->
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1655</width>
+     <width>1879</width>
      <height>20</height>
     </rect>
    </property>
@@ -1375,7 +713,19 @@
     <addaction name="actionSave"/>
     <addaction name="actionExtractSlice"/>
    </widget>
+   <widget class="QMenu" name="menuControls">
+    <property name="font">
+     <font>
+      <pointsize>14</pointsize>
+     </font>
+    </property>
+    <property name="title">
+     <string>Controls</string>
+    </property>
+    <addaction name="actionSlice"/>
+   </widget>
    <addaction name="menuData"/>
+   <addaction name="menuControls"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionExtractSlice">
@@ -1384,7 +734,7 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>10</pointsize>
+     <pointsize>12</pointsize>
     </font>
    </property>
   </action>
@@ -1394,7 +744,7 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>10</pointsize>
+     <pointsize>12</pointsize>
     </font>
    </property>
   </action>
@@ -1404,7 +754,17 @@
    </property>
    <property name="font">
     <font>
-     <pointsize>10</pointsize>
+     <pointsize>12</pointsize>
+    </font>
+   </property>
+  </action>
+  <action name="actionSlice">
+   <property name="text">
+    <string>Controls…</string>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
     </font>
    </property>
   </action>

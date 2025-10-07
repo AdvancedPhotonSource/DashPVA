@@ -42,22 +42,10 @@ class HKL3DSliceWindow(QMainWindow):
         self.setWindowTitle('3D Slice')
         pyv.set_plot_theme('dark')
 
-        # ------ Connecting the signals to the code that will be executed
-        self.btnZoomIn.clicked.connect(self.zoom_in)
-        self.btnZoomOut.clicked.connect(self.zoom_out)
-        self.btnResetCamera.clicked.connect(self.reset_camera)
-        self.btnSetCamPos.clicked.connect(self.set_camera_position)
-        if hasattr(self, 'btnViewSliceNormal'):
-            self.btnViewSliceNormal.clicked.connect(self.view_slice_normal)
-        
-        # Quick camera preset buttons in Movements group
+        # ------ Connecting menu actions to open Controls dialog
         try:
-            if hasattr(self, 'btnHKView'):
-                self.btnHKView.clicked.connect(lambda: self._apply_cam_preset_button('HK(xy)'))
-            if hasattr(self, 'btnKLView'):
-                self.btnKLView.clicked.connect(lambda: self._apply_cam_preset_button('KL(yz)'))
-            if hasattr(self, 'btnHLView'):
-                self.btnHLView.clicked.connect(lambda: self._apply_cam_preset_button('HL(xz)'))
+            if hasattr(self, 'actionSlice'):
+                self.actionSlice.triggered.connect(lambda: self.open_controls_dialog(focus='slice'))
         except Exception:
             pass
         
@@ -97,6 +85,12 @@ class HKL3DSliceWindow(QMainWindow):
         # Slice control state
         self._slice_translate_step = 0.01
         self._slice_rotate_step_deg = 1.0
+        # Camera control state (updated via Controls dialog)
+        self._zoom_step = 1.5
+        self._cam_pos_selection = None
+        # Slice dialog-driven state
+        self._slice_orientation_selection = None
+        self._custom_normal = [0.0, 0.0, 1.0]
 
         # Pending-change tracking for batch render
         try:
@@ -180,6 +174,49 @@ class HKL3DSliceWindow(QMainWindow):
         
         # -------------------------------------------------------------------- #
 
+
+    # ********* METHODS ******* #
+    def open_controls_dialog(self, focus=None):
+        """Open or focus the modeless Controls dialog."""
+        try:
+            if hasattr(self, 'controls_dialog') and self.controls_dialog is not None and self.controls_dialog.isVisible():
+                try:
+                    self.controls_dialog.raise_()
+                except Exception:
+                    pass
+                try:
+                    self.controls_dialog.activateWindow()
+                except Exception:
+                    pass
+                if focus == 'camera':
+                    try:
+                        self.controls_dialog.focus_camera_section()
+                    except Exception:
+                        pass
+                elif focus == 'slice':
+                    try:
+                        self.controls_dialog.focus_slice_section()
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
+        try:
+            from viewer.hkl_controls_dialog import HKLControlsDialog
+            self.controls_dialog = HKLControlsDialog(self)
+            if focus == 'camera':
+                try:
+                    self.controls_dialog.focus_camera_section()
+                except Exception:
+                    pass
+            elif focus == 'slice':
+                try:
+                    self.controls_dialog.focus_slice_section()
+                except Exception:
+                    pass
+            self.controls_dialog.show()
+        except Exception:
+            pass
 
     # ********* METHODS ******* #
     # ================ RESOLUTION PROCESSING METHODS ======================= #
@@ -708,12 +745,15 @@ class HKL3DSliceWindow(QMainWindow):
         """Update labels in Info group with current slice orientation/normal/origin."""
         try:
             # Orientation preset text
-            orient_text = "-"
-            try:
-                if hasattr(self, 'cbSliceOrientation') and self.cbSliceOrientation is not None:
-                    orient_text = self.cbSliceOrientation.currentText()
-            except Exception:
-                pass
+            orient_text = getattr(self, '_slice_orientation_selection', None)
+            if not orient_text:
+                try:
+                    if hasattr(self, 'cbSliceOrientation') and self.cbSliceOrientation is not None:
+                        orient_text = self.cbSliceOrientation.currentText()
+                except Exception:
+                    orient_text = "-"
+            if orient_text is None or orient_text == "":
+                orient_text = "-"
             # Plane state
             normal, origin = self.get_plane_state()
             n = self.normalize_vector(np.array(normal, dtype=float))
@@ -1479,10 +1519,10 @@ class HKL3DSliceWindow(QMainWindow):
 
     # ================ CAMERA CONTROL METHODS ======================= #
     def zoom_in(self):
-        """Zoom camera in using step factor from UI if available"""
+        """Zoom camera in using step factor from main state (_zoom_step)"""
         camera = self.plotter.camera
         try:
-            step = float(self.sbZoomStep.value()) if hasattr(self, 'sbZoomStep') else 1.5
+            step = float(getattr(self, '_zoom_step', 1.5))
             if not np.isfinite(step) or step <= 1.0:
                 step = 1.5
         except Exception:
@@ -1491,10 +1531,10 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
 
     def zoom_out(self):
-        """Zoom camera out using inverse of step factor from UI if available"""
+        """Zoom camera out using inverse of step factor from main state (_zoom_step)"""
         camera = self.plotter.camera
         try:
-            step = float(self.sbZoomStep.value()) if hasattr(self, 'sbZoomStep') else 1.5
+            step = float(getattr(self, '_zoom_step', 1.5))
             if not np.isfinite(step) or step <= 1.0:
                 step = 1.5
         except Exception:
@@ -1509,16 +1549,17 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
 
     def set_camera_position(self):
-        """Set camera to predefined positions (use UI combo from slice window)."""
-        # Source text from the UI
-        pos_src = None
-        try:
-            if hasattr(self, 'cbSetCamPos') and self.cbSetCamPos is not None:
-                pos_src = self.cbSetCamPos.currentText()
-            elif hasattr(self, 'camSetPosCombo') and self.camSetPosCombo is not None:
-                pos_src = self.camSetPosCombo.currentText()
-        except Exception:
-            pass
+        """Set camera to predefined positions (use dialog state or legacy UI combo)."""
+        # Source text from dialog-updated state first
+        pos_src = getattr(self, '_cam_pos_selection', None)
+        if not pos_src:
+            try:
+                if hasattr(self, 'cbSetCamPos') and self.cbSetCamPos is not None:
+                    pos_src = self.cbSetCamPos.currentText()
+                elif hasattr(self, 'camSetPosCombo') and self.camSetPosCombo is not None:
+                    pos_src = self.camSetPosCombo.currentText()
+            except Exception:
+                pass
 
         pos_text = (pos_src or '').strip().lower()
         p = self.plotter
@@ -1609,10 +1650,14 @@ class HKL3DSliceWindow(QMainWindow):
         Selects the combo text and delegates to set_camera_position() for mapping and safety.
         """
         try:
-            if hasattr(self, 'cbSetCamPos') and (self.cbSetCamPos is not None):
-                self.cbSetCamPos.setCurrentText(label)
+            # Prefer dialog-driven state update
+            self._cam_pos_selection = label
         except Exception:
-            pass
+            try:
+                if hasattr(self, 'cbSetCamPos') and (self.cbSetCamPos is not None):
+                    self.cbSetCamPos.setCurrentText(label)
+            except Exception:
+                pass
         try:
             self.set_camera_position()
         except Exception:
@@ -1867,18 +1912,25 @@ class HKL3DSliceWindow(QMainWindow):
     def _on_orientation_changed(self, idx: int):
         if not self._ensure_data_loaded_or_warn():
             return
-        preset = self.cbSliceOrientation.currentText()
+        preset = getattr(self, '_slice_orientation_selection', None)
+        if not preset:
+            try:
+                preset = self.cbSliceOrientation.currentText()
+            except Exception:
+                preset = 'HK(xy)'
         self.set_plane_preset(preset)
 
     def _on_custom_normal_changed(self):
         if not self._ensure_data_loaded_or_warn():
             return
         # Only respond when Custom is selected
-        if self.cbSliceOrientation.currentText().lower().startswith('custom'):
-            n = np.array([self.sbNormH.value(), self.sbNormK.value(), self.sbNormL.value()], dtype=float)
-            n = self.normalize_vector(n)
-            # Update spinboxes to normalized values
-            self.sbNormH.setValue(float(n[0])); self.sbNormK.setValue(float(n[1])); self.sbNormL.setValue(float(n[2]))
+        preset = (str(getattr(self, '_slice_orientation_selection', '')) or '').lower()
+        if preset.startswith('custom'):
+            try:
+                n_raw = np.array(getattr(self, '_custom_normal', [0.0, 0.0, 1.0]), dtype=float)
+            except Exception:
+                n_raw = np.array([0.0, 0.0, 1.0], dtype=float)
+            n = self.normalize_vector(n_raw)
             # Apply immediately, keep origin
             _, origin = self.get_plane_state()
             self.update_slice_from_plane(n, origin)
@@ -1977,8 +2029,11 @@ class HKL3DSliceWindow(QMainWindow):
         elif 'xz' in preset or 'hl' in preset:
             n = np.array([0.0, 1.0, 0.0], dtype=float)
         else:
-            # Custom uses current spinboxes
-            n = np.array([self.sbNormH.value(), self.sbNormK.value(), self.sbNormL.value()], dtype=float)
+            # Custom uses dialog-updated state; avoid referencing dialog widgets directly
+            try:
+                n = np.array(getattr(self, '_custom_normal', [0.0, 0.0, 1.0]), dtype=float)
+            except Exception:
+                n = np.array([0.0, 0.0, 1.0], dtype=float)
             n = self.normalize_vector(n)
         _, origin = self.get_plane_state()
         self.set_plane_state(n, origin)
