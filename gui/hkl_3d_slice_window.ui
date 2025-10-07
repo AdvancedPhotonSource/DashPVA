@@ -399,47 +399,6 @@
              </property>
             </widget>
            </item>
-           <item row="5" column="0">
-            <widget class="QLabel" name="lbReductionFactor">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
-             <property name="text">
-              <string>Reduction Factor</string>
-             </property>
-            </widget>
-           </item>
-           <item row="5" column="1">
-            <widget class="QComboBox" name="cbbReductionFactor">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
-             <item>
-              <property name="text">
-               <string>x2</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>x4</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>x6</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>None</string>
-              </property>
-             </item>
-            </widget>
-           </item>
            <item row="6" column="0">
             <widget class="QLabel" name="lbCurrentPointSize">
              <property name="font">
@@ -671,13 +630,6 @@
               <font>
                <pointsize>12</pointsize>
               </font>
-             </property>
-            </widget>
-           </item>
-           <item row="4" column="0">
-            <widget class="QPushButton" name="btnRender">
-             <property name="text">
-              <string>Render Changes</string>
              </property>
             </widget>
            </item>

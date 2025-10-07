@@ -54,12 +54,12 @@ class HKL3DSliceWindow(QMainWindow):
         self.cbToggleCloudVolume.clicked.connect(self.toggle_cloud_vol)
         self.cbColorMapSelect.currentIndexChanged.connect(self.change_color_map)
         
-        # Data alteration (deferred; apply on Render)
-        if hasattr(self, 'btnRender'):
-            self.btnRender.clicked.connect(self._apply_pending_changes)
-        self.cbbReductionFactor.currentIndexChanged.connect(self._mark_reduction_changed)
-        self.sbMinIntensity.editingFinished.connect(self._mark_intensity_changed)
-        self.sbMaxIntensity.editingFinished.connect(self._mark_intensity_changed)
+        # Data alteration: immediate apply on Enter (Render button and reduction factor deprecated)
+        # if hasattr(self, 'btnRender'):
+        #     self.btnRender.clicked.connect(self._apply_pending_changes)
+        # self.cbbReductionFactor.currentIndexChanged.connect(self._mark_reduction_changed)
+        self.sbMinIntensity.editingFinished.connect(self.update_intensity)
+        self.sbMaxIntensity.editingFinished.connect(self.update_intensity)
         
         #TODO: these functions
         self.actionLoadData.triggered.connect(self.load_data)
@@ -93,10 +93,8 @@ class HKL3DSliceWindow(QMainWindow):
         self._custom_normal = [0.0, 0.0, 1.0]
 
         # Pending-change tracking for batch render
-        try:
-            self._applied_reduction_text = self.cbbReductionFactor.currentText()
-        except Exception:
-            self._applied_reduction_text = None
+        # Reduction factor deprecated
+        self._applied_reduction_text = None
         try:
             self._applied_min_intensity = self.sbMinIntensity.value()
             self._applied_max_intensity = self.sbMaxIntensity.value()
@@ -919,6 +917,7 @@ class HKL3DSliceWindow(QMainWindow):
             )
         except Exception:
             return
+        self.update_intensity()
 
         # Avoid re-adding volume/scalar bars during interactive plane moves to keep axes stable
 
@@ -1042,14 +1041,10 @@ class HKL3DSliceWindow(QMainWindow):
             
             try:
                 self.setup_3d_cloud(cloud=self.parent.cloud.copy(deep=True), intensity=self.parent.cloud['intensity'], shape=self.parent.reader.shape)
-                # Auto reduction: target ~15M points if over threshold
-                try:
-                    total_points = self.cloud_copy.n_points if hasattr(self.cloud_copy, 'n_points') else (len(self.cloud_copy) if hasattr(self.cloud_copy, '__len__') else 0)
-                except Exception:
-                    total_points = 0
-                auto_factor = self.calculate_auto_reduction_factor(total_points)
-                reduction = auto_factor if auto_factor > 1.0 else 1.0
-                cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'], reduction_factor=reduction)
+                # Reduction factor deprecated: use full-resolution data
+                cloud = self.cloud_copy.points if hasattr(self.cloud_copy, 'points') else np.asarray(self.cloud_copy)
+                intensity = self.cloud_copy['intensity']
+                self.curr_shape = self.orig_shape
                 self.create_3D(cloud=cloud, intensity=intensity)
                 self.num_images = len(self.parent.reader.cache_images) if hasattr(self.parent.reader, 'cache_images') and self.parent.reader.cache_images is not None else 0
                 self.groupBox3DViewer.setTitle(f'Viewing {len(self.parent.reader.cache_images)} Image(s)')
@@ -1292,15 +1287,9 @@ class HKL3DSliceWindow(QMainWindow):
             if self.setup_3d_cloud(cloud=points, intensity=intensities, shape=shape):
                 self.orig_shape = shape
                 self.num_images = num_images
-                reduction_factor_text = self.cbbReductionFactor.currentText()
-                import re
-                match = re.search(r'x(\d+(?:\.\d+)?)', reduction_factor_text)
-                manual_factor = float(match.group(1)) if match else 1.0
-                # Auto reduction to <=500k points if over threshold
-                # auto_factor = self.calculate_auto_reduction_factor(len(points))
-                factor = max(manual_factor, 1.0) #auto_factor
-                cloud, intensity = self.process_3d_to_lower_res(cloud=points, intensity=intensities, reduction_factor=factor)
-                self.create_3D(cloud=cloud, intensity=intensity)
+                # Reduction factor deprecated: use full-resolution data
+                self.curr_shape = self.orig_shape
+                self.create_3D(cloud=points, intensity=intensities)
                 
                 # Update UI
                 self.groupBox3DViewer.setTitle(f'Viewing {num_images} Image(s)')
