@@ -312,6 +312,7 @@ class PVASetupDialog(QDialog):
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
             '--n-consumers', str(self.spinBoxNConsumersAssociator.value()),
             '--distributor-updates', str(self.spinBoxDistributorUpdatesAssociator.value()),
+            '-dc'
         ]
 
         # Add metadata config file if specified
@@ -465,6 +466,7 @@ class PVASetupDialog(QDialog):
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
             '--n-consumers', str(self.spinBoxNConsumersAnalysis.value()),
             '--distributor-updates', str(self.spinBoxDistributorUpdatesAnalysis.value()),
+            '-dc'
         ]
 
         # Add metadata config file if specified
