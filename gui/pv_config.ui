@@ -160,7 +160,7 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>s6lambda1:Pva1:Image</string>
+     <string>processor:1:analysis</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_input_channel">
