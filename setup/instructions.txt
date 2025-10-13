@@ -1,0 +1,33 @@
+==== DashPVA setup instructions ====
+
+last updated: 10/13/2025
+
+--> Setup the PVA server
+
+run: DashPVAU_setup
+
+Will open the PVA workflow setup. Set it up according to the screenshots in this folder. Then run
+the "metadata associator" and "analysis".
+
+--> Start the live viewer with HKL
+
+run: DashPVAU
+
+- Will start the live viewer config box. 
+- The input channel should be already correct if you are using the eiger (should be 4idEiger:Pva1:Image).
+- Then click "browse" and select the correct toml file: metadata_pvs_eiger_no_scan.toml.
+- Click Ok.
+- Click Start Live View.
+- WARNING: keep the "Stop HKL" toggle on unless you want to recalculate HKL at that point. Note
+that it will severely slow down if the motors are moving!! 
+
+--> Start the HKL 3D for scans
+
+run: DashPVAU_hkl3d
+
+- Will start the live viewer config box.
+- Change the input channel to: processor:1:output.
+- Then click "browse" and select the correct toml file: metadata_pvs_eiger.toml.
+- Click Ok.
+- Click Start Live View.
+
