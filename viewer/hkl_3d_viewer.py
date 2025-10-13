@@ -33,7 +33,7 @@ class ConfigDialog(QDialog):
             config_path (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
-        uic.loadUi('gui/hkl_viewer_setup.ui', self)
+        uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
         self.input_channel = ""

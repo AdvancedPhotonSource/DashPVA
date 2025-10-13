@@ -562,7 +562,7 @@ class PVAReader(QObject):
         file_path_pv = latest_attribute.get('FilePath:Value', '')
         file_name_pv = latest_attribute.get('FileName:Value', '')
         
-        if file_path_pv != '' and file_name_pv != '':
+        if file_path_pv != ' ' and file_name_pv != ' ':
             return {'FilePath': file_path_pv,
                     'FileName': file_name_pv}
         else:

@@ -158,7 +158,7 @@ class HpcRsmProcessor(AdImageProcessor):
          # Get beam and reference directions
         if len(hkl_attr) == len(self.hkl_pv_channels):
             primary_beam_directions = [hkl_attr.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
-            inplane_beam_direction = [hkl_attr.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
+            inplane_beam_direction = [hkl_attr.get(f'InplaneReferenceDirection:AxisNumber{i}', None) for i in range(1,4)]
             sample_surface_normal_direction = [hkl_attr.get(f'SampleSurfaceNormalDirection:AxisNumber{i}', None) for i in range(1,4)]
 
             return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
