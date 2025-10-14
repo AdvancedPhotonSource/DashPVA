@@ -1076,6 +1076,7 @@ class HKL3DSliceWindow(QMainWindow):
             return
         
         # Set the file path string when a file is selected
+        self.plotter.clear()
         self.leFilePathStr.setText(file_name)
         
         # Store original state
@@ -1488,18 +1489,39 @@ class HKL3DSliceWindow(QMainWindow):
             # should also use the same save as h5 so that it can be used in 3d or 2d
             from utils.hdf5_loader import HDF5Loader
             loader = HDF5Loader()
-            
-            success = loader.save_3d_to_h5(
+
+            # Prefer current viewer shape; fallback to original
+            preferred_shape = None
+            try:
+                cs = getattr(self, 'curr_shape', None)
+                if isinstance(cs, (tuple, list)) and len(cs) == 2 and int(cs[0]) > 0 and int(cs[1]) > 0:
+                    preferred_shape = (int(cs[0]), int(cs[1]))
+            except Exception:
+                preferred_shape = None
+            if preferred_shape is None:
+                try:
+                    os_shape = getattr(self, 'orig_shape', None)
+                    if isinstance(os_shape, (tuple, list)) and len(os_shape) == 2 and int(os_shape[0]) > 0 and int(os_shape[1]) > 0:
+                        preferred_shape = (int(os_shape[0]), int(os_shape[1]))
+                except Exception:
+                    preferred_shape = None
+
+            success = loader.extract_slice(
                 file_path=file_path,
                 points=slice_points,
                 intensities=slice_intensities,
-                metadata=slice_metadata
+                metadata=slice_metadata,
+                shape=preferred_shape
             )
             
             if success:
                 QMessageBox.information(self, "Success", f"Slice extracted and saved successfully!\n{len(slice_points)} points saved.")
             else:
-                QMessageBox.critical(self, "Error", f"Failed to save slice: {loader.get_last_error()}")
+                try:
+                    last_err = loader.get_last_error()
+                except Exception:
+                    last_err = "Unknown error"
+                QMessageBox.critical(self, "Error", f"Failed to save slice: {last_err}")
                 
         except Exception as e:
             QMessageBox.critical(self, "Extract Error", f"Error extracting slice:\n{str(e)}")
