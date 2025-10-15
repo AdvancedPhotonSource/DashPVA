@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import subprocess
 import numpy as np
 import os.path as osp
@@ -7,18 +8,20 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
+from epics import PV, pv
 from epics import camonitor, caget
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
 # Custom imported classes
-from generators import rotation_cycle
-from pva_reader import PVAReader
 from roi_stats_dialog import RoiStatsDialog
-from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils import rotation_cycle
+from utils import PVAReader, HDF5Writer
+# from ..utils.size_manager import SizeManager
 
 
-max_cache_size = 900 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
 
 
@@ -31,21 +34,20 @@ class ConfigDialog(QDialog):
 
         Attributes:
             input_channel (str): Input channel for PVA.
-            roi_config (str): Path to the ROI configuration file.
+            config_path (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
-        self.input_channel = ""
-        self.roi_config =  ""
+        self.input_channel = ''
+        self.config_path = ''
         # class can be prefilled with text
         self.init_ui()
         
         # Connecting signasl to 
-        # self.btn_edit.clicked.connect(self.json_open_file_dialog)
+        self.btn_clear.clicked.connect(self.clear_pv_setup)
         self.btn_browse.clicked.connect(self.browse_file_dialog)
-        self.btn_create.clicked.connect(self.new_pv_setup)
         self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
 
     def init_ui(self) -> None:
@@ -53,7 +55,7 @@ class ConfigDialog(QDialog):
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_roi_config.setText(self.le_roi_config.text())
+        self.le_config.setText(self.le_config.text())
 
     def browse_file_dialog(self) -> None:
         """
@@ -61,33 +63,24 @@ class ConfigDialog(QDialog):
         """
         self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
 
-        self.le_roi_config.setText(self.pvs_path)
+        self.le_config.setText(self.pvs_path)
 
-    def new_pv_setup(self) -> None:
+    def clear_pv_setup(self) -> None:
         """
-        Opens a new window for setting up a new PV configuration within the UI.
+        Clears line edit that tells image view where the config file is.
         """
-        self.new_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='w', path=None)
-    
-    def edit_pv_setup(self) -> None:
-        """
-        Opens a window for editing an existing PV configuration.
-        """
-        if self.le_edit_file_path.text() != '':
-            self.edit_pv_setup_dialog = PVSetupDialog(parent=self, file_mode='r+', path=self.pvs_path)
-        else:
-            print('file path empty')
+        self.le_config.clear()
 
     def dialog_accepted(self) -> None:
         """
         Handles the final step when the dialog's accept button is pressed.
-        Starts the ImageWindow process with filled information.
+        Starts the DiffractionImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
-        self.roi_config = self.le_roi_config.text()
-        if osp.isfile(self.roi_config) or (self.roi_config == ''):
-            self.image_viewer = ImageWindow(input_channel=self.input_channel,
-                                            file_path=self.roi_config,) 
+        self.config_path = self.le_config.text()
+        if osp.isfile(self.config_path) or (self.config_path == ''):
+            self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel,
+                                            file_path=self.config_path,) 
         else:
             print('File Path Doesn\'t Exitst')  
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
@@ -95,7 +88,8 @@ class ConfigDialog(QDialog):
             self.new_dialog.show()    
 
 
-class ImageWindow(QMainWindow):
+class DiffractionImageWindow(QMainWindow):
+    hkl_data_updated = pyqtSignal(bool)
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
         """
@@ -105,9 +99,9 @@ class ImageWindow(QMainWindow):
             input_channel (str): The PVA input channel for the detector.
             file_path (str): The file path for loading configuration.
         """
-        super(ImageWindow, self).__init__()
+        super(DiffractionImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
-        self.setWindowTitle('Image Viewer with PVAaccess')
+        self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
         self.reader = None
@@ -116,44 +110,51 @@ class ImageWindow(QMainWindow):
         self.first_plot = True
         self.image_is_transposed = False
         self.rot_num = 0
-        self.rois = []
-        self.stats_dialog = {}
+        self.mouse_x = 0
+        self.mouse_y = 0
+        self.rois: list[pg.ROI] = []
+        self.stats_dialogs = {}
         self.stats_data = {}
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
-        # self.timer_rsm = QTimer()
+        self.file_writer_thread = QThread()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
+
         # For testing ROIs being sent from analysis window
         self.roi_x = 100
         self.roi_y = 200
         self.roi_width = 50
         self.roi_height = 50
+
         # HKL values
+        self.is_hkl_ready = False
         self.hkl_config = None
+        self.hkl_pvs = {}
         self.hkl_data = {}
+        self.q_conv = None
         self.qx = None
         self.qy = None
         self.qz = None
         self.processes = {}
         
-        # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        self.viewer_layout.addWidget(self.image_view,1,1)
-        self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
-        self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
+        self.viewer_layout.addWidget(self.image_view,0,1)
+        self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
+        self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        self.horizontal_avg_plot.setMaximumWidth(175)
-        self.horizontal_avg_plot.setYLink(self.image_view.getView())
-        self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
+        self.horizontal_avg_plot.setMaximumWidth(200)
+        self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
+        self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -161,7 +162,7 @@ class ImageWindow(QMainWindow):
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
-        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer)
+        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
@@ -170,22 +171,25 @@ class ImageWindow(QMainWindow):
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
+        # self.rotate90degCCW.clicked.connect(self.rotate_rois)
+        self.log_image.clicked.connect(self.update_image)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
         self.display_rois.stateChanged.connect(self.show_rois_checked)
         self.chk_transpose.stateChanged.connect(self.transpose_image_checked)
         self.plotting_frequency.valueChanged.connect(self.start_timers)
-        self.log_image.clicked.connect(self.update_image)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
+        self.hkl_data_updated.connect(self.handle_hkl_data_update)
 
     def start_timers(self) -> None:
         """
         Starts timers for updating labels and plotting at specified frequencies.
         """
-        self.timer_labels.start(int(1000/100))
-        self.timer_plot.start(int(1000/self.plotting_frequency.value()))
+        if self.reader is not None and self.reader.channel.isMonitorActive():
+            self.timer_labels.start(int(1000/100))
+            self.timer_plot.start(int(1000/self.plotting_frequency.value()))
 
     def stop_timers(self) -> None:
         """
@@ -201,9 +205,16 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             if self.rbtn_C.isChecked():
                 self.reader.pixel_ordering = 'C'
+                self.reader.image_is_transposed = True 
             elif self.rbtn_F.isChecked():
                 self.reader.pixel_ordering = 'F'
-
+                self.image_is_transposed = False
+                self.reader.image_is_transposed = False
+                
+    def trigger_save_caches(self) -> None:
+        if not self.file_writer_thread.isRunning():
+                self.file_writer_thread.start()
+        self.file_writer.save_caches_to_h5(clear_caches=True)
 
     def c_ordering_clicked(self) -> None:
         """
@@ -211,6 +222,7 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'C'
+            self.reader.image_is_transposed = True
 
     def f_ordering_clicked(self) -> None:
         """
@@ -218,6 +230,8 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.reader.pixel_ordering = 'F'
+            self.image_is_transposed = False
+            self.reader.image_is_transposed = False
 
     def open_analysis_window_clicked(self) -> None:
         """
@@ -226,7 +240,7 @@ class ImageWindow(QMainWindow):
         if self.reader is not None:
             if self.reader.image is not None:
                 self.analysis_window = AnalysisWindow(parent=self)
-                self.analysis_window.show()
+                self.analysis_window.show()        
 
     def start_live_view_clicked(self) -> None:
         """
@@ -236,47 +250,72 @@ class ImageWindow(QMainWindow):
         Also starts monitoring the stats and adds ROIs to the viewer.
         """
         try:
-            # A double check to make sure there isn't a connection already when starting
+            self.stop_timers()
+            self.image_view.clear()
+            self.reset_rsm_vars()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering()
-                self.transpose_image_checked()
-                self.reader.start_channel_monitor()
+                self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
+                self.file_writer.moveToThread(self.file_writer_thread)
             else:
-                self.stop_timers()
-                self.reader.stop_channel_monitor()
+                if self.reader.channel.isMonitorActive():
+                    self.reader.stop_channel_monitor()
+                if self.file_writer_thread.isRunning():
+                    self.file_writer_thread.quit()
+                    self.file_writer_thread.wait()
+                for roi in self.rois:
+                    self.image_view.getView().removeItem(roi)
+                self.rois.clear()
+                self.btn_save_caches.clicked.disconnect()
+                # self.reader.reader_scan_complete.disconnect()
+                self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.set_pixel_ordering()
-                self.transpose_image_checked()
-                self.reader.start_channel_monitor()
-        except:
-            print(f'Failed to Connect to {self._input_channel}')
+                self.file_writer.pva_reader = self.reader
+            # Reconnecting signals
+            self.reader.reader_scan_complete.connect(self.trigger_save_caches)
+            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
+            self.btn_save_caches.clicked.connect(self.save_caches_clicked)
+
+            if self.reader.CACHING_MODE == 'scan':
+                self.file_writer_thread.start()
+            elif self.reader.CACHING_MODE == 'bin':
+                self.slider = QSlider()
+                self.slider.setRange(0, self.reader.BIN_COUNT-1)
+                self.slider.setValue(0)
+                self.slider.setOrientation(Qt.Horizontal) 
+                self.slider.setTickPosition(QSlider.TicksAbove)
+                self.viewer_layout.addWidget(self.slider, 1, 1)
+                
+            self.set_pixel_ordering()
+            self.transpose_image_checked()
+            self.reader.start_channel_monitor()
+        except Exception as e:
+            print(f'Failed to Connect to {self._input_channel}: {e}')
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.reset_rsm_vars()
+            del self.file_writer
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
+            self.btn_save_caches.clicked.disconnect()
+            self.file_writer_thread.terminate()
         
-        if self.reader is not None:
-            if not(self.reader.rois):
-                    if ('ROI' in self.reader.config):
+        try:
+            if self.reader is not None:
+                if not(self.reader.rois):
+                    if 'ROI' in self.reader.config:
                         self.reader.start_roi_backup_monitor()
-            self.start_stats_monitors()
-            self.add_rois()
-            self.start_timers()
-            try:
-                self.init_hkl()
-                if self.hkl_data:
-                    qxyz = self.create_rsm()
-                    self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
-                    self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
-                    self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
-            except Exception as e:
-                print('failed to create rsm: %s' % e)
+                    self.start_hkl_monitors()
+                    self.start_stats_monitors()
+                    self.add_rois()
+                    self.start_timers()
+        except Exception as e:
+            print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -285,14 +324,61 @@ class ImageWindow(QMainWindow):
         This method also updates the UI to reflect the disconnected state.
         """
         if self.reader is not None:
-            self.reader.stop_channel_monitor()
+            if self.reader.channel.isMonitorActive():
+                self.reader.stop_channel_monitor()
             self.stop_timers()
-            for key in self.stats_dialog:
-                self.stats_dialog[key] = None
-            del self.reader
-            self.reader = None
+            for key in self.stats_dialogs:
+                self.stats_dialogs[key] = None
+            # for roi in self.rois:
+            #     self.image_view.getView().removeItem(roi)
+            for hkl_pv in self.hkl_pvs.values():
+                hkl_pv.clear_callbacks()
+                hkl_pv.disconnect()
+            self.hkl_pvs = {}
+            self.hkl_data = {}
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
+
+    def start_hkl_viewer_clicked(self) -> None:
+        try:
+            if self.reader is not None and self.reader.HKL_IN_CONFIG:
+                cmd = ['python', 'viewer/hkl_3d_viewer.py',]
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    preexec_fn=os.setsid,
+                    universal_newlines=True
+                )
+                self.processes[process.pid] = process
+
+        except Exception as e:
+            print(f'[Diffraction Image Viewer] Failed to load HKL Viewer:{e}')
+
+    def save_caches_clicked(self) -> None:
+        if not self.reader.channel.isMonitorActive():  
+            if not self.file_writer_thread.isRunning():
+                self.file_writer_thread.start()
+            self.file_writer.save_caches_to_h5(clear_caches=True)
+        else:
+            QMessageBox.critical(None,
+                                'Error',
+                                'Stop Live View to Save Cache',
+                                QMessageBox.Ok)
+
+    def stats_button_clicked(self) -> None:
+        """
+        Creates a popup dialog for viewing the stats of a specific button.
+
+        This method identifies the button pressed and opens the corresponding stats dialog.
+        """
+        if self.reader is not None:
+            sending_button = self.sender()
+            text = sending_button.text()
+            self.stats_dialogs[text] = RoiStatsDialog(parent=self, 
+                                                     stats_text=text, 
+                                                     timer=self.timer_labels)
+            self.stats_dialogs[text].show()
 
     def start_stats_monitors(self)  -> None:
         """
@@ -308,8 +394,8 @@ class ImageWindow(QMainWindow):
                         pv = f"{self.reader.stats[stat_num][stat]}"
                         self.stats_data[pv] = caget(pv)
                         camonitor(pvname=pv, callback=self.stats_ca_callback)
-        except:
-            print("Failed to Connect to Stats CA Monitors")
+        except Exception as e:
+            print(f"[Diffraction Image Viewer] Failed to Connect to Stats CA Monitors: {e}")
 
     def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -322,20 +408,11 @@ class ImageWindow(QMainWindow):
         """
         self.stats_data[pvname] = value
         
-    def stats_button_clicked(self) -> None:
-        """
-        Creates a popup dialog for viewing the stats of a specific button.
+    def on_writer_finished(self, message) -> None:
+        print(message)
+        self.file_writer_thread.quit()
+        self.file_writer_thread.wait()
 
-        This method identifies the button pressed and opens the corresponding stats dialog.
-        """
-        if self.reader is not None:
-            sending_button = self.sender()
-            text = sending_button.text()
-            self.stats_dialog[text] = RoiStatsDialog(parent=self, 
-                                                     stats_text=text, 
-                                                     timer=self.timer_labels)
-            self.stats_dialog[text].show()
-    
     def show_rois_checked(self) -> None:
         """
         Toggles visibility of ROIs based on the checked state of the display checkbox.
@@ -408,39 +485,7 @@ class ImageWindow(QMainWindow):
                 self.image_view.addItem(roi)
                 roi.sigRegionChanged.connect(self.update_roi_region)
         except Exception as e:
-            print(f'Failed to add ROIs:{e}')
-
-    def start_hkl_viewer(self) -> None:
-        try:
-            if self.reader is not None and 'HKL' in self.reader.config:
-                qx = self.qx.flatten()
-                qy = self.qy.flatten()
-                qz = self.qz.flatten()
-                intensity = self.reader.image.flatten()
-
-                np.save('qx.npy', qx)
-                np.save('qy.npy', qy)
-                np.save('qz.npy', qz)
-                np.save('intensity.npy', intensity)
-
-                # cmd = ['python', 'viewer/hkl_3d_viewer.py',
-                #        '--qx-file', 'qx.npy',
-                #        '--qy-file', 'qy.npy',
-                #        '--qz-file', 'qz.npy',
-                #        '--intensity-file', 'intensity.npy']
-
-                # process = subprocess.Popen(
-                #     cmd,
-                #     stdout=subprocess.PIPE,
-                #     stderr=subprocess.STDOUT,
-                #     preexec_fn=os.setsid,
-                #     universal_newlines=True
-                # )
-
-                # self.processes[process.pid] = process
-
-        except Exception as e:
-            print(f'Failed to load HKL Viewer:{e}')
+            print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
 
 
     def start_hkl_monitors(self) -> None:
@@ -448,16 +493,19 @@ class ImageWindow(QMainWindow):
         Initializes camonitors for HKL values and stores them in a dictionary.
         """
         try:
-            if "HKL" in self.reader.config:
+            if self.reader.HKL_IN_CONFIG:
                 self.hkl_config = self.reader.config["HKL"]
-
-                # Monitor each HKL parameter
-                for section, pv_dict in self.hkl_config.items():
-                    for key, pv_name in pv_dict.items():
-                        self.hkl_data[pv_name] = caget(pv_name)
-                        camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
+                if not self.hkl_pvs:
+                    for section, pv_dict in self.hkl_config.items():
+                        for section_key, pv_name in pv_dict.items():
+                            if pv_name not in self.hkl_pvs:
+                                self.hkl_pvs[pv_name] = PV(pvname=pv_name)
+                for pv_name, pv_obj in self.hkl_pvs.items():
+                    self.hkl_data[pv_name] = pv_obj.get() # Get current value
+                    pv_obj.add_callback(callback=self.hkl_ca_callback)
+                self.hkl_data_updated.emit(True)
         except Exception as e:
-            print(f"Failed to initialize HKL monitors: {e}")
+            print(f"[Diffraction Image Viewer] Failed to initialize HKL monitors: {e}")
 
     def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -470,64 +518,108 @@ class ImageWindow(QMainWindow):
         """
         self.hkl_data[pvname] = value
         if self.qx is not None and self.qy is not None and self.qz is not None:
-            self.update_rsm()
+            self.hkl_data_updated.emit(True)
 
-    def init_hkl(self) -> None:
-        """
-        Initializes HKL parameters by setting up monitors for each HKL value.
-        """
-        self.start_hkl_monitors()
-        self.hkl_setup()
-        
+    def handle_hkl_data_update(self):
+        if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
+            self.hkl_setup()
+            if self.q_conv is None:
+                raise ValueError("QConversion object is not initialized.")
+            self.update_rsm()
+  
+                
     def hkl_setup(self) -> None:
-        if self.hkl_config is not None:
+        if (self.hkl_config is not None) and (not self.stop_hkl.isChecked()):
             try:
                 # Get everything for the sample circles
                 sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
                 self.sample_circle_directions = []
-                self.sample_cirlce_names = []
+                self.sample_circle_names = []
                 self.sample_circle_positions = []
                 for pv_key in sample_circle_keys:
                     if pv_key.endswith('DirectionAxis'):
-                        self.sample_circle_directions.append(self.hkl_data[pv_key])
+                        direction = self.hkl_data.get(pv_key)
+                        if direction is None:
+                            raise ValueError(f"Missing sample circle direction PV data: {pv_key}")
+                        self.sample_circle_directions.append(direction)
                     elif pv_key.endswith('SpecMotorName'):
-                        self.sample_cirlce_names.append(self.hkl_data[pv_key])
+                        name = self.hkl_data.get(pv_key)
+                        if name is None:
+                            raise ValueError(f"Missing sample circle motor name PV data: {pv_key}")
+                        self.sample_circle_names.append(name)
                     elif pv_key.endswith('Position'):
-                        self.sample_circle_positions.append(self.hkl_data[pv_key])
+                        position = self.hkl_data.get(pv_key)
+                        if position is None:
+                            raise ValueError(f"Missing sample circle position PV data: {pv_key}")
+                        self.sample_circle_positions.append(position)
+                
                 # Get everything for the detector circles
                 det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
                 self.det_circle_directions = []
-                self.det_cirlce_names = []
+                self.det_circle_names = []
                 self.det_circle_positions = []
                 for pv_key in det_circle_keys:
                     if pv_key.endswith('DirectionAxis'):
-                        self.det_circle_directions.append(self.hkl_data[pv_key])
+                        direction = self.hkl_data.get(pv_key)
+                        if direction is None:
+                            raise ValueError(f"Missing detector circle direction PV data: {pv_key}")
+                        self.det_circle_directions.append(direction)
                     elif pv_key.endswith('SpecMotorName'):
-                        self.det_cirlce_names.append(self.hkl_data[pv_key])
+                        name = self.hkl_data.get(pv_key)
+                        if name is None:
+                            raise ValueError(f"Missing detector circle motor name PV data: {pv_key}")
+                        self.det_circle_names.append(name)
                     elif pv_key.endswith('Position'):
-                        self.det_circle_positions.append(self.hkl_data[pv_key])
+                        position = self.hkl_data.get(pv_key)
+                        if position is None:
+                            raise ValueError(f"Missing detector circle position PV data: {pv_key}")
+                        self.det_circle_positions.append(position)
+                
                 # Primary Beam Direction
-                self.primary_beam_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['PRIMARY_BEAM_DIRECTION'].values()]
+                primary_beam_pvs = self.hkl_config.get('PRIMARY_BEAM_DIRECTION', {}).values()
+                self.primary_beam_directions = [self.hkl_data.get(axis_number) for axis_number in primary_beam_pvs]
+                if any(val is None for val in self.primary_beam_directions):
+                    raise ValueError("Missing primary beam direction PV data")
+                
                 # Inplane Reference Direction
-                self.inplane_reference_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['INPLANE_REFERENCE_DIRECITON'].values()]
+                inplane_ref_pvs = self.hkl_config.get('INPLANE_REFERENCE_DIRECITON', {}).values()
+                self.inplane_reference_directions = [self.hkl_data.get(axis_number) for axis_number in inplane_ref_pvs]
+                if any(val is None for val in self.inplane_reference_directions):
+                    raise ValueError("Missing inplane reference direction PV data")
+
                 # Sample Surface Normal Direction
-                self.sample_surface_normal_directions = [self.hkl_data[axis_number] for axis_number in self.hkl_config['SAMPLE_SURFACE_NORMAL_DIRECITON'].values()]
+                surface_normal_pvs = self.hkl_config.get('SAMPLE_SURFACE_NORMAL_DIRECITON', {}).values()
+                self.sample_surface_normal_directions = [self.hkl_data.get(axis_number) for axis_number in surface_normal_pvs]
+                if any(val is None for val in self.sample_surface_normal_directions):
+                    raise ValueError("Missing sample surface normal direction PV data")
+
                 # UB Matrix
-                self.ub_matrix = self.hkl_data[self.hkl_config['SPEC']['UB_MATRIX_VALUE']]
-                self.ub_matrix  = np.reshape(self.ub_matrix,(3,3))
+                ub_matrix_pv = self.hkl_config['SPEC']['UB_MATRIX_VALUE']
+                self.ub_matrix = self.hkl_data.get(ub_matrix_pv)
+                if self.ub_matrix is None or not isinstance(self.ub_matrix, np.ndarray) or self.ub_matrix.size != 9:
+                    raise ValueError("Invalid UB Matrix data")
+                self.ub_matrix = np.reshape(self.ub_matrix,(3,3))
+
                 # Energy
-                self.energy = self.hkl_data[self.hkl_config['SPEC']['ENERGY_VALUE']] * 1000
+                energy_pv = self.hkl_config['SPEC']['ENERGY_VALUE']
+                self.energy = self.hkl_data.get(energy_pv)
+                if self.energy is None:
+                    raise ValueError("Missing energy PV data")
+                self.energy *= 1000
+
                 # Make sure all values are setup correctly before instantiating QConversion
-                if self.sample_circle_directions and self.det_circle_directions and self.primary_beam_directions:
-                    # Class for the conversion of angular coordinates to momentum space 
+                if all([self.sample_circle_directions, self.det_circle_directions, self.primary_beam_directions]):
                     self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
                                                             self.det_circle_directions, 
                                                             self.primary_beam_directions)
-            except Exception as e:
-                print(f'Error Setting up HKL: {e}')
-                return
-         
+                else:
+                    self.q_conv = None
+                    raise ValueError("QConversion initialization failed due to missing PV data.")
 
+            except Exception as e:
+                print(f'[Diffraction Image Viewer] Error Setting up HKL: {e}')
+                self.q_conv = None # Reset to None on failure to prevent invalid calculations
+                
     def create_rsm(self) -> np.ndarray:
         """
         Creates a reciprocal space map (RSM) from the current detector image.
@@ -547,43 +639,48 @@ class ImageWindow(QMainWindow):
         The conversion uses the current sample and detector angles along with the UB matrix
         to transform from angular to reciprocal space coordinates.
         """
-        if self.hkl_data:
+        if self.reader is not None and self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
                 hxrd = xu.HXRD(self.inplane_reference_directions,
                             self.sample_surface_normal_directions, 
                             en=self.energy, 
                             qconv=self.q_conv)
 
-                if self.stats_data:
-                    if f"{self.reader.pva_prefix}:Stats4:Total_RBV" in self.stats_data:
-                        roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                        cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
-                        cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
-                        distance = self.hkl_data['DetectorSetup:Distance'] # Distance
-                        pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
-                        pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
-                        nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
-                        nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
-                        pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
-                        pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
+                roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
+                cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
+                cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
+                distance = self.hkl_data['DetectorSetup:Distance'] # Distance
+                pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
+                pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
+                nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
+                pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
+                pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
 
-                        hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
-                                            Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
-                                            pwidth2=pixel_width2, distance=distance, roi=roi)
-                        
-                        angles = [*self.sample_circle_positions, *self.det_circle_positions]
-
-                        return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+                hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
+                                    Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
+                                    pwidth2=pixel_width2, distance=distance, roi=roi)
+                
+                angles = [*self.sample_circle_positions, *self.det_circle_positions]
+                
+                return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
             except Exception as e:
-                print(f'Error Creating RSM: {e}')
+                print(f'[Diffration Image Viewer] Error Creating RSM: {e}')
                 return
         else:
             return
+        
+    def reset_rsm_vars(self) -> None:
+        self.hkl_data = {}
+        self.rois.clear()
+        self.qx = None
+        self.qy = None
+        self.qz = None
+
 
     def update_rois(self) -> None:
         """
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
-
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
@@ -593,6 +690,7 @@ class ImageWindow(QMainWindow):
             height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
+        self.image_view.update()
 
     def update_roi_region(self) -> None:
         """
@@ -617,16 +715,20 @@ class ImageWindow(QMainWindow):
             if self.reader is not None:
                 img = self.image_view.getImageItem()
                 q_pointer = img.mapFromScene(pos)
-                x, y = q_pointer.x(), q_pointer.y() 
+                self.mouse_x, self.mouse_y = int(q_pointer.x()), int(q_pointer.y())
+                self.update_mouse_labels()
+    
+    def update_mouse_labels(self) -> None:
+            if self.reader is not None:
                 if self.image is not None:
-                    if 0 <= x < self.image.shape[0] and 0 <= y < self.image.shape[1]:
-                        self.mouse_x_val.setText(f"{x:.3f}")
-                        self.mouse_y_val.setText(f"{y:.3f}")
-                        self.mouse_px_val.setText(f'{self.image[int(x)][int(y)]}')
-                        if self.hkl_data:
-                            self.mouse_h.setText(f'{self.qx[int(x)][int(y)]}')
-                            self.mouse_k.setText(f'{self.qy[int(x)][int(y)]}')
-                            self.mouse_l.setText(f'{self.qz[int(x)][int(y)]}')
+                    if 0 <= self.mouse_x < self.image.shape[0] and 0 <= self.mouse_y < self.image.shape[1]:
+                        self.mouse_x_val.setText(f"{self.mouse_x}")
+                        self.mouse_y_val.setText(f"{self.mouse_y}")
+                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
+                        if self.qx is not None and len(self.qx) > 0:
+                            self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]:.7f}')
+                            self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]:.7f}')
+                            self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]:.7f}')
 
     def update_labels(self) -> None:
         """
@@ -640,6 +742,7 @@ class ImageWindow(QMainWindow):
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             self.plot_call_id.setText(f'{self.call_id_plot:d}')
+            self.update_mouse_labels()
             if len(self.reader.shape):
                 self.size_x_val.setText(f'{self.reader.shape[0]:d}')
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
@@ -651,12 +754,12 @@ class ImageWindow(QMainWindow):
             self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
 
     def update_rsm(self) -> None:
-        if self.reader is not None:
+        if (self.reader is not None) and (not self.stop_hkl.isChecked()):
             if self.hkl_data:
-                self.hkl_setup()
-                self.qx = self.create_rsm()[0].T if self.image_is_transposed else self.create_rsm()[0]
-                self.qy = self.create_rsm()[1].T if self.image_is_transposed else self.create_rsm()[1]
-                self.qz = self.create_rsm()[2].T if self.image_is_transposed else self.create_rsm()[2]
+                qxyz = self.create_rsm()
+                self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
+                self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
+                self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]
 
     def update_image(self) -> None:
         """
@@ -667,21 +770,30 @@ class ImageWindow(QMainWindow):
         """
         if self.reader is not None:
             self.call_id_plot +=1
-            image = self.reader.image
-            if image is not None:
-                self.image = np.rot90(image, k=self.rot_num).T if self.image_is_transposed else np.rot90(image, k=self.rot_num)
+            if self.reader.CACHING_MODE in ['', 'alignment', 'scan']:
+                self.image = self.reader.image
+            elif self.reader.CACHING_MODE == 'bin':
+                index = self.slider.value()
+                self.image = np.reshape(np.mean(np.stack(self.reader.cached_images[index]), axis=0), self.reader.shape) # (self.reader.shape)
+
+            if self.image is not None:
+                self.image = np.transpose(self.image) if self.image_is_transposed else self.image
+                self.image = np.rot90(m=self.image, k=self.rot_num)
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            self.image = np.log1p(self.image + 1)
-                            min_level = np.log1p(min_level + 1)
-                            max_level = np.log1p(max_level + 1)
+                            # Ensure non negative values
+                            self.image = np.maximum(self.image, 0)
+                            epsilon = 1e-10
+                            self.image = np.log10(self.image + 1)
+                            min_level = np.log10(max(min_level, epsilon) + 1)
+                            max_level = np.log10(max_level + 1)
                     if self.first_plot:
                         self.image_view.setImage(self.image, 
-                                                 autoRange=False, 
-                                                 autoLevels=False, 
-                                                 levels=(min_level, max_level),
-                                                 autoHistogramRange=False) 
+                                                autoRange=False, 
+                                                autoLevels=False, 
+                                                levels=(min_level, max_level),
+                                                autoHistogramRange=False)
                         # Auto sets the max value based on first incoming image
                         self.max_setting_val.setValue(max_level)
                         self.min_setting_val.setValue(min_level)
@@ -693,8 +805,8 @@ class ImageWindow(QMainWindow):
                                                 autoHistogramRange=False)
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
-                                              y=np.arange(0,self.image.shape[1]), 
-                                              clear=True)
+                                            y=np.arange(self.image.shape[1]), 
+                                            clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
@@ -714,13 +826,20 @@ class ImageWindow(QMainWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
-        del self.stats_dialog # otherwise dialogs stay in memory
-        super(ImageWindow,self).closeEvent(event)
+        del self.stats_dialogs # otherwise dialogs stay in memory
+        if self.file_writer_thread.isRunning():
+            self.file_writer_thread.quit()
+            self.file_writer_thread
+        super(DiffractionImageWindow,self).closeEvent(event)
 
-
-if __name__ == '__main__':
+def main():
     app = QApplication(sys.argv)
+    # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()
 
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    main()

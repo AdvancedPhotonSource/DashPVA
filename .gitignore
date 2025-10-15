@@ -1,6 +1,10 @@
 *.npy
 *.loglogin
 *.cpython*
+*.h5
 visualization_learning
 collector_tests
 unused_files
+test/
+fix.md
+error*.txt

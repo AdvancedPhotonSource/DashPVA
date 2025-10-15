@@ -5,7 +5,7 @@ import os
 import signal
 import toml
 from PyQt5 import QtWidgets, uic, QtCore
-from PyQt5.QtWidgets import QFileDialog, QDialog
+from PyQt5.QtWidgets import QFileDialog, QDialog, QTextEdit
 from PyQt5.QtCore import pyqtSignal, QObject
 
 class Worker(QObject):
@@ -92,6 +92,8 @@ class PVASetupDialog(QDialog):
         file_name, _ = QFileDialog.getOpenFileName(self, 'Select Metadata Config File', '', 'TOML Files (*.toml)')
         if file_name:
             self.lineEditConfigUploadPath.setText(file_name)
+            # Update current mode label based on uploaded TOML
+            self.update_current_mode_label(file_name)
 
     # Browse functions for AssociatorConsumers
     def browse_processor_file_associator(self):
@@ -157,6 +159,23 @@ class PVASetupDialog(QDialog):
         with open(path, 'r') as f:
             toml_data: dict = toml.load(f)
         return toml_data
+
+    def update_current_mode_label(self, path: str) -> None:
+        """
+        Parses the provided TOML file and updates the 'Current Mode' label
+        on the Config Upload tab with CACHE_OPTIONS.CACHING_MODE.
+        """
+        text = '(none)'
+        try:
+            toml_data = self.parse_toml(path)
+            mode = toml_data.get('CACHE_OPTIONS', {}).get('CACHING_MODE', '')
+            text = mode if mode else '(none)'
+        except Exception:
+            text = '(error)'
+        try:
+            self.labelCurrentModeValue.setText(text)
+        except Exception:
+            pass
     
     def parse_metadata_channels(self, metadata_config_path) -> str:
         """
@@ -170,18 +189,25 @@ class PVASetupDialog(QDialog):
         """
         pv_config = self.parse_toml(path=metadata_config_path)
         metadata_config : dict = pv_config.get("METADATA", {})
+        hkl_config : dict = pv_config.get('HKL', {})
+        ca_pvs = ""
+        pva_pvs = ""
         
         if metadata_config and metadata_config is not None:
             ca = metadata_config.get("CA", {})
             pva = metadata_config.get("PVA", {})
-            ca_pvs = ""
-            pva_pvs = ""
+            
             if ca:
-                for value in list(ca.values()):
+                for value in ca.values():
                     ca_pvs += f"ca://{value},"
             if pva:
-                for value in list(pva.values()):
+                for value in pva.values():
                     pva_pvs += f"pva://{value},"
+   
+        if hkl_config and hkl_config is not None:
+            for pvs_dict in hkl_config.values():
+                for pv_channel in pvs_dict.values():
+                    ca_pvs += f"ca://{pv_channel},"
             
         all_pvs = ca_pvs.strip(',') if not(pva_pvs) else ca_pvs + pva_pvs.strip(',')
         return all_pvs
@@ -305,6 +331,7 @@ class PVASetupDialog(QDialog):
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
             '--n-consumers', str(self.spinBoxNConsumersAssociator.value()),
             '--distributor-updates', str(self.spinBoxDistributorUpdatesAssociator.value()),
+            '-dc'
         ]
 
         # Add metadata config file if specified
@@ -313,6 +340,9 @@ class PVASetupDialog(QDialog):
             metadata_pvs = self.parse_metadata_channels(config_path)
             if metadata_pvs:
                 cmd.extend(['--metadata-channels', metadata_pvs])
+
+        # print(' '.join(cmd))
+
 
         try:
             process = subprocess.Popen(
@@ -326,7 +356,8 @@ class PVASetupDialog(QDialog):
 
             # Start thread to read output
             worker = Worker(process)
-            worker.output_signal.connect(self.textEditAssociatorConsumersOutput.appendPlainText)
+            output_format = partial(self._format_and_append_output, target_widget=self.textEditAssociatorConsumersOutput)
+            worker.output_signal.connect(output_format)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()
@@ -354,6 +385,32 @@ class PVASetupDialog(QDialog):
             self.buttonStopAssociatorConsumers.setEnabled(False)
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
+    
+
+    # ... inside your PVASetupDialog class ...
+
+    def _format_and_append_output(self, text: str, target_widget: QTextEdit):
+        """
+        Receives text, formats it with HTML, and appends it to the specified widget.
+        """
+        # Get a timestamp for logging
+        timestamp = datetime.now().strftime('%H:%M:%S')
+
+        # Make the text safe to insert into HTML
+        safe_text = text.replace('<', '&lt;').replace('>', '&gt;')
+
+        # Apply color based on keywords
+        color = "#FFFFFF" # Default to white (or your theme's default)
+        if "ERROR" in text.upper():
+            color = "#FF5733"  # Red
+        elif "WARNING" in text.upper():
+            color = "#FFC300"  # Orange
+        elif "SUCCESS" in text.upper() or "done" in text.lower():
+            color = "#33FF57"  # Green
+        #xmessage = safe_text['processorStatus']
+        formatted_line = f"<font color='gray'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
+        
+        target_widget.appendHtml(formatted_line)
 
     # Run and Stop functions for Collector
     def run_collector(self):
@@ -366,10 +423,13 @@ class PVASetupDialog(QDialog):
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Collector is already running.')
             return
 
+        producer_id_list = [str(i) for i in range(1, int(self.lineEditProducerIdList.text())+1)]
+        producer_id_list = ','.join(producer_id_list)
+
         cmd = [
             'pvapy-hpc-collector',
             '--collector-id', str(self.spinBoxCollectorId.value()),
-            '--producer-id-list', self.lineEditProducerIdList.text(),
+            '--producer-id-list', producer_id_list,
             '--input-channel', self.lineEditInputChannelCollector.text(),
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),
@@ -449,7 +509,10 @@ class PVASetupDialog(QDialog):
             '--processor-file', self.lineEditProcessorFileAnalysis.text(),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
-            '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value())
+            '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
+            '--n-consumers', str(self.spinBoxNConsumersAnalysis.value()),
+            '--distributor-updates', str(self.spinBoxDistributorUpdatesAnalysis.value()),
+            '-dc'
         ]
 
         # Add metadata config file if specified
@@ -498,6 +561,68 @@ class PVASetupDialog(QDialog):
             self.labelStatusAnalysisConsumer.setText('Process ID: Not running')
             self.textEditAnalysisConsumerOutput.appendPlainText('Analysis Consumer stopped.')
 
+    def show_performance(self):
+        if not self.performance_dialog:
+            self.performance_dialog = PerformanceDialog(
+                parent=self, 
+                status_channel=self.lineEditStatusChannelAnalysis.text(),
+                data_channel=self.lineEditOutputChannelAnalysis.text()
+            )
+        self.performance_dialog.show()
+        self.performance_dialog.raise_() # Bring window to the front
+        self.performance_dialog.activateWindow()
+
+    def fetch_and_print_stats(self, consumer_id: int = 1, status_channel_base: str = 'processor:*:status') -> dict:
+        """
+        Fetches, unpacks, and prints processor stats from a PVA status channel.
+
+        Args:
+            consumer_id (int): The ID of the consumer to get stats from.
+            status_channel_base (str): The base name of the status channel.
+
+        Returns:
+            dict: A dictionary containing the unpacked stats.
+        """
+        print('Printing stats')
+        channel_name = status_channel_base.replace('*', str(consumer_id))
+        
+        try:
+            # Use a temporary channel to get the stats just once
+            stats_channel = PVAReader(input_channel=channel_name)
+            pv_object = stats_channel.channel.get()
+            
+            # Check for the existence of the stats dictionary
+            if 'userStats' not in pv_object:
+                print(f"Warning: 'userStats' not found in PV from {channel_name}")
+                return {}
+
+            # Unpack the userStats dictionary
+            stats = {
+                key: val.value if hasattr(val, 'value') else val
+                for key, val in pv_object['userStats'].items()
+            }
+
+            # Write stats to a file for analysis
+            with open('stats_output.txt', 'w') as f:
+                f.write(f"Number of frames processed: {self.spinBoxNf.value()}\n")
+                f.write(f"Hertz: {self.spinBoxFps.value()}\n")
+                f.write(f"Image size: {self.spinBoxNx.value()} x {self.spinBoxNy.value()}\n\n")
+                f.write(f"Latency Stats from {channel_name}:\n{pv_object}\n\n")
+                
+                f.write("**** Metadata ****\n")
+                f.write(f"First Frame ID: {first_frame_id}\n")
+                f.write(f"First Frame Internal Processing Time: {first_frame_time:.5f} ms\n")
+                f.write(f"First Frame Timestamp: {first_frame_timestamp}\n")
+            
+            return stats
+
+        except Exception as e:
+            import traceback
+            with open('error_output.txt', 'w') as f:
+                f.write(f"Error getting stats from {channel_name}:\n")
+                f.write(traceback.format_exc())
+            return {}
+    
     def closeEvent(self, event):
         """
         Handles the dialog close event by terminating all active subprocesses.
