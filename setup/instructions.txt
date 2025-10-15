@@ -26,7 +26,7 @@ that it will severely slow down if the motors are moving!!
 run: DashPVAU_hkl3d
 
 - Will start the live viewer config box.
-- Change the input channel to: processor:1:output.
+- Change the input channel to: processor:1:analysis.
 - Then click "browse" and select the correct toml file: metadata_pvs_eiger.toml.
 - Click Ok.
 - Click Start Live View.
