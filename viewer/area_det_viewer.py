@@ -13,10 +13,12 @@ from epics import camonitor, caget
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
 # Custom imported classes
+from roi_stats_dialog import RoiStatsDialog
+from analysis_window import AnalysisWindow 
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
-from .roi_stats_dialog import RoiStatsDialog
-from .analysis_window import AnalysisWindow 
 # from ..utils.size_manager import SizeManager
 
 

@@ -89,10 +89,18 @@ class HDF5Loader:
                 
                 # Load image data (for both 2D and 3D)
                 if 'entry/data/data' in f:
-                    raw_data['images'] = f['entry/data/data'][:]
-                    raw_data['num_images'] = f['entry/data/data'].shape[0]
-                    raw_data['image_shape'] = (f['entry/data/data'].shape[1], 
-                                            f['entry/data/data'].shape[2])
+                    data_ds = f['entry/data/data']
+                    arr = data_ds[()]
+                    raw_data['images'] = arr
+                    if arr.ndim == 3:
+                        raw_data['num_images'] = arr.shape[0]
+                        raw_data['image_shape'] = (arr.shape[1], arr.shape[2])
+                    elif arr.ndim == 2:
+                        raw_data['num_images'] = 1
+                        raw_data['image_shape'] = (arr.shape[0], arr.shape[1])
+                    else:
+                        raw_data['num_images'] = 0
+                        raw_data['image_shape'] = (0, 0)
                 
                 # Load any metadata
                 raw_data['metadata'] = {}
@@ -358,35 +366,111 @@ class HDF5Loader:
     
     def load_h5_volume_3d(self, file_path: str) -> Tuple[np.ndarray, Tuple[int, int, int]]:
         """
-        Load HDF5 file as 3D volume
+        Load HDF5 file as 3D volume (or 2D slice if saved that way) using the standard structure.
+        Reads:
+          - /entry/data/data as the array
+          - /entry attrs (e.g., data_type)
+          - /entry/data attrs (array_rank, array_shape)
+          - /entry/data/metadata datasets (voxel_spacing, grid_origin, volume_shape, original_shape, etc.)
         
         Args:
             file_path (str): Path to HDF5 file
             
         Returns:
             Tuple containing:
-                - volume (np.ndarray): 3D volume data (D, H, W)
-                - shape (Tuple[int, int, int]): Volume dimensions
+                - volume (np.ndarray): 3D volume data (D, H, W) or 2D slice (H, W)
+                - shape (Tuple[int, int, int]): Volume dimensions (or 2D shape with leading 0)
         """
         try:
-            # Validate and load
-            if not self.validate_file(file_path):
-                raise ValueError(f"Invalid file: {self.last_error}")
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File does not exist: {file_path}")
+            if not h5py.is_hdf5(file_path):
+                raise ValueError(f"Not a valid HDF5 file: {file_path}")
             
-            raw_data = self._load_hdf5_data(file_path)
-            if not raw_data or 'images' not in raw_data:
-                raise ValueError("No image data found")
+            meta: dict = {}
+            with h5py.File(file_path, 'r') as f:
+                # Basic path checks
+                if 'entry' not in f or 'entry/data' not in f or 'entry/data/data' not in f:
+                    raise ValueError("Required HDF5 paths missing (expected /entry/data/data)")
+                
+                entry_grp = f['entry']
+                data_grp = f['entry/data']
+                data_ds = data_grp['data']
+                
+                # Read array and shape
+                volume = data_ds[()]  # numpy array
+                vol_shape = volume.shape  # 3D for volume; 2D for slice
+                
+                # Read attributes for quick discovery
+                try:
+                    meta['data_type'] = entry_grp.attrs.get('data_type', '')
+                except Exception:
+                    meta['data_type'] = ''
+                try:
+                    meta['array_rank'] = int(data_grp.attrs.get('array_rank', volume.ndim))
+                except Exception:
+                    meta['array_rank'] = volume.ndim
+                try:
+                    arr_shape_attr = data_grp.attrs.get('array_shape', np.array(vol_shape, dtype=np.int64))
+                    meta['array_shape'] = list(np.array(arr_shape_attr, dtype=np.int64).tolist())
+                except Exception:
+                    meta['array_shape'] = list(vol_shape)
+                
+                # Read metadata datasets if present
+                voxel_spacing = None
+                grid_origin = None
+                original_shape = None
+                volume_shape_ds = None
+                if 'entry/data/metadata' in f:
+                    md_grp = f['entry/data/metadata']
+                    for key in md_grp.keys():
+                        try:
+                            ds = md_grp[key]
+                            # Try to read as string safely, otherwise as numeric/array
+                            if hasattr(ds, 'asstr'):
+                                val = ds.asstr()[()]
+                            else:
+                                val = ds[()]
+                            # Normalize numpy types to python types
+                            if isinstance(val, np.ndarray):
+                                meta[key] = val.tolist()
+                            elif isinstance(val, (np.generic,)):
+                                meta[key] = val.item()
+                            else:
+                                meta[key] = val
+                        except Exception:
+                            # Fall back to stringified content if any issue
+                            try:
+                                meta[key] = str(md_grp[key][()])
+                            except Exception:
+                                pass
+                    voxel_spacing = meta.get('voxel_spacing', None)
+                    grid_origin = meta.get('grid_origin', None)
+                    original_shape = meta.get('original_shape', None)
+                    volume_shape_ds = meta.get('volume_shape', None)
+                
+                # Store in instance for downstream consumers
+                self.volume = volume
+                # Always store a 3-tuple for volume_shape; if 2D, prefix with 0
+                if volume.ndim == 3:
+                    self.volume_shape = tuple(int(x) for x in vol_shape)
+                elif volume.ndim == 2:
+                    self.volume_shape = (0, int(vol_shape[0]), int(vol_shape[1]))
+                else:
+                    self.volume_shape = (0, 0, 0)
+                # Keep file-level metadata for access by caller
+                self.file_metadata = {
+                    'data_type': (meta.get('data_type') or ''),
+                    'array_rank': meta.get('array_rank'),
+                    'array_shape': meta.get('array_shape'),
+                    'voxel_spacing': voxel_spacing,
+                    'grid_origin': grid_origin,
+                    'original_shape': original_shape,
+                    'volume_shape': volume_shape_ds,
+                }
             
-            # Return images as volume (don't flatten)
-            volume = raw_data['images']
-            volume_shape = volume.shape  # (depth, height, width)
-            
-            # Store volume data
-            self.volume = volume
-            self.volume_shape = volume_shape
-            
-            return (volume, volume_shape)
-            
+            # Return volume and a 3D shape; for 2D, return (0, H, W) so callers can detect
+            return (volume, self.volume_shape)
         except Exception as e:
             self._handle_loading_error(e, file_path)
             return (np.array([]), (0, 0, 0))
@@ -473,10 +557,10 @@ class HDF5Loader:
     
     
     # ================ SAVING METHODS ======================= #
-    def save_3d_to_h5(self, file_path: str, points: np.ndarray, intensities: np.ndarray, 
+    def save_vol_to_h5(self, file_path: str, points: np.ndarray, intensities: np.ndarray, 
                          metadata: Optional[dict] = None) -> bool:
         """
-        Save point cloud data to HDF5 file
+        Save volume data to HDF5 file
         
         Args:
             file_path (str): Output file path
@@ -506,7 +590,7 @@ class HDF5Loader:
             default_metadata = {
                 'num_points': len(points),
                 'point_dimensions': points.shape[1],
-                'data_type': '3d_point',
+                'data_type': 'points',
                 'creation_timestamp': str(np.datetime64('now')),
                 'source_file': getattr(self, 'current_file_path', 'unknown')
             }
@@ -631,33 +715,377 @@ class HDF5Loader:
         """
         pass
     
-    def save_volume_to_h5(self, file_path: str, volume: np.ndarray, 
+    def save_vol_to_h5(self, file_path: str, volume: np.ndarray, 
                          metadata: Optional[dict] = None) -> bool:
         """
-        Save 3D volume to HDF5 file
+        Save 3D volume (or 2D slice) to HDF5 file using standard structure.
+        Writes the array to /entry/data/data and metadata to /entry/data/metadata.
         
         Args:
             file_path (str): Output file path
-            volume (np.ndarray): 3D volume data
-            metadata (dict, optional): Additional metadata
-            
+            volume (np.ndarray): Volume array. Shape should be:
+                                 - (D, H, W) for 3D volumes
+                                 - (H, W) for 2D slices
+            metadata (dict, optional): Additional metadata to save. Will be merged
+                                       with defaults (including data_type).
         Returns:
             bool: True if save successful
         """
-        pass
+        try:
+            if volume is None or volume.size == 0:
+                raise ValueError("Volume array cannot be empty")
+            if volume.ndim not in (2, 3):
+                raise ValueError(f"Volume must be 2D or 3D, got ndim={volume.ndim}")
+            
+            # Prepare metadata and infer data_type if not provided
+            meta = {} if metadata is None else dict(metadata)
+            inferred_type = 'volume' if volume.ndim == 3 else 'slice'
+            meta.setdefault('data_type', inferred_type)
+            meta.setdefault('creation_timestamp', str(np.datetime64('now')))
+            meta.setdefault('source_file', getattr(self, 'current_file_path', 'unknown'))
+            if volume.ndim == 3:
+                meta.setdefault('volume_shape', tuple(int(x) for x in volume.shape))
+            else:
+                meta.setdefault('slice_shape', tuple(int(x) for x in volume.shape))
+            
+            # Create HDF5 structure and write data
+            with h5py.File(file_path, 'w') as h5f:
+                # /entry
+                entry_grp = h5f.create_group(self.hdf5_structure['entry'])
+                # /entry/data
+                data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
+                # /entry/data/data -> write as float32 for consistency
+                data_ds_name = self.hdf5_structure['images'].split('/')[-1]
+                data_grp.create_dataset(data_ds_name, data=volume.astype(np.float32))
+                
+                # /entry/data/metadata
+                metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
+                for key, value in meta.items():
+                    try:
+                        if isinstance(value, (int, float, np.number)):
+                            metadata_grp.create_dataset(key, data=value)
+                        elif isinstance(value, str):
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=value, dtype=dt)
+                        elif isinstance(value, (list, tuple, np.ndarray)):
+                            if len(value) > 0:
+                                if all(isinstance(v, (int, float, np.number)) for v in value):
+                                    metadata_grp.create_dataset(key, data=np.array(value))
+                                elif all(isinstance(v, str) for v in value):
+                                    dt = h5py.string_dtype(encoding='utf-8')
+                                    metadata_grp.create_dataset(key, data=np.array(value, dtype=dt))
+                                else:
+                                    dt = h5py.string_dtype(encoding='utf-8')
+                                    metadata_grp.create_dataset(key, data=str(value), dtype=dt)
+                        else:
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=str(value), dtype=dt)
+                    except Exception as e:
+                        print(f"Warning: Could not save metadata key '{key}': {e}")
+                
+                # Attributes for quick discovery
+                entry_grp.attrs['data_type'] = meta.get('data_type', inferred_type)
+                data_grp.attrs['array_rank'] = volume.ndim
+                data_grp.attrs['array_shape'] = np.array(volume.shape, dtype=np.int64)
+            
+            print(f"{meta.get('data_type', inferred_type).capitalize()} successfully saved to {file_path}")
+            print(f"Structure paths used:")
+            print(f"  Entry: {self.hdf5_structure['entry']}")
+            print(f"  Data: {self.hdf5_structure['data']}")
+            print(f"  Images: {self.hdf5_structure['images']}")
+            print(f"  Metadata: {self.hdf5_structure['metadata']}")
+            return True
+        except Exception as e:
+            error_msg = f"Failed to save volume to {file_path}: {e}"
+            print(error_msg)
+            self._handle_saving_error(e, file_path)
+            return False
     
+    def extract_slice(self, file_path: str, points: np.ndarray, intensities: np.ndarray,
+                      metadata: Optional[dict] = None, shape: Optional[Tuple[int, int]] = None) -> bool:
+        """
+        Save a 2D slice derived from scattered 3D points into an HDF5 file, keeping the structure
+        consistent with HDF5Writer.save_caches_to_h5:
+          - /entry/data/data -> 2D image (H, W)
+          - /entry/data/hkl/qx,qy,qz -> 2D grids of coordinates (H, W)
+          - /entry/data/metadata -> slice and provenance metadata
+
+        Args:
+            file_path: Output HDF5 path
+            points: (N, 3) slice points in 3D
+            intensities: (N,) intensity values
+            metadata: dict containing at least 'slice_normal' and 'slice_origin' if available
+            shape: desired 2D shape (H, W) for the slice image; if None, inferred
+
+        Returns:
+            True on success, False otherwise
+        """
+        try:
+            if points is None or points.size == 0:
+                raise ValueError("Slice points array cannot be empty")
+            if intensities is None or intensities.size == 0:
+                raise ValueError("Slice intensities array cannot be empty")
+            if points.shape[0] != intensities.shape[0]:
+                raise ValueError("Points and intensities must have the same number of elements")
+            if points.shape[1] != 3:
+                raise ValueError("Points must be 3D (N, 3)")
+
+            meta = {} if metadata is None else dict(metadata)
+
+            # Plane basis from metadata or fallback
+            n = np.array(meta.get('slice_normal', [0.0, 0.0, 1.0]), dtype=float)
+            n_norm = np.linalg.norm(n)
+            if not np.isfinite(n_norm) or n_norm <= 0.0:
+                n = np.array([0.0, 0.0, 1.0], dtype=float)
+            else:
+                n = n / n_norm
+            o = np.array(meta.get('slice_origin', [0.0, 0.0, 0.0]), dtype=float)
+            if not np.all(np.isfinite(o)):
+                # Fallback to centroid of points
+                o = np.mean(points, axis=0)
+
+            # Choose an axis not parallel to n to build in-plane basis u,v
+            world_axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])]
+            ref = world_axes[0]
+            for ax in world_axes:
+                if abs(float(np.dot(ax, n))) < 0.9:
+                    ref = ax
+                    break
+            u = np.cross(n, ref)
+            u_norm = np.linalg.norm(u)
+            if not np.isfinite(u_norm) or u_norm <= 0.0:
+                # Fallback if numerical degeneracy
+                ref = np.array([0.0, 1.0, 0.0])
+                u = np.cross(n, ref)
+                u_norm = np.linalg.norm(u)
+                if not np.isfinite(u_norm) or u_norm <= 0.0:
+                    # Absolute fallback
+                    u = np.array([1.0, 0.0, 0.0])
+                    u_norm = 1.0
+            u = u / u_norm
+            v = np.cross(n, u)
+            v_norm = np.linalg.norm(v)
+            if not np.isfinite(v_norm) or v_norm <= 0.0:
+                v = np.array([0.0, 1.0, 0.0])
+
+            # Project points onto plane coordinates (U,V)
+            rel = points - o[None, :]
+            U = rel.dot(u)
+            V = rel.dot(v)
+
+            # Determine slice image shape (H, W)
+            preferred_shape = None
+            # Prefer provided shape
+            if shape and isinstance(shape, (tuple, list)) and len(shape) == 2 and int(shape[0]) > 0 and int(shape[1]) > 0:
+                preferred_shape = (int(shape[0]), int(shape[1]))
+            else:
+                # Fallback to metadata original_shape if valid
+                orig = meta.get('original_shape', None)
+                if isinstance(orig, (tuple, list)) and len(orig) == 2 and int(orig[0]) > 0 and int(orig[1]) > 0:
+                    preferred_shape = (int(orig[0]), int(orig[1]))
+            # Final fallback to a reasonable default
+            if preferred_shape is None:
+                preferred_shape = (512, 512)
+            H, W = preferred_shape
+
+            # Compute bin edges over U,V extents
+            U_min, U_max = float(np.min(U)), float(np.max(U))
+            V_min, V_max = float(np.min(V)), float(np.max(V))
+            # Avoid zero-size ranges
+            if not np.isfinite(U_min) or not np.isfinite(U_max) or U_max == U_min:
+                U_min, U_max = -0.5, 0.5
+            if not np.isfinite(V_min) or not np.isfinite(V_max) or V_max == V_min:
+                V_min, V_max = -0.5, 0.5
+
+            # Bin points into HxW grid, averaging intensities per bin
+            du = (U_max - U_min) / float(W)
+            dv = (V_max - V_min) / float(H)
+            # Guard against zero or NaN
+            if not np.isfinite(du) or du <= 0.0:
+                du = 1.0 / float(max(W, 1))
+            if not np.isfinite(dv) or dv <= 0.0:
+                dv = 1.0 / float(max(H, 1))
+            iu = np.floor((U - U_min) / du).astype(int)
+            iv = np.floor((V - V_min) / dv).astype(int)
+            iu = np.clip(iu, 0, W - 1)
+            iv = np.clip(iv, 0, H - 1)
+
+            image_sum = np.zeros((H, W), dtype=np.float64)
+            image_cnt = np.zeros((H, W), dtype=np.int64)
+            # Accumulate
+            for k in range(points.shape[0]):
+                image_sum[iv[k], iu[k]] += float(intensities[k])
+                image_cnt[iv[k], iu[k]] += 1
+            # Average; fill empty bins with 0.0
+            image = np.zeros((H, W), dtype=np.float32)
+            nonzero = image_cnt > 0
+            image[nonzero] = (image_sum[nonzero] / image_cnt[nonzero]).astype(np.float32)
+            image[~nonzero] = 0.0
+
+            # Build qx,qy,qz grids at bin centers
+            Uc = U_min + (np.arange(W, dtype=np.float64) + 0.5) * du
+            Vc = V_min + (np.arange(H, dtype=np.float64) + 0.5) * dv
+            # Broadcast to HxW
+            U_grid = np.broadcast_to(Uc[None, :], (H, W))
+            V_grid = np.broadcast_to(Vc[:, None], (H, W))
+            # q = o + U*u + V*v
+            qx = (o[0] + U_grid * u[0] + V_grid * v[0]).astype(np.float32)
+            qy = (o[1] + U_grid * u[1] + V_grid * v[1]).astype(np.float32)
+            qz = (o[2] + U_grid * u[2] + V_grid * v[2]).astype(np.float32)
+
+            # Prepare metadata consistent with writer
+            intensity_range = [float(np.min(image)), float(np.max(image))]
+            meta.setdefault('data_type', 'slice')
+            meta.setdefault('extraction_timestamp', str(np.datetime64('now')))
+            meta.setdefault('num_points', int(points.shape[0]))
+            meta.setdefault('image_shape', [int(H), int(W)])
+            meta.setdefault('slice_normal', [float(n[0]), float(n[1]), float(n[2])])
+            meta.setdefault('slice_origin', [float(o[0]), float(o[1]), float(o[2])])
+            meta.setdefault('u_axis', [float(u[0]), float(u[1]), float(u[2])])
+            meta.setdefault('v_axis', [float(v[0]), float(v[1]), float(v[2])])
+            meta.setdefault('u_range', [float(U_min), float(U_max)])
+            meta.setdefault('v_range', [float(V_min), float(V_max)])
+            meta.setdefault('intensity_range', intensity_range)
+
+            # Write HDF5 file: /entry/data/data, /entry/data/hkl/{qx,qy,qz}, /entry/data/metadata
+            with h5py.File(file_path, 'w') as h5f:
+                entry_grp = h5f.create_group(self.hdf5_structure['entry'])
+                data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
+                # Image data
+                data_ds_name = self.hdf5_structure['images'].split('/')[-1]
+                data_grp.create_dataset(data_ds_name, data=image.astype(np.float32))
+                # HKL 2D grids
+                hkl_grp = data_grp.create_group(self.hdf5_structure['hkl'].split('/')[-1])
+                hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=qx)
+                hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=qy)
+                hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=qz)
+                # Metadata
+                metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
+                for key, value in meta.items():
+                    try:
+                        if isinstance(value, (int, float, np.number)):
+                            metadata_grp.create_dataset(key, data=value)
+                        elif isinstance(value, str):
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=value, dtype=dt)
+                        elif isinstance(value, (list, tuple, np.ndarray)):
+                            arr = np.array(value)
+                            if arr.dtype.kind in ('i', 'u', 'f'):
+                                metadata_grp.create_dataset(key, data=arr)
+                            elif arr.dtype.kind in ('U', 'S', 'O'):
+                                dt = h5py.string_dtype(encoding='utf-8')
+                                metadata_grp.create_dataset(key, data=arr.astype(dt))
+                            else:
+                                dt = h5py.string_dtype(encoding='utf-8')
+                                metadata_grp.create_dataset(key, data=str(value), dtype=dt)
+                        else:
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=str(value), dtype=dt)
+                    except Exception as e:
+                        print(f"Warning: Could not save metadata key '{key}': {e}")
+
+                # Attributes
+                entry_grp.attrs['data_type'] = 'slice'
+                data_grp.attrs['array_rank'] = 2
+                data_grp.attrs['array_shape'] = np.array([H, W], dtype=np.int64)
+
+            print(f"Slice successfully saved to {file_path} (shape {H}x{W})")
+            print(f"Structure paths used:")
+            print(f"  Entry: {self.hdf5_structure['entry']}")
+            print(f"  Data: {self.hdf5_structure['data']}")
+            print(f"  Images: {self.hdf5_structure['images']}")
+            print(f"  HKL: {self.hdf5_structure['hkl']} -> qx,qy,qz grids")
+            print(f"  Metadata: {self.hdf5_structure['metadata']}")
+            return True
+        except Exception as e:
+            error_msg = f"Failed to save slice to {file_path}: {e}"
+            print(error_msg)
+            self._handle_saving_error(e, file_path)
+            return False
+
     # ================ UTILITY METHODS ======================= #
     def get_file_info(self, file_path: str) -> dict:
         """
-        Get information about HDF5 file structure and contents
+        Inspect an HDF5 file and summarize basic structure and metadata.
         
         Args:
             file_path (str): Path to HDF5 file
             
         Returns:
-            dict: File information including datasets, shapes, dtypes
+            dict: {
+                'valid': bool,
+                'data_type': str (from /entry attrs if present),
+                'paths': list of dataset paths,
+                'shapes': dict of path -> shape,
+                'dtypes': dict of path -> dtype,
+                'entry_attrs': dict,
+                'data_attrs': dict,
+                'metadata': dict of /entry/data/metadata datasets (key -> python value)
+            }
         """
-        pass
+        info = {
+            'valid': False,
+            'data_type': '',
+            'paths': [],
+            'shapes': {},
+            'dtypes': {},
+            'entry_attrs': {},
+            'data_attrs': {},
+            'metadata': {}
+        }
+        try:
+            if not os.path.exists(file_path) or not h5py.is_hdf5(file_path):
+                return info
+            with h5py.File(file_path, 'r') as f:
+                info['valid'] = True
+                # entry attrs
+                if 'entry' in f:
+                    for k, v in f['entry'].attrs.items():
+                        info['entry_attrs'][k] = v
+                    info['data_type'] = str(info['entry_attrs'].get('data_type', ''))
+                # data attrs
+                if 'entry/data' in f:
+                    for k, v in f['entry/data'].attrs.items():
+                        info['data_attrs'][k] = v
+                # metadata datasets
+                if 'entry/data/metadata' in f:
+                    md_grp = f['entry/data/metadata']
+                    for key in md_grp.keys():
+                        try:
+                            ds = md_grp[key]
+                            if hasattr(ds, 'asstr'):
+                                val = ds.asstr()[()]
+                            else:
+                                val = ds[()]
+                            if isinstance(val, np.ndarray):
+                                info['metadata'][key] = val.tolist()
+                            elif isinstance(val, (np.generic,)):
+                                info['metadata'][key] = val.item()
+                            else:
+                                info['metadata'][key] = val
+                        except Exception:
+                            pass
+                # datasets enumeration
+                def visitor(name, obj):
+                    if isinstance(obj, h5py.Dataset):
+                        info['paths'].append('/' + name)
+                        info['shapes']['/' + name] = obj.shape
+                        info['dtypes']['/' + name] = str(obj.dtype)
+                f.visititems(visitor)
+            return info
+        except Exception as e:
+            # Also log to error file
+            try:
+                with open(self.log_file_path, 'a') as f:
+                    f.write("==== HDF5 Inspect Error ====\n")
+                    f.write(f"File Path: {file_path}\n")
+                    f.write(f"Error: {repr(e)}\n")
+                    f.write("Traceback:\n")
+                    f.write(traceback.format_exc())
+                    f.write("\n")
+            except Exception:
+                pass
+            return info
     
     def convert_2d_to_3d(self, points_2d: np.ndarray, intensities: np.ndarray, 
                         z_values: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
@@ -696,6 +1124,10 @@ class HDF5Loader:
         """
         pass
     
+    def get_last_error(self) -> str:
+        """Return the last recorded error message."""
+        return self.last_error
+
     # ================ ERROR HANDLING ======================= #
     
     def _handle_loading_error(self, error: Exception, file_path: str) -> None:
@@ -720,4 +1152,7 @@ class HDF5Loader:
             error (Exception): The exception that occurred
             file_path (str): Path to file that caused error
         """
-        pass
+        f = open('error_output.txt', 'w')
+        f.write(f'Error Saving HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
+        f.close()
+        print(self.last_error)
