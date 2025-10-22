@@ -1,0 +1,1266 @@
+"""
+Simple analysis helper script for DashPVA
+
+Purpose:
+- Read an HDF5 (.h5/.hdf5) file containing a saved volume (under /entry/data/data)
+- Build a PyVista ImageData grid (cell-centered) ready for visualization/slicing
+- Designed to be imported and used inside Jupyter notebooks
+
+Jupyter usage example:
+----------------------
+from analysis import grid_data
+grid, volume, meta = grid_data("path/to/file.h5")
+
+import pyvista as pv
+pv.set_jupyter_backend("html")  # optional, for better notebook rendering
+plotter = pv.Plotter()
+plotter.add_volume(grid, scalars="intensity", name="volume")
+plotter.show()
+
+You can also inspect metadata:
+meta  # dict with voxel_spacing, grid_origin, grid_dimensions_cells, array_order, etc.
+"""
+
+import argparse
+import os
+from typing import Tuple, Dict, Optional
+from utils.hdf5_loader import HDF5Loader
+
+
+import numpy as np
+
+# We try to keep PyVista optional; only import when building a grid or plotting
+try:
+    import pyvista as pv
+except Exception:
+    pv = None
+
+# Prefer the project's HDF5Loader for consistent structure handling
+try:
+    from utils.hdf5_loader import HDF5Loader
+except Exception:
+    HDF5Loader = None
+
+# Fallback reader using h5py for simple cases if HDF5Loader is unavailable or fails
+try:
+    import h5py
+except Exception:
+    h5py = None
+
+# Optional Matplotlib for image plotting
+try:
+    import matplotlib.pyplot as plt
+except Exception:
+    plt = None
+
+
+class Data:
+    def __init__(self, points: np.ndarray, intensities: np.ndarray):
+        self.points = points
+        self.intensities = intensities
+
+def show_slice(mesh, cmap='viridis'):
+    return DashAnalysis().show_slice(mesh, cmap=cmap)
+
+class DashAnalysis:
+    """
+    Minimal 3D point-cloud loader for DashPVA.
+
+    Usage (Jupyter-friendly):
+        from dash_analysis import DashAnalysis
+        da = DashAnalysis()  # or DashAnalysis('/path/to/file.h5')
+        points, intensities, meta = da.load_data('/path/to/file.h5')
+
+    The returned arrays can be rendered in Jupyter via PyVista:
+        import pyvista as pv
+        pv.set_jupyter_backend('html')  # interactive backend
+        cloud = pv.PolyData(points)
+        cloud['intensity'] = intensities.astype('float32')
+        plotter = pv.Plotter()
+        plotter.add_mesh(cloud, scalars='intensity', render_points_as_spheres=True, point_size=2.0, cmap='viridis')
+        plotter.show()
+    """
+
+    def __init__(self):
+        # caches for last raster image and extent/orientation for line cuts
+        self._last_image = None
+        self._last_extent = None  # [U_min, U_max, V_min, V_max]
+        self._last_orientation = None
+
+    def load_data(self, file_path: Optional[str] = None):
+        """
+        Load 3D point data and intensities using HDF5Loader.load_h5_to_3d.
+
+        Args:
+            file_path: Optional path override to the HDF5 file.
+
+        Returns:
+            Data object with attributes:
+              - points: np.ndarray of shape (N, 3)
+              - intensities: np.ndarray of shape (N,)
+        """
+        path = file_path or getattr(self, 'file_path', None)
+        if not path:
+            raise FileNotFoundError("No file path provided to load_data and none set in DashAnalysis.")
+
+        loader = HDF5Loader()
+        points_3d, intensities, num_images, shape = loader.load_h5_to_3d(path)
+        return Data(points_3d, intensities)
+    
+    def _build_vol(self, data):
+        """
+        Build a PyVista ImageData grid from a loaded volume, mirroring the viewer's approach.
+
+        Accepts:
+          - tuple (volume_np, shape_tuple) as returned by HDF5Loader.load_h5_volume_3d
+          - dict {'volume': np.ndarray, 'metadata': {...}} to provide spacing/origin/order hints
+
+        Returns:
+          - PyVista ImageData with cell_data['intensity'] populated
+        """
+        import numpy as np
+        if pv is None:
+            raise ImportError("PyVista is required to build the volume. Install pyvista and retry.")
+
+        # Extract volume and optional metadata
+        meta = {}
+        if isinstance(data, tuple) and len(data) >= 1:
+            volume = data[0]
+        elif isinstance(data, dict):
+            volume = data.get('volume')
+            meta = data.get('metadata') or {}
+        else:
+            raise ValueError("Unsupported data format for _build_vol; pass (volume, shape) tuple or {'volume': ..., 'metadata': ...} dict")
+
+        if volume is None or not hasattr(volume, 'shape'):
+            raise ValueError("Invalid volume provided to _build_vol")
+
+        # Determine cell-centered dimensions
+        try:
+            dims_cells_meta = meta.get('grid_dimensions_cells', None)
+            if dims_cells_meta is not None:
+                dims_cells = np.array(dims_cells_meta, dtype=int)
+            else:
+                dims_cells = np.array(volume.shape, dtype=int)
+        except Exception:
+            dims_cells = np.array(volume.shape, dtype=int)
+
+        # Create grid with points-based dimensions (= cells + 1)
+        grid = pv.ImageData()
+        grid.dimensions = (dims_cells + 1).tolist()
+
+        # Spacing and origin from metadata or defaults
+        spacing = meta.get('voxel_spacing') or (1.0, 1.0, 1.0)
+        origin = meta.get('grid_origin') or (0.0, 0.0, 0.0)
+        try:
+            grid.spacing = tuple(float(x) for x in spacing)
+        except Exception:
+            grid.spacing = (1.0, 1.0, 1.0)
+        try:
+            grid.origin = tuple(float(x) for x in origin)
+        except Exception:
+            grid.origin = (0.0, 0.0, 0.0)
+
+        # Assign intensity scalars to cell_data using recorded array order
+        arr_order = (meta.get('array_order') or 'F') if isinstance(meta, dict) else 'F'
+        try:
+            grid.cell_data["intensity"] = volume.flatten(order=arr_order)
+        except Exception:
+            grid.cell_data["intensity"] = volume.flatten(order="F")
+
+        return grid
+    
+    def slice_data(self, data, hkl=None, normal=None, shape=(512, 512), slab_thickness=None, clamp_to_bounds=True, spacing=(1.0, 1.0, 1.0), grid_origin=(0.0, 0.0, 0.0)):
+        """
+        Create a slice from either a volume or a point cloud.
+
+        Parameters:
+            data: volume or point cloud.
+              - Volume: pv.ImageData, np.ndarray (D,H,W), or (ndarray_volume, shape_tuple)
+              - Points: (points, intensities) where points is (N,3) and intensities is (N,)
+            hkl: slice origin. If a 3-vector, used directly. If a string preset ('HK'/'XY','KL'/'YZ','HL'/'XZ'),
+                 sets the normal preset and the origin defaults to the dataset center.
+            normal: slice plane normal vector (3,)
+            shape: resolution (rows, cols) for sampling the plane when slicing points.
+            slab_thickness: thickness of the selection slab around the plane for point slicing.
+            clamp_to_bounds: clamp origin to dataset bounds.
+            spacing, grid_origin: only used when building a grid from a NumPy volume.
+
+        Returns:
+            pv.PolyData representing the slice.
+        """
+        if pv is None:
+            raise ImportError("PyVista is required for slice_data()")
+
+        import numpy as _np
+
+        # Helper: normalize volume to pv.ImageData with cell_data['intensity']
+        def _ensure_grid(_vol, _spacing=(1.0, 1.0, 1.0), _origin=(0.0, 0.0, 0.0)):
+            if isinstance(_vol, pv.ImageData):
+                _grid = _vol
+                if ('intensity' not in _grid.cell_data) and ('intensity' in _grid.point_data):
+                    _grid = _grid.point_data_to_cell_data(pass_point_data=False)
+                if 'intensity' not in _grid.cell_data:
+                    raise ValueError("ImageData must have cell_data['intensity'] for slicing.")
+                return _grid
+            if isinstance(_vol, (tuple, list)) and len(_vol) >= 1 and isinstance(_vol[0], _np.ndarray):
+                _vol_np = _vol[0]
+            elif isinstance(_vol, _np.ndarray):
+                _vol_np = _vol
+            else:
+                raise TypeError("Volume must be pv.ImageData, a NumPy ndarray (D,H,W), or (ndarray_volume, shape) tuple.")
+            if _vol_np.ndim != 3:
+                raise ValueError("NumPy volume must be 3D shaped (D,H,W).")
+            _dims_cells = _np.array(_vol_np.shape, dtype=int)
+            _grid = pv.ImageData()
+            _grid.dimensions = (_dims_cells + 1).tolist()
+            _grid.spacing = tuple(float(x) for x in _spacing)
+            _grid.origin = tuple(float(x) for x in _origin)
+            _grid.cell_data['intensity'] = _np.asarray(_vol_np, dtype=_np.float32).flatten(order='F')
+            return _grid
+
+        # Helper: resolve normal and origin
+        def _resolve_plane(_dataset_center, _bounds):
+            # Resolve normal (from hkl preset or provided normal)
+            _n = None
+            if isinstance(hkl, str):
+                s = hkl.strip().lower()
+                if s in ('hk', 'xy'):
+                    _n = _np.array([0.0, 0.0, 1.0], dtype=float)
+                elif s in ('kl', 'yz'):
+                    _n = _np.array([1.0, 0.0, 0.0], dtype=float)
+                elif s in ('hl', 'xz'):
+                    _n = _np.array([0.0, 1.0, 0.0], dtype=float)
+            if _n is None:
+                _n = _np.array(normal if (normal is not None) else [0.0, 0.0, 1.0], dtype=float)
+            # Normalize
+            nlen = float(_np.linalg.norm(_n))
+            if not _np.isfinite(nlen) or nlen <= 0.0:
+                _n = _np.array([0.0, 0.0, 1.0], dtype=float)
+            else:
+                _n = _n / nlen
+
+            # Resolve origin
+            if isinstance(hkl, (tuple, list, _np.ndarray)) and len(hkl) == 3:
+                _o = _np.array([float(hkl[0]), float(hkl[1]), float(hkl[2])], dtype=float)
+            else:
+                _o = _np.array(_dataset_center if _dataset_center is not None else [0.0, 0.0, 0.0], dtype=float)
+
+            # Clamp origin to bounds
+            if clamp_to_bounds and (_bounds is not None) and (len(_bounds) == 6):
+                _o[0] = float(_np.clip(_o[0], _bounds[0], _bounds[1]))
+                _o[1] = float(_np.clip(_o[1], _bounds[2], _bounds[3]))
+                _o[2] = float(_np.clip(_o[2], _bounds[4], _bounds[5]))
+
+            return _o, _n
+
+        # Distinguish volume vs points
+        is_volume_like = isinstance(data, pv.ImageData) or isinstance(data, np.ndarray) or (isinstance(data, (tuple, list)) and len(data) >= 1 and isinstance(data[0], np.ndarray) and data[0].ndim == 3)
+        if is_volume_like:
+            grid = _ensure_grid(data, _spacing=spacing, _origin=grid_origin)
+            center = getattr(grid, 'center', (0.0, 0.0, 0.0))
+            origin_vec, n_vec = _resolve_plane(center, getattr(grid, 'bounds', None))
+            sl = grid.slice(normal=n_vec, origin=origin_vec)
+            sl.field_data['slice_normal'] = np.asarray(n_vec, dtype=float)
+            sl.field_data['slice_origin'] = np.asarray(origin_vec, dtype=float)
+            return sl
+
+        # Treat as point cloud
+        # Extract points and intensities
+        points = None
+        intensities = None
+        if isinstance(data, (tuple, list)) and len(data) >= 2:
+            points = np.asarray(data[0], dtype=float)
+            intensities = np.asarray(data[1], dtype=float).reshape(-1)
+        elif hasattr(data, 'points') and hasattr(data, 'intensities'):
+            points = np.asarray(getattr(data, 'points'), dtype=float)
+            intensities = np.asarray(getattr(data, 'intensities'), dtype=float).reshape(-1)
+        elif isinstance(data, dict):
+            points = np.asarray(data.get('points'), dtype=float)
+            intensities = np.asarray(data.get('intensities'), dtype=float).reshape(-1)
+        else:
+            raise TypeError("Point data must be provided as (points, intensities) tuple/list, object with .points/.intensities, or {'points': ..., 'intensities': ...} dict.")
+
+        if points is None or intensities is None or points.ndim != 2 or points.shape[1] != 3 or intensities.shape[0] != points.shape[0]:
+            raise ValueError("Invalid point data: points must be (N,3) and intensities must be length N.")
+
+        # Build cloud and bounds
+        cloud = pv.PolyData(points)
+        cloud['intensity'] = intensities.astype('float32')
+
+        minb = points.min(axis=0)
+        maxb = points.max(axis=0)
+        bounds = (float(minb[0]), float(maxb[0]), float(minb[1]), float(maxb[1]), float(minb[2]), float(maxb[2]))
+        center = ((minb + maxb) * 0.5).astype(float)
+
+        origin_vec, n_vec = _resolve_plane(center, bounds)
+
+        # Optional pre-filter: limit contributing points to a slab around the plane for interpolation
+        rel = points - origin_vec[None, :]
+        d_signed = rel.dot(n_vec)
+        use_slab = slab_thickness is not None and np.isfinite(float(slab_thickness)) and float(slab_thickness) > 0.0
+        if use_slab:
+            tol = float(slab_thickness)
+            mask = np.abs(d_signed) <= tol
+            # Fallback to all points if slab yields none
+            if not np.any(mask):
+                mask = np.ones(points.shape[0], dtype=bool)
+        else:
+            mask = np.ones(points.shape[0], dtype=bool)
+
+        pts_for_extent = points[mask]
+        vals_for_extent = intensities[mask]
+
+        # Build in-plane basis u, v orthonormal to n_vec
+        world_axes = [
+            np.array([1.0, 0.0, 0.0], dtype=float),
+            np.array([0.0, 1.0, 0.0], dtype=float),
+            np.array([0.0, 0.0, 1.0], dtype=float),
+        ]
+        ref = world_axes[0]
+        for ax in world_axes:
+            if abs(float(np.dot(ax, n_vec))) < 0.9:
+                ref = ax
+                break
+        u = np.cross(n_vec, ref)
+        u_len = float(np.linalg.norm(u))
+        if not np.isfinite(u_len) or u_len <= 0.0:
+            ref = np.array([0.0, 1.0, 0.0], dtype=float)
+            u = np.cross(n_vec, ref)
+            u_len = float(np.linalg.norm(u))
+            if not np.isfinite(u_len) or u_len <= 0.0:
+                u = np.array([1.0, 0.0, 0.0], dtype=float)
+                u_len = 1.0
+        u = u / u_len
+        v = np.cross(n_vec, u)
+        v_len = float(np.linalg.norm(v))
+        if not np.isfinite(v_len) or v_len <= 0.0:
+            v = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            v = v / v_len
+
+        # Project points used for extent, compute extents
+        rel_ext = pts_for_extent - origin_vec[None, :]
+        U = rel_ext.dot(u)
+        V = rel_ext.dot(v)
+        U_min, U_max = float(np.min(U)), float(np.max(U))
+        V_min, V_max = float(np.min(V)), float(np.max(V))
+        if not np.isfinite(U_min) or not np.isfinite(U_max) or U_max == U_min:
+            U_min, U_max = -0.5, 0.5
+        if not np.isfinite(V_min) or not np.isfinite(V_max) or V_max == V_min:
+            V_min, V_max = -0.5, 0.5
+
+        # Slight padding
+        pad_u = (U_max - U_min) * 0.02
+        pad_v = (V_max - V_min) * 0.02
+        U_min -= pad_u
+        U_max += pad_u
+        V_min -= pad_v
+        V_max += pad_v
+
+        i_size = max(U_max - U_min, 1e-6)
+        j_size = max(V_max - V_min, 1e-6)
+        H, W = (shape if (isinstance(shape, (tuple, list)) and len(shape) == 2) else (512, 512))
+        H = max(int(H), 2)
+        W = max(int(W), 2)
+
+        # Create plane sized by extents and interpolate point data onto it
+        plane = pv.Plane(center=origin_vec.tolist(), direction=n_vec.tolist(),
+                         i_size=i_size, j_size=j_size, i_resolution=W, j_resolution=H)
+
+        # Choose contributing cloud (slab-filtered if applicable)
+        if np.any(mask) and np.any(~mask) and use_slab:
+            cloud_contrib = pv.PolyData(pts_for_extent)
+            cloud_contrib['intensity'] = vals_for_extent.astype('float32')
+        else:
+            cloud_contrib = cloud  # full cloud built earlier
+
+        # Interpolation radius based on average cell size
+        avg_cell = float((i_size / W + j_size / H) * 0.5)
+        optimal_radius = max(1e-6, 2.5 * avg_cell)
+
+        interp_plane = plane.interpolate(
+            cloud_contrib,
+            radius=optimal_radius,
+            sharpness=1.5,
+            null_value=0.0
+        )
+        interp_plane.field_data['slice_normal'] = np.asarray(n_vec, dtype=float)
+        interp_plane.field_data['slice_origin'] = np.asarray(origin_vec, dtype=float)
+        return interp_plane
+
+    def create_vol(self, points, intensities):
+        cloud = pv.PolyData(points)
+        cloud['intensity'] = intensities.astype('float32')
+        minb = cloud.points.min(axis=0)
+        maxb = cloud.points.max(axis=0)
+        data_range = maxb - minb
+        padding = data_range * 0.10
+        grid_min = minb - padding
+        grid_max = maxb + padding
+        grid_range = grid_max - grid_min
+
+        # Resolution: adaptive cells per axis (mirror slicer thresholds)
+        total_points = int(points.shape[0]) if hasattr(points, "shape") else len(points)
+        if total_points >= 5_000_000:
+            refine_cells = 120
+        elif total_points >= 2_000_000:
+            refine_cells = 140
+        elif total_points >= 500_000:
+            refine_cells = 160
+        else:
+            refine_cells = 180
+        spacing = grid_range / refine_cells
+        dimensions = np.ceil(grid_range / spacing).astype(int) + 1
+
+        # Create grid
+        grid = pv.ImageData()
+        grid.origin = grid_min
+        grid.spacing = spacing
+        grid.dimensions = dimensions
+
+        # Interpolate cloud into volume
+        optimal_radius = float(np.mean(spacing) * 2.5)
+        vol = grid.interpolate(cloud, radius=optimal_radius, sharpness=1.5, null_value=0.0)
+
+        return vol
+
+    def show_meta(self,file_path):
+        if not file_path:
+            raise FileNotFoundError("No file path provided to load_data and none set in DashAnalysis.")
+
+        loader = HDF5Loader()
+        data = loader.get_file_info(file_path=file_path)
+        return data
+
+    def show_vol(self, vol, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0), cmap='jet'):
+        """
+        Display a 3D HKL volume in a Jupyter notebook.
+
+        Parameters:
+        vol: pyvista.ImageData with cell_data['intensity'] OR a NumPy ndarray (D,H,W) of intensities (cell-centered).
+        spacing: tuple of voxel spacing (ΔH, ΔK, ΔL) used if vol is ndarray.
+        origin: tuple grid origin (H0, K0, L0) used if vol is ndarray.
+        cmap: colormap name for volume rendering.
+
+        Returns:
+        The PyVista rendering (and displays inline in the notebook).
+        """
+        # Normalize input to a PyVista ImageData with cell_data['intensity']
+        if isinstance(vol, pv.ImageData):
+            grid = vol
+            # Ensure 'intensity' exists
+            if 'intensity' not in grid.cell_data and 'intensity' in grid.point_data:
+                # Convert to cell_data for consistent D×H×W handling
+                grid = grid.point_data_to_cell_data(pass_point_data=False)
+            if 'intensity' not in grid.cell_data:
+                raise ValueError("ImageData must have cell_data['intensity'] for volume rendering.")
+        elif isinstance(vol, np.ndarray):
+            if vol.ndim != 3:
+                raise ValueError("NumPy volume must be 3D shaped (D, H, W).")
+            # Build grid: dimensions = cells + 1 (VTK requirement)
+            dims_cells = np.array(vol.shape, dtype=int)
+            grid = pv.ImageData()
+            grid.dimensions = (dims_cells + 1).tolist()
+            grid.spacing = tuple(float(x) for x in spacing)
+            grid.origin = tuple(float(x) for x in origin)
+            # For VTK/PyVista, flatten with Fortran order to match D×H×W cell-layout
+            grid.cell_data['intensity'] = np.asarray(vol, dtype=np.float32).flatten(order='F')
+        else:
+            raise TypeError("vol must be a pyvista.ImageData or a NumPy ndarray (D,H,W).")
+
+        # Compute display clim from data range if available
+        try:
+            data = np.asarray(grid.cell_data['intensity'])
+            clim = (float(np.min(data)), float(np.max(data)))
+        except Exception:
+            clim = None
+
+        # Render inline
+        plotter = pv.Plotter(notebook=True)
+        plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        plotter.add_volume(grid, scalars='intensity', cmap=cmap, clim=clim, name='cloud_volume', show_scalar_bar=True)
+        try:
+            plotter.show_bounds(mesh=grid, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis', bounds=grid.bounds)
+        except Exception:
+            pass
+        return plotter.show()
+
+    def show_slice(self, vol, hkl='HK', origin=None, shape=None, cmap='viridis',
+                   spacing=(1.0, 1.0, 1.0), grid_origin=(0.0, 0.0, 0.0),
+                   clim=None, min_intensity=None, max_intensity=None, axes=None, return_image=False):
+        """
+        Slice a 3D HKL volume or a point cloud and display the 2D raster using matplotlib imshow.
+
+        Parameters:
+            vol: pyvista.ImageData (with cell_data['intensity']), NumPy ndarray (D,H,W),
+                 (ndarray_volume, shape) tuple, OR a point-cloud container:
+                 - (points, intensities) tuple/list
+                 - object with .points and .intensities attributes (e.g. Data)
+                 - dict with keys {'points': ..., 'intensities': ...}
+            hkl: plane preset; 'HK'/'XY' -> normal (0,0,1); 'KL'/'YZ' -> (1,0,0); 'HL'/'XZ' -> (0,1,0).
+            origin: (H0,K0,L0) slice origin; defaults to grid/points center if None.
+            shape: (H, W) raster size; defaults to (512, 512) if None.
+            cmap: matplotlib colormap name.
+            spacing: voxel spacing used when vol is ndarray.
+            grid_origin: grid origin used when vol is ndarray.
+            clim: optional (vmin, vmax) for imshow intensity limits. Ignored if min_intensity/max_intensity are provided.
+            min_intensity: optional float; filters slice values below this and acts as vmin for display.
+            max_intensity: optional float; filters slice values above this and acts as vmax for display.
+            axes: optional matplotlib Axes to render into; creates a new figure if None.
+            return_image: if True, returns (img, extent); else returns None.
+
+        Returns:
+            (img, extent) if return_image=True, else None. extent = [U_min, U_max, V_min, V_max].
+        """
+        # Require PyVista for arbitrary oriented slicing
+        if pv is None:
+            raise ImportError("PyVista is required for show_slice()")
+
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+
+        # Helper: normalize volume to a PyVista ImageData with cell_data['intensity']
+        def _ensure_grid(_vol, _spacing=(1.0, 1.0, 1.0), _origin=(0.0, 0.0, 0.0)):
+            if isinstance(_vol, pv.ImageData):
+                _grid = _vol
+                if ('intensity' not in _grid.cell_data) and ('intensity' in _grid.point_data):
+                    _grid = _grid.point_data_to_cell_data(pass_point_data=False)
+                if 'intensity' not in _grid.cell_data:
+                    raise ValueError("ImageData must have cell_data['intensity'] for slicing.")
+                return _grid
+
+            if isinstance(_vol, (tuple, list)) and len(_vol) >= 1 and isinstance(_vol[0], _np.ndarray):
+                _vol_np = _vol[0]
+            elif isinstance(_vol, _np.ndarray):
+                _vol_np = _vol
+            else:
+                raise TypeError("vol must be pv.ImageData, a NumPy ndarray (D,H,W), or (ndarray_volume, shape) tuple.")
+
+            if _vol_np.ndim != 3:
+                raise ValueError("NumPy volume must be 3D shaped (D,H,W).")
+
+            _dims_cells = _np.array(_vol_np.shape, dtype=int)
+            _grid = pv.ImageData()
+            _grid.dimensions = (_dims_cells + 1).tolist()
+            _grid.spacing = tuple(float(x) for x in _spacing)
+            _grid.origin = tuple(float(x) for x in _origin)
+            # Flatten in Fortran order to match VTK/PyVista cell layout
+            _grid.cell_data['intensity'] = _np.asarray(_vol_np, dtype=_np.float32).flatten(order='F')
+            return _grid
+
+        # Helper: map HKL preset to normal
+        def _resolve_normal(_hkl):
+            if isinstance(_hkl, str):
+                s = _hkl.strip().lower()
+                if s in ('hk', 'xy'):
+                    return _np.array([0.0, 0.0, 1.0], dtype=float)
+                if s in ('kl', 'yz'):
+                    return _np.array([1.0, 0.0, 0.0], dtype=float)
+                if s in ('hl', 'xz'):
+                    return _np.array([0.0, 1.0, 0.0], dtype=float)
+            return _np.array([0.0, 0.0, 1.0], dtype=float)
+
+        # Helper: rasterize slice to image and report orientation & orthogonal axis value
+        def _rasterize_slice(_slice_mesh, _normal, _origin, H=512, W=512, _min_intensity=None, _max_intensity=None):
+            pts = _np.asarray(getattr(_slice_mesh, 'points', _np.empty((0, 3))), dtype=float)
+            try:
+                vals = _np.asarray(_slice_mesh['intensity'], dtype=float).reshape(-1)
+            except Exception:
+                vals = _np.zeros((len(pts),), dtype=float)
+
+            # Optional pre-rasterization filter by intensity range
+            if (_min_intensity is not None) or (_max_intensity is not None):
+                m = _np.ones(vals.shape, dtype=bool)
+                if _min_intensity is not None:
+                    m &= (vals >= float(_min_intensity))
+                if _max_intensity is not None:
+                    m &= (vals <= float(_max_intensity))
+                pts = pts[m]
+                vals = vals[m]
+
+            if pts.size == 0 or vals.size == 0 or pts.shape[0] != vals.shape[0]:
+                # Return empty image with default ranges and Custom orientation
+                return _np.zeros((H, W), dtype=_np.float32), -0.5, 0.5, -0.5, 0.5, "Custom", None, None
+
+            n = _np.array(_normal, dtype=float)
+            o = _np.array(_origin, dtype=float)
+
+            # Normalize normal
+            n_norm = float(_np.linalg.norm(n))
+            if not _np.isfinite(n_norm) or n_norm <= 0.0:
+                n = _np.array([0.0, 0.0, 1.0], dtype=float)
+            else:
+                n = n / n_norm
+
+            # Infer orientation from normal
+            X = _np.array([1.0, 0.0, 0.0], dtype=float)  # H
+            Y = _np.array([0.0, 1.0, 0.0], dtype=float)  # K
+            Z = _np.array([0.0, 0.0, 1.0], dtype=float)  # L
+            tol = 0.95
+            dX = abs(float(_np.dot(n, X)))
+            dY = abs(float(_np.dot(n, Y)))
+            dZ = abs(float(_np.dot(n, Z)))
+
+            if dZ >= tol:
+                # HK plane: U=H, V=K; orth_label L
+                U = pts[:, 0].astype(float)
+                V = pts[:, 1].astype(float)
+                orientation = "HK"
+                orth_label = "L"
+                orth_value = float(o[2])
+            elif dX >= tol:
+                # KL plane: U=K, V=L; orth_label H
+                U = pts[:, 1].astype(float)
+                V = pts[:, 2].astype(float)
+                orientation = "KL"
+                orth_label = "H"
+                orth_value = float(o[0])
+            elif dY >= tol:
+                # HL plane: U=H, V=L; orth_label K
+                U = pts[:, 0].astype(float)
+                V = pts[:, 2].astype(float)
+                orientation = "HL"
+                orth_label = "K"
+                orth_value = float(o[1])
+            else:
+                # Custom orientation: build in-plane basis u, v
+                world_axes = [
+                    _np.array([1.0, 0.0, 0.0], dtype=float),
+                    _np.array([0.0, 1.0, 0.0], dtype=float),
+                    _np.array([0.0, 0.0, 1.0], dtype=float),
+                ]
+                ref = world_axes[0]
+                for ax in world_axes:
+                    if abs(float(_np.dot(ax, n))) < 0.9:
+                        ref = ax
+                        break
+                u = _np.cross(n, ref)
+                u_norm = float(_np.linalg.norm(u))
+                if not _np.isfinite(u_norm) or u_norm <= 0.0:
+                    ref = _np.array([0.0, 1.0, 0.0], dtype=float)
+                    u = _np.cross(n, ref)
+                    u_norm = float(_np.linalg.norm(u))
+                    if not _np.isfinite(u_norm) or u_norm <= 0.0:
+                        u = _np.array([1.0, 0.0, 0.0], dtype=float)
+                        u_norm = 1.0
+                u = u / u_norm
+                v = _np.cross(n, u)
+                v_norm = float(_np.linalg.norm(v))
+                if not _np.isfinite(v_norm) or v_norm <= 0.0:
+                    v = _np.array([0.0, 1.0, 0.0], dtype=float)
+
+                # Project points to plane (origin-relative)
+                rel = pts - o[None, :]
+                U = rel.dot(u)  # cols
+                V = rel.dot(v)  # rows
+
+                orientation = "Custom"
+                orth_label = None
+                try:
+                    orth_value = float(_np.dot(n, o))
+                except Exception:
+                    orth_value = None
+
+            # Extents and binning
+            U_min, U_max = float(_np.min(U)), float(_np.max(U))
+            V_min, V_max = float(_np.min(V)), float(_np.max(V))
+            if not _np.isfinite(U_min) or not _np.isfinite(U_max) or (U_max == U_min):
+                U_min, U_max = -0.5, 0.5
+            if not _np.isfinite(V_min) or not _np.isfinite(V_max) or (V_max == V_min):
+                V_min, V_max = -0.5, 0.5
+
+            sum_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]], weights=vals)
+            cnt_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]])
+            with _np.errstate(invalid='ignore', divide='ignore'):
+                img = _np.zeros_like(sum_img, dtype=_np.float32)
+                nz = cnt_img > 0
+                img[nz] = (sum_img[nz] / cnt_img[nz]).astype(_np.float32)
+                img[~nz] = 0.0
+
+            return img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value
+
+        # Resolve normal and output image size
+        normal = _resolve_normal(hkl)
+        H, W = (shape if (isinstance(shape, (tuple, list)) and len(shape) == 2) else (512, 512))
+        H = max(int(H), 1)
+        W = max(int(W), 1)
+
+        # Normalize normal vector
+        n = _np.asarray(normal, dtype=float)
+        n_norm = float(_np.linalg.norm(n))
+        if not _np.isfinite(n_norm) or n_norm <= 0.0:
+            n = _np.array([0.0, 0.0, 1.0], dtype=float)
+        else:
+            n = n / n_norm
+
+        # If a PolyData slice is provided, rasterize directly
+        if isinstance(vol, pv.PolyData):
+            normal_fd = getattr(vol, 'field_data', {}).get('slice_normal', None)
+            origin_fd = getattr(vol, 'field_data', {}).get('slice_origin', None)
+            normal_use = normal_fd if normal_fd is not None else n
+            origin_use = origin_fd if origin_fd is not None else getattr(vol, 'center', (0.0, 0.0, 0.0))
+            result = _rasterize_slice(
+                vol, normal_use, _np.array(origin_use, dtype=float), H=H, W=W,
+                _min_intensity=min_intensity, _max_intensity=max_intensity
+            )
+            if result is None:
+                return None
+            img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value = result
+            try:
+                # cache for da.line_cut when called without vol
+                self._last_image = img
+                self._last_extent = [U_min, U_max, V_min, V_max]
+                self._last_orientation = orientation
+            except Exception:
+                pass
+
+            extent = [U_min, U_max, V_min, V_max]
+            if axes is None:
+                _plt.figure(figsize=(6, 5))
+                ax = _plt.gca()
+            else:
+                ax = axes
+            vmin = float(min_intensity) if (min_intensity is not None) else (clim[0] if clim else None)
+            vmax = float(max_intensity) if (max_intensity is not None) else (clim[1] if clim else None)
+            im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
+                           vmin=vmin,
+                           vmax=vmax,
+                           aspect='auto')
+            if orientation == "HK":
+                ax.set_xlabel('H')
+                ax.set_ylabel('K')
+            elif orientation == "KL":
+                ax.set_xlabel('K')
+                ax.set_ylabel('L')
+            elif orientation == "HL":
+                ax.set_xlabel('H')
+                ax.set_ylabel('L')
+            else:
+                ax.set_xlabel('U')
+                ax.set_ylabel('V')
+
+            title = None
+            if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
+                title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
+            else:
+                title = f'{hkl} slice'
+            ax.set_title(title)
+
+            _plt.colorbar(im, ax=ax, label='Intensity')
+            if axes is None:
+                _plt.show()
+
+            if return_image:
+                return img, extent
+            return None
+
+        # Volume-like inputs: build grid and slice
+        is_volume_like = isinstance(vol, pv.ImageData) or isinstance(vol, _np.ndarray) or (isinstance(vol, (tuple, list)) and len(vol) >= 1 and isinstance(vol[0], _np.ndarray) and vol[0].ndim == 3)
+        if is_volume_like:
+            grid = _ensure_grid(vol, _spacing=spacing, _origin=grid_origin)
+            if origin is None:
+                origin = getattr(grid, 'center', (0.0, 0.0, 0.0))
+            # Clamp origin within grid bounds
+            b = getattr(grid, "bounds", None)
+            o = _np.array(origin, dtype=float)
+            if b and len(b) == 6:
+                o[0] = float(_np.clip(o[0], b[0], b[1]))
+                o[1] = float(_np.clip(o[1], b[2], b[3]))
+                o[2] = float(_np.clip(o[2], b[4], b[5]))
+            origin = tuple(o.tolist())
+            sl = grid.slice(normal=n, origin=_np.array(origin, dtype=float))
+        else:
+            # Point-cloud inputs: compute default origin from points center if not provided
+            pts = None
+            if isinstance(vol, (tuple, list)) and len(vol) >= 2:
+                pts = _np.asarray(vol[0], dtype=float)
+            elif hasattr(vol, 'points'):
+                pts = _np.asarray(getattr(vol, 'points'), dtype=float)
+            elif isinstance(vol, dict) and ('points' in vol):
+                pts = _np.asarray(vol['points'], dtype=float)
+            else:
+                pts = None
+            if origin is None:
+                if pts is not None and pts.size >= 3:
+                    mn = pts.min(axis=0)
+                    mx = pts.max(axis=0)
+                    origin = tuple(((mn + mx) * 0.5).astype(float).tolist())
+                else:
+                    origin = (0.0, 0.0, 0.0)
+            # Create slice mesh via slice_data (handles points internally)
+            sl = self.slice_data(vol, hkl=hkl, shape=(H, W), clamp_to_bounds=True)
+
+        # Rasterize with orientation info
+        result = _rasterize_slice(
+            sl, n, _np.array(origin, dtype=float), H=H, W=W,
+            _min_intensity=min_intensity, _max_intensity=max_intensity
+        )
+        if result is None:
+            return None
+        img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value = result
+        try:
+            # cache for da.line_cut when called without vol
+            self._last_image = img
+            self._last_extent = [U_min, U_max, V_min, V_max]
+            self._last_orientation = orientation
+        except Exception:
+            pass
+
+        # Display via matplotlib imshow with physical axis labels
+        extent = [U_min, U_max, V_min, V_max]
+        if axes is None:
+            _plt.figure(figsize=(6, 5))
+            ax = _plt.gca()
+        else:
+            ax = axes
+        vmin = float(min_intensity) if (min_intensity is not None) else (clim[0] if clim else None)
+        vmax = float(max_intensity) if (max_intensity is not None) else (clim[1] if clim else None)
+        im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
+                       vmin=vmin,
+                       vmax=vmax,
+                       aspect='auto')
+
+        # Axis labels based on orientation
+        if orientation == "HK":
+            ax.set_xlabel('H')
+            ax.set_ylabel('K')
+        elif orientation == "KL":
+            ax.set_xlabel('K')
+            ax.set_ylabel('L')
+        elif orientation == "HL":
+            ax.set_xlabel('H')
+            ax.set_ylabel('L')
+        else:
+            ax.set_xlabel('U')
+            ax.set_ylabel('V')
+
+        # Title includes orthogonal axis slice value when available
+        title = None
+        if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
+            title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
+        else:
+            title = f'{hkl} slice at origin {tuple(_np.array(origin).round(3))}'
+        ax.set_title(title)
+
+        _plt.colorbar(im, ax=ax, label='Intensity')
+        if axes is None:
+            _plt.show()
+
+        if return_image:
+            return img, extent
+        return None
+
+    def line_cut(self, spec, param=None, vol=None, hkl='HK', origin=None, shape=(512, 512), n_samples=512, width_px=1, show=True, interactive=False):
+        """
+        Compute a line cut on a slice, supporting endpoints and preset forms.
+        - spec: ((U1,V1),(U2,V2)) endpoints in physical slice coordinates OR preset string {'zero','infinite','positive','negative'}
+        - param: optional (value, axis_letter) where axis_letter in {'x','y'}:
+            * 'zero' (horizontal): param=(value,'x') fixes V=value and traverses U_min→U_max
+            * 'infinite' (vertical): param=(value,'y') fixes U=value and traverses V_min→V_max
+            * 'positive'/'negative': diagonal across current extents; param is optional and currently ignored
+        - vol: optional volume or slice; if provided, builds/rasterizes a fresh slice; otherwise uses cached last image
+        - hkl: orientation preset when generating slice from vol
+        - origin: slice origin when generating slice from vol
+        - shape: raster resolution when generating slice from vol
+        - n_samples: number of samples along the line
+        - width_px: averaging strip width (in pixels) normal to the line (1 = true line)
+        - show: if True, overlays the line on the slice image and displays the 1D profile
+
+        Returns dict:
+            {
+              "distance": np.ndarray,
+              "intensity": np.ndarray,
+              "U": np.ndarray,
+              "V": np.ndarray,
+              "endpoints": ((U1,V1),(U2,V2)),
+              "orientation": str
+            }
+        """
+        import numpy as _np
+
+        # Resolve image and extent
+        H, W = None, None
+        orientation = None
+        U_min = U_max = V_min = V_max = None
+        img = None
+
+        try:
+            if vol is not None:
+                # Support passing a pre-rasterized image and its extent (as returned by show_slice(..., return_image=True))
+                if isinstance(vol, (tuple, list)) and len(vol) >= 2:
+                    try:
+                        img_candidate = _np.asarray(vol[0])
+                        ext_candidate = vol[1]
+                        if img_candidate.ndim == 2 and isinstance(ext_candidate, (list, tuple)) and len(ext_candidate) == 4:
+                            img = img_candidate.astype(_np.float32)
+                            U_min, U_max, V_min, V_max = float(ext_candidate[0]), float(ext_candidate[1]), float(ext_candidate[2]), float(ext_candidate[3])
+                            H, W = img.shape[:2]
+                            orientation = self._last_orientation or "Auto"
+                            # cache for subsequent calls
+                            self._last_image = img
+                            self._last_extent = [U_min, U_max, V_min, V_max]
+                            self._last_orientation = orientation
+                        else:
+                            pass  # fall through
+                    except Exception:
+                        pass  # fall through
+
+                if img is None:
+                    if pv is None:
+                        raise ImportError("PyVista is required to build a slice from 'vol'.")
+
+                    # If vol is already a slice mesh
+                    if isinstance(vol, pv.PolyData):
+                        sl = vol
+                        n_vec = _np.asarray(getattr(sl, 'field_data', {}).get('slice_normal', _np.array([0.0, 0.0, 1.0], dtype=float)), dtype=float)
+                        o_vec = _np.asarray(getattr(sl, 'field_data', {}).get('slice_origin', _np.asarray(getattr(sl, 'center', (0.0, 0.0, 0.0)), dtype=float)), dtype=float)
+                    else:
+                        # If vol looks like a 3D volume, require an explicit slice beforehand.
+                        # Call show_slice(..., return_image=True) and pass (img, extent) to line_cut.
+                        is_3d_volume = isinstance(vol, pv.ImageData) or (isinstance(vol, _np.ndarray) and vol.ndim == 3) or (isinstance(vol, (tuple, list)) and len(vol) >= 1 and isinstance(vol[0], _np.ndarray) and getattr(vol[0], "ndim", None) == 3)
+                        if is_3d_volume:
+                            raise ValueError("line_cut expects slice data. Pass a pv.PolyData slice or (img, extent) from show_slice(..., return_image=True).")
+                        # Otherwise attempt to slice via slice_data using defaults
+                        sl = self.slice_data(vol, hkl='HK', shape=(512, 512), clamp_to_bounds=True)
+                        n_vec = _np.asarray(getattr(sl, 'field_data', {}).get('slice_normal', _np.array([0.0, 0.0, 1.0], dtype=float)), dtype=float)
+                        o_vec = _np.asarray(getattr(sl, 'field_data', {}).get('slice_origin', _np.asarray(getattr(sl, 'center', (0.0, 0.0, 0.0)), dtype=float)), dtype=float)
+
+                pts = _np.asarray(getattr(sl, 'points', _np.empty((0, 3))), dtype=float)
+                try:
+                    vals = _np.asarray(sl['intensity'], dtype=float).reshape(-1)
+                except Exception:
+                    vals = _np.zeros((pts.shape[0],), dtype=float)
+
+                H = max(int(shape[0] if (isinstance(shape, (tuple, list)) and len(shape) == 2) else 512), 2)
+                W = max(int(shape[1] if (isinstance(shape, (tuple, list)) and len(shape) == 2) else 512), 2)
+
+                def _infer_orientation_and_axes(normal_vec: _np.ndarray):
+                    nn = _np.asarray(normal_vec, dtype=float)
+                    nn_len = float(_np.linalg.norm(nn))
+                    if not _np.isfinite(nn_len) or nn_len <= 0.0:
+                        nn = _np.array([0.0, 0.0, 1.0], dtype=float)
+                    else:
+                        nn = nn / nn_len
+                    X = _np.array([1.0, 0.0, 0.0], dtype=float)  # H
+                    Y = _np.array([0.0, 1.0, 0.0], dtype=float)  # K
+                    Z = _np.array([0.0, 0.0, 1.0], dtype=float)  # L
+                    tol = 0.95
+                    dX = abs(float(_np.dot(nn, X)))
+                    dY = abs(float(_np.dot(nn, Y)))
+                    dZ = abs(float(_np.dot(nn, Z)))
+                    if dZ >= tol:
+                        return "HK", (0, 1)
+                    if dX >= tol:
+                        return "KL", (1, 2)
+                    if dY >= tol:
+                        return "HL", (0, 2)
+                    return "Custom", None
+
+                orientation, uv_idxs = _infer_orientation_and_axes(n_vec)
+
+                if pts.size == 0 or vals.size == 0 or pts.shape[0] != vals.shape[0]:
+                    raise ValueError("Slice contains no valid points to rasterize")
+
+                if uv_idxs is not None:
+                    u_idx, v_idx = uv_idxs
+                    U = pts[:, u_idx].astype(float)
+                    V = pts[:, v_idx].astype(float)
+                    U_min, U_max = float(_np.min(U)), float(_np.max(U))
+                    V_min, V_max = float(_np.min(V)), float(_np.max(V))
+                    if (not _np.isfinite(U_min)) or (not _np.isfinite(U_max)) or (U_max == U_min):
+                        U_min, U_max = -0.5, 0.5
+                    if (not _np.isfinite(V_min)) or (not _np.isfinite(V_max)) or (V_max == V_min):
+                        V_min, V_max = -0.5, 0.5
+                    sum_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]], weights=vals)
+                    cnt_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]])
+                    with _np.errstate(invalid="ignore", divide="ignore"):
+                        img = _np.zeros_like(sum_img, dtype=_np.float32)
+                        nz = cnt_img > 0
+                        img[nz] = (sum_img[nz] / cnt_img[nz]).astype(_np.float32)
+                        img[~nz] = 0.0
+                else:
+                    # Custom orientation: build in-plane basis from normal and origin
+                    world_axes = [
+                        _np.array([1.0, 0.0, 0.0], dtype=float),
+                        _np.array([0.0, 1.0, 0.0], dtype=float),
+                        _np.array([0.0, 0.0, 1.0], dtype=float),
+                    ]
+                    ref = world_axes[0]
+                    for ax in world_axes:
+                        if abs(float(_np.dot(ax, n_vec))) < 0.9:
+                            ref = ax
+                            break
+                    u = _np.cross(n_vec, ref)
+                    u_len = float(_np.linalg.norm(u))
+                    if not _np.isfinite(u_len) or u_len <= 0.0:
+                        ref = _np.array([0.0, 1.0, 0.0], dtype=float)
+                        u = _np.cross(n_vec, ref)
+                        u_len = float(_np.linalg.norm(u))
+                        if not _np.isfinite(u_len) or u_len <= 0.0:
+                            u = _np.array([1.0, 0.0, 0.0], dtype=float)
+                            u_len = 1.0
+                    u = u / u_len
+                    v = _np.cross(n_vec, u)
+                    v_len = float(_np.linalg.norm(v))
+                    if not _np.isfinite(v_len) or v_len <= 0.0:
+                        v = _np.array([0.0, 1.0, 0.0], dtype=float)
+                    else:
+                        v = v / v_len
+
+                    rel = _np.asarray(pts - o_vec[None, :], dtype=float)
+                    U = rel.dot(u)
+                    V = rel.dot(v)
+
+                    U_min, U_max = float(_np.min(U)), float(_np.max(U))
+                    V_min, V_max = float(_np.min(V)), float(_np.max(V))
+                    if not _np.isfinite(U_min) or not _np.isfinite(U_max) or (U_max == U_min):
+                        U_min, U_max = -0.5, 0.5
+                    if not _np.isfinite(V_min) or not _np.isfinite(V_max) or (V_max == V_min):
+                        V_min, V_max = -0.5, 0.5
+
+                    sum_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]], weights=vals)
+                    cnt_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]])
+                    with _np.errstate(invalid="ignore", divide="ignore"):
+                        img = _np.zeros_like(sum_img, dtype=_np.float32)
+                        nz = cnt_img > 0
+                        img[nz] = (sum_img[nz] / cnt_img[nz]).astype(_np.float32)
+                        img[~nz] = 0.0
+
+                # cache
+                self._last_image = img
+                self._last_extent = [U_min, U_max, V_min, V_max]
+                self._last_orientation = orientation
+            else:
+                img = self._last_image
+                if img is None or self._last_extent is None:
+                    raise ValueError("No slice image available; provide 'vol' or call show_slice(..., return_image=True) first.")
+                U_min, U_max, V_min, V_max = self._last_extent
+                H, W = img.shape[:2]
+                orientation = self._last_orientation or "Auto"
+        except Exception as e:
+            raise
+
+        # Endpoints from spec/preset
+        def _endpoints_from_spec(_spec, _param):
+            if isinstance(_spec, (tuple, list)) and len(_spec) == 2:
+                return tuple(_spec[0]), tuple(_spec[1])
+            s = str(_spec).strip().lower()
+            if s in ("zero", "horizontal", "0"):
+                if not (_param and len(_param) == 2):
+                    raise ValueError("param=(value,'x') required for 'zero' preset")
+                val, ax = _param
+                ax = str(ax).lower()
+                # V fixed at val; U spans full range
+                return (U_min, float(val)), (U_max, float(val))
+            if s in ("infinite", "vertical", "inf"):
+                if not (_param and len(_param) == 2):
+                    raise ValueError("param=(value,'y') required for 'infinite' preset")
+                val, ax = _param
+                ax = str(ax).lower()
+                # U fixed at val; V spans full range
+                return (float(val), V_min), (float(val), V_max)
+            if s in ("positive", "pos"):
+                return (U_min, V_min), (U_max, V_max)
+            if s in ("negative", "neg"):
+                return (U_min, V_max), (U_max, V_min)
+            raise ValueError(f"Unknown spec '{_spec}'; pass endpoints ((U1,V1),(U2,V2)) or preset string")
+
+        (U1, V1), (U2, V2) = _endpoints_from_spec(spec, param)
+
+        # Convert endpoints to pixel coords
+        def _uv_to_pixel(Uv, Vv):
+            col = (float(Uv) - U_min) / (U_max - U_min if (U_max != U_min) else 1.0) * (W - 1)
+            row = (float(Vv) - V_min) / (V_max - V_min if (V_max != V_min) else 1.0) * (H - 1)
+            return col, row
+
+        c1, r1 = _uv_to_pixel(U1, V1)
+        c2, r2 = _uv_to_pixel(U2, V2)
+
+        # Sampling points along the line in pixel space
+        n_samples = max(int(n_samples), 2)
+        ts = _np.linspace(0.0, 1.0, n_samples, dtype=float)
+        cols = c1 + ts * (c2 - c1)
+        rows = r1 + ts * (r2 - r1)
+
+        # Bilinear interpolation
+        def _bilinear(img_arr, cc, rr):
+            h, w = img_arr.shape[:2]
+            cc = _np.clip(cc, 0.0, w - 1.0)
+            rr = _np.clip(rr, 0.0, h - 1.0)
+            c0 = _np.floor(cc).astype(int)
+            r0 = _np.floor(rr).astype(int)
+            c1i = _np.clip(c0 + 1, 0, w - 1)
+            r1i = _np.clip(r0 + 1, 0, h - 1)
+            dc = cc - c0
+            dr = rr - r0
+            I00 = img_arr[r0, c0]
+            I10 = img_arr[r0, c1i]
+            I01 = img_arr[r1i, c0]
+            I11 = img_arr[r1i, c1i]
+            return (1 - dc) * (1 - dr) * I00 + dc * (1 - dr) * I10 + (1 - dc) * dr * I01 + dc * dr * I11
+
+        # Width averaging across perpendicular offsets
+        width_px = max(int(width_px), 1)
+        if width_px == 1:
+            prof = _bilinear(img, cols, rows)
+        else:
+            dcol = c2 - c1
+            drow = r2 - r1
+            length = float(_np.hypot(dcol, drow))
+            if not _np.isfinite(length) or length <= 0.0:
+                length = 1.0
+            # Perpendicular unit vector (pixel space)
+            u_perp = _np.array([-drow, dcol], dtype=float) / length
+            half = (width_px - 1) / 2.0
+            offsets = _np.linspace(-half, half, width_px, dtype=float)
+            samples = []
+            for off in offsets:
+                cc = cols + off * u_perp[1]
+                rr = rows + off * u_perp[0]
+                samples.append(_bilinear(img, cc, rr))
+            prof = _np.mean(_np.vstack(samples), axis=0)
+
+        # Physical coordinates per sample and distance
+        U_samples = U1 + ts * (U2 - U1)
+        V_samples = V1 + ts * (V2 - V1)
+        dist = _np.sqrt((U_samples - U1) ** 2 + (V_samples - V1) ** 2)
+
+        lc = {
+            "distance": dist.astype(_np.float32),
+            "intensity": _np.asarray(prof, dtype=_np.float32),
+            "U": _np.asarray(U_samples, dtype=_np.float32),
+            "V": _np.asarray(V_samples, dtype=_np.float32),
+            "endpoints": ((float(U1), float(V1)), (float(U2), float(V2))),
+            "orientation": str(orientation),
+        }
+
+        if show and not interactive:
+            # Overlay line and show profile
+            if plt is not None:
+                fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+                ax_img, ax_prof = axes
+                extent = [U_min, U_max, V_min, V_max]
+                ax_img.imshow(img, origin='lower', extent=extent, cmap='viridis', aspect='auto')
+                ax_img.plot([U1, U2], [V1, V2], color='cyan', linewidth=2)
+                ax_img.set_title(f"Slice ({orientation}) with line cut")
+                ax_img.set_xlabel('U'); ax_img.set_ylabel('V')
+                ax_prof.plot(dist, prof, color='magenta')
+                ax_prof.set_xlabel('Distance')
+                ax_prof.set_ylabel('Intensity')
+                ax_prof.set_title("Line cut profile")
+                plt.tight_layout()
+                plt.show()
+
+        # Interactive draggable endpoints with live profile updates
+        if interactive:
+            if plt is None:
+                raise ImportError("matplotlib is required for interactive line_cut")
+            # Check backend; warn and fallback to static overlay if non-interactive
+            import matplotlib as _mpl
+            _backend = str(getattr(_mpl, "get_backend", lambda: "")()).lower()
+            if ("inline" in _backend) or ("agg" in _backend):
+                try:
+                    print(f"DashAnalysis.line_cut interactive=True requires an interactive Matplotlib backend. Detected backend: {_mpl.get_backend()}. Run '%matplotlib widget' (preferred, requires 'ipympl') or '%matplotlib notebook' in a notebook cell, then retry.")
+                except Exception:
+                    pass
+                # Fallback: draw static overlay and return
+                if show:
+                    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+                    ax_img, ax_prof = axes
+                    extent = [U_min, U_max, V_min, V_max]
+                    ax_img.imshow(img, origin='lower', extent=extent, cmap='viridis', aspect='auto')
+                    ax_img.plot([U1, U2], [V1, V2], color='cyan', linewidth=2)
+                    ax_img.set_title(f"Slice ({orientation}) with line cut (static, non-interactive backend)")
+                    ax_img.set_xlabel('U'); ax_img.set_ylabel('V')
+                    ax_prof.plot(dist, prof, color='magenta')
+                    ax_prof.set_xlabel('Distance')
+                    ax_prof.set_ylabel('Intensity')
+                    ax_prof.set_title("Line cut profile")
+                    plt.tight_layout()
+                    plt.show()
+                return lc
+            try:
+                from matplotlib.lines import Line2D
+            except Exception:
+                Line2D = None
+
+            extent = [U_min, U_max, V_min, V_max]
+            fig, (ax_img, ax_prof) = plt.subplots(1, 2, figsize=(10, 4))
+            im = ax_img.imshow(img, origin='lower', extent=extent, cmap='viridis', aspect='auto')
+            ax_img.set_title(f"Slice ({orientation}) — drag endpoints")
+            # initial endpoints from spec
+            p1 = [float(U1), float(V1)]
+            p2 = [float(U2), float(V2)]
+
+            # line + endpoint markers
+            if Line2D is not None:
+                line = Line2D([p1[0], p2[0]], [p1[1], p2[1]], color='cyan', lw=2)
+                ax_img.add_line(line)
+            else:
+                line_plot, = ax_img.plot([p1[0], p2[0]], [p1[1], p2[1]], color='cyan', lw=2)
+            pt1 = ax_img.plot(p1[0], p1[1], 'o', color='cyan', ms=8, picker=5)[0]
+            pt2 = ax_img.plot(p2[0], p2[1], 'o', color='cyan', ms=8, picker=5)[0]
+
+            # initial profile
+            prof_line, = ax_prof.plot(dist, prof, color='magenta')
+            ax_prof.set_xlabel('Distance'); ax_prof.set_ylabel('Intensity')
+            ax_prof.set_title('Line cut profile')
+
+            state = {"drag": None}
+
+            def update_profile():
+                # recompute with current endpoints using cached image+extent
+                lc_local = self.line_cut((tuple((float(pt1.get_xdata()[0]), float(pt1.get_ydata()[0]))),
+                                          tuple((float(pt2.get_xdata()[0]), float(pt2.get_ydata()[0])))),
+                                         vol=(img, extent),
+                                         n_samples=n_samples,
+                                         width_px=width_px,
+                                         show=False)
+                prof_line.set_data(lc_local["distance"], lc_local["intensity"])
+                ax_prof.relim(); ax_prof.autoscale_view()
+                fig.canvas.draw_idle()
+
+            def on_press(event):
+                if event.inaxes != ax_img:
+                    return
+                x, y = event.xdata, event.ydata
+                if x is None or y is None:
+                    return
+                # pick nearest endpoint
+                d1 = float(np.hypot(x - pt1.get_xdata()[0], y - pt1.get_ydata()[0]))
+                d2 = float(np.hypot(x - pt2.get_xdata()[0], y - pt2.get_ydata()[0]))
+                state["drag"] = 0 if d1 <= d2 else 1
+
+            def on_motion(event):
+                if state["drag"] is None or event.inaxes != ax_img:
+                    return
+                x, y = event.xdata, event.ydata
+                if x is None or y is None:
+                    return
+                # constrain to extents
+                x = float(np.clip(x, U_min, U_max))
+                y = float(np.clip(y, V_min, V_max))
+                if state["drag"] == 0:
+                    pt1.set_data([x], [y])
+                else:
+                    pt2.set_data([x], [y])
+                if Line2D is not None:
+                    line.set_data([pt1.get_xdata()[0], pt2.get_xdata()[0]],
+                                  [pt1.get_ydata()[0], pt2.get_ydata()[0]])
+                else:
+                    line_plot.set_data([pt1.get_xdata()[0], pt2.get_xdata()[0]],
+                                       [pt1.get_ydata()[0], pt2.get_ydata()[0]])
+                update_profile()
+
+            def on_release(event):
+                state["drag"] = None
+
+            cid1 = fig.canvas.mpl_connect('button_press_event', on_press)
+            cid2 = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+            cid3 = fig.canvas.mpl_connect('button_release_event', on_release)
+
+            plt.tight_layout()
+            plt.show()
+
+        return lc
