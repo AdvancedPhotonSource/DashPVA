@@ -1,0 +1,5 @@
+name: dash_analysis
+
+channels:
+  - conda-forge
+
