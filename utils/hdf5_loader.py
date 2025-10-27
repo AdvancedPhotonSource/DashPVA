@@ -467,6 +467,12 @@ class HDF5Loader:
                     'grid_origin': grid_origin,
                     'original_shape': original_shape,
                     'volume_shape': volume_shape_ds,
+                    'num_images': meta.get('num_images', None),
+                    # Persisted grid reconstruction hints
+                    'array_order': meta.get('array_order', None),
+                    'grid_dimensions_cells': meta.get('grid_dimensions_cells', None),
+                    'axes_labels': meta.get('axes_labels', None),
+                    'intensity_range': meta.get('intensity_range', None),
                 }
             
             # Return volume and a 3D shape; for 2D, return (0, H, W) so callers can detect
@@ -513,6 +519,148 @@ class HDF5Loader:
         except Exception as e:
             self._handle_loading_error(e, file_path)
             return (np.array([]), np.array([]), {})
+
+    def load_vti_volume_3d(self, file_path: str, scalar_name: Optional[str] = None, prefer_cell_data: bool = True) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        """
+        Load a .vti (VTK XML ImageData) file and return a cell-centered 3D numpy volume (D, H, W).
+        No saving performed. Populates self.volume, self.volume_shape, and self.file_metadata.
+
+        Args:
+            file_path: Path to the .vti file
+            scalar_name: Optional name of the scalar to use; if None, uses active or first available
+            prefer_cell_data: Prefer cell_data arrays (best for slicing); if False and only point_data exists, will convert
+
+        Returns:
+            (volume, shape): numpy array (D,H,W) and shape tuple
+        """
+        try:
+            import pyvista as pv  # Lazy import to keep dependency optional
+            self.current_file_path = file_path
+
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File does not exist: {file_path}")
+
+            grid = pv.read(file_path)
+
+            # Select scalar from cell_data (preferred) or point_data
+            chosen_name = None
+            intens_1d = None
+            target_obj_for_dims = grid  # object whose dimensions we use
+
+            cell_keys = list(grid.cell_data.keys()) if hasattr(grid, "cell_data") else []
+            point_keys = list(grid.point_data.keys()) if hasattr(grid, "point_data") else []
+
+            def _pick_name(keys: list, active: Optional[str], requested: Optional[str]) -> Optional[str]:
+                if requested and requested in keys:
+                    return requested
+                if active and active in keys:
+                    return active
+                return keys[0] if keys else None
+
+            if prefer_cell_data and cell_keys:
+                chosen_name = _pick_name(cell_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                if not chosen_name:
+                    raise ValueError("No scalar arrays found in VTI cell_data")
+                intens_1d = np.asarray(grid.cell_data[chosen_name])
+                target_obj_for_dims = grid
+            else:
+                # Try point_data first and convert to cell_data for consistent D×H×W slicing
+                if point_keys:
+                    chosen_name = _pick_name(point_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                    if not chosen_name:
+                        raise ValueError("No scalar arrays found in VTI point_data")
+                    v_cd = grid.point_data_to_cell_data(pass_point_data=False)
+                    intens_1d = np.asarray(v_cd.cell_data[chosen_name])
+                    target_obj_for_dims = v_cd
+                elif cell_keys:
+                    # Fallback to cell_data if point_data missing
+                    chosen_name = _pick_name(cell_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                    intens_1d = np.asarray(grid.cell_data[chosen_name])
+                    target_obj_for_dims = grid
+                else:
+                    raise ValueError("No scalar arrays found in VTI (point_data or cell_data)")
+
+            # Derive cell-centered dimensions from points-based dimensions (cells = points - 1)
+            dims_points = tuple(int(d) for d in getattr(target_obj_for_dims, "dimensions", (0, 0, 0)))
+            dims_cells = tuple(max(d - 1, 0) for d in dims_points)
+
+            expected = int(np.prod(dims_cells)) if all(d > 0 for d in dims_cells) else 0
+            if expected <= 0:
+                raise ValueError(f"Invalid VTI dimensions (points={dims_points}, cells={dims_cells})")
+            if intens_1d.size != expected:
+                # Attempt robust conversion via point_data_to_cell_data if mismatch
+                try:
+                    v_cd = target_obj_for_dims.point_data_to_cell_data(pass_point_data=False) if hasattr(target_obj_for_dims, "point_data_to_cell_data") else grid.point_data_to_cell_data(pass_point_data=False)
+                    intens_1d = np.asarray(v_cd.cell_data[chosen_name])
+                    dims_points = tuple(int(d) for d in getattr(v_cd, "dimensions", (0, 0, 0)))
+                    dims_cells = tuple(max(d - 1, 0) for d in dims_points)
+                    expected = int(np.prod(dims_cells)) if all(d > 0 for d in dims_cells) else 0
+                except Exception:
+                    pass
+            if intens_1d.size != expected:
+                raise ValueError(f"Scalar size {intens_1d.size} does not match expected cells product {expected}")
+
+            # Reshape to D×H×W using Fortran order to match VTK/PyVista layout (x-fastest, z-slowest)
+            volume = intens_1d.reshape(dims_cells, order="F").astype(np.float32)
+
+            # Store in instance
+            self.volume = volume
+            if len(dims_cells) == 3:
+                self.volume_shape = (int(dims_cells[2]), int(dims_cells[1]), int(dims_cells[0])) if False else tuple(int(x) for x in dims_cells)  # keep (D,H,W)
+            elif len(dims_cells) == 2:
+                self.volume_shape = (0, int(dims_cells[0]), int(dims_cells[1]))
+            else:
+                self.volume_shape = (0, 0, 0)
+
+            spacing = getattr(grid, "spacing", (1.0, 1.0, 1.0))
+            origin = getattr(grid, "origin", (0.0, 0.0, 0.0))
+            intensity_range = [float(np.min(volume)), float(np.max(volume))] if volume.size > 0 else [0.0, 0.0]
+
+            # Populate metadata to mirror HDF5 loader expectations
+            self.file_metadata = {
+                "data_type": "volume",
+                "array_rank": int(volume.ndim),
+                "array_shape": list(volume.shape),
+                "voxel_spacing": [float(spacing[0]), float(spacing[1]), float(spacing[2])],
+                "grid_origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "original_shape": [int(volume.shape[1]), int(volume.shape[2])] if volume.ndim == 3 else ([int(volume.shape[0]), int(volume.shape[1])] if volume.ndim == 2 else [0, 0]),
+                "volume_shape": list(volume.shape) if volume.ndim == 3 else None,
+                "num_images": 1,
+                "array_order": "F",
+                "grid_dimensions_cells": [int(x) for x in dims_cells],
+                "axes_labels": ["H", "K", "L"],
+                "intensity_range": intensity_range,
+                "scalar_name": chosen_name,
+            }
+
+            return (volume, self.volume_shape)
+        except Exception as e:
+            self._handle_loading_error(e, file_path)
+            return (np.array([]), (0, 0, 0))
+
+    def load_volume_auto(self, file_path: str, scalar_name: Optional[str] = None) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        """
+        Convenience loader that accepts .h5/.hdf5 or .vti and routes to the appropriate method.
+        No saving performed.
+
+        Args:
+            file_path: Path to input file (.h5/.hdf5 or .vti)
+            scalar_name: Optional scalar name for .vti inputs
+
+        Returns:
+            (volume, shape): numpy array and shape tuple
+        """
+        try:
+            ext = str(Path(file_path).suffix).lower()
+            if ext in (".h5", ".hdf5"):
+                return self.load_h5_volume_3d(file_path)
+            elif ext == ".vti":
+                return self.load_vti_volume_3d(file_path, scalar_name=scalar_name)
+            else:
+                raise ValueError(f"Unsupported file extension: {ext}")
+        except Exception as e:
+            self._handle_loading_error(e, file_path)
+            return (np.array([]), (0, 0, 0))
 
     # ================ HELPER METHODS FOR 3D LOADING ======================= #
     def _flatten_coordinate_data(self, coord_array: np.ndarray) -> np.ndarray:
