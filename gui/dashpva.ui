@@ -137,6 +137,19 @@
       </spacer>
      </item>
      <item>
+      <widget class="QPushButton" name="btn_settings">
+       <property name="text">
+        <string>Settings</string>
+       </property>
+       <property name="minimumWidth">
+        <number>110</number>
+       </property>
+       <property name="minimumHeight">
+        <number>28</number>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btn_shutdown_all">
        <property name="text">
         <string>Shutdown All</string>

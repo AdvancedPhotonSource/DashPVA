@@ -101,6 +101,15 @@ def run():
                         quiet=True
                     )
                 )
+            if hasattr(self, 'btn_settings'):
+                self.btn_settings.clicked.connect(
+                    lambda: self.launch(
+                        'settings',
+                        [sys.executable, 'viewer/settings/settings_dialog.py'],
+                        self.btn_settings,
+                        'Settings — Running…'
+                    )
+                )
             if hasattr(self, 'btn_exit'):
                 self.btn_exit.clicked.connect(self.request_close)
             if hasattr(self, 'btn_shutdown_all'):
@@ -170,6 +179,25 @@ def run():
                 # Enable Shutdown All only when there are running modules
                 self.btn_shutdown_all.setEnabled(count > 0)
 
+        def _format_running_modules_list(self):
+            """Return a human-readable list of running modules and their PIDs."""
+            lines = []
+            for key, entry in self.processes.items():
+                p = entry.get('popen')
+                if p is None or p.poll() is not None:
+                    continue
+                name = entry.get('running_text', key)
+                if ' — ' in name:
+                    name = name.split(' — ')[0]
+                try:
+                    pid = p.pid
+                except Exception:
+                    pid = 'unknown'
+                lines.append(f"- {name} (PID {pid})")
+            if not lines:
+                return "Running modules:\nNone"
+            return "Running modules:\n" + "\n".join(lines)
+
         def _terminate_proc(self, p, timeout=3.0):
             """Attempt graceful terminate, then force kill if still alive."""
             try:
@@ -198,10 +226,11 @@ def run():
             count = len(self.processes)
             if count == 0:
                 return
+            text = f"{self._format_running_modules_list()}\n\nAre you sure you want to force stop all running modules?\n\nData might be lost."
             resp = QMessageBox.question(
                 self,
                 'Shutdown All Modules',
-                'Are you sure you want to force stop all running modules?\n\nData might be lost.',
+                text,
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -215,10 +244,11 @@ def run():
             except Exception:
                 any_running = False
             if any_running:
+                text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
                 resp = QMessageBox.question(
                     self,
                     'Exit Launcher',
-                    'There are running modules.\n\nForce stop all and exit?\n\nData might be lost.',
+                    text,
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
@@ -235,10 +265,11 @@ def run():
             except Exception:
                 any_running = False
             if any_running:
+                text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
                 resp = QMessageBox.question(
                     self,
                     'Exit Launcher',
-                    'There are running modules.\n\nForce stop all and exit?\n\nData might be lost.',
+                    text,
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
