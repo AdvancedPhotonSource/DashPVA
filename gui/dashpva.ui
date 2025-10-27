@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DashPVALauncher</class>
+ <widget class="QDialog" name="DashPVALauncher">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>360</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>DashPVA Launcher</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="leftMargin">
+    <number>12</number>
+   </property>
+   <property name="topMargin">
+    <number>12</number>
+   </property>
+   <property name="rightMargin">
+    <number>12</number>
+   </property>
+   <property name="bottomMargin">
+    <number>12</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="lbl_header">
+     <property name="text">
+      <string>Select a module to launch</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">font-size: 16px; font-weight: bold;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_hkl3d_viewer">
+     <property name="text">
+      <string>HKL 3D Viewer</string>
+     </property>
+     <property name="minimumHeight">
+      <number>34</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_hkl3d_slicer">
+     <property name="text">
+      <string>HKL 3D Slicer</string>
+     </property>
+     <property name="minimumHeight">
+      <number>34</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_area_detector">
+     <property name="text">
+      <string>Area Detector Viewer</string>
+     </property>
+     <property name="minimumHeight">
+      <number>34</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_pva_setup">
+     <property name="text">
+      <string>PVA Workflow Setup</string>
+     </property>
+     <property name="minimumHeight">
+      <number>34</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_sim_setup">
+     <property name="text">
+      <string>Start Simulator (background)</string>
+     </property>
+     <property name="minimumHeight">
+      <number>34</number>
+     </property>
+     <property name="toolTip">
+      <string>Launch simulator in background (no console output)</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <widget class="QLabel" name="lbl_status">
+     <property name="text">
+      <string>No modules running</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeft|Qt::AlignVCenter</set>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">color: #666;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_shutdown_all">
+       <property name="text">
+        <string>Shutdown All</string>
+       </property>
+       <property name="toolTip">
+        <string>Force stop all running modules</string>
+       </property>
+       <property name="minimumWidth">
+        <number>120</number>
+       </property>
+       <property name="minimumHeight">
+        <number>28</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_exit">
+       <property name="text">
+        <string>Exit</string>
+       </property>
+       <property name="minimumWidth">
+        <number>100</number>
+       </property>
+       <property name="minimumHeight">
+        <number>28</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
