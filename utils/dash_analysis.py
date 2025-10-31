@@ -24,8 +24,7 @@ meta  # dict with voxel_spacing, grid_origin, grid_dimensions_cells, array_order
 import argparse
 import os
 from typing import Optional
-from utils.hdf5_loader import HDF5Loader
-
+from hdf5_loader import HDF5Loader
 
 import numpy as np
 
@@ -39,7 +38,11 @@ except Exception:
 try:
     from utils.hdf5_loader import HDF5Loader
 except Exception:
-    HDF5Loader = None
+    try:
+        from hdf5_loader import HDF5Loader
+    except Exception:
+        HDF5Loader = None
+
 
 # Fallback reader using h5py for simple cases if HDF5Loader is unavailable or fails
 try:
