@@ -22,7 +22,7 @@ import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import SizeManager
 from utils.hdf5_loader import HDF5Loader
-
+from viewer.hkl_slice_2d_view import HKLSlice2DView
 class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent=None):
         # use parent if none
@@ -46,6 +46,9 @@ class HKL3DSliceWindow(QMainWindow):
         try:
             if hasattr(self, 'actionSlice'):
                 self.actionSlice.triggered.connect(lambda: self.open_controls_dialog(focus='slice'))
+            # Tools -> View -> Slice
+            if hasattr(self, 'actionViewSlice'):
+                self.actionViewSlice.triggered.connect(self._on_view_slice_action)
         except Exception:
             pass
         
@@ -54,10 +57,17 @@ class HKL3DSliceWindow(QMainWindow):
         self.cbToggleCloudVolume.clicked.connect(self.toggle_cloud_vol)
         self.cbColorMapSelect.currentIndexChanged.connect(self.change_color_map)
         
-        # Data alteration: immediate apply on Enter (Render button and reduction factor deprecated)
-        # if hasattr(self, 'btnRender'):
-        #     self.btnRender.clicked.connect(self._apply_pending_changes)
-        # self.cbbReductionFactor.currentIndexChanged.connect(self._mark_reduction_changed)
+        # Slice mesh visibility toggle
+        try:
+            if hasattr(self, 'cbToggleSliceMesh'):
+                self.cbToggleSliceMesh.clicked.connect(self.toggle_slice_mesh)
+        except Exception:
+            pass
+        
+        # Data alteration: re-enable reduction factor callback
+        if hasattr(self, 'cbbReductionFactor'):
+            self.cbbReductionFactor.currentIndexChanged.connect(self.reduction_factor)
+        # Keep immediate intensity updates
         self.sbMinIntensity.editingFinished.connect(self.update_intensity)
         self.sbMaxIntensity.editingFinished.connect(self.update_intensity)
         
@@ -174,6 +184,57 @@ class HKL3DSliceWindow(QMainWindow):
 
 
     # ********* METHODS ******* #
+    def _ensure_slice_2d_view(self):
+        """Ensure the 2D slice view exists as a popup window."""
+        try:
+            if getattr(self, "slice_2d_view", None) is None:
+                self.slice_2d_view = HKLSlice2DView(self)
+                try:
+                    # Make sure it shows as a top-level popup
+                    self.slice_2d_view.setWindowTitle("2D Slice View")
+                    self.slice_2d_view.setWindowFlags(self.slice_2d_view.windowFlags() | Qt.Window)
+                except Exception:
+                    pass
+            # Show and bring to front
+            try:
+                self.slice_2d_view.show()
+                self.slice_2d_view.raise_()
+                self.slice_2d_view.activateWindow()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_view_slice_action(self):
+        """Menu Tools -> View -> Slice: open 2D view popup and sync."""
+        try:
+            # Ensure widget exists and open as popup
+            self._ensure_slice_2d_view()
+            # Perform comprehensive sync of all settings from parent
+            try:
+                if getattr(self, 'slice_2d_view', None):
+                    self.slice_2d_view.sync_all_settings()
+            except Exception:
+                pass
+            try:
+                n, o = self.get_plane_state()
+                # Schedule update to reflect current plane and slice; if no slice yet this will update once available
+                if getattr(self, 'slice_2d_view', None) and "slice" in getattr(self.plotter, "actors", {}):
+                    # Use current slice actor input if it exists
+                    try:
+                        current_slice = self.plotter.actors["slice"].GetMapper().GetInput()
+                    except Exception:
+                        current_slice = None
+                    if current_slice is not None:
+                        self.slice_2d_view.schedule_update(current_slice, self.normalize_vector(np.array(n, dtype=float)), np.array(o, dtype=float))
+                else:
+                    # Fallback: trigger a refresh path
+                    self.update_slice_from_plane(n, o)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def open_controls_dialog(self, focus=None):
         """Open or focus the modeless Controls dialog."""
         try:
@@ -217,6 +278,47 @@ class HKL3DSliceWindow(QMainWindow):
             pass
 
     # ********* METHODS ******* #
+    def _set_busy(self, busy: bool, message: str = None):
+        """Enable/disable window and show wait cursor during long operations."""
+        try:
+            if busy:
+                try:
+                    self.setEnabled(False)
+                except Exception:
+                    pass
+                try:
+                    QApplication.setOverrideCursor(Qt.WaitCursor)
+                except Exception:
+                    pass
+                try:
+                    if message and hasattr(self, 'statusbar') and self.statusbar:
+                        self.statusbar.showMessage(str(message))
+                except Exception:
+                    pass
+                try:
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+            else:
+                try:
+                    QApplication.restoreOverrideCursor()
+                except Exception:
+                    pass
+                try:
+                    self.setEnabled(True)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'statusbar') and self.statusbar:
+                        self.statusbar.clearMessage()
+                except Exception:
+                    pass
+                try:
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+        except Exception:
+            pass
     # ================ RESOLUTION PROCESSING METHODS ======================= #
     def lower_res(self, points, voxel_size=1.0) -> tuple:
         """
@@ -331,48 +433,119 @@ class HKL3DSliceWindow(QMainWindow):
 
 
 
-    def _compute_adaptive_cells(self, total_points: int) -> tuple:
+    def _compute_adaptive_cells(self, total_points: int) -> int:
         """
-        Compute adaptive grid cell counts for single-pass rendering based on point count.
-        Returns (preview_cells, refine_cells), but only refine_cells is used in single-pass mode.
+        Compute adaptive grid cell count for single-pass rendering based on point count.
+        Returns refine_cells (cells per axis).
         Aggressively lower grid resolution to speed up rendering (down to ~100s).
         """
         try:
             if total_points >= 5_000_000:
-                return 80, 120
+                return 300
             elif total_points >= 2_000_000:
-                return 100, 140
+                return 300
             elif total_points >= 500_000:
-                return 120, 160
+                return 300
             else:
-                return 160, 180
+                return 300
         except Exception:
-            return 160, 180
+            return 300
 
-    
-    
+    def _get_target_cells_override(self) -> int:
+        """Return user-entered target cells per axis or None if not set/invalid."""
+        try:
+            txt = str(self.leTargetCells.text()).strip()
+        except Exception:
+            return None
+        if not txt:
+            return None
+        try:
+            val = int(float(txt))
+        except Exception:
+            return None
+        if val <= 0:
+            return None
+        return val
 
     def reduction_factor(self):
         """Handle reduction factor changes"""
+        # Guard: require a point cloud with intensity before applying reduction
+        try:
+            if getattr(self, "cloud_copy", None) is None or (hasattr(self.cloud_copy, "n_points") and int(self.cloud_copy.n_points) == 0) or ("intensity" not in getattr(self.cloud_copy, "array_names", [])):
+                # Allow updating size labels in volume-only mode without applying reduction
+                if hasattr(self, 'vol') and self.vol is not None and isinstance(getattr(self, 'orig_shape', None), (tuple, list)) and len(self.orig_shape) == 2:
+                    try:
+                        reduction_factor_text = self.cbbReductionFactor.currentText() if hasattr(self, 'cbbReductionFactor') else "None"
+                        import re
+                        if str(reduction_factor_text).lower() == "none":
+                            factor = 1.0
+                        else:
+                            m = re.search(r'x(\d+(?:\.\d+)?)', str(reduction_factor_text))
+                            factor = float(m.group(1)) if m else 1.0
+                        ox, oy = int(self.orig_shape[0]), int(self.orig_shape[1])
+                        if factor <= 1.0:
+                            self.curr_shape = (ox, oy)
+                        else:
+                            self.curr_shape = (max(1, int(ox // factor)), max(1, int(oy // factor)))
+                        # Update labels to reflect selection without changing volume
+                        try:
+                            if hasattr(self, 'lbCurrentResolutionX'):
+                                self.lbCurrentResolutionX.setText(str(self.curr_shape[0]))
+                            if hasattr(self, 'lbCurrentResolutionY'):
+                                self.lbCurrentResolutionY.setText(str(self.curr_shape[1]))
+                            self._update_info_image_sizes()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    return
+                try:
+                    QMessageBox.warning(self, "No Data", "No point cloud loaded to reduce")
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
         try:
             reduction_factor_text = self.cbbReductionFactor.currentText()
             import re
-            match = re.search(r'x(\d+(?:\.\d+)?)', reduction_factor_text)
-            manual_factor = float(match.group(1)) if match else 1.0
-            # Enforce auto cap at 500k points
+            
+            # Handle "None" option - no reduction
+            if reduction_factor_text.lower() == "none":
+                manual_factor = 1.0
+            else:
+                match = re.search(r'x(\d+(?:\.\d+)?)', reduction_factor_text)
+                manual_factor = float(match.group(1)) if match else 1.0
+            
+            # Determine reduction factor, honor "None" as no reduction
             try:
                 total_points = self.cloud_copy.n_points if hasattr(self.cloud_copy, 'n_points') else (len(self.cloud_copy) if hasattr(self.cloud_copy, '__len__') else 0)
             except Exception:
                 total_points = 0
             auto_factor = self.calculate_auto_reduction_factor(total_points)
-            factor = max(manual_factor, auto_factor)
-            cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'], reduction_factor=factor)
+            factor = max(manual_factor, auto_factor) if reduction_factor_text.lower() != "none" else 1.0
+
+            if factor > 1.0:
+                cloud, intensity = self.process_3d_to_lower_res(self.cloud_copy, self.cloud_copy['intensity'], reduction_factor=factor)
+            else:
+                # Use full resolution and reflect original shape in UI
+                cloud = self.cloud_copy.points if hasattr(self.cloud_copy, 'points') else np.asarray(self.cloud_copy)
+                intensity = self.cloud_copy['intensity']
+                self.curr_shape = self.orig_shape
             self.create_3D(cloud=cloud, intensity=intensity)
+            try:
+                self._set_busy(False)
+            except Exception:
+                pass
             
         except Exception as e:
             import traceback
             with open('error_output2.txt','w') as f:
                 f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
+            try:
+                self._set_busy(False)
+            except Exception:
+                pass
 
 
     # ================ DATA SETUP METHODS ======================= #
@@ -402,10 +575,25 @@ class HKL3DSliceWindow(QMainWindow):
                 self.cloud_copy = cloud.copy(deep=True) if hasattr(cloud, 'copy') else cloud
                 self.cloud_copy['intensity'] = intensity
         self.orig_shape = shape      
+        # Capture original unfiltered point/intensity arrays for HKL filtering
+        try:
+            pts = self.cloud_copy.points if hasattr(self.cloud_copy, 'points') else np.asarray(self.cloud_copy)
+            intens = self.cloud_copy['intensity']
+            self._original_cloud_data = {
+                'points': np.asarray(pts).copy(),
+                'intensity': np.asarray(intens).copy()
+            }
+        except Exception:
+            self._original_cloud_data = None
         return True
 
     # ================ 3D VISUALIZATION METHODS ======================= #
     def create_3D(self, cloud=None, intensity=None):
+        # Disable UI and show busy cursor during render
+        try:
+            self._set_busy(True, "Rendering 3D...")
+        except Exception:
+            pass
         # Avoid clearing entire plotter to keep axes stable
         try:
             if "cloud_volume" in self.plotter.actors:
@@ -461,7 +649,10 @@ class HKL3DSliceWindow(QMainWindow):
 
         # Adaptive grid based on point count (single-pass)
         total_points = int(len(cloud))
-        _, refine_cells = self._compute_adaptive_cells(total_points)
+        refine_cells = self._compute_adaptive_cells(total_points)
+        override = self._get_target_cells_override()
+        if override is not None:
+            refine_cells = int(override)
 
         # Build full grid spacing/dimensions
         spacing_per_axis = grid_range / refine_cells
@@ -537,6 +728,11 @@ class HKL3DSliceWindow(QMainWindow):
         # Check if slice has data before adding
         if vol_slice.n_points > 0:
             self.plotter.add_mesh(vol_slice, scalars="intensity", name="slice", show_edges=False, reset_camera=False)
+            # Enforce slice visibility based on toggle control
+            try:
+                self._apply_slice_visibility()
+            except Exception:
+                pass
         else:
             pass
 
@@ -567,6 +763,11 @@ class HKL3DSliceWindow(QMainWindow):
             self._sync_plane_interaction()
             self._sync_slice_controls()
             self._sync_lock_message()
+        except Exception:
+            pass
+        # Ensure Slice Lock overlay persists
+        try:
+            self._ensure_slice_lock_overlay_present()
         except Exception:
             pass
 
@@ -607,9 +808,25 @@ class HKL3DSliceWindow(QMainWindow):
         self.toggle_state = {"visible": False}
         
         # --------- Adjust Labels -------------- #
-        self.lbCurrentPointSizeNum.setText(str(len(cloud)))
-        self.lbCurrentResolutionX.setText(str(self.curr_shape[0]))
-        self.lbCurrentResolutionY.setText(str(self.curr_shape[1]))
+        try:
+            if hasattr(self, 'lbCurrentPointSizeNum'):
+                self.lbCurrentPointSizeNum.setText(str(len(cloud)))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'lbCurrentResolutionX'):
+                self.lbCurrentResolutionX.setText(str(self.curr_shape[0]))
+        except Exception:
+            pass
+        try:
+            if hasattr(self, 'lbCurrentResolutionY'):
+                self.lbCurrentResolutionY.setText(str(self.curr_shape[1]))
+        except Exception:
+            pass
+        try:
+            self._update_info_image_sizes()
+        except Exception:
+            pass
         intensity_range = int(np.min(intensity)), int(np.max(intensity))
         self.sbMinIntensity.setRange(*intensity_range)
         self.sbMinIntensity.setValue(int(np.min(intensity)))
@@ -617,13 +834,17 @@ class HKL3DSliceWindow(QMainWindow):
         self.sbMaxIntensity.setValue(int(np.max(intensity)))
         self.update_intensity()
         try:
-            self.update_info_slice_labels()
+            self.update_info_labels()
             self._refresh_availability()
         except Exception:
             pass
 
     def update_intensity(self):
         """Updates the min/max intensity levels and scalar bar range"""
+        try:
+            self._set_busy(True, "Updating intensity...")
+        except Exception:
+            pass
         self.min_intensity = self.sbMinIntensity.value()
         self.max_intensity = self.sbMaxIntensity.value()
         
@@ -675,11 +896,26 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
         # avoid the cloud volume reapearing after change intneisity limits
         self.toggle_cloud_vol()
+        # Ensure Slice Lock overlay persists
+        try:
+            self._ensure_slice_lock_overlay_present()
+        except Exception:
+            pass
+        # Sync 2D slice view levels to inherit from parent
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.sync_levels()
+        except Exception:
+            pass
 
         # Update Info labels and availability after intensity changes
         try:
             self.update_info_slice_labels()
             self._refresh_availability()
+        except Exception:
+            pass
+        try:
+            self._set_busy(False)
         except Exception:
             pass
 
@@ -758,7 +994,7 @@ class HKL3DSliceWindow(QMainWindow):
             o = np.array(origin, dtype=float)
             # Format strings
             n_str = f"[{n[0]:0.3f}, {n[1]:0.3f}, {n[2]:0.3f}]"
-            o_str = f"[{o[0]:0.2f}, {o[1]:0.2f}, {o[2]:0.2f}]"
+            o_str = f"[{o[0]:0.5f}, {o[1]:0.5f}, {o[2]:0.5f}]"
             # Apply to labels if present
             try:
                 if hasattr(self, 'lbSliceOrientationVal'):
@@ -798,6 +1034,152 @@ class HKL3DSliceWindow(QMainWindow):
             try:
                 if hasattr(self, 'actionExtractSlice'):
                     self.actionExtractSlice.setEnabled(self._slice_exists())
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # ======= CENTRALIZED INFO LABEL UPDATE METHOD ======= #
+    def update_info_labels(self):
+        """Update all info labels with current data state - centralized method for consistency."""
+        try:
+            # Update point count labels
+            if hasattr(self, 'cloud_mesh') and self.cloud_mesh is not None:
+                current_points = len(self.cloud_mesh.points) if hasattr(self.cloud_mesh, 'points') else 0
+                try:
+                    self.lbCurrentPointSizeNum.setText(str(current_points))
+                except Exception:
+                    pass
+
+            # Ensure Original point size label is populated centrally
+            try:
+                if hasattr(self, 'lbOriginalPointSizeNum'):
+                    orig_count = None
+                    try:
+                        if hasattr(self, 'cloud_copy') and self.cloud_copy is not None:
+                            if hasattr(self.cloud_copy, 'n_points'):
+                                orig_count = int(self.cloud_copy.n_points)
+                            elif hasattr(self.cloud_copy, '__len__'):
+                                orig_count = int(len(self.cloud_copy))
+                    except Exception:
+                        orig_count = None
+                    if orig_count is None:
+                        try:
+                            if getattr(self, '_original_cloud_data', None) is not None and 'points' in self._original_cloud_data:
+                                orig_count = int(len(self._original_cloud_data['points']))
+                        except Exception:
+                            pass
+                    if orig_count is None:
+                        try:
+                            orig_count = int(self.lbOriginalPointSizeNum.text())
+                        except Exception:
+                            orig_count = 0
+                    self.lbOriginalPointSizeNum.setText(str(orig_count))
+            except Exception:
+                pass
+
+            # Update resolution labels
+            try:
+                if hasattr(self, 'curr_shape') and self.curr_shape:
+                    self.lbCurrentResolutionX.setText(str(self.curr_shape[0]))
+                    self.lbCurrentResolutionY.setText(str(self.curr_shape[1]))
+            except Exception:
+                pass
+
+            # Update image sizes
+            try:
+                self._update_info_image_sizes()
+            except Exception:
+                pass
+
+            # Update slice-related info
+            try:
+                self.update_info_slice_labels()
+            except Exception:
+                pass
+
+            # Update Info group point counts
+            try:
+                # Original points
+                if hasattr(self, 'lbInfoPointsOrigVal'):
+                    orig_count = None
+                    try:
+                        if hasattr(self, 'cloud_copy') and self.cloud_copy is not None:
+                            orig_count = int(self.cloud_copy.n_points) if hasattr(self.cloud_copy, 'n_points') else (len(self.cloud_copy) if hasattr(self.cloud_copy, '__len__') else None)
+                    except Exception:
+                        orig_count = None
+                    if orig_count is None:
+                        try:
+                            orig_count = int(self.lbOriginalPointSizeNum.text())
+                        except Exception:
+                            orig_count = 0
+                    self.lbInfoPointsOrigVal.setText(str(orig_count))
+            except Exception:
+                pass
+            try:
+                # Current points
+                if hasattr(self, 'lbInfoPointsCurrVal'):
+                    curr_count = None
+                    try:
+                        if hasattr(self, 'cloud_mesh') and self.cloud_mesh is not None and hasattr(self.cloud_mesh, 'points'):
+                            curr_count = int(len(self.cloud_mesh.points))
+                    except Exception:
+                        curr_count = None
+                    if curr_count is None:
+                        try:
+                            curr_count = int(self.lbCurrentPointSizeNum.text())
+                        except Exception:
+                            curr_count = 0
+                    self.lbInfoPointsCurrVal.setText(str(curr_count))
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"Error updating info labels: {e}")
+
+    # ======= INFO IMAGE SIZE HELPERS ======= #
+    def _update_info_image_sizes(self):
+        """Update Info section image sizes (Original and Current) based on orig_shape/curr_shape or existing labels."""
+        try:
+            # Original size
+            ox, oy = None, None
+            try:
+                os_shape = getattr(self, 'orig_shape', None)
+                if isinstance(os_shape, (tuple, list)) and len(os_shape) == 2 and int(os_shape[0]) > 0 and int(os_shape[1]) > 0:
+                    ox, oy = int(os_shape[0]), int(os_shape[1])
+            except Exception:
+                pass
+            if ox is None or oy is None:
+                try:
+                    ox = int(self.lbOriginalResolutionX.text())
+                    oy = int(self.lbOriginalResolutionY.text())
+                except Exception:
+                    ox, oy = None, None
+            orig_text = f"{ox} x {oy}" if (ox is not None and oy is not None) else "0 x 0"
+            try:
+                if hasattr(self, 'lbInfoImageSizeOrigVal') and self.lbInfoImageSizeOrigVal is not None:
+                    self.lbInfoImageSizeOrigVal.setText(orig_text)
+            except Exception:
+                pass
+
+            # Current size
+            cx, cy = None, None
+            try:
+                cs_shape = getattr(self, 'curr_shape', None)
+                if isinstance(cs_shape, (tuple, list)) and len(cs_shape) == 2 and int(cs_shape[0]) > 0 and int(cs_shape[1]) > 0:
+                    cx, cy = int(cs_shape[0]), int(cs_shape[1])
+            except Exception:
+                pass
+            if cx is None or cy is None:
+                try:
+                    cx = int(self.lbCurrentResolutionX.text())
+                    cy = int(self.lbCurrentResolutionY.text())
+                except Exception:
+                    cx, cy = None, None
+            curr_text = f"{cx} x {cy}" if (cx is not None and cy is not None) else "0 x 0"
+            try:
+                if hasattr(self, 'lbInfoImageSizeCurrVal') and self.lbInfoImageSizeCurrVal is not None:
+                    self.lbInfoImageSizeCurrVal.setText(curr_text)
             except Exception:
                 pass
         except Exception:
@@ -917,7 +1299,18 @@ class HKL3DSliceWindow(QMainWindow):
             )
         except Exception:
             return
+        # Enforce slice visibility based on toggle control
+        try:
+            self._apply_slice_visibility()
+        except Exception:
+            pass
         self.update_intensity()
+        # Mirror the slice into the lightweight 2D view only if it is already open (do not auto-open)
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.schedule_update(new_slice, n, clamped_origin)
+        except Exception:
+            pass
 
         # Avoid re-adding volume/scalar bars during interactive plane moves to keep axes stable
 
@@ -1092,7 +1485,7 @@ class HKL3DSliceWindow(QMainWindow):
             from utils import HDF5Loader
             loader = HDF5Loader()
             # Detect file type via metadata
-            info = loader.get_file_info(file_name)
+            info = loader.get_file_info(file_name, style="dict")
             dt_raw = info.get('data_type', '')
             # Normalize possible bytes/numpy scalar types from HDF5 attrs
             if isinstance(dt_raw, (bytes, bytearray)):
@@ -1763,6 +2156,49 @@ class HKL3DSliceWindow(QMainWindow):
         is_visible = self.cbToggleCloudVolume.isChecked()
         self.plotter.renderer._actors["cloud_volume"].SetVisibility(is_visible)
 
+    def toggle_slice_mesh(self):
+        """Toggle visibility of the slice mesh"""
+        try:
+            visible = True
+            if hasattr(self, 'cbToggleSliceMesh'):
+                visible = bool(self.cbToggleSliceMesh.isChecked())
+            if "slice" in getattr(self.plotter, "actors", {}):
+                actor = self.plotter.actors["slice"]
+                try:
+                    actor.SetVisibility(visible)
+                except Exception:
+                    try:
+                        # Fallback via renderer actors mapping
+                        self.plotter.renderer._actors["slice"].SetVisibility(visible)
+                    except Exception:
+                        pass
+            # Render after toggling
+            try:
+                self.plotter.render()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _apply_slice_visibility(self):
+        """Apply visibility of slice actor based on the checkbox state."""
+        try:
+            if "slice" not in getattr(self.plotter, "actors", {}):
+                return
+            target = True
+            if hasattr(self, 'cbToggleSliceMesh'):
+                target = bool(self.cbToggleSliceMesh.isChecked())
+            actor = self.plotter.actors["slice"]
+            try:
+                actor.SetVisibility(target)
+            except Exception:
+                try:
+                    self.plotter.renderer._actors["slice"].SetVisibility(target)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def change_color_map(self):
         color_map_select = self.cbColorMapSelect.currentText()
         # Create new lookup table
@@ -1778,6 +2214,12 @@ class HKL3DSliceWindow(QMainWindow):
                     scalar_bar_actor.Modified()
         # Force render
         self.plotter.render()
+        # Sync 2D slice view colormap without adding controls
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.sync_colormap()
+        except Exception:
+            pass
         normal, origin = self.get_plane_state()
         n = self.normalize_vector(np.array(normal, dtype=float))
         o = np.array(origin, dtype=float)
@@ -1810,7 +2252,7 @@ class HKL3DSliceWindow(QMainWindow):
                 # Attempt to add a slightly smaller checkbox at top-left
                 added = False
                 try:
-                    self.plotter.add_checkbox_button_widget(
+                    self._slice_lock_checkbox = self.plotter.add_checkbox_button_widget(
                         self._on_slice_lock_toggled,
                         value=bool(self._slice_locked),
                         position=(0.02, 0.96),  # normalized near top-left
@@ -1820,7 +2262,7 @@ class HKL3DSliceWindow(QMainWindow):
                 except Exception:
                     try:
                         # Fallback without size parameter if backend doesn't support it
-                        self.plotter.add_checkbox_button_widget(
+                        self._slice_lock_checkbox = self.plotter.add_checkbox_button_widget(
                             self._on_slice_lock_toggled,
                             value=bool(self._slice_locked),
                             position=(0.02, 0.96)  # normalized near top-left
@@ -1908,6 +2350,47 @@ class HKL3DSliceWindow(QMainWindow):
             # Render to update HUD visibility
             try:
                 self.plotter.render()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _ensure_slice_lock_overlay_present(self):
+        """Ensure Slice Lock overlay label and checkbox exist; re-add if missing."""
+        try:
+            # Ensure label
+            if "slice_lock_label" not in getattr(self.plotter, "actors", {}):
+                try:
+                    self.plotter.add_text("Slice Lock", position=(40, 12), font_size=12, color="white", name="slice_lock_label")
+                except Exception:
+                    try:
+                        self.plotter.add_text("Slice Lock", position="upper_left", font_size=12, color="white", name="slice_lock_label")
+                    except Exception:
+                        pass
+            # Ensure checkbox
+            if not bool(getattr(self, "_slice_lock_overlay_added", False)) or getattr(self, "_slice_lock_checkbox", None) is None:
+                try:
+                    self._slice_lock_checkbox = self.plotter.add_checkbox_button_widget(
+                        self._on_slice_lock_toggled,
+                        value=bool(getattr(self, "_slice_locked", False)),
+                        position=(0.02, 0.96),
+                        size=18
+                    )
+                except Exception:
+                    try:
+                        self._slice_lock_checkbox = self.plotter.add_checkbox_button_widget(
+                            self._on_slice_lock_toggled,
+                            value=bool(getattr(self, "_slice_locked", False)),
+                            position=(0.02, 0.96)
+                        )
+                    except Exception:
+                        pass
+                self._slice_lock_overlay_added = True
+            # Re-sync state with overlay
+            try:
+                self._sync_plane_interaction()
+                self._sync_slice_controls()
+                self._sync_lock_message()
             except Exception:
                 pass
         except Exception:
@@ -2116,6 +2599,13 @@ class HKL3DSliceWindow(QMainWindow):
         # Remove parent's reference to this window
         if hasattr(self.parent, 'slice_window'):
             self.parent.slice_window = None
+        # Close the lightweight 2D slice view if it exists
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.close()
+        except Exception:
+            pass
+        self.slice_2d_view = None
         event.accept()
         
         

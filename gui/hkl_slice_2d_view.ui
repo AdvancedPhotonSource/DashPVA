@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HKLSlice2DViewWidget</class>
+ <widget class="QWidget" name="HKLSlice2DViewWidget">
+  <property name="windowTitle">
+   <string>2D Slice View</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QWidget" name="w2DPlotContainer">
+     <layout class="QVBoxLayout" name="layoutPlotHost"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
