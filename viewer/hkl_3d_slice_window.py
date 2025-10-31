@@ -22,7 +22,7 @@ import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import SizeManager
 from utils.hdf5_loader import HDF5Loader
-
+from viewer.hkl_slice_2d_view import HKLSlice2DView
 class HKL3DSliceWindow(QMainWindow):
     def __init__(self, parent=None):
         # use parent if none
@@ -46,6 +46,9 @@ class HKL3DSliceWindow(QMainWindow):
         try:
             if hasattr(self, 'actionSlice'):
                 self.actionSlice.triggered.connect(lambda: self.open_controls_dialog(focus='slice'))
+            # Tools -> View -> Slice
+            if hasattr(self, 'actionViewSlice'):
+                self.actionViewSlice.triggered.connect(self._on_view_slice_action)
         except Exception:
             pass
         
@@ -54,10 +57,17 @@ class HKL3DSliceWindow(QMainWindow):
         self.cbToggleCloudVolume.clicked.connect(self.toggle_cloud_vol)
         self.cbColorMapSelect.currentIndexChanged.connect(self.change_color_map)
         
-        # Data alteration: immediate apply on Enter (Render button and reduction factor deprecated)
-        # if hasattr(self, 'btnRender'):
-        #     self.btnRender.clicked.connect(self._apply_pending_changes)
-        # self.cbbReductionFactor.currentIndexChanged.connect(self._mark_reduction_changed)
+        # Slice mesh visibility toggle
+        try:
+            if hasattr(self, 'cbToggleSliceMesh'):
+                self.cbToggleSliceMesh.clicked.connect(self.toggle_slice_mesh)
+        except Exception:
+            pass
+        
+        # Data alteration: re-enable reduction factor callback
+        if hasattr(self, 'cbbReductionFactor'):
+            self.cbbReductionFactor.currentIndexChanged.connect(self.reduction_factor)
+        # Keep immediate intensity updates
         self.sbMinIntensity.editingFinished.connect(self.update_intensity)
         self.sbMaxIntensity.editingFinished.connect(self.update_intensity)
         
@@ -174,6 +184,57 @@ class HKL3DSliceWindow(QMainWindow):
 
 
     # ********* METHODS ******* #
+    def _ensure_slice_2d_view(self):
+        """Ensure the 2D slice view exists as a popup window."""
+        try:
+            if getattr(self, "slice_2d_view", None) is None:
+                self.slice_2d_view = HKLSlice2DView(self)
+                try:
+                    # Make sure it shows as a top-level popup
+                    self.slice_2d_view.setWindowTitle("2D Slice View")
+                    self.slice_2d_view.setWindowFlags(self.slice_2d_view.windowFlags() | Qt.Window)
+                except Exception:
+                    pass
+            # Show and bring to front
+            try:
+                self.slice_2d_view.show()
+                self.slice_2d_view.raise_()
+                self.slice_2d_view.activateWindow()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_view_slice_action(self):
+        """Menu Tools -> View -> Slice: open 2D view popup and sync."""
+        try:
+            # Ensure widget exists and open as popup
+            self._ensure_slice_2d_view()
+            # Perform comprehensive sync of all settings from parent
+            try:
+                if getattr(self, 'slice_2d_view', None):
+                    self.slice_2d_view.sync_all_settings()
+            except Exception:
+                pass
+            try:
+                n, o = self.get_plane_state()
+                # Schedule update to reflect current plane and slice; if no slice yet this will update once available
+                if getattr(self, 'slice_2d_view', None) and "slice" in getattr(self.plotter, "actors", {}):
+                    # Use current slice actor input if it exists
+                    try:
+                        current_slice = self.plotter.actors["slice"].GetMapper().GetInput()
+                    except Exception:
+                        current_slice = None
+                    if current_slice is not None:
+                        self.slice_2d_view.schedule_update(current_slice, self.normalize_vector(np.array(n, dtype=float)), np.array(o, dtype=float))
+                else:
+                    # Fallback: trigger a refresh path
+                    self.update_slice_from_plane(n, o)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def open_controls_dialog(self, focus=None):
         """Open or focus the modeless Controls dialog."""
         try:
@@ -217,6 +278,47 @@ class HKL3DSliceWindow(QMainWindow):
             pass
 
     # ********* METHODS ******* #
+    def _set_busy(self, busy: bool, message: str = None):
+        """Enable/disable window and show wait cursor during long operations."""
+        try:
+            if busy:
+                try:
+                    self.setEnabled(False)
+                except Exception:
+                    pass
+                try:
+                    QApplication.setOverrideCursor(Qt.WaitCursor)
+                except Exception:
+                    pass
+                try:
+                    if message and hasattr(self, 'statusbar') and self.statusbar:
+                        self.statusbar.showMessage(str(message))
+                except Exception:
+                    pass
+                try:
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+            else:
+                try:
+                    QApplication.restoreOverrideCursor()
+                except Exception:
+                    pass
+                try:
+                    self.setEnabled(True)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'statusbar') and self.statusbar:
+                        self.statusbar.clearMessage()
+                except Exception:
+                    pass
+                try:
+                    QApplication.processEvents()
+                except Exception:
+                    pass
+        except Exception:
+            pass
     # ================ RESOLUTION PROCESSING METHODS ======================= #
     def lower_res(self, points, voxel_size=1.0) -> tuple:
         """
@@ -406,6 +508,11 @@ class HKL3DSliceWindow(QMainWindow):
 
     # ================ 3D VISUALIZATION METHODS ======================= #
     def create_3D(self, cloud=None, intensity=None):
+        # Disable UI and show busy cursor during render
+        try:
+            self._set_busy(True, "Rendering 3D...")
+        except Exception:
+            pass
         # Avoid clearing entire plotter to keep axes stable
         try:
             if "cloud_volume" in self.plotter.actors:
@@ -675,11 +782,26 @@ class HKL3DSliceWindow(QMainWindow):
         self.plotter.render()
         # avoid the cloud volume reapearing after change intneisity limits
         self.toggle_cloud_vol()
+        # Ensure Slice Lock overlay persists
+        try:
+            self._ensure_slice_lock_overlay_present()
+        except Exception:
+            pass
+        # Sync 2D slice view levels to inherit from parent
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.sync_levels()
+        except Exception:
+            pass
 
         # Update Info labels and availability after intensity changes
         try:
             self.update_info_slice_labels()
             self._refresh_availability()
+        except Exception:
+            pass
+        try:
+            self._set_busy(False)
         except Exception:
             pass
 
@@ -917,7 +1039,18 @@ class HKL3DSliceWindow(QMainWindow):
             )
         except Exception:
             return
+        # Enforce slice visibility based on toggle control
+        try:
+            self._apply_slice_visibility()
+        except Exception:
+            pass
         self.update_intensity()
+        # Mirror the slice into the lightweight 2D view only if it is already open (do not auto-open)
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.schedule_update(new_slice, n, clamped_origin)
+        except Exception:
+            pass
 
         # Avoid re-adding volume/scalar bars during interactive plane moves to keep axes stable
 
@@ -1778,6 +1911,12 @@ class HKL3DSliceWindow(QMainWindow):
                     scalar_bar_actor.Modified()
         # Force render
         self.plotter.render()
+        # Sync 2D slice view colormap without adding controls
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.sync_colormap()
+        except Exception:
+            pass
         normal, origin = self.get_plane_state()
         n = self.normalize_vector(np.array(normal, dtype=float))
         o = np.array(origin, dtype=float)
@@ -2116,6 +2255,13 @@ class HKL3DSliceWindow(QMainWindow):
         # Remove parent's reference to this window
         if hasattr(self.parent, 'slice_window'):
             self.parent.slice_window = None
+        # Close the lightweight 2D slice view if it exists
+        try:
+            if getattr(self, "slice_2d_view", None):
+                self.slice_2d_view.close()
+        except Exception:
+            pass
+        self.slice_2d_view = None
         event.accept()
         
         

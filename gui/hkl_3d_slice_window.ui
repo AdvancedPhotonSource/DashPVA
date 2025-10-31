@@ -676,8 +676,38 @@
     </property>
     <addaction name="actionSlice"/>
    </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="font">
+     <font>
+      <pointsize>14</pointsize>
+     </font>
+    </property>
+    <property name="title">
+     <string>Tools</string>
+    </property>
+    <widget class="QMenu" name="menuView">
+     <property name="title">
+      <string>View</string>
+     </property>
+     <addaction name="actionViewSlice"/>
+    </widget>
+    <addaction name="menuView"/>
+   </widget>
+   <widget class="QMenu" name="menuSettings">
+    <property name="font">
+     <font>
+      <pointsize>14</pointsize>
+     </font>
+    </property>
+    <property name="title">
+     <string>Settings</string>
+    </property>
+    <addaction name="actionOptimize"/>
+   </widget>
    <addaction name="menuData"/>
    <addaction name="menuControls"/>
+   <addaction name="menuTools"/>
+   <addaction name="menuSettings"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionExtractSlice">
@@ -713,6 +743,16 @@
   <action name="actionSlice">
    <property name="text">
     <string>Controls…</string>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>12</pointsize>
+    </font>
+   </property>
+  </action>
+  <action name="actionViewSlice">
+   <property name="text">
+    <string>Slice</string>
    </property>
    <property name="font">
     <font>
