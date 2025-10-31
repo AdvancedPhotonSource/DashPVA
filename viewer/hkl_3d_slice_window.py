@@ -1485,7 +1485,7 @@ class HKL3DSliceWindow(QMainWindow):
             from utils import HDF5Loader
             loader = HDF5Loader()
             # Detect file type via metadata
-            info = loader.get_file_info(file_name)
+            info = loader.get_file_info(file_name, style="dict")
             dt_raw = info.get('data_type', '')
             # Normalize possible bytes/numpy scalar types from HDF5 attrs
             if isinstance(dt_raw, (bytes, bytearray)):
