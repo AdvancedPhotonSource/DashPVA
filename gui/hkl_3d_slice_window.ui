@@ -879,6 +879,38 @@
          </widget>
         </item>
         <!-- Removed tabsControls (Slice/Camera tabs) -->
+        <item>
+         <layout class="QHBoxLayout" name="hLayoutSettings">
+          <item>
+           <spacer name="hSpacerSettings">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnSettings">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Settings</string>
+            </property>
+            <property name="toolTip">
+             <string>Open settings and database manager</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
        </layout>
       </widget>
      </widget>
