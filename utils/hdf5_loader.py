@@ -467,6 +467,12 @@ class HDF5Loader:
                     'grid_origin': grid_origin,
                     'original_shape': original_shape,
                     'volume_shape': volume_shape_ds,
+                    'num_images': meta.get('num_images', None),
+                    # Persisted grid reconstruction hints
+                    'array_order': meta.get('array_order', None),
+                    'grid_dimensions_cells': meta.get('grid_dimensions_cells', None),
+                    'axes_labels': meta.get('axes_labels', None),
+                    'intensity_range': meta.get('intensity_range', None),
                 }
             
             # Return volume and a 3D shape; for 2D, return (0, H, W) so callers can detect
@@ -513,6 +519,148 @@ class HDF5Loader:
         except Exception as e:
             self._handle_loading_error(e, file_path)
             return (np.array([]), np.array([]), {})
+
+    def load_vti_volume_3d(self, file_path: str, scalar_name: Optional[str] = None, prefer_cell_data: bool = True) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        """
+        Load a .vti (VTK XML ImageData) file and return a cell-centered 3D numpy volume (D, H, W).
+        No saving performed. Populates self.volume, self.volume_shape, and self.file_metadata.
+
+        Args:
+            file_path: Path to the .vti file
+            scalar_name: Optional name of the scalar to use; if None, uses active or first available
+            prefer_cell_data: Prefer cell_data arrays (best for slicing); if False and only point_data exists, will convert
+
+        Returns:
+            (volume, shape): numpy array (D,H,W) and shape tuple
+        """
+        try:
+            import pyvista as pv  # Lazy import to keep dependency optional
+            self.current_file_path = file_path
+
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File does not exist: {file_path}")
+
+            grid = pv.read(file_path)
+
+            # Select scalar from cell_data (preferred) or point_data
+            chosen_name = None
+            intens_1d = None
+            target_obj_for_dims = grid  # object whose dimensions we use
+
+            cell_keys = list(grid.cell_data.keys()) if hasattr(grid, "cell_data") else []
+            point_keys = list(grid.point_data.keys()) if hasattr(grid, "point_data") else []
+
+            def _pick_name(keys: list, active: Optional[str], requested: Optional[str]) -> Optional[str]:
+                if requested and requested in keys:
+                    return requested
+                if active and active in keys:
+                    return active
+                return keys[0] if keys else None
+
+            if prefer_cell_data and cell_keys:
+                chosen_name = _pick_name(cell_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                if not chosen_name:
+                    raise ValueError("No scalar arrays found in VTI cell_data")
+                intens_1d = np.asarray(grid.cell_data[chosen_name])
+                target_obj_for_dims = grid
+            else:
+                # Try point_data first and convert to cell_data for consistent D×H×W slicing
+                if point_keys:
+                    chosen_name = _pick_name(point_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                    if not chosen_name:
+                        raise ValueError("No scalar arrays found in VTI point_data")
+                    v_cd = grid.point_data_to_cell_data(pass_point_data=False)
+                    intens_1d = np.asarray(v_cd.cell_data[chosen_name])
+                    target_obj_for_dims = v_cd
+                elif cell_keys:
+                    # Fallback to cell_data if point_data missing
+                    chosen_name = _pick_name(cell_keys, getattr(grid, "active_scalars_name", None), scalar_name)
+                    intens_1d = np.asarray(grid.cell_data[chosen_name])
+                    target_obj_for_dims = grid
+                else:
+                    raise ValueError("No scalar arrays found in VTI (point_data or cell_data)")
+
+            # Derive cell-centered dimensions from points-based dimensions (cells = points - 1)
+            dims_points = tuple(int(d) for d in getattr(target_obj_for_dims, "dimensions", (0, 0, 0)))
+            dims_cells = tuple(max(d - 1, 0) for d in dims_points)
+
+            expected = int(np.prod(dims_cells)) if all(d > 0 for d in dims_cells) else 0
+            if expected <= 0:
+                raise ValueError(f"Invalid VTI dimensions (points={dims_points}, cells={dims_cells})")
+            if intens_1d.size != expected:
+                # Attempt robust conversion via point_data_to_cell_data if mismatch
+                try:
+                    v_cd = target_obj_for_dims.point_data_to_cell_data(pass_point_data=False) if hasattr(target_obj_for_dims, "point_data_to_cell_data") else grid.point_data_to_cell_data(pass_point_data=False)
+                    intens_1d = np.asarray(v_cd.cell_data[chosen_name])
+                    dims_points = tuple(int(d) for d in getattr(v_cd, "dimensions", (0, 0, 0)))
+                    dims_cells = tuple(max(d - 1, 0) for d in dims_points)
+                    expected = int(np.prod(dims_cells)) if all(d > 0 for d in dims_cells) else 0
+                except Exception:
+                    pass
+            if intens_1d.size != expected:
+                raise ValueError(f"Scalar size {intens_1d.size} does not match expected cells product {expected}")
+
+            # Reshape to D×H×W using Fortran order to match VTK/PyVista layout (x-fastest, z-slowest)
+            volume = intens_1d.reshape(dims_cells, order="F").astype(np.float32)
+
+            # Store in instance
+            self.volume = volume
+            if len(dims_cells) == 3:
+                self.volume_shape = (int(dims_cells[2]), int(dims_cells[1]), int(dims_cells[0])) if False else tuple(int(x) for x in dims_cells)  # keep (D,H,W)
+            elif len(dims_cells) == 2:
+                self.volume_shape = (0, int(dims_cells[0]), int(dims_cells[1]))
+            else:
+                self.volume_shape = (0, 0, 0)
+
+            spacing = getattr(grid, "spacing", (1.0, 1.0, 1.0))
+            origin = getattr(grid, "origin", (0.0, 0.0, 0.0))
+            intensity_range = [float(np.min(volume)), float(np.max(volume))] if volume.size > 0 else [0.0, 0.0]
+
+            # Populate metadata to mirror HDF5 loader expectations
+            self.file_metadata = {
+                "data_type": "volume",
+                "array_rank": int(volume.ndim),
+                "array_shape": list(volume.shape),
+                "voxel_spacing": [float(spacing[0]), float(spacing[1]), float(spacing[2])],
+                "grid_origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "original_shape": [int(volume.shape[1]), int(volume.shape[2])] if volume.ndim == 3 else ([int(volume.shape[0]), int(volume.shape[1])] if volume.ndim == 2 else [0, 0]),
+                "volume_shape": list(volume.shape) if volume.ndim == 3 else None,
+                "num_images": 1,
+                "array_order": "F",
+                "grid_dimensions_cells": [int(x) for x in dims_cells],
+                "axes_labels": ["H", "K", "L"],
+                "intensity_range": intensity_range,
+                "scalar_name": chosen_name,
+            }
+
+            return (volume, self.volume_shape)
+        except Exception as e:
+            self._handle_loading_error(e, file_path)
+            return (np.array([]), (0, 0, 0))
+
+    def load_volume_auto(self, file_path: str, scalar_name: Optional[str] = None) -> Tuple[np.ndarray, Tuple[int, int, int]]:
+        """
+        Convenience loader that accepts .h5/.hdf5 or .vti and routes to the appropriate method.
+        No saving performed.
+
+        Args:
+            file_path: Path to input file (.h5/.hdf5 or .vti)
+            scalar_name: Optional scalar name for .vti inputs
+
+        Returns:
+            (volume, shape): numpy array and shape tuple
+        """
+        try:
+            ext = str(Path(file_path).suffix).lower()
+            if ext in (".h5", ".hdf5"):
+                return self.load_h5_volume_3d(file_path)
+            elif ext == ".vti":
+                return self.load_vti_volume_3d(file_path, scalar_name=scalar_name)
+            else:
+                raise ValueError(f"Unsupported file extension: {ext}")
+        except Exception as e:
+            self._handle_loading_error(e, file_path)
+            return (np.array([]), (0, 0, 0))
 
     # ================ HELPER METHODS FOR 3D LOADING ======================= #
     def _flatten_coordinate_data(self, coord_array: np.ndarray) -> np.ndarray:
@@ -1004,25 +1152,25 @@ class HDF5Loader:
             return False
 
     # ================ UTILITY METHODS ======================= #
-    def get_file_info(self, file_path: str) -> dict:
+    def get_file_info(self, file_path: str, *, style: str = "text", include_unknown: bool = True,
+                       float_precision: int = 6, summarize_datasets: bool = True, raw: bool = False):
         """
-        Inspect an HDF5 file and summarize basic structure and metadata.
-        
+        Inspect an HDF5 file and return a formatted summary.
+
         Args:
-            file_path (str): Path to HDF5 file
-            
+            file_path: Path to HDF5 file
+            style: "text" (default) for human-readable string, or "dict" for a grouped dict.
+            include_unknown: Include unrecognized metadata keys under 'other_metadata'.
+            float_precision: Decimal places for float formatting in text output.
+            summarize_datasets: If True, highlight /entry/data/data and summarize others; else list all.
+            raw: If True, return the original raw dict (backward compatibility).
+
         Returns:
-            dict: {
-                'valid': bool,
-                'data_type': str (from /entry attrs if present),
-                'paths': list of dataset paths,
-                'shapes': dict of path -> shape,
-                'dtypes': dict of path -> dtype,
-                'entry_attrs': dict,
-                'data_attrs': dict,
-                'metadata': dict of /entry/data/metadata datasets (key -> python value)
-            }
+            - If raw=True: the original raw dict identical to prior implementation.
+            - If style="text": a formatted multiline string.
+            - If style="dict": a grouped dict with sections.
         """
+        # Step 1: Build the raw info (same schema as before)
         info = {
             'valid': False,
             'data_type': '',
@@ -1035,7 +1183,9 @@ class HDF5Loader:
         }
         try:
             if not os.path.exists(file_path) or not h5py.is_hdf5(file_path):
-                return info
+                return info if raw else self._format_file_info(info, style=style, include_unknown=include_unknown,
+                                                              float_precision=float_precision, summarize_datasets=summarize_datasets)
+
             with h5py.File(file_path, 'r') as f:
                 info['valid'] = True
                 # entry attrs
@@ -1068,11 +1218,20 @@ class HDF5Loader:
                 # datasets enumeration
                 def visitor(name, obj):
                     if isinstance(obj, h5py.Dataset):
-                        info['paths'].append('/' + name)
-                        info['shapes']['/' + name] = obj.shape
-                        info['dtypes']['/' + name] = str(obj.dtype)
+                        p = '/' + name
+                        info['paths'].append(p)
+                        info['shapes'][p] = obj.shape
+                        info['dtypes'][p] = str(obj.dtype)
                 f.visititems(visitor)
-            return info
+
+            # Step 2: Return raw if requested
+            if raw:
+                return info
+
+            # Step 3: Return formatted output
+            return self._format_file_info(info, style=style, include_unknown=include_unknown,
+                                          float_precision=float_precision, summarize_datasets=summarize_datasets)
+
         except Exception as e:
             # Also log to error file
             try:
@@ -1085,7 +1244,190 @@ class HDF5Loader:
                     f.write("\n")
             except Exception:
                 pass
-            return info
+            return info if raw else self._format_file_info(info, style=style, include_unknown=include_unknown,
+                                                           float_precision=float_precision, summarize_datasets=summarize_datasets)
+
+    # Internal helper to format file info; kept private within this class.
+    def _format_file_info(self, info: dict, *, style: str = "text", include_unknown: bool = True,
+                          float_precision: int = 6, summarize_datasets: bool = True):
+        # Helper conversions
+        def _to_native(x):
+            try:
+                if isinstance(x, bytes):
+                    return x.decode('utf-8', errors='ignore')
+                if isinstance(x, (np.generic,)):
+                    return x.item()
+                if isinstance(x, np.ndarray):
+                    return [_to_native(v) for v in x.tolist()]
+                if isinstance(x, (list, tuple)):
+                    return [_to_native(v) for v in x]
+                return x
+            except Exception:
+                return x
+
+        def _fmt_num(v):
+            try:
+                fv = float(v)
+                return f"{fv:.{int(float_precision)}f}"
+            except Exception:
+                return str(v)
+
+        def _fmt_value(v):
+            v = _to_native(v)
+            if isinstance(v, float):
+                return _fmt_num(v)
+            if isinstance(v, (list, tuple)):
+                return "[" + ", ".join(_fmt_value(x) for x in v) + "]"
+            return str(v)
+
+        # Extract common fields
+        md = {k: _to_native(v) for k, v in (info.get('metadata') or {}).items()}
+        entry_attrs = {k: _to_native(v) for k, v in (info.get('entry_attrs') or {}).items()}
+        data_attrs = {k: _to_native(v) for k, v in (info.get('data_attrs') or {}).items()}
+
+        # Derive summary
+        array_rank = data_attrs.get('array_rank', None)
+        array_shape = data_attrs.get('array_shape', None)
+        if isinstance(array_shape, np.ndarray):
+            array_shape = array_shape.tolist()
+        # grid/volume keys of interest
+        voxel_spacing = md.get('voxel_spacing', None)
+        grid_origin = md.get('grid_origin', None)
+        grid_cells = md.get('grid_dimensions_cells', None)
+        grid_points = None
+        try:
+            if isinstance(grid_cells, (list, tuple)) and len(grid_cells) == 3:
+                grid_points = [int(grid_cells[0]) + 1, int(grid_cells[1]) + 1, int(grid_cells[2]) + 1]
+        except Exception:
+            grid_points = None
+        array_order = md.get('array_order', None)
+        axes_labels = md.get('axes_labels', None)
+        volume_shape = md.get('volume_shape', None)
+        original_shape = md.get('original_shape', None)
+        intensity_range = md.get('intensity_range', None)
+        num_images = md.get('num_images', None)
+
+        # Build datasets summary
+        datasets = {}
+        paths = info.get('paths') or []
+        shapes = info.get('shapes') or {}
+        dtypes = info.get('dtypes') or {}
+        primary_path = '/entry/data/data'
+        if primary_path in paths:
+            datasets[primary_path] = {
+                'shape': shapes.get(primary_path),
+                'dtype': dtypes.get(primary_path)
+            }
+        if not summarize_datasets:
+            for p in paths:
+                if p not in datasets:
+                    datasets[p] = {'shape': shapes.get(p), 'dtype': dtypes.get(p)}
+        else:
+            # summarize count of others
+            others = [p for p in paths if p != primary_path]
+            if others:
+                datasets['(other_datasets)'] = {'count': len(others)}
+
+        # Determine recognized metadata keys to filter "other_metadata"
+        recognized = {
+            'voxel_spacing', 'grid_origin', 'grid_dimensions_cells', 'array_order',
+            'axes_labels', 'volume_shape', 'original_shape', 'intensity_range', 'num_images',
+            'array_rank', 'array_shape'
+        }
+        other_metadata = {}
+        if include_unknown:
+            for k, v in md.items():
+                if k not in recognized:
+                    other_metadata[k] = v
+
+        # Grouped dict
+        grouped = {
+            'summary': {
+                'valid': bool(info.get('valid', False)),
+                'data_type': info.get('data_type', ''),
+                'array_rank': array_rank,
+                'array_shape': array_shape
+            },
+            'grid': {
+                'voxel_spacing': voxel_spacing,
+                'grid_origin': grid_origin,
+                'grid_dimensions_cells': grid_cells,
+                'grid_dimensions_points': grid_points,
+                'array_order': array_order,
+                'axes_labels': axes_labels
+            },
+            'volume': {
+                'volume_shape': volume_shape,
+                'original_shape': original_shape,
+                'intensity_range': intensity_range,
+                'num_images': num_images
+            },
+            'datasets': datasets,
+            'entry_attrs': entry_attrs,
+            'data_attrs': data_attrs,
+            'other_metadata': other_metadata if include_unknown else {}
+        }
+
+        if style == "dict":
+            return grouped
+
+        # Default: style == "text"
+        lines = []
+        def _section(title):
+            lines.append(f"{title}:")
+        def _kv(label, value):
+            if value is None or value == {} or value == []:
+                return
+            lines.append(f"  - {label}: {_fmt_value(value)}")
+
+        _section("Summary")
+        _kv("Valid", grouped['summary'].get('valid'))
+        _kv("Data Type", grouped['summary'].get('data_type'))
+        _kv("Array Rank", grouped['summary'].get('array_rank'))
+        _kv("Array Shape", grouped['summary'].get('array_shape'))
+
+        _section("Grid")
+        _kv("Voxel Spacing (ΔH, ΔK, ΔL)", grouped['grid'].get('voxel_spacing'))
+        _kv("Grid Origin (H0, K0, L0)", grouped['grid'].get('grid_origin'))
+        _kv("Grid Dimensions (cells)", grouped['grid'].get('grid_dimensions_cells'))
+        _kv("Grid Dimensions (points)", grouped['grid'].get('grid_dimensions_points'))
+        _kv("Array Order", grouped['grid'].get('array_order'))
+        _kv("Axes Labels", grouped['grid'].get('axes_labels'))
+
+        _section("Volume/Image")
+        _kv("Volume Shape (D,H,W)", grouped['volume'].get('volume_shape'))
+        _kv("Original Shape (H,W)", grouped['volume'].get('original_shape'))
+        _kv("Intensity Range", grouped['volume'].get('intensity_range'))
+        _kv("Num Images", grouped['volume'].get('num_images'))
+
+        _section("Datasets")
+        if primary_path in datasets:
+            ds = datasets[primary_path]
+            _kv(f"{primary_path} shape", ds.get('shape'))
+            _kv(f"{primary_path} dtype", ds.get('dtype'))
+        if '(other_datasets)' in datasets:
+            _kv("Other datasets count", datasets['(other_datasets)'].get('count'))
+        elif not summarize_datasets:
+            for p, ds in datasets.items():
+                if p == primary_path:
+                    continue
+                _kv(f"{p} shape", ds.get('shape'))
+                _kv(f"{p} dtype", ds.get('dtype'))
+
+        _section("Entry Attributes")
+        for k, v in grouped['entry_attrs'].items():
+            _kv(k, v)
+
+        _section("Data Attributes")
+        for k, v in grouped['data_attrs'].items():
+            _kv(k, v)
+
+        if include_unknown and grouped.get('other_metadata'):
+            _section("Other Metadata")
+            for k, v in grouped['other_metadata'].items():
+                _kv(k, v)
+
+        return "\n".join(lines)
     
     def convert_2d_to_3d(self, points_2d: np.ndarray, intensities: np.ndarray, 
                         z_values: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:

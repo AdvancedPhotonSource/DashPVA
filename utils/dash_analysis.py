@@ -23,9 +23,8 @@ meta  # dict with voxel_spacing, grid_origin, grid_dimensions_cells, array_order
 
 import argparse
 import os
-from typing import Tuple, Dict, Optional
-from utils.hdf5_loader import HDF5Loader
-
+from typing import Optional
+from hdf5_loader import HDF5Loader
 
 import numpy as np
 
@@ -39,7 +38,11 @@ except Exception:
 try:
     from utils.hdf5_loader import HDF5Loader
 except Exception:
-    HDF5Loader = None
+    try:
+        from hdf5_loader import HDF5Loader
+    except Exception:
+        HDF5Loader = None
+
 
 # Fallback reader using h5py for simple cases if HDF5Loader is unavailable or fails
 try:
@@ -170,7 +173,7 @@ class DashAnalysis:
 
         return grid
     
-    def slice_data(self, data, hkl=None, normal=None, shape=(512, 512), slab_thickness=None, clamp_to_bounds=True, spacing=(1.0, 1.0, 1.0), grid_origin=(0.0, 0.0, 0.0)):
+    def slice_data(self, data, hkl=None, normal=None, shape=(512, 512), slab_thickness=None, clamp_to_bounds=True, spacing=(0.5, 0.5, 0.5), grid_origin=(0.0, 0.0, 0.0)):
         """
         Create a slice from either a volume or a point cloud.
 
@@ -184,7 +187,8 @@ class DashAnalysis:
             shape: resolution (rows, cols) for sampling the plane when slicing points.
             slab_thickness: thickness of the selection slab around the plane for point slicing.
             clamp_to_bounds: clamp origin to dataset bounds.
-            spacing, grid_origin: only used when building a grid from a NumPy volume.
+            spacing: how close or far you want the cells to be
+            grid_origin: only used when building a grid from a NumPy volume.
 
         Returns:
             pv.PolyData representing the slice.
@@ -403,13 +407,13 @@ class DashAnalysis:
         # Resolution: adaptive cells per axis (mirror slicer thresholds)
         total_points = int(points.shape[0]) if hasattr(points, "shape") else len(points)
         if total_points >= 5_000_000:
-            refine_cells = 120
+            refine_cells = 250
         elif total_points >= 2_000_000:
-            refine_cells = 140
+            refine_cells = 275
         elif total_points >= 500_000:
-            refine_cells = 160
+            refine_cells = 300
         else:
-            refine_cells = 180
+            refine_cells = 300
         spacing = grid_range / refine_cells
         dimensions = np.ceil(grid_range / spacing).astype(int) + 1
 
@@ -425,13 +429,12 @@ class DashAnalysis:
 
         return vol
 
-    def show_meta(self,file_path):
+    def show_meta(self, file_path, *, style="text", raw=False, include_unknown=True, float_precision=6, summarize_datasets=True):
         if not file_path:
             raise FileNotFoundError("No file path provided to load_data and none set in DashAnalysis.")
 
         loader = HDF5Loader()
-        data = loader.get_file_info(file_path=file_path)
-        return data
+        return loader.get_file_info(file_path, style=style, raw=raw, include_unknown=include_unknown, float_precision=float_precision, summarize_datasets=summarize_datasets)
 
     def show_vol(self, vol, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0), cmap='jet'):
         """
@@ -485,6 +488,135 @@ class DashAnalysis:
         except Exception:
             pass
         return plotter.show()
+
+    def show_point_cloud(self, cloud, intensities=None, *, notebook=True,
+                         point_size=2.0, cmap='viridis', opacity=1.0,
+                         render_points_as_spheres=False, axes_labels=('H','K','L'),
+                         clim=None, show_bounds=True, hide_out_of_range=True, opacity_range=None):
+        """
+        Render a point cloud in HKL space using PyVista.
+
+        Parameters
+        cloud: one of
+          - (points, intensities) tuple/list
+          - Data object with .points and .intensities
+          - dict with keys {'points': ..., 'intensities': ...}
+          - pv.PolyData with optional 'intensity' array
+          - numpy.ndarray of shape (N,3) for points (provide intensities separately)
+        intensities: optional 1D array of length N; used if not embedded in the cloud
+        notebook: use a notebook plotter (True) or a regular plotter (False)
+        point_size: point size for rendering
+        cmap: colormap name applied when intensities are present
+        opacity: point opacity [0..1]
+        render_points_as_spheres: True for spherical glyphs
+        axes_labels: tuple of axis labels, default ('H','K','L')
+        clim: optional (vmin, vmax) display limits if intensities are present
+        show_bounds: whether to show bounds with HKL labels
+        hide_out_of_range: if True, uses a PyVista LookupTable to hide intensities outside clim (or data min/max if clim is None).
+        opacity_range: optional (min_opacity, max_opacity) to apply an in-range opacity ramp; out-of-range opacity is set to 0 via LUT.
+
+        Returns
+        The PyVista rendering (e.g., a notebook cell display result).
+        """
+        import numpy as np
+        import pyvista as pv
+
+        # Normalize inputs to pv.PolyData + 'intensity' if available
+        pts = None
+        ints = None
+        poly = None
+
+        if isinstance(cloud, pv.PolyData):
+            poly = cloud
+            if ('intensity' not in poly.array_names) and (intensities is not None):
+                poly['intensity'] = np.asarray(intensities, dtype=np.float32)
+        elif hasattr(cloud, 'points') and hasattr(cloud, 'intensities'):
+            # Data object
+            pts = np.asarray(cloud.points, dtype=float)
+            ints = np.asarray(cloud.intensities, dtype=float)
+            poly = pv.PolyData(pts)
+            poly['intensity'] = ints.astype(np.float32)
+        elif isinstance(cloud, (tuple, list)) and len(cloud) >= 2:
+            pts = np.asarray(cloud[0], dtype=float)
+            ints = np.asarray(cloud[1], dtype=float)
+            poly = pv.PolyData(pts)
+            poly['intensity'] = ints.astype(np.float32)
+        elif isinstance(cloud, dict) and ('points' in cloud):
+            pts = np.asarray(cloud['points'], dtype=float)
+            ints = np.asarray(cloud.get('intensities', intensities), dtype=float) if ('intensities' in cloud or intensities is not None) else None
+            poly = pv.PolyData(pts)
+            if ints is not None and ints.shape[0] == pts.shape[0]:
+                poly['intensity'] = ints.astype(np.float32)
+        elif isinstance(cloud, np.ndarray) and cloud.ndim == 2 and cloud.shape[1] == 3:
+            pts = np.asarray(cloud, dtype=float)
+            poly = pv.PolyData(pts)
+            if intensities is not None:
+                poly['intensity'] = np.asarray(intensities, dtype=np.float32)
+        else:
+            raise TypeError("Unsupported cloud format. Provide (points, intensities), Data, dict, pv.PolyData, or Nx3 ndarray.")
+
+        # Create plotter
+        p = pv.Plotter(notebook=bool(notebook))
+        p.add_axes(xlabel=str(axes_labels[0]), ylabel=str(axes_labels[1]), zlabel=str(axes_labels[2]))
+
+        # Add points layer (with optional LUT gating)
+        has_intensity = ('intensity' in poly.array_names)
+        if has_intensity:
+            # Determine scalar range
+            if clim is not None and len(clim) == 2:
+                vmin, vmax = float(clim[0]), float(clim[1])
+            else:
+                arr = np.asarray(poly['intensity'])
+                vmin, vmax = float(np.nanmin(arr)), float(np.nanmax(arr))
+
+            if bool(hide_out_of_range) or (opacity_range is not None):
+                # Build a LookupTable that hides out-of-range values and sets an in-range opacity ramp
+                lut = pv.LookupTable(cmap=cmap)
+                lut.scalar_range = (vmin, vmax)
+                lut.below_range_color = 'black'
+                lut.above_range_color = 'black'
+                lut.below_range_opacity = 0.0
+                lut.above_range_opacity = 0.0
+                if opacity_range is not None:
+                    o0, o1 = float(opacity_range[0]), float(opacity_range[1])
+                    lut.apply_opacity([o0, o1])
+                # Important: do not pass a uniform opacity float; let LUT control per-intensity opacity
+                p.add_mesh(poly,
+                           scalars='intensity',
+                           cmap=lut,
+                           render_points_as_spheres=bool(render_points_as_spheres),
+                           point_size=float(point_size),
+                           name='points')
+            else:
+                # Original behavior: simple colormap and uniform opacity
+                p.add_mesh(poly,
+                           scalars='intensity',
+                           cmap=cmap,
+                           clim=(vmin, vmax),
+                           render_points_as_spheres=bool(render_points_as_spheres),
+                           point_size=float(point_size),
+                           opacity=float(opacity),
+                           name='points')
+        else:
+            p.add_mesh(poly,
+                       color='white',
+                       render_points_as_spheres=bool(render_points_as_spheres),
+                       point_size=float(point_size),
+                       opacity=float(opacity),
+                       name='points')
+
+        # Optional bounds
+        if bool(show_bounds):
+            try:
+                p.show_bounds(mesh=poly,
+                              xtitle=str(axes_labels[0]),
+                              ytitle=str(axes_labels[1]),
+                              ztitle=str(axes_labels[2]),
+                              bounds=poly.bounds)
+            except Exception:
+                pass
+
+        return p.show()
 
     def show_slice(self, vol, hkl='HK', origin=None, shape=None, cmap='viridis',
                    spacing=(1.0, 1.0, 1.0), grid_origin=(0.0, 0.0, 0.0),

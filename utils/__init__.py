@@ -1,5 +1,24 @@
-from utils.hdf5_writer import HDF5Writer
-from utils.pva_reader import PVAReader
-from utils.generators import rotation_cycle
-from utils.size_manager import SizeManager
-from utils.hdf5_loader import HDF5Loader
+try:
+    from utils.hdf5_writer import HDF5Writer
+except Exception:
+    pass
+
+try:
+    from utils.hdf5_loader import HDF5Loader
+except Exception:
+    pass
+
+try:
+    from utils.pva_reader import PVAReader
+except Exception:
+    pass
+
+try:
+    from utils.size_manager import SizeManager
+except Exception:
+    pass
+
+try:
+    from utils.generators import rotation_cycle
+except Exception:
+    pass
