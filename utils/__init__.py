@@ -22,3 +22,8 @@ try:
     from utils.generators import rotation_cycle
 except Exception:
     pass
+
+try:
+    from utils.dash_analysis import DashAnalysis
+except Exception:
+    pass
