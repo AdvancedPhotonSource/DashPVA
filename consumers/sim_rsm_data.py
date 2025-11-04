@@ -21,7 +21,9 @@ import time
 import tempfile
 import ctypes.util
 import math
+import numpy as np
 import pvaccess as pva  # pva module provides CaIoc and related functions
+from epics import camonitor, caget
 
 # -------------------------------
 # Define PV Record Parameters
@@ -39,13 +41,13 @@ axis_records = {
         "AxisNumber": 2,
         "SpecMotorName": "Eta",
         "DirectionAxis": "z-",
-        "Position": 10.74625,
+        "Position": 0.0,
     },
     "6idb1:m19.RBV": {
         "AxisNumber": 3,
         "SpecMotorName": "Chi",
         "DirectionAxis": "y+",
-        "Position": 90.14,
+        "Position": 0.0
     },
     "6idb1:m20.RBV": {
         "AxisNumber": 4,
@@ -63,7 +65,7 @@ axis_records = {
         "AxisNumber": 2,
         "SpecMotorName": "Delta",
         "DirectionAxis": "z-",
-        "Position": 70.035125,
+        "Position": 0.0,
     },
 }
 
@@ -77,7 +79,7 @@ ub_matrix_record = {
     "Value": [1, 0, 0, 0, 1, 0, 0, 0, 1]
 }
 energy_record = {
-    "Value": 5.212  # keV
+    "Value": 11.212  # keV
 }
 
 # Additional static records based on HKL configuration:
@@ -101,8 +103,17 @@ detector_setup_record = {
     "PixelDirection2": "x+",
     "CenterChannelPixel": [500, 500],
     "Size": [100, 100],
-    "Distance": 20.644,
+    "Distance": 400.644,
     "Units": "mm"
+}
+scan_on_record = {
+    'Value': False
+}
+file_path_record = {
+    'Value': ''
+}
+file_name_record = {
+    'Value': ''
 }
 
 # -------------------------------
@@ -138,15 +149,22 @@ def get_record_definition(name, value_type) -> str:
             field(VAL, "")
         }
         """ % name
+    elif isinstance(value_type, bool):
+        return """
+        record(longout, "%s") {
+            field(DTYP, "Soft Channel")
+        }
+        """ % name
     elif isinstance(value_type, list) and all(isinstance(x, (int, float)) for x in value_type):
         # For numeric arrays (like UB_matrix)
         return """
         record(waveform, "%s") {
             field(DTYP, "Soft Channel")
             field(FTVL, "DOUBLE")
-            field(NELM, "64")
+            field(NELM, "9")
         }
         """ % name
+
 
 def setup_ca_ioc(records_dict) -> pva.CaIoc:
     """
@@ -160,7 +178,7 @@ def setup_ca_ioc(records_dict) -> pva.CaIoc:
         epicsLibDir = os.path.dirname(pvDataLib)
         dbdDir = os.path.realpath('%s/../../dbd' % epicsLibDir)
         os.environ['EPICS_DB_INCLUDE_PATH'] = dbdDir
-
+        
     # Create a temporary database file
     dbFile = tempfile.NamedTemporaryFile(delete=False, mode='w')
     
@@ -197,9 +215,11 @@ def update_ca_record_field(caIoc, base_name, field_name, value) -> None:
     record_name = "%s:%s" % (valid_base, field_name)
     
     try:
-        # print(record_name, value)
-        if isinstance(value, list) and all(isinstance(x, (int, float)) for x in value):
+        if isinstance(value, bool):
+            value = int(value)  # Cast True/False to 1/0
+        elif isinstance(value, (list, np.ndarray)) and all(isinstance(x, (int, float, np.float32)) for x in value):
             # For numeric arrays
+            value = [int(val) for val in value]
             caIoc.putField(record_name, value)
         else:
         #     # For scalar values or other types
@@ -227,29 +247,24 @@ def main() -> None:
         "PrimaryBeamDirection": primary_beam_direction_record,
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
-        "DetectorSetup": detector_setup_record
+        "DetectorSetup": detector_setup_record,
+        "ScanOn": scan_on_record,
+        "FilePath": file_path_record,
+        "FileName": file_name_record
     }
-    print(all_records)
+    print(axis_records)
     
     # Set up the CA IOC with these records
     caIoc = setup_ca_ioc(all_records)
-
-    # Add Name field to all static records
-    static_records = {
-        "6idb:spec:UB_matrix": {**ub_matrix_record, "Name": "6idb:spec:UB_matrix"},
-        "6idb:spec:Energy": {**energy_record, "Name": "6idb:spec:Energy"},
-        "PrimaryBeamDirection": {**primary_beam_direction_record, "Name": "PrimaryBeamDirection"},
-        "InplaneReferenceDirection": {**inplane_reference_direction_record, "Name": "InplaneReferenceDirection"},
-        "SampleSurfaceNormalDirection": {**sample_surface_normal_direction_record, "Name": "SampleSurfaceNormalDirection"},
-        "DetectorSetup": {**detector_setup_record, "Name": "DetectorSetup"}
-    }
     
     # Update static records (they remain constant)
     for rec_name, rec_data in all_records.items():
         update_full_record(caIoc, rec_name, rec_data)
 
     # For dynamic axis records, store their base positions
-    base_positions = {name: rec["Position"] for name, rec in axis_records.items()}
+    base_positions = {name: rec['Position'] for name, rec in axis_records.items()}
+    dynamic_records = {**axis_records, '6idb:spec:Energy':13.0,} #'6idb:spec:UB_matrix': caget('6idb:spec:UB_matrix')}
+
     amplitude = 0.5        # Amplitude of the sine-wave update
     update_interval = 0.5  # Seconds between updates
     start_time = time.time()
@@ -257,13 +272,21 @@ def main() -> None:
     try:
         while True:
             elapsed = time.time() - start_time
-            for name, rec in axis_records.items():
+            for name, rec in dynamic_records.items():
                 # Update the Position field with a sine offset
-                new_position = base_positions[name] + amplitude * math.sin(elapsed)
+                new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
-                if rec["SpecMotorName"] == "Eta":
-                    # Only Update Eta Position
-                    update_ca_record_field(caIoc, name, "Position", new_position)
+                if isinstance(rec, dict):
+                    if rec["SpecMotorName"] == "Eta":
+                        # Only Update Eta Position
+                        update_ca_record_field(caIoc, name, 'Position', new_position)
+                    if rec["SpecMotorName"] == "Delta":
+                        # Only Update Eta Position
+                        update_ca_record_field(caIoc, name, 'Position', new_position)
+                # elif name == '6idb:spec:Energy':
+                #     update_ca_record_field(caIoc, name, 'Value', new_position)
+                # elif name == '6idb:spec:UB_matrix':
+                #     update_ca_record_field(caIoc, name, 'Value', new_position)
             
             time.sleep(update_interval)
     except KeyboardInterrupt:
