@@ -7,6 +7,117 @@ This guide provides step-by-step instructions to set up, configure, and run the 
 ## Setup
 
 ### Install Dependencies
+
+You can install DashPVA dependencies using either **Conda** (recommended for full compatibility) or **UV** (faster installation). Choose the method that best fits your needs.
+
+#### Option 1: Using UV (Fast Installation)
+
+[UV](https://github.com/astral-sh/uv) is an extremely fast Python package installer and resolver written in Rust. It provides much faster dependency resolution and installation compared to traditional pip.
+
+**Prerequisites:**
+- Python 3.11 installed on your system
+
+**Installation Steps:**
+
+1. **Install UV** (if not already installed):
+
+   **Linux/macOS:**
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+   
+   After installation, add UV to your PATH:
+   ```bash
+   # For bash/zsh (Linux/macOS)
+   source $HOME/.local/bin/env
+   
+   # Or add permanently to ~/.bashrc or ~/.zshrc:
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+   
+   After installation, restart your terminal or add to PATH:
+   ```powershell
+   $env:PATH += ";$env:USERPROFILE\.cargo\bin"
+   ```
+   
+   **Alternative (all platforms):**
+   ```bash
+   pip install uv
+   ```
+
+2. **Install dependencies** (UV will automatically create a virtual environment):
+   ```bash
+   uv sync
+   ```
+   
+   This single command will:
+   - Create a virtual environment (`.venv/`) automatically
+   - Install all dependencies from `pyproject.toml`
+   - Use locked versions from `uv.lock` for reproducible installs
+
+3. **Activate the environment and run the application:**
+   
+   **Option A: Activate the virtual environment (traditional way):**
+   ```bash
+   # Linux/macOS
+   source .venv/bin/activate
+   
+   # Windows (PowerShell)
+   .venv\Scripts\Activate.ps1
+   
+   # Windows (Command Prompt)
+   .venv\Scripts\activate.bat
+   ```
+   
+   Then run your commands normally:
+   ```bash
+   python dashpva.py setup
+   ```
+   
+   **Option B: Use UV to run commands directly (no activation needed):**
+   ```bash
+   uv run python dashpva.py setup
+   uv run python dashpva.py detector
+   ```
+
+**Note:** All dependencies including `pvapy` (required for PVAccess) are automatically installed via `uv sync`. No conda installation is needed!
+
+**Quick Start Summary:**
+```bash
+# 1. Install UV (one-time setup)
+curl -LsSf https://astral.sh/uv/install.sh | sh  # Linux/macOS
+# OR: pip install uv  # All platforms
+
+# 2. Install all dependencies (creates .venv automatically)
+uv sync
+
+# 3. Activate and run
+source .venv/bin/activate  # Linux/macOS
+# OR: uv run python dashpva.py setup  # No activation needed
+```
+
+**Verify Installation:**
+```bash
+uv --version
+uv pip list
+```
+
+**Updating Dependencies:**
+```bash
+# Update dependencies and regenerate lock file
+uv lock --upgrade
+
+# Sync with updated dependencies
+uv sync
+```
+
+#### Option 2: Using Conda (Full Compatibility)
+
 Using the [environment.yml](environment.yml) file, you can install the environment using the conda command:
 ```bash
 conda env create -f environment.yml
@@ -28,7 +139,7 @@ Instead of using the `environment.yml` file, you can follow these manual instruc
    pip install pyepics
    ```
 
-### Verify Installation
+**Verify Conda Installation:**
 Ensure all dependencies are installed correctly:
 ```bash
 conda list
