@@ -45,6 +45,9 @@ dependencies = [
     "pytz>=2025.1",
     "superqt>=0.6.7",
     "scikit-image>=0.22.0",
+    "pyfai>=2025.3.0",
+    "fabio>=2025.10.0",
+    "opencv-python>=4.11.0.86",
 ]
 
 [build-system]
