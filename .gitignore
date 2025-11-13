@@ -8,3 +8,7 @@ unused_files
 test/
 fix.md
 error*.txt
+.venv/
+venv/
+__pycache__/
+*.pyc
