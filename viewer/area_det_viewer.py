@@ -159,7 +159,7 @@ class DiffractionImageWindow(QMainWindow):
         
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        self.viewer_layout.addWidget(self.image_view,1,1)
+        self.viewer_layout.addWidget(self.image_view,0,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
         # Set Viridis as the default colormap
