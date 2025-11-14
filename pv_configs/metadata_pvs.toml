@@ -97,49 +97,49 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
 # Section for HKL PVs
 [HKL]
     [HKL.SAMPLE_CIRCLE_AXIS_1]
-    AXIS_NUMBER = '6idb1:m28_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m28_RBV:DirectionAxis'
-    # NAME = '6idb1:m28_RBV:Name'
-    POSITION = '6idb1:m28_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m28_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m28_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m28_RBV:DirectionAxis'
+    # NAME = '8idi:m28_RBV:Name'
+    POSITION = '8idi:m28_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m28_RBV:SpecMotorName'
     
     [HKL.SAMPLE_CIRCLE_AXIS_2]
-    AXIS_NUMBER = '6idb1:m17_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m17_RBV:DirectionAxis'
-    # NAME = '6idb1:m17_RBV:Name'
-    POSITION = '6idb1:m17_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m17_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m17_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m17_RBV:DirectionAxis'
+    # NAME = '8idi:m17_RBV:Name'
+    POSITION = '8idi:m17_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m17_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_3]
-    AXIS_NUMBER = '6idb1:m19_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m19_RBV:DirectionAxis'
-    # NAME = '6idb1:m19_RBV:Name'
-    POSITION = '6idb1:m19_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m19_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m19_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m19_RBV:DirectionAxis'
+    # NAME = '8idi:m19_RBV:Name'
+    POSITION = '8idi:m19_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m19_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_4]
-    AXIS_NUMBER = '6idb1:m20_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m20_RBV:DirectionAxis'
-    # NAME = '6idb1:m20_RBV:Name'
-    POSITION = '6idb1:m20_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m20_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m20_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m20_RBV:DirectionAxis'
+    # NAME = '8idi:m20_RBV:Name'
+    POSITION = '8idi:m20_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m20_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_1]
-    AXIS_NUMBER = '6idb1:m29_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m29_RBV:DirectionAxis'
-    # NAME = '6idb1:m29_RBV:Name'
-    POSITION = '6idb1:m29_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m29_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m29_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m29_RBV:DirectionAxis'
+    # NAME = '8idi:m29_RBV:Name'
+    POSITION = '8idi:m29_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m29_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_2]
-    AXIS_NUMBER = '6idb1:m18_RBV:AxisNumber'
-    DIRECTION_AXIS = '6idb1:m18_RBV:DirectionAxis'
-    # NAME = '6idb1:m18_RBV:Name'
-    POSITION = '6idb1:m18_RBV:Position'
-    # SPEC_MOTOR_NAME = '6idb1:m18_RBV:SpecMotorName'
+    AXIS_NUMBER = '8idi:m18_RBV:AxisNumber'
+    DIRECTION_AXIS = '8idi:m18_RBV:DirectionAxis'
+    # NAME = '8idi:m18_RBV:Name'
+    POSITION = '8idi:m18_RBV:Position'
+    # SPEC_MOTOR_NAME = '8idi:m18_RBV:SpecMotorName'
 
     [HKL.SPEC]
-    ENERGY_VALUE = '6idb:spec:Energy:Value'
+    ENERGY_VALUE = '8idi:spec:Energy:Value'
     UB_MATRIX_VALUE = '6idb:spec:UB_matrix:Value'
 
     [HKL.PRIMARY_BEAM_DIRECTION]
