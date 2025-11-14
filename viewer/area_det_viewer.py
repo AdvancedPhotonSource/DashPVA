@@ -144,18 +144,30 @@ class DiffractionImageWindow(QMainWindow):
         self.qx = None
         self.qy = None
         self.qz = None
+        # Initialize HKL direction attributes to avoid AttributeError if setup fails
+        self.sample_circle_directions = []
+        self.sample_circle_positions = []
+        self.det_circle_directions = []
+        self.det_circle_positions = []
+        self.primary_beam_directions = []
+        self.inplane_reference_directions = []
+        self.sample_surface_normal_directions = []
+        self.ub_matrix = None
+        self.energy = None
         self.processes = {}
         # Bad pixel masking
         self.bad_pixel_mask = None
-        # Set bad pixel path based on detector type
+        # Set bad pixel path based on detector type (only for Eiger detectors)
         if self._input_channel == "8idLambda2m:Pva1:Image":
             self.bad_pixel_path = "/home/beams4/MQICHU/Tools_cloud/areaDetectorBlemish/8idLambda2m/latest_badpixel_gaps.json"
+            self.apply_bad_pixel_mask = True
         elif self._input_channel == "8idEiger4m:Pva1:Image":
             self.bad_pixel_path = "/home/beams4/MQICHU/Tools_cloud/areaDetectorBlemish/8idEiger4m/latest_badpixel_gaps.json"
+            self.apply_bad_pixel_mask = True
         else:
-            # No blemish is applied
+            # No blemish is applied for other detectors
             self.bad_pixel_path = None
-        self.apply_bad_pixel_mask = True
+            self.apply_bad_pixel_mask = False
         
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
@@ -501,7 +513,12 @@ class DiffractionImageWindow(QMainWindow):
         This method reads the bad pixel JSON file, extracts pixel coordinates,
         and creates a boolean mask for efficient vectorized masking of images.
         The mask is cached to avoid reloading on each image update.
+        Only loads for Eiger detectors (8idEiger4m or 8idLambda2m).
         """
+        # Only load bad pixel mask if enabled (i.e., for Eiger detectors)
+        if not self.apply_bad_pixel_mask or self.bad_pixel_path is None:
+            return
+            
         if not osp.exists(self.bad_pixel_path):
             print(f"Bad pixel file not found: {self.bad_pixel_path}")
             self.apply_bad_pixel_mask = False
@@ -565,6 +582,9 @@ class DiffractionImageWindow(QMainWindow):
         """
         if not self.apply_bad_pixel_mask or self.bad_pixel_mask is None:
             return image
+        
+        # Make a writable copy to avoid "read-only array" error
+        image = image.copy()
         
         # Apply mask: set bad pixels to 0 (vectorized operation)
         image[~self.bad_pixel_mask] = 0
@@ -669,10 +689,14 @@ class DiffractionImageWindow(QMainWindow):
 
     def handle_hkl_data_update(self):
         if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
-            self.hkl_setup()
-            if self.q_conv is None:
-                raise ValueError("QConversion object is not initialized.")
-            self.update_rsm()
+            try:
+                self.hkl_setup()
+                if self.q_conv is not None:
+                    self.update_rsm()
+                # If q_conv is None, HKL setup failed - silently skip RSM update
+            except Exception as e:
+                # Log error but don't raise - allows viewer to continue without HKL
+                print(f'[Diffraction Image Viewer] HKL update failed (will retry on next update): {e}')
   
                 
     def hkl_setup(self) -> None:
@@ -788,6 +812,15 @@ class DiffractionImageWindow(QMainWindow):
         """
         if self.reader is not None and self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
+                # Check if all required attributes are initialized
+                if (self.q_conv is None or 
+                    not hasattr(self, 'inplane_reference_directions') or 
+                    not self.inplane_reference_directions or
+                    not hasattr(self, 'sample_surface_normal_directions') or
+                    not self.sample_surface_normal_directions or
+                    self.energy is None):
+                    return None
+                    
                 hxrd = xu.HXRD(self.inplane_reference_directions,
                             self.sample_surface_normal_directions, 
                             en=self.energy, 
