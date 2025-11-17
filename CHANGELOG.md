@@ -4,12 +4,40 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 
 ---
 
+## Latest Changes (November 2025)
+
+### New Features
+- Selective compression support for large HDF5 datasets using Blosc (LZ4), applied only where it provides clear benefits.
+- Compatible file structure for compressed data, ensuring seamless loading via `utils.hdf5_loader.HDF5Loader`.
+
+### Improvements
+- Faster load times and reduced disk footprint for large arrays written to `/entry/data/data`.
+- Graceful handling when compression plugins are unavailable (falls back to uncompressed writes).
+- Clearer loading messages and error reporting during data import.
+
+### Usage
+- Files produced by `compress.py` can be loaded with:
+  - `HDF5Loader.load_h5_to_3d(path)` for points + intensities
+  - `HDF5Loader.load_h5_volume_3d(path)` for volume workflows
+
+
+## Latest Changes (October 2025)
+
+### New Features
+- Launcher: Force-shutdown dialog now lists all running modules with their process IDs (PIDs) for full visibility before termination.
+- HKL Slice 3D Tool: Added a 2D viewer under Tools to quickly inspect any 3D slice in 2D.
+
+### Bug Fixes and Improvements
+- HKL Range Handling: Adjusted HKL index/range bounds and validation in HKL 3D Viewer and HKL 3D Slicer to ensure accurate limits and improved user feedback.
+- Launcher: Enhanced process tracking with clearer status text and contextual enablement of “Shutdown All”.
+
 ## Latest Changes (September 2025)
 
-### 🚀 New Features
+### New Features
 
 #### Command Line Interface (CLI)
 - **NEW**: Introduced unified CLI interface via `dashpva.py`
+  - `python dashpva.py run` - Launch dashpva
   - `python dashpva.py hkl3d` - Launch HKL 3D Viewer
   - `python dashpva.py slice3d` - Launch HKL 3D Slicer (standalone mode)
   - `python dashpva.py detector` - Launch Area Detector Viewer
@@ -33,7 +61,10 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 - **ENHANCED**: Area detector viewer now includes SizeManager
 - **IMPROVED**: Replaced old font scaling with SizeManager system
 
-### 🔧 Bug Fixes and Improvements
+#### 2D Slice viewing in 3d viewer
+View the 3D sliced data in 2d
+
+### Bug Fixes and Improvements
 
 #### Configuration and Setup
 - **FIXED**: PV simulator server size can now be changed through GUI
@@ -55,10 +86,10 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 ## How to Use This File
 
 This changelog follows these conventions:
-- **🚀 New Features**: Major new functionality and capabilities
-- **🔧 Bug Fixes and Improvements**: Fixes, optimizations, and enhancements
-- **📚 Documentation**: Updates to documentation and guides
-- **⚠️ Breaking Changes**: Changes that may affect existing workflows
+- New Features: Major new functionality and capabilities
+- Bug Fixes and Improvements: Fixes, optimizations, and enhancements
+- Documentation: Updates to documentation and guides
+- Breaking Changes: Changes that may affect existing workflows
 
 ---
 

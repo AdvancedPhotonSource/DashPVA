@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+import hdf5plugin
 # from utils import PVAReader
 
 class HDF5Writer(QObject):
@@ -81,7 +82,8 @@ class HDF5Writer(QObject):
                 print(f'creating file at: {OUTPUT_FILE_LOCATION}')
                 images_grp = h5f.create_group("entry")
                 data_grp = images_grp.create_group('data')
-                data_grp.create_dataset("data", data=np.array([np.reshape(img, shape) for img in images]))
+                data_grp.create_dataset("data", data=np.array([np.reshape(img, shape) for img in images]), 
+                                       **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
                 print('images written')
                 metadata_grp = data_grp.create_group("metadata")
                 motor_pos_grp = metadata_grp.create_group('motor_positions')
@@ -113,9 +115,12 @@ class HDF5Writer(QObject):
                             raise ValueError("[Saving Caches] qx, qy, and qz caches must have the same number of elements.")
                         print('saving rsm attributes')
                         hkl_grp = data_grp.create_group(name="hkl")
-                        hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx, shape) for qx in rsm[0]]))
-                        hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy, shape) for qy in rsm[1]]))
-                        hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz, shape) for qz in rsm[2]]))
+                        hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx, shape) for qx in rsm[0]]), 
+                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                        hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy, shape) for qy in rsm[1]]), 
+                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                        hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz, shape) for qz in rsm[2]]), 
+                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
             self.hdf5_writer_finished.emit(f"Caches successfully saved to {OUTPUT_FILE_LOCATION}")
         except Exception as e:
             self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
