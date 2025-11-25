@@ -43,6 +43,12 @@ try:
 except Exception:
     plt = None
 
+try:
+    import numpy as np
+except Exception:
+    np = None
+
+
 
 # ============================================================================
 # CLASSES
@@ -60,7 +66,7 @@ class Data:
         intensities (np.ndarray): Intensity values with shape (N,)
     """
     
-    def __init__(self, points: np.ndarray, intensities: np.ndarray):
+    def __init__(self, points: np.ndarray, intensities: np.ndarray, metadata: dict=None, num_images: int=0, shape: tuple=None):
         """
         Initialize Data object.
         
@@ -70,6 +76,9 @@ class Data:
         """
         self.points = points
         self.intensities = intensities
+        self.metadata = metadata
+        self.num_images = num_images
+        self.shape = shape
 
 
 class LineCutData:
