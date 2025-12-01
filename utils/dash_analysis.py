@@ -1132,47 +1132,42 @@ class DashAnalysis:
 
         return lc
 
-    def show_slice(self, vol, hkl='HK', origin=None, shape=None, cmap='viridis',
-                   spacing=(1.0, 1.0, 1.0), grid_origin=(0.0, 0.0, 0.0),
-                   clim=None, min_intensity=None, max_intensity=None, axes=None, return_image=False):
+    def show_slice(self, slice_mesh, shape=None, cmap='viridis',
+                   clim=None, min_intensity=None, max_intensity=None, axes=None, return_image=False,
+                   axis_display='hkl', show_grid=False):
         """
-        Slice a 3D HKL volume or point cloud and display as 2D raster with interactive features.
+        Display a pre-computed slice mesh as a 2D raster with interactive features.
 
-        This method provides comprehensive slice visualization with automatic orientation detection,
-        intensity filtering, interactive hover tooltips, and support for both volume and point cloud data.
-        Includes caching for efficient line cut operations.
+        This method visualizes slice data that has already been created by slice_data(),
+        providing rasterization, intensity range calculation, and interactive hover tooltips.
 
         Usage:
-            # Display HK plane slice
-            da.show_slice(volume_data, hkl='HK')
+            # First create the slice
+            slice_mesh = da.slice_data(data, hkl='HK', shape=(100, 100))
             
-            # Custom slice with intensity filtering
-            da.show_slice(data, origin=(1.0, 0.5, 0.0), min_intensity=100)
+            # Then display it
+            da.show_slice(slice_mesh)
             
-            # Return image data for further analysis
-            img, extent = da.show_slice(data, return_image=True)
+            # Or display with custom settings
+            da.show_slice(slice_mesh, cmap='hot', clim=(0, 1000))
+            
+            # Display with simple U/V labels
+            da.show_slice(slice_mesh, axis_display='uv')
 
         Parameters:
-            vol: Input data. Supported formats:
-                - pv.ImageData with cell_data['intensity']
-                - pv.PolyData slice mesh (rasterized directly)
-                - NumPy ndarray (D,H,W) volume
-                - (ndarray_volume, shape) tuple
-                - Point cloud: (points, intensities), Data object, or dict
-            hkl (str): Plane orientation preset:
-                - 'HK'/'XY': normal (0,0,1) - HK plane
-                - 'KL'/'YZ': normal (1,0,0) - KL plane  
-                - 'HL'/'XZ': normal (0,1,0) - HL plane
-            origin (tuple): (H,K,L) slice origin coordinates. Defaults to data center
-            shape (tuple): (H, W) raster resolution. Defaults to (512, 512)
+            slice_mesh: pv.PolyData slice mesh from slice_data() with:
+                - 'intensity' point data array
+                - field_data containing slice metadata (normal, origin, axes, etc.)
+            shape (tuple): (H, W) raster resolution. If None, uses (512, 512)
             cmap (str): Matplotlib colormap name for display
-            spacing (tuple): Voxel spacing (ΔH, ΔK, ΔL) for NumPy volume construction
-            grid_origin (tuple): Grid origin (H0, K0, L0) for NumPy volume construction
             clim (tuple): (vmin, vmax) intensity display limits. Overridden by min/max_intensity
             min_intensity (float): Minimum intensity threshold (filters and sets vmin)
             max_intensity (float): Maximum intensity threshold (filters and sets vmax)
             axes: Optional matplotlib Axes object for rendering. Creates new figure if None
             return_image (bool): If True, returns (img, extent) tuple instead of displaying
+            axis_display (str): Axis label format. Options:
+                - 'hkl' (default): Shows formatted HKL expressions (e.g., "H + K", "L/2")
+                - 'uv': Shows simple "U" and "V" labels
 
         Returns:
             tuple or None: If return_image=True, returns (img, extent) where:
@@ -1181,222 +1176,253 @@ class DashAnalysis:
             Otherwise returns None and displays the slice
 
         Raises:
-            ImportError: If PyVista or matplotlib are not available
-            ValueError: If input data format is not supported
+            ImportError: If matplotlib is not available
+            TypeError: If slice_mesh is not a pv.PolyData
+            ValueError: If slice_mesh lacks required data
 
         Examples:
-            # Basic slice display with hover tooltips
-            da.show_slice(volume, hkl='HK')
+            # Basic display
+            slice_mesh = da.slice_data(volume, hkl='HK')
+            da.show_slice(slice_mesh)
             
-            # High-contrast slice with intensity filtering
-            da.show_slice(data, min_intensity=50, max_intensity=500, cmap='hot')
-            
-            # Custom slice orientation with specific origin
-            da.show_slice(data, origin=(1.5, 0.0, 0.5), shape=(1024, 1024))
+            # High-resolution display with filtering
+            da.show_slice(slice_mesh, shape=(1024, 1024), min_intensity=50)
             
             # Get image data for line cut analysis
-            img, extent = da.show_slice(data, return_image=True)
+            img, extent = da.show_slice(slice_mesh, return_image=True)
             line_data = da.line_cut('zero', param=(0.5, 'x'), vol=(img, extent))
+            
+            # Display with simple U/V labels
+            da.show_slice(slice_mesh, axis_display='uv')
         """
-        # Require PyVista for arbitrary oriented slicing
-        if pv is None:
-            raise ImportError("PyVista is required for show_slice()")
+        if plt is None:
+            raise ImportError("matplotlib is required for show_slice()")
+        
+        if not isinstance(slice_mesh, pv.PolyData):
+            raise TypeError("slice_mesh must be a pv.PolyData object from slice_data()")
 
         import numpy as _np
-        import matplotlib.pyplot as _plt
 
-        # Helper: normalize volume to a PyVista ImageData with cell_data['intensity']
-        def _ensure_grid(_vol, _spacing=(1.0, 1.0, 1.0), _origin=(0.0, 0.0, 0.0)):
-            if isinstance(_vol, pv.ImageData):
-                _grid = _vol
-                if ('intensity' not in _grid.cell_data) and ('intensity' in _grid.point_data):
-                    _grid = _grid.point_data_to_cell_data(pass_point_data=False)
-                if 'intensity' not in _grid.cell_data:
-                    raise ValueError("ImageData must have cell_data['intensity'] for slicing.")
-                return _grid
-
-            if isinstance(_vol, (tuple, list)) and len(_vol) >= 1 and isinstance(_vol[0], _np.ndarray):
-                _vol_np = _vol[0]
-            elif isinstance(_vol, _np.ndarray):
-                _vol_np = _vol
-            else:
-                raise TypeError("vol must be pv.ImageData, a NumPy ndarray (D,H,W), or (ndarray_volume, shape) tuple.")
-
-            if _vol_np.ndim != 3:
-                raise ValueError("NumPy volume must be 3D shaped (D,H,W).")
-
-            _dims_cells = _np.array(_vol_np.shape, dtype=int)
-            _grid = pv.ImageData()
-            _grid.dimensions = (_dims_cells + 1).tolist()
-            _grid.spacing = tuple(float(x) for x in _spacing)
-            _grid.origin = tuple(float(x) for x in _origin)
-            # Flatten in Fortran order to match VTK/PyVista cell layout
-            _grid.cell_data['intensity'] = _np.asarray(_vol_np, dtype=_np.float32).flatten(order='F')
-            return _grid
-
-        # Helper: map HKL preset to normal
-        def _resolve_normal(_hkl):
-            if isinstance(_hkl, str):
-                s = _hkl.strip().lower()
-                if s in ('hk', 'xy'):
-                    return _np.array([0.0, 0.0, 1.0], dtype=float)
-                if s in ('kl', 'yz'):
-                    return _np.array([1.0, 0.0, 0.0], dtype=float)
-                if s in ('hl', 'xz'):
-                    return _np.array([0.0, 1.0, 0.0], dtype=float)
-            return _np.array([0.0, 0.0, 1.0], dtype=float)
-
-        # Helper: rasterize slice to image and report orientation & orthogonal axis value
-        def _rasterize_slice(_slice_mesh, _normal, _origin, H=512, W=512, _min_intensity=None, _max_intensity=None):
-            pts = _np.asarray(getattr(_slice_mesh, 'points', _np.empty((0, 3))), dtype=float)
-            try:
-                vals = _np.asarray(_slice_mesh['intensity'], dtype=float).reshape(-1)
-            except Exception:
-                vals = _np.zeros((len(pts),), dtype=float)
-
-            # Optional pre-rasterization filter by intensity range
-            if (_min_intensity is not None) or (_max_intensity is not None):
-                m = _np.ones(vals.shape, dtype=bool)
-                if _min_intensity is not None:
-                    m &= (vals >= float(_min_intensity))
-                if _max_intensity is not None:
-                    m &= (vals <= float(_max_intensity))
-                pts = pts[m]
-                vals = vals[m]
-
-            if pts.size == 0 or vals.size == 0 or pts.shape[0] != vals.shape[0]:
-                # Return empty image with default ranges and Custom orientation
-                return _np.zeros((H, W), dtype=_np.float32), -0.5, 0.5, -0.5, 0.5, "Custom", None, None
-
-            n = _np.array(_normal, dtype=float)
-            o = _np.array(_origin, dtype=float)
-
-            # Normalize normal
-            n_norm = float(_np.linalg.norm(n))
-            if not _np.isfinite(n_norm) or n_norm <= 0.0:
-                n = _np.array([0.0, 0.0, 1.0], dtype=float)
-            else:
-                n = n / n_norm
-
-            # Infer orientation from normal
-            X = _np.array([1.0, 0.0, 0.0], dtype=float)  # H
-            Y = _np.array([0.0, 1.0, 0.0], dtype=float)  # K
-            Z = _np.array([0.0, 0.0, 1.0], dtype=float)  # L
-            tol = 0.95
-            dX = abs(float(_np.dot(n, X)))
-            dY = abs(float(_np.dot(n, Y)))
-            dZ = abs(float(_np.dot(n, Z)))
-
-            if dZ >= tol:
-                # HK plane: U=H, V=K; orth_label L
-                U = pts[:, 0].astype(float)
-                V = pts[:, 1].astype(float)
-                orientation = "HK"
-                orth_label = "L"
-                orth_value = float(o[2])
-            elif dX >= tol:
-                # KL plane: U=K, V=L; orth_label H
-                U = pts[:, 1].astype(float)
-                V = pts[:, 2].astype(float)
-                orientation = "KL"
-                orth_label = "H"
-                orth_value = float(o[0])
-            elif dY >= tol:
-                # HL plane: U=H, V=L; orth_label K
-                U = pts[:, 0].astype(float)
-                V = pts[:, 2].astype(float)
-                orientation = "HL"
-                orth_label = "K"
-                orth_value = float(o[1])
-            else:
-                # Custom orientation: build in-plane basis u, v
-                world_axes = [
-                    _np.array([1.0, 0.0, 0.0], dtype=float),
-                    _np.array([0.0, 1.0, 0.0], dtype=float),
-                    _np.array([0.0, 0.0, 1.0], dtype=float),
-                ]
-                ref = world_axes[0]
-                for ax in world_axes:
-                    if abs(float(_np.dot(ax, n))) < 0.9:
-                        ref = ax
-                        break
-                u = _np.cross(n, ref)
-                u_norm = float(_np.linalg.norm(u))
-                if not _np.isfinite(u_norm) or u_norm <= 0.0:
-                    ref = _np.array([0.0, 1.0, 0.0], dtype=float)
-                    u = _np.cross(n, ref)
-                    u_norm = float(_np.linalg.norm(u))
-                    if not _np.isfinite(u_norm) or u_norm <= 0.0:
-                        u = _np.array([1.0, 0.0, 0.0], dtype=float)
-                        u_norm = 1.0
-                u = u / u_norm
-                v = _np.cross(n, u)
-                v_norm = float(_np.linalg.norm(v))
-                if not _np.isfinite(v_norm) or v_norm <= 0.0:
-                    v = _np.array([0.0, 1.0, 0.0], dtype=float)
-
-                # Project points to plane (origin-relative)
-                rel = pts - o[None, :]
-                U = rel.dot(u)  # cols
-                V = rel.dot(v)  # rows
-
-                orientation = "Custom"
-                orth_label = None
-                try:
-                    orth_value = float(_np.dot(n, o))
-                except Exception:
-                    orth_value = None
-
-            # Extents and binning
-            U_min, U_max = float(_np.min(U)), float(_np.max(U))
-            V_min, V_max = float(_np.min(V)), float(_np.max(V))
-            if not _np.isfinite(U_min) or not _np.isfinite(U_max) or (U_max == U_min):
-                U_min, U_max = -0.5, 0.5
-            if not _np.isfinite(V_min) or not _np.isfinite(V_max) or (V_max == V_min):
-                V_min, V_max = -0.5, 0.5
-
-            sum_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]], weights=vals)
-            cnt_img, _, _ = _np.histogram2d(V, U, bins=[H, W], range=[[V_min, V_max], [U_min, U_max]])
-            with _np.errstate(invalid='ignore', divide='ignore'):
-                img = _np.zeros_like(sum_img, dtype=_np.float32)
-                nz = cnt_img > 0
-                img[nz] = (sum_img[nz] / cnt_img[nz]).astype(_np.float32)
-                img[~nz] = 0.0
-
-            return img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value
-
-        # Resolve normal and output image size
-        normal = _resolve_normal(hkl)
-        H, W = (shape if (isinstance(shape, (tuple, list)) and len(shape) == 2) else (512, 512))
+        # Get metadata from slice mesh
+        normal_fd = getattr(slice_mesh, 'field_data', {}).get('slice_normal', None)
+        origin_fd = getattr(slice_mesh, 'field_data', {}).get('slice_origin', None)
+        u_axis_fd = getattr(slice_mesh, 'field_data', {}).get('slice_u_axis', None)
+        v_axis_fd = getattr(slice_mesh, 'field_data', {}).get('slice_v_axis', None)
+        u_label_fd = getattr(slice_mesh, 'field_data', {}).get('slice_u_label', None)
+        v_label_fd = getattr(slice_mesh, 'field_data', {}).get('slice_v_label', None)
+        
+        # Resolve shape: prefer stored slice_shape from slice_data, else given shape, else 512x512
+        stored_shape = getattr(slice_mesh, 'field_data', {}).get('slice_shape', None)
+        if isinstance(shape, (tuple, list)) and len(shape) == 2:
+            H, W = int(shape[0]), int(shape[1])
+        elif stored_shape is not None and len(stored_shape) >= 2:
+            H, W = int(stored_shape[0]), int(stored_shape[1])
+        else:
+            H, W = 512, 512
         H = max(int(H), 1)
         W = max(int(W), 1)
-
-        # Normalize normal vector
-        n = _np.asarray(normal, dtype=float)
-        n_norm = float(_np.linalg.norm(n))
-        if not _np.isfinite(n_norm) or n_norm <= 0.0:
-            n = _np.array([0.0, 0.0, 1.0], dtype=float)
+        
+        # Rasterize the slice mesh
+        pts = _np.asarray(slice_mesh.points, dtype=float)
+        try:
+            vals = _np.asarray(slice_mesh['intensity'], dtype=float).reshape(-1)
+        except Exception:
+            raise ValueError("slice_mesh must have 'intensity' point data array")
+        
+        if pts.size == 0 or vals.size == 0:
+            raise ValueError("slice_mesh contains no valid points to rasterize")
+        
+        # Get normal and origin from metadata
+        normal = _np.asarray(normal_fd if normal_fd is not None else [0, 0, 1], dtype=float)
+        origin = _np.asarray(origin_fd if origin_fd is not None else slice_mesh.center, dtype=float)
+        
+        # Normalize normal
+        n_norm = float(_np.linalg.norm(normal))
+        if n_norm > 0:
+            normal = normal / n_norm
         else:
-            n = n / n_norm
-
-        # If a PolyData slice is provided, rasterize directly
-        if isinstance(vol, pv.PolyData):
-            normal_fd = getattr(vol, 'field_data', {}).get('slice_normal', None)
-            origin_fd = getattr(vol, 'field_data', {}).get('slice_origin', None)
-            u_axis_fd = getattr(vol, 'field_data', {}).get('slice_u_axis', None)
-            v_axis_fd = getattr(vol, 'field_data', {}).get('slice_v_axis', None)
-            u_label_fd = getattr(vol, 'field_data', {}).get('slice_u_label', None)
-            v_label_fd = getattr(vol, 'field_data', {}).get('slice_v_label', None)
+            normal = _np.array([0.0, 0.0, 1.0], dtype=float)
+        
+        # Infer orientation from normal
+        X = _np.array([1.0, 0.0, 0.0], dtype=float)  # H
+        Y = _np.array([0.0, 1.0, 0.0], dtype=float)  # K
+        Z = _np.array([0.0, 0.0, 1.0], dtype=float)  # L
+        tolerance = 0.95
+        dX = abs(float(_np.dot(normal, X)))
+        dY = abs(float(_np.dot(normal, Y)))
+        dZ = abs(float(_np.dot(normal, Z)))
+        
+        if dZ >= tolerance:
+            # HK plane
+            U = pts[:, 0]
+            V = pts[:, 1]
+            orientation = "HK"
+            orth_label = "L"
+            orth_value = float(origin[2])
+        elif dX >= tolerance:
+            # KL plane
+            U = pts[:, 1]
+            V = pts[:, 2]
+            orientation = "KL"
+            orth_label = "H"
+            orth_value = float(origin[0])
+        elif dY >= tolerance:
+            # HL plane
+            U = pts[:, 0]
+            V = pts[:, 2]
+            orientation = "HL"
+            orth_label = "K"
+            orth_value = float(origin[1])
+        else:
+            # Custom orientation - use stored axes if available
+            if u_axis_fd is not None and v_axis_fd is not None:
+                u = _np.asarray(u_axis_fd, dtype=float)
+                v = _np.asarray(v_axis_fd, dtype=float)
+            else:
+                # Build orthonormal basis
+                world_axes = [X, Y, Z]
+                ref = world_axes[0]
+                for ax in world_axes:
+                    if abs(float(_np.dot(ax, normal))) < 0.9:
+                        ref = ax
+                        break
+                u = _np.cross(normal, ref)
+                u_norm = float(_np.linalg.norm(u))
+                if u_norm > 0:
+                    u = u / u_norm
+                else:
+                    u = _np.array([1.0, 0.0, 0.0], dtype=float)
+                v = _np.cross(normal, u)
+                v_norm = float(_np.linalg.norm(v))
+                if v_norm > 0:
+                    v = v / v_norm
+                else:
+                    v = _np.array([0.0, 1.0, 0.0], dtype=float)
             
-            normal_use = normal_fd if normal_fd is not None else n
-            origin_use = origin_fd if origin_fd is not None else getattr(vol, 'center', (0.0, 0.0, 0.0))
-            result = _rasterize_slice(
-                vol, normal_use, _np.array(origin_use, dtype=float), H=H, W=W,
-                _min_intensity=min_intensity, _max_intensity=max_intensity
-            )
-            if result is None:
-                return None
-            img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value = result
+            # Project points
+            rel = pts - origin[None, :]
+            U = rel.dot(u)
+            V = rel.dot(v)
+            orientation = "Custom"
+            orth_label = None
+            orth_value = None
+        
+        # Apply intensity filtering if requested
+        if (min_intensity is not None) or (max_intensity is not None):
+            mask = _np.ones(vals.shape, dtype=bool)
+            if min_intensity is not None:
+                mask &= (vals >= float(min_intensity))
+            if max_intensity is not None:
+                mask &= (vals <= float(max_intensity))
+            if _np.any(mask):
+                U = U[mask]
+                V = V[mask]
+                vals = vals[mask]
+            else:
+                # No points pass filter
+                U = _np.array([])
+                V = _np.array([])
+                vals = _np.array([])
+        
+        # Calculate extents
+        if len(U) > 0:
+            U_min, U_max = float(_np.min(U)), float(_np.max(U))
+            V_min, V_max = float(_np.min(V)), float(_np.max(V))
+        else:
+            U_min, U_max = -0.5, 0.5
+            V_min, V_max = -0.5, 0.5
+        
+        if U_max == U_min:
+            U_min -= 0.5
+            U_max += 0.5
+        if V_max == V_min:
+            V_min -= 0.5
+            V_max += 0.5
+
+        # If caller changed shape relative to stored slice_shape, expand/shrink HKL extents
+        # to keep per-pixel physical size consistent. This makes axis ranges change with shape.
+        try:
+            stored_shape_fd = getattr(slice_mesh, 'field_data', {}).get('slice_shape', None)
+            if (stored_shape_fd is not None) and isinstance(shape, (tuple, list)) and (len(shape) == 2):
+                orig_H = int(stored_shape_fd[0])
+                orig_W = int(stored_shape_fd[1])
+                new_H = int(H)
+                new_W = int(W)
+                if (orig_H > 0) and (orig_W > 0) and ((new_H != orig_H) or (new_W != orig_W)):
+                    u_center = 0.5 * (U_min + U_max)
+                    v_center = 0.5 * (V_min + V_max)
+                    # Compute original per-pixel sizes; fallback to current ranges if degenerate
+                    u_pp = (U_max - U_min) / float(orig_W) if (U_max != U_min and orig_W > 0) else (U_max - U_min)
+                    v_pp = (V_max - V_min) / float(orig_H) if (V_max != V_min and orig_H > 0) else (V_max - V_min)
+                    new_u_range = float(u_pp) * float(new_W)
+                    new_v_range = float(v_pp) * float(new_H)
+                    U_min = float(u_center) - 0.5 * float(new_u_range)
+                    U_max = float(u_center) + 0.5 * float(new_u_range)
+                    V_min = float(v_center) - 0.5 * float(new_v_range)
+                    V_max = float(v_center) + 0.5 * float(new_v_range)
+        except Exception:
+            # Be permissive; if anything fails here, continue with original extents
+            pass
+        
+        # Rasterize to image
+        if len(vals) > 0:
+            # Direct image placement for plane-generated slices (no histogram2d re-binning)
+            is_plane_grid = False
+            try:
+                stored_shape_fd = getattr(slice_mesh, 'field_data', {}).get('slice_shape', None)
+                if (stored_shape_fd is not None) and (int(stored_shape_fd[0]) * int(stored_shape_fd[1]) == int(pts.shape[0])):
+                    is_plane_grid = True
+            except Exception:
+                is_plane_grid = False
+
+            if is_plane_grid:
+                img = _np.zeros((H, W), dtype=_np.float32)
+                cnt = _np.zeros((H, W), dtype=_np.int32)
+                # Map U,V to pixel indices directly and accumulate intensities
+                col_f = (U - U_min) / (U_max - U_min if (U_max != U_min) else 1.0) * (W - 1)
+                row_f = (V - V_min) / (V_max - V_min if (V_max != V_min) else 1.0) * (H - 1)
+                cols = _np.clip(_np.round(col_f).astype(_np.int64), 0, W - 1)
+                rows = _np.clip(_np.round(row_f).astype(_np.int64), 0, H - 1)
+                # Accumulate
+                _vals32 = _np.asarray(vals, dtype=_np.float32)
+                img[rows, cols] += _vals32
+                cnt[rows, cols] += 1
+                nz = cnt > 0
+                img[nz] = img[nz] / cnt[nz]
+                # Calculate actual intensity range from rasterized data
+                valid_pixels = img[nz]
+                if valid_pixels.size > 0:
+                    actual_min = float(_np.nanmin(valid_pixels))
+                    actual_max = float(_np.nanmax(valid_pixels))
+                else:
+                    actual_min = 0.0
+                    actual_max = 0.0
+            else:
+                # No histogram2d fallback: place values directly by pixel index mapping
+                img = _np.zeros((H, W), dtype=_np.float32)
+                cnt = _np.zeros((H, W), dtype=_np.int32)
+                # Map U,V to pixel indices directly and accumulate intensities
+                col_f = (U - U_min) / (U_max - U_min if (U_max != U_min) else 1.0) * (W - 1)
+                row_f = (V - V_min) / (V_max - V_min if (V_max != V_min) else 1.0) * (H - 1)
+                cols = _np.clip(_np.round(col_f).astype(_np.int64), 0, W - 1)
+                rows = _np.clip(_np.round(row_f).astype(_np.int64), 0, H - 1)
+                _vals32 = _np.asarray(vals, dtype=_np.float32)
+                img[rows, cols] += _vals32
+                cnt[rows, cols] += 1
+                nz = cnt > 0
+                img[nz] = img[nz] / cnt[nz]
+                # Calculate actual intensity range from rasterized data
+                valid_pixels = img[nz]
+                if valid_pixels.size > 0:
+                    actual_min = float(_np.nanmin(valid_pixels))
+                    actual_max = float(_np.nanmax(valid_pixels))
+                else:
+                    actual_min = 0.0
+                    actual_max = 0.0
+        else:
+            img = _np.zeros((H, W), dtype=_np.float32)
+            actual_min = 0.0
+            actual_max = 0.0
             try:
                 # cache for da.line_cut when called without vol
                 self._last_image = img
@@ -1407,18 +1433,294 @@ class DashAnalysis:
 
             extent = [U_min, U_max, V_min, V_max]
             if axes is None:
-                _plt.figure(figsize=(6, 5))
-                ax = _plt.gca()
+                fig, ax = plt.subplots(figsize=(6, 5))
             else:
                 ax = axes
-            vmin = float(min_intensity) if (min_intensity is not None) else (clim[0] if clim else None)
-            vmax = float(max_intensity) if (max_intensity is not None) else (clim[1] if clim else None)
+                fig = ax.figure
+            # Resolve display limits: use actual rasterized data range
+            vmin = float(min_intensity) if (min_intensity is not None) else actual_min
+            vmax = float(max_intensity) if (max_intensity is not None) else actual_max
+            
+            # Override with clim if provided
+            if clim:
+                if clim[0] is not None:
+                    vmin = clim[0]
+                if clim[1] is not None:
+                    vmax = clim[1]
+            
+            # Check for slice-stored clim as fallback
+            if (vmin is None or vmax is None):
+                try:
+                    clim_fd = getattr(slice_mesh, 'field_data', {}).get('slice_intensity_clim', None)
+                    if clim_fd is not None:
+                        c = _np.asarray(clim_fd, dtype=float).reshape(-1)
+                        if c.size >= 2 and _np.isfinite(c[0]) and _np.isfinite(c[1]):
+                            if vmin is None:
+                                vmin = float(c[0])
+                            if vmax is None:
+                                vmax = float(c[1])
+                except Exception:
+                    pass
+
+            
             im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
                            vmin=vmin,
                            vmax=vmax,
                            aspect='auto')
             
-            # Use HKL axis labels if available, otherwise fall back to orientation-based labels
+            # Interactive hover label using annotate + mouse events
+            fig = ax.figure
+            ann = ax.annotate(
+                "",
+                xy=(0, 0),
+                xytext=(12, 12),
+                textcoords="offset points",
+                fontsize=9,
+                color="white",
+                bbox=dict(boxstyle="round", fc="black", ec="white", alpha=0.85),
+                arrowprops=dict(arrowstyle="->", color="white", alpha=0.85)
+            )
+            ann.set_visible(False)
+
+            def _label_text(x_coord, y_coord, intensity_val):
+                if axis_display == 'uv':
+                    return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                else:
+                    # HKL formatting
+                    if (u_label_fd is not None) and (v_label_fd is not None):
+                        return f"{u_label_fd}={x_coord:.3f}, {v_label_fd}={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    elif orientation == "HK":
+                        return f"H={x_coord:.3f}, K={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    elif orientation == "KL":
+                        return f"K={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    elif orientation == "HL":
+                        return f"H={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    else:
+                        return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+
+            def _on_move(event):
+                if event.inaxes is not ax:
+                    return
+                x = event.xdata
+                y = event.ydata
+                if x is None or y is None:
+                    return
+                try:
+                    col = int((x - extent[0]) / (extent[1] - extent[0]) * img.shape[1])
+                    row = int((y - extent[2]) / (extent[3] - extent[2]) * img.shape[0])
+                    col = max(0, min(img.shape[1] - 1, col))
+                    row = max(0, min(img.shape[0] - 1, row))
+                    intensity = img[row, col]
+                except Exception:
+                    return
+                ann.xy = (x, y)
+                ann.set_text(_label_text(x, y, intensity))
+                if not ann.get_visible():
+                    ann.set_visible(True)
+                try:
+                    fig.canvas.draw_idle()
+                except Exception:
+                    pass
+
+            def _on_leave(event):
+                if ann.get_visible():
+                    ann.set_visible(False)
+                    try:
+                        fig.canvas.draw_idle()
+                    except Exception:
+                        pass
+
+            try:
+                fig.canvas.mpl_connect("motion_notify_event", _on_move)
+                fig.canvas.mpl_connect("axes_leave_event", _on_leave)
+            except Exception:
+                pass
+            
+            # Set axis labels based on axis_display parameter
+            if axis_display == 'uv':
+                # Simple U/V labels
+                ax.set_xlabel('U')
+                ax.set_ylabel('V')
+            else:
+                # HKL formatting (default)
+                if u_label_fd is not None and v_label_fd is not None:
+                    ax.set_xlabel(str(u_label_fd))
+                    ax.set_ylabel(str(v_label_fd))
+                elif u_axis_fd is not None and v_axis_fd is not None:
+                    ax.set_xlabel(format_hkl_axis(u_axis_fd))
+                    ax.set_ylabel(format_hkl_axis(v_axis_fd))
+                elif orientation == "HK":
+                    ax.set_xlabel('H')
+                    ax.set_ylabel('K')
+                elif orientation == "KL":
+                    ax.set_xlabel('K')
+                    ax.set_ylabel('L')
+                elif orientation == "HL":
+                    ax.set_xlabel('H')
+                    ax.set_ylabel('L')
+                else:
+                    ax.set_xlabel('U')
+                    ax.set_ylabel('V')
+
+            title = None
+            if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
+                title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
+            else:
+                title = f'{orientation} slice'
+            ax.set_title(title)
+
+            ax.figure.colorbar(im, ax=ax, label='Intensity')
+            
+            # Add grid if requested
+            if show_grid:
+                ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+            
+            # Use Matplotlib status bar readout via format_coord (built-in hover)
+            def _format_coord(x_coord, y_coord):
+                try:
+                    col = int((x_coord - extent[0]) / (extent[1] - extent[0]) * img.shape[1])
+                    row = int((y_coord - extent[2]) / (extent[3] - extent[2]) * img.shape[0])
+                    col = max(0, min(img.shape[1] - 1, col))
+                    row = max(0, min(img.shape[0] - 1, row))
+                    intensity = img[row, col]
+                except Exception:
+                    return ""
+                if axis_display == 'uv':
+                    return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+                else:
+                    # HKL formatting
+                    if u_label_fd is not None and v_label_fd is not None:
+                        return f"{u_label_fd}: {x_coord:.3f}, {v_label_fd}: {y_coord:.3f}  I: {float(intensity):.1f}"
+                    elif orientation == "HK":
+                        return f"H: {x_coord:.3f}, K: {y_coord:.3f}  I: {float(intensity):.1f}"
+                    elif orientation == "KL":
+                        return f"K: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
+                    elif orientation == "HL":
+                        return f"H: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
+                    else:
+                        return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+            ax.format_coord = _format_coord
+
+            if axes is None:  # Only show if standalone
+                plt.show()
+
+            if return_image:
+                return img, extent
+            return None
+        
+        
+        try:
+            self._last_image = img
+            self._last_extent = [U_min, U_max, V_min, V_max]
+            self._last_orientation = orientation
+        except Exception:
+            pass
+
+        # Display via matplotlib imshow with physical axis labels
+        extent = [U_min, U_max, V_min, V_max]
+        if axes is None:
+            fig, ax = plt.subplots(figsize=(6, 5))
+        else:
+            ax = axes
+            fig = ax.figure
+
+        # Determine display limits
+        vmin = float(min_intensity) if (min_intensity is not None) else actual_min
+        vmax = float(max_intensity) if (max_intensity is not None) else actual_max
+        if clim:
+            if clim[0] is not None:
+                vmin = clim[0]
+            if clim[1] is not None:
+                vmax = clim[1]
+        if (vmin is None or vmax is None):
+            try:
+                clim_fd = getattr(slice_mesh, 'field_data', {}).get('slice_intensity_clim', None)
+                if clim_fd is not None:
+                    c = _np.asarray(clim_fd, dtype=float).reshape(-1)
+                    if c.size >= 2 and _np.isfinite(c[0]) and _np.isfinite(c[1]):
+                        if vmin is None:
+                            vmin = float(c[0])
+                        if vmax is None:
+                            vmax = float(c[1])
+            except Exception:
+                pass
+
+        im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap, vmin=vmin, vmax=vmax, aspect='auto')
+        # Interactive hover label using annotate + mouse events
+        fig = ax.figure
+        ann = ax.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(12, 12),
+            textcoords="offset points",
+            fontsize=9,
+            color="white",
+            bbox=dict(boxstyle="round", fc="black", ec="white", alpha=0.85),
+            arrowprops=dict(arrowstyle="->", color="white", alpha=0.85)
+        )
+        ann.set_visible(False)
+
+        def _label_text(x_coord, y_coord, intensity_val):
+            if axis_display == 'uv':
+                return f"U={x_coord:.3f}, V={y_coord:.3f}\nI={float(intensity_val):.1f}"
+            else:
+                # HKL formatting
+                if (u_label_fd is not None) and (v_label_fd is not None):
+                    return f"{u_label_fd}={x_coord:.3f}, {v_label_fd}={y_coord:.3f}\nI={float(intensity_val):.1f}"
+                elif orientation == "HK":
+                    return f"H={x_coord:.3f}, K={y_coord:.3f}\nI={float(intensity_val):.1f}"
+                elif orientation == "KL":
+                    return f"K={x_coord:.3f}, L={y_coord:.3f}\nI={float(intensity_val):.1f}"
+                elif orientation == "HL":
+                    return f"H={x_coord:.3f}, L={y_coord:.3f}\nI={float(intensity_val):.1f}"
+                else:
+                    return f"U={x_coord:.3f}, V={y_coord:.3f}\nI={float(intensity_val):.1f}"
+
+        def _on_move(event):
+            if event.inaxes is not ax:
+                return
+            x = event.xdata
+            y = event.ydata
+            if x is None or y is None:
+                return
+            try:
+                col = int((x - extent[0]) / (extent[1] - extent[0]) * img.shape[1])
+                row = int((y - extent[2]) / (extent[3] - extent[2]) * img.shape[0])
+                col = max(0, min(img.shape[1] - 1, col))
+                row = max(0, min(img.shape[0] - 1, row))
+                intensity = img[row, col]
+            except Exception:
+                return
+            ann.xy = (x, y)
+            ann.set_text(_label_text(x, y, intensity))
+            if not ann.get_visible():
+                ann.set_visible(True)
+            try:
+                fig.canvas.draw_idle()
+            except Exception:
+                pass
+
+        def _on_leave(event):
+            if ann.get_visible():
+                ann.set_visible(False)
+                try:
+                    fig.canvas.draw_idle()
+                except Exception:
+                    pass
+
+        try:
+            fig.canvas.mpl_connect("motion_notify_event", _on_move)
+            fig.canvas.mpl_connect("axes_leave_event", _on_leave)
+        except Exception:
+            pass
+
+        # Set axis labels based on axis_display parameter
+        if axis_display == 'uv':
+            # Simple U/V labels
+            ax.set_xlabel('U')
+            ax.set_ylabel('V')
+        else:
+            # HKL formatting (default)
             if u_label_fd is not None and v_label_fd is not None:
                 ax.set_xlabel(str(u_label_fd))
                 ax.set_ylabel(str(v_label_fd))
@@ -1438,169 +1740,46 @@ class DashAnalysis:
                 ax.set_xlabel('U')
                 ax.set_ylabel('V')
 
-            title = None
-            if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
-                title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
-            else:
-                title = f'{hkl} slice'
-            ax.set_title(title)
-
-            _plt.colorbar(im, ax=ax, label='Intensity')
-            
-            # Add interactive hover tooltips for HKL and intensity
-            def on_hover(event):
-                if event.inaxes == ax and event.xdata is not None and event.ydata is not None:
-                    # Convert mouse coordinates to image pixel coordinates
-                    x_coord = event.xdata
-                    y_coord = event.ydata
-                    
-                    # Convert to pixel indices
-                    col = int((x_coord - extent[0]) / (extent[1] - extent[0]) * img.shape[1])
-                    row = int((y_coord - extent[2]) / (extent[3] - extent[2]) * img.shape[0])
-                    
-                    # Clamp to image bounds
-                    col = max(0, min(img.shape[1] - 1, col))
-                    row = max(0, min(img.shape[0] - 1, row))
-                    
-                    # Get intensity value
-                    intensity = img[row, col]
-                    
-                    # Convert back to HKL coordinates based on orientation
-                    if u_label_fd is not None and v_label_fd is not None:
-                        # Use custom HKL labels
-                        tooltip_text = f"{u_label_fd}: {x_coord:.3f}, {v_label_fd}: {y_coord:.3f}\nIntensity: {intensity:.1f}"
-                    elif orientation == "HK":
-                        tooltip_text = f"H: {x_coord:.3f}, K: {y_coord:.3f}\nIntensity: {intensity:.1f}"
-                    elif orientation == "KL":
-                        tooltip_text = f"K: {x_coord:.3f}, L: {y_coord:.3f}\nIntensity: {intensity:.1f}"
-                    elif orientation == "HL":
-                        tooltip_text = f"H: {x_coord:.3f}, L: {y_coord:.3f}\nIntensity: {intensity:.1f}"
-                    else:
-                        tooltip_text = f"U: {x_coord:.3f}, V: {y_coord:.3f}\nIntensity: {intensity:.1f}"
-                    
-                    # Update or create annotation
-                    if hasattr(ax, '_hover_annotation'):
-                        ax._hover_annotation.set_text(tooltip_text)
-                        ax._hover_annotation.xy = (x_coord, y_coord)
-                        ax._hover_annotation.set_visible(True)
-                    else:
-                        ax._hover_annotation = ax.annotate(
-                            tooltip_text,
-                            xy=(x_coord, y_coord),
-                            xytext=(10, 10),
-                            textcoords='offset points',
-                            bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.8),
-                            fontsize=9,
-                            ha='left'
-                        )
-                    
-                    _plt.draw()
-                else:
-                    # Hide annotation when not hovering over the plot
-                    if hasattr(ax, '_hover_annotation'):
-                        ax._hover_annotation.set_visible(False)
-                        _plt.draw()
-            
-            # Connect the hover event
-            if axes is None:  # Only add hover for standalone plots
-                _plt.gcf().canvas.mpl_connect('motion_notify_event', on_hover)
-                _plt.show()
-            
-            if return_image:
-                return img, extent
-            return None
-
-        # Volume-like inputs: build grid and slice
-        is_volume_like = isinstance(vol, pv.ImageData) or isinstance(vol, _np.ndarray) or (isinstance(vol, (tuple, list)) and len(vol) >= 1 and isinstance(vol[0], _np.ndarray) and vol[0].ndim == 3)
-        if is_volume_like:
-            grid = _ensure_grid(vol, _spacing=spacing, _origin=grid_origin)
-            if origin is None:
-                origin = getattr(grid, 'center', (0.0, 0.0, 0.0))
-            # Clamp origin within grid bounds
-            b = getattr(grid, "bounds", None)
-            o = _np.array(origin, dtype=float)
-            if b and len(b) == 6:
-                o[0] = float(_np.clip(o[0], b[0], b[1]))
-                o[1] = float(_np.clip(o[1], b[2], b[3]))
-                o[2] = float(_np.clip(o[2], b[4], b[5]))
-            origin = tuple(o.tolist())
-            sl = grid.slice(normal=n, origin=_np.array(origin, dtype=float))
-        else:
-            # Point-cloud inputs: compute default origin from points center if not provided
-            pts = None
-            if isinstance(vol, (tuple, list)) and len(vol) >= 2:
-                pts = _np.asarray(vol[0], dtype=float)
-            elif hasattr(vol, 'points'):
-                pts = _np.asarray(getattr(vol, 'points'), dtype=float)
-            elif isinstance(vol, dict) and ('points' in vol):
-                pts = _np.asarray(vol['points'], dtype=float)
-            else:
-                pts = None
-            if origin is None:
-                if pts is not None and pts.size >= 3:
-                    mn = pts.min(axis=0)
-                    mx = pts.max(axis=0)
-                    origin = tuple(((mn + mx) * 0.5).astype(float).tolist())
-                else:
-                    origin = (0.0, 0.0, 0.0)
-            # Create slice mesh via slice_data (handles points internally)
-            sl = self.slice_data(vol, hkl=hkl, shape=(H, W), clamp_to_bounds=True)
-
-        # Rasterize with orientation info
-        result = _rasterize_slice(
-            sl, n, _np.array(origin, dtype=float), H=H, W=W,
-            _min_intensity=min_intensity, _max_intensity=max_intensity
-        )
-        if result is None:
-            return None
-        img, U_min, U_max, V_min, V_max, orientation, orth_label, orth_value = result
-        try:
-            # cache for da.line_cut when called without vol
-            self._last_image = img
-            self._last_extent = [U_min, U_max, V_min, V_max]
-            self._last_orientation = orientation
-        except Exception:
-            pass
-
-        # Display via matplotlib imshow with physical axis labels
-        extent = [U_min, U_max, V_min, V_max]
-        if axes is None:
-            _plt.figure(figsize=(6, 5))
-            ax = _plt.gca()
-        else:
-            ax = axes
-        vmin = float(min_intensity) if (min_intensity is not None) else (clim[0] if clim else None)
-        vmax = float(max_intensity) if (max_intensity is not None) else (clim[1] if clim else None)
-        im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
-                       vmin=vmin,
-                       vmax=vmax,
-                       aspect='auto')
-
-        # Axis labels based on orientation
-        if orientation == "HK":
-            ax.set_xlabel('H')
-            ax.set_ylabel('K')
-        elif orientation == "KL":
-            ax.set_xlabel('K')
-            ax.set_ylabel('L')
-        elif orientation == "HL":
-            ax.set_xlabel('H')
-            ax.set_ylabel('L')
-        else:
-            ax.set_xlabel('U')
-            ax.set_ylabel('V')
-
-        # Title includes orthogonal axis slice value when available
-        title = None
+        # Title
         if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
-            title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
+            ax.set_title(f'{orientation} plane ({orth_label} = {orth_value:.3f})')
         else:
-            title = f'{hkl} slice at origin {tuple(_np.array(origin).round(3))}'
-        ax.set_title(title)
+            ax.set_title(f'{orientation} slice')
 
-        _plt.colorbar(im, ax=ax, label='Intensity')
+        ax.figure.colorbar(im, ax=ax, label='Intensity')
+
+        # Add grid if requested
+        if show_grid:
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Use Matplotlib status bar readout via format_coord (built-in hover)
+        def _format_coord(x_coord, y_coord):
+            try:
+                col = int((x_coord - extent[0]) / (extent[1] - extent[0]) * img.shape[1])
+                row = int((y_coord - extent[2]) / (extent[3] - extent[2]) * img.shape[0])
+                col = max(0, min(img.shape[1] - 1, col))
+                row = max(0, min(img.shape[0] - 1, row))
+                intensity = img[row, col]
+            except Exception:
+                return ""
+            if axis_display == 'uv':
+                return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+            else:
+                # HKL formatting
+                if u_label_fd is not None and v_label_fd is not None:
+                    return f"{u_label_fd}: {x_coord:.3f}, {v_label_fd}: {y_coord:.3f}  I: {float(intensity):.1f}"
+                elif orientation == "HK":
+                    return f"H: {x_coord:.3f}, K: {y_coord:.3f}  I: {float(intensity):.1f}"
+                elif orientation == "KL":
+                    return f"K: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
+                elif orientation == "HL":
+                    return f"H: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
+                else:
+                    return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+        ax.format_coord = _format_coord
+
         if axes is None:
-            _plt.show()
+            plt.show()
 
         if return_image:
             return img, extent
