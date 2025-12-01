@@ -195,9 +195,9 @@ class DashAnalysis:
 # MAIN METHODS (Ordered by complexity/length - longest to shortest)
 # ============================================================================
 
-    def slice_data(self, data, hkl=None, normal=None, shape=(512, 512), slab_thickness=None, 
+    def slice_data(self, data, hkl=None, normal=None, shape=(512,512), slab_thickness=None, 
                    clamp_to_bounds=True, spacing=(0.5, 0.5, 0.5), grid_origin=(0.0, 0.0, 0.0), 
-                   show=True, axes=None):
+                   show=True, axes=None, intensity_range=None, **kwargs):
         """
         Create a slice from either a volume or a point cloud with advanced processing options.
 
@@ -235,6 +235,15 @@ class DashAnalysis:
                 - ((u_hkl, v_hkl),): Two 3-vectors defining in-plane axes in HKL coordinates
                 - ((u_hkl, v_hkl), n_hkl): Two in-plane axes plus normal vector
                 - None: Use hkl/normal parameters as before
+            intensity_range (tuple): Optional (min, max) intensity bounds used to filter
+                contributing data prior to slicing/interpolation. Use None for open bounds,
+                e.g., (None, 500) or (100, None). Default None applies no filtering (full
+                intensity range).
+            **kwargs: Additional keyword arguments passed to show_slice when show=True.
+                Common options include:
+                - axis_display: 'hkl' (default) or 'uv' for axis label format
+                - cmap: Colormap name for display
+                - clim: (vmin, vmax) intensity display limits
 
         Returns:
             pv.PolyData: Slice mesh with field_data containing:
@@ -266,6 +275,12 @@ class DashAnalysis:
                 data, hkl=(1.0, 0.5, 0.0), 
                 shape=(1024, 1024), 
                 spacing=(0.1, 0.1, 0.1)
+            )
+            
+            # Slice with UV axis labels
+            uv_slice = da.slice_data(
+                data, hkl='HK', 
+                axis_display='uv'
             )
         """
         if pv is None:
@@ -338,12 +353,78 @@ class DashAnalysis:
         # If volume return the slice
         if is_volume_like:
             grid = _ensure_grid(data, _spacing=spacing, _origin=grid_origin)
+            # Apply intensity range filter if provided (volume data)
+            if intensity_range is not None:
+                try:
+                    if isinstance(intensity_range, (tuple, list)) and len(intensity_range) == 2:
+                        _imin = None if intensity_range[0] is None else float(intensity_range[0])
+                        _imax = None if intensity_range[1] is None else float(intensity_range[1])
+                    else:
+                        raise ValueError("intensity_range must be a (min, max) tuple")
+                    
+                    _arr = np.asarray(grid.cell_data['intensity']).astype(np.float32)
+                    _mask = np.ones(_arr.shape, dtype=bool)
+                    if _imin is not None:
+                        _mask &= (_arr >= _imin)
+                    if _imax is not None:
+                        _mask &= (_arr <= _imax)
+                    if not np.any(_mask):
+                        import warnings as _warnings
+                        _warnings.warn("slice_data: intensity_range excluded all voxels; leaving volume unfiltered.")
+                    else:
+                        _arr[~_mask] = 0.0
+                        grid.cell_data['intensity'] = _arr
+                except Exception:
+                    # Be permissive; if anything goes wrong with filtering, continue unfiltered
+                    pass
             center = getattr(grid, 'center', (0.0, 0.0, 0.0))
             origin_vec, n_vec = _resolve_plane(center, getattr(grid, 'bounds', None))
             sl = grid.slice(normal=n_vec, origin=origin_vec)
             sl.field_data['slice_normal'] = np.asarray(n_vec, dtype=float)
             sl.field_data['slice_origin'] = np.asarray(origin_vec, dtype=float)
-            # call show slice
+            # Attach constant unit normals matching the slice normal
+            try:
+                normals_point = np.tile(np.asarray(n_vec, dtype=np.float32), (sl.n_points, 1))
+                sl.point_data['Normals'] = normals_point
+                try:
+                    sl.point_data.set_active_normals('Normals')
+                except Exception:
+                    try:
+                        sl.set_active_vectors('Normals')
+                    except Exception:
+                        pass
+                if sl.n_cells > 0:
+                    normals_cell = np.tile(np.asarray(n_vec, dtype=np.float32), (sl.n_cells, 1))
+                    sl.cell_data['Normals'] = normals_cell
+            except Exception:
+                pass
+            # Store a display clim on the slice similar to 3D viewer behavior
+            try:
+                vals = _np.asarray(sl['intensity'], dtype=float).reshape(-1)
+            except Exception:
+                vals = None
+            disp_min = None
+            disp_max = None
+            try:
+                if isinstance(intensity_range, (tuple, list)) and len(intensity_range) == 2:
+                    imin, imax = intensity_range
+                    disp_min = (float(imin) if (imin is not None) else (float(_np.nanmin(vals)) if (vals is not None and vals.size > 0) else None))
+                    disp_max = (float(imax) if (imax is not None) else (float(_np.nanmax(vals)) if (vals is not None and vals.size > 0) else None))
+                else:
+                    if vals is not None and vals.size > 0:
+                        disp_min = float(_np.nanmin(vals))
+                        disp_max = float(_np.nanmax(vals))
+            except Exception:
+                disp_min = disp_min if disp_min is not None else None
+                disp_max = disp_max if disp_max is not None else None
+            try:
+                if (disp_min is not None) and (disp_max is not None) and _np.isfinite(disp_min) and _np.isfinite(disp_max):
+                    sl.field_data['slice_intensity_clim'] = _np.asarray([disp_min, disp_max], dtype=float)
+            except Exception:
+                pass
+            # call show slice if requested
+            if show:
+                self.show_slice(sl, shape=shape, **kwargs)
             return sl
 
         # Treat as point cloud
@@ -384,15 +465,37 @@ class DashAnalysis:
         use_slab = slab_thickness is not None and np.isfinite(float(slab_thickness)) and float(slab_thickness) > 0.0
         if use_slab:
             tol = float(slab_thickness)
-            mask = np.abs(d_signed) <= tol
+            mask_slab = np.abs(d_signed) <= tol
             # Fallback to all points if slab yields none
-            if not np.any(mask):
-                mask = np.ones(points.shape[0], dtype=bool)
+            if not np.any(mask_slab):
+                mask_slab = np.ones(points.shape[0], dtype=bool)
         else:
-            mask = np.ones(points.shape[0], dtype=bool)
+            mask_slab = np.ones(points.shape[0], dtype=bool)
 
-        pts_for_extent = points[mask]
-        vals_for_extent = intensities[mask]
+        # Optional intensity range filter
+        if intensity_range is not None and isinstance(intensity_range, (tuple, list)) and len(intensity_range) == 2:
+            try:
+                _imin = None if intensity_range[0] is None else float(intensity_range[0])
+                _imax = None if intensity_range[1] is None else float(intensity_range[1])
+            except Exception:
+                _imin = None; _imax = None
+            mask_int = np.ones(intensities.shape[0], dtype=bool)
+            if _imin is not None:
+                mask_int &= (intensities >= _imin)
+            if _imax is not None:
+                mask_int &= (intensities <= _imax)
+        else:
+            mask_int = np.ones(intensities.shape[0], dtype=bool)
+
+        mask_contrib = mask_slab & mask_int
+
+        # For extent estimation, prefer slab mask (geometry) even if intensity filter removes all
+        if np.any(mask_slab):
+            pts_for_extent = points[mask_slab]
+            vals_for_extent = intensities[mask_slab]
+        else:
+            pts_for_extent = points
+            vals_for_extent = intensities
 
         # Resolve HKL axes or build default in-plane basis
         u_hkl = None
@@ -473,20 +576,21 @@ class DashAnalysis:
 
         i_size = max(U_max - U_min, 1e-6)
         j_size = max(V_max - V_min, 1e-6)
-        H, W = (shape if (isinstance(shape, (tuple, list)) and len(shape) == 2) else (512, 512))
+        H, W = ((int(shape[0]), int(shape[1])) if (isinstance(shape, (tuple, list)) and len(shape) == 2) else tuple(getattr(data, 'metadata')['datasets']['/entry/data/data']['shape'][-2:]))
         H = max(int(H), 2)
         W = max(int(W), 2)
 
         # Create plane sized by extents and interpolate point data onto it
         plane = pv.Plane(center=origin_vec.tolist(), direction=n_vec.tolist(),
-                         i_size=i_size, j_size=j_size, i_resolution=W, j_resolution=H)
+                         i_size=i_size, j_size=j_size, i_resolution=W-1, j_resolution=H-1)
 
-        # Choose contributing cloud (slab-filtered if applicable)
-        if np.any(mask) and np.any(~mask) and use_slab:
-            cloud_contrib = pv.PolyData(pts_for_extent)
-            cloud_contrib['intensity'] = vals_for_extent.astype('float32')
+        # Choose contributing cloud based on slab and intensity range
+        if np.any(mask_contrib):
+            cloud_contrib = pv.PolyData(points[mask_contrib])
+            cloud_contrib['intensity'] = intensities[mask_contrib].astype('float32')
+            no_contrib = False
         else:
-            cloud_contrib = cloud  # full cloud built earlier
+            no_contrib = True
 
         # Use smart radius calculation to minimize gaps
         optimal_radius = self._calculate_smart_radius(
@@ -496,18 +600,70 @@ class DashAnalysis:
             (H, W)
         )
 
-        interp_plane = plane.interpolate(
-            cloud_contrib,
-            radius=optimal_radius,
-            sharpness=1.5,
-            null_value=0.0
-        )
+        if not no_contrib:
+            interp_plane = plane.interpolate(
+                cloud_contrib,
+                radius=optimal_radius,
+                sharpness=1.5,
+                null_value=0.0
+            )
+        else:
+            # No contributing points: return a zero-intensity plane
+            interp_plane = plane.copy()
+            try:
+                interp_plane['intensity'] = np.zeros(interp_plane.n_points, dtype=np.float32)
+            except Exception:
+                pass
+            import warnings as _warnings
+            _warnings.warn("slice_data: intensity_range and/or slab_thickness excluded all points; returning empty slice.")
         interp_plane.field_data['slice_normal'] = np.asarray(n_vec, dtype=float)
         interp_plane.field_data['slice_origin'] = np.asarray(origin_vec, dtype=float)
+        # Attach constant unit normals matching the slice normal
+        try:
+            normals_point = np.tile(np.asarray(n_vec, dtype=np.float32), (interp_plane.n_points, 1))
+            interp_plane.point_data['Normals'] = normals_point
+            try:
+                interp_plane.point_data.set_active_normals('Normals')
+            except Exception:
+                try:
+                    interp_plane.set_active_vectors('Normals')
+                except Exception:
+                    pass
+            if interp_plane.n_cells > 0:
+                normals_cell = np.tile(np.asarray(n_vec, dtype=np.float32), (interp_plane.n_cells, 1))
+                interp_plane.cell_data['Normals'] = normals_cell
+        except Exception:
+            pass
+        # Store a display clim on the slice similar to 3D viewer behavior
+        try:
+            vals = _np.asarray(interp_plane['intensity'], dtype=float).reshape(-1)
+        except Exception:
+            vals = None
+        disp_min = None
+        disp_max = None
+        try:
+            if isinstance(intensity_range, (tuple, list)) and len(intensity_range) == 2:
+                imin, imax = intensity_range
+                disp_min = (float(imin) if (imin is not None) else (float(_np.nanmin(vals)) if (vals is not None and vals.size > 0) else None))
+                disp_max = (float(imax) if (imax is not None) else (float(_np.nanmax(vals)) if (vals is not None and vals.size > 0) else None))
+            else:
+                if vals is not None and vals.size > 0:
+                    disp_min = float(_np.nanmin(vals))
+                    disp_max = float(_np.nanmax(vals))
+        except Exception:
+            disp_min = disp_min if disp_min is not None else None
+            disp_max = disp_max if disp_max is not None else None
+        try:
+            if (disp_min is not None) and (disp_max is not None) and _np.isfinite(disp_min) and _np.isfinite(disp_max):
+                interp_plane.field_data['slice_intensity_clim'] = _np.asarray([disp_min, disp_max], dtype=float)
+        except Exception:
+            pass
         
         # Store HKL axes for downstream use
         interp_plane.field_data['slice_u_axis'] = np.asarray(u, dtype=float)
         interp_plane.field_data['slice_v_axis'] = np.asarray(v, dtype=float)
+        # Persist the slice resolution so downstream display/analysis can honor it
+        interp_plane.field_data['slice_shape'] = _np.asarray([H, W], dtype=int)
         
         # Store HKL axis labels if available
         if u_hkl is not None:
@@ -516,7 +672,8 @@ class DashAnalysis:
             interp_plane.field_data['slice_v_label'] = format_hkl_axis(v_hkl)
         
         if show:
-            self.show_slice(interp_plane)
+            self.show_slice(interp_plane, shape=shape, **kwargs)
+        # sd = SliceData(data=Data())
         return interp_plane
 
     def line_cut(self, spec, param=None, vol=None, hkl='HK', origin=None, shape=(512, 512), 
@@ -1936,11 +2093,14 @@ class DashAnalysis:
         
         # Adaptive radius multiplier based on point density
         if point_density < threshold_sparse:
-            radius_multiplier = 4.5  # Very aggressive for very sparse data
+            # radius_multiplier = 4.5  # Very aggressive for very sparse data (legacy)
+            radius_multiplier = 2.0  # Tuned down for performance with large shapes
         elif point_density < threshold_medium:
-            radius_multiplier = 3.8  # Moderate for medium density
+            # radius_multiplier = 3.8  # Moderate for medium density (legacy)
+            radius_multiplier = 1.8  # Tuned down to limit neighbors per sample
         else:
-            radius_multiplier = 3.2  # Conservative for dense data
+            # radius_multiplier = 3.2  # Conservative for dense data (legacy)
+            radius_multiplier = 1.6  # Tuned down; keeps visuals similar while cutting work
         
         # Calculate radius ensuring it's at least as large as average point spacing
         # and scales appropriately with grid resolution
