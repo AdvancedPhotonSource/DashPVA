@@ -1134,7 +1134,7 @@ class DashAnalysis:
 
     def show_slice(self, slice_mesh, shape=None, cmap='viridis',
                    clim=None, min_intensity=None, max_intensity=None, axes=None, return_image=False,
-                   axis_display='hkl', show_grid=False):
+                   axis_display='hkl', show_grid=False, shape_data=True):
         """
         Display a pre-computed slice mesh as a 2D raster with interactive features.
 
@@ -1243,7 +1243,7 @@ class DashAnalysis:
         else:
             normal = _np.array([0.0, 0.0, 1.0], dtype=float)
         
-        # Infer orientation from normal
+        # --- START Infer orientation from normal START --- #
         X = _np.array([1.0, 0.0, 0.0], dtype=float)  # H
         Y = _np.array([0.0, 1.0, 0.0], dtype=float)  # K
         Z = _np.array([0.0, 0.0, 1.0], dtype=float)  # L
@@ -1343,7 +1343,7 @@ class DashAnalysis:
         # to keep per-pixel physical size consistent. This makes axis ranges change with shape.
         try:
             stored_shape_fd = getattr(slice_mesh, 'field_data', {}).get('slice_shape', None)
-            if (stored_shape_fd is not None) and isinstance(shape, (tuple, list)) and (len(shape) == 2):
+            if shape_data and (stored_shape_fd is not None) and isinstance(shape, (tuple, list)) and (len(shape) == 2):
                 orig_H = int(stored_shape_fd[0])
                 orig_W = int(stored_shape_fd[1])
                 new_H = int(H)
@@ -1375,50 +1375,27 @@ class DashAnalysis:
             except Exception:
                 is_plane_grid = False
 
-            if is_plane_grid:
-                img = _np.zeros((H, W), dtype=_np.float32)
-                cnt = _np.zeros((H, W), dtype=_np.int32)
-                # Map U,V to pixel indices directly and accumulate intensities
-                col_f = (U - U_min) / (U_max - U_min if (U_max != U_min) else 1.0) * (W - 1)
-                row_f = (V - V_min) / (V_max - V_min if (V_max != V_min) else 1.0) * (H - 1)
-                cols = _np.clip(_np.round(col_f).astype(_np.int64), 0, W - 1)
-                rows = _np.clip(_np.round(row_f).astype(_np.int64), 0, H - 1)
-                # Accumulate
-                _vals32 = _np.asarray(vals, dtype=_np.float32)
-                img[rows, cols] += _vals32
-                cnt[rows, cols] += 1
-                nz = cnt > 0
-                img[nz] = img[nz] / cnt[nz]
-                # Calculate actual intensity range from rasterized data
-                valid_pixels = img[nz]
-                if valid_pixels.size > 0:
-                    actual_min = float(_np.nanmin(valid_pixels))
-                    actual_max = float(_np.nanmax(valid_pixels))
-                else:
-                    actual_min = 0.0
-                    actual_max = 0.0
+            if is_plane_grid and (pts.shape[0] == (H * W)):
+                img = _np.asarray(vals, dtype=_np.float32).reshape(H, W)
             else:
-                # No histogram2d fallback: place values directly by pixel index mapping
-                img = _np.zeros((H, W), dtype=_np.float32)
-                cnt = _np.zeros((H, W), dtype=_np.int32)
-                # Map U,V to pixel indices directly and accumulate intensities
-                col_f = (U - U_min) / (U_max - U_min if (U_max != U_min) else 1.0) * (W - 1)
-                row_f = (V - V_min) / (V_max - V_min if (V_max != V_min) else 1.0) * (H - 1)
-                cols = _np.clip(_np.round(col_f).astype(_np.int64), 0, W - 1)
-                rows = _np.clip(_np.round(row_f).astype(_np.int64), 0, H - 1)
-                _vals32 = _np.asarray(vals, dtype=_np.float32)
-                img[rows, cols] += _vals32
-                cnt[rows, cols] += 1
-                nz = cnt > 0
-                img[nz] = img[nz] / cnt[nz]
-                # Calculate actual intensity range from rasterized data
-                valid_pixels = img[nz]
-                if valid_pixels.size > 0:
-                    actual_min = float(_np.nanmin(valid_pixels))
-                    actual_max = float(_np.nanmax(valid_pixels))
-                else:
-                    actual_min = 0.0
-                    actual_max = 0.0
+                sum_img, _, _ = _np.histogram2d(V, U, bins=[H, W],
+                                                range=[[V_min, V_max], [U_min, U_max]],
+                                                weights=vals)
+                cnt_img, _, _ = _np.histogram2d(V, U, bins=[H, W],
+                                                range=[[V_min, V_max], [U_min, U_max]])
+                with _np.errstate(invalid="ignore", divide="ignore"):
+                    img = _np.zeros_like(sum_img, dtype=_np.float32)
+                    nz = cnt_img > 0
+                    img[nz] = (sum_img[nz] / cnt_img[nz]).astype(_np.float32)
+                    img[~nz] = 0.0
+
+            valid_pixels = img[_np.isfinite(img)]
+            if valid_pixels.size > 0:
+                actual_min = float(_np.nanmin(valid_pixels))
+                actual_max = float(_np.nanmax(valid_pixels))
+            else:
+                actual_min = 0.0
+                actual_max = 0.0
         else:
             img = _np.zeros((H, W), dtype=_np.float32)
             actual_min = 0.0
@@ -1463,12 +1440,45 @@ class DashAnalysis:
                     pass
 
             
-            im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
+                im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap,
                            vmin=vmin,
                            vmax=vmax,
                            aspect='auto')
+            # Apply rectangular view when requested without reshaping data
+            try:
+                if (not shape_data) and isinstance(shape, (tuple, list)) and len(shape) == 2:
+                    _H, _W = int(shape[0]), int(shape[1])
+                    _ratio = float(_H) / float(_W) if (_W != 0) else 1.0
+                    try:
+                        ax.set_box_aspect(_ratio)
+                    except Exception:
+                        try:
+                            # Fallback: adjust data aspect to approximate box aspect
+                            ax.set_aspect(((extent[3] - extent[2]) / (extent[1] - extent[0])) * _ratio, adjustable='box')
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            # Origin overlay textbox
+            origin_text = f"Origin: H={origin[0]:.3f}, K={origin[1]:.3f}, L={origin[2]:.3f}"
+            origin_text_artist = None
+            origin_marker_artist = None
+            try:
+                origin_text_artist = ax.text(
+                    0.0,
+                    -0.10,
+                    origin_text,
+                    transform=ax.transAxes,
+                    ha='left',
+                    va='top',
+                    fontsize=9,
+                    color='black',
+                    clip_on=False
+                )
+            except Exception:
+                origin_text_artist = None
             
-            # Interactive hover label using annotate + mouse events
+            # ----- Interactive hover label using annotate + mouse events
             fig = ax.figure
             ann = ax.annotate(
                 "",
@@ -1483,20 +1493,33 @@ class DashAnalysis:
             ann.set_visible(False)
 
             def _label_text(x_coord, y_coord, intensity_val):
-                if axis_display == 'uv':
-                    return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
-                else:
-                    # HKL formatting
-                    if (u_label_fd is not None) and (v_label_fd is not None):
-                        return f"{u_label_fd}={x_coord:.3f}, {v_label_fd}={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
-                    elif orientation == "HK":
-                        return f"H={x_coord:.3f}, K={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
-                    elif orientation == "KL":
-                        return f"K={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
-                    elif orientation == "HL":
-                        return f"H={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
-                    else:
+                # Hover label: show UV only when axis_display == 'uv'
+                # Otherwise show H,K,L (all three), with orth axis from origin for canonical planes
+                try:
+                    if axis_display == 'uv':
                         return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    if orientation == "HK":
+                        return f"H={y_coord:.3f}, K={x_coord:.3f}, L={float(origin[2]):.3f}\nIntensity={float(intensity_val):.1f}"
+                    if orientation == "KL":
+                        return f"H={float(origin[0]):.3f}, K={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    if orientation == "HL":
+                        return f"H={x_coord:.3f}, K={float(origin[1]):.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                    # Custom orientation: project back to HKL; fix orth axis (closest to normal) to origin
+                    if 'u' in locals() and 'v' in locals() and isinstance(u, _np.ndarray) and isinstance(v, _np.ndarray):
+                        hkl = _np.asarray(origin, dtype=float) + x_coord * _np.asarray(u, dtype=float) + y_coord * _np.asarray(v, dtype=float)
+                        X = _np.array([1.0, 0.0, 0.0], dtype=float)
+                        Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+                        Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+                        d = _np.asarray([abs(float(_np.dot(normal, X))),
+                                         abs(float(_np.dot(normal, Y))),
+                                         abs(float(_np.dot(normal, Z)))], dtype=float)
+                        idx = int(_np.argmax(d))
+                        hkl[idx] = float(origin[idx])
+                        return f"H={float(hkl[0]):.3f}, K={float(hkl[1]):.3f}, L={float(hkl[2]):.3f}\nIntensity={float(intensity_val):.1f}"
+                except Exception:
+                    pass
+                # Fallback
+                return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
 
             def _on_move(event):
                 if event.inaxes is not ax:
@@ -1563,8 +1586,25 @@ class DashAnalysis:
                     ax.set_ylabel('V')
 
             title = None
+            fallback_label = None
+            fallback_value = None
+            try:
+                X = _np.array([1.0, 0.0, 0.0], dtype=float)
+                Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+                Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+                dX = abs(float(_np.dot(normal, X)))
+                dY = abs(float(_np.dot(normal, Y)))
+                dZ = abs(float(_np.dot(normal, Z)))
+                idx = int(_np.argmax(_np.asarray([dX, dY, dZ], dtype=float)))
+                labels = ['H', 'K', 'L']
+                fallback_label = labels[idx]
+                fallback_value = float(origin[idx])
+            except Exception:
+                pass
             if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
                 title = f'{orientation} plane ({orth_label} = {orth_value:.3f})'
+            elif (fallback_label is not None) and (fallback_value is not None) and _np.isfinite(fallback_value):
+                title = f'{orientation} slice ({fallback_label} = {fallback_value:.3f})'
             else:
                 title = f'{orientation} slice'
             ax.set_title(title)
@@ -1585,20 +1625,22 @@ class DashAnalysis:
                     intensity = img[row, col]
                 except Exception:
                     return ""
-                if axis_display == 'uv':
-                    return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
-                else:
-                    # HKL formatting
-                    if u_label_fd is not None and v_label_fd is not None:
-                        return f"{u_label_fd}: {x_coord:.3f}, {v_label_fd}: {y_coord:.3f}  I: {float(intensity):.1f}"
-                    elif orientation == "HK":
-                        return f"H: {x_coord:.3f}, K: {y_coord:.3f}  I: {float(intensity):.1f}"
-                    elif orientation == "KL":
-                        return f"K: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
-                    elif orientation == "HL":
-                        return f"H: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
-                    else:
-                        return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+                # Status bar readout mirrors hover: UV for axis_display == 'uv'; else show H,K,L
+                try:
+                    if axis_display == 'uv':
+                        return f"U: {x_coord:.3f}, V: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                    if orientation == "HK":
+                        return f"H: {y_coord:.3f}, K: {x_coord:.3f}, L: {float(origin[2]):.3f}  Intensity: {float(intensity):.1f}"
+                    if orientation == "KL":
+                        return f"H: {float(origin[0]):.3f}, K: {x_coord:.3f}, L: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                    if orientation == "HL":
+                        return f"H: {x_coord:.3f}, K: {float(origin[1]):.3f}, L: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                    if 'u' in locals() and 'v' in locals() and isinstance(u, _np.ndarray) and isinstance(v, _np.ndarray):
+                        hkl = _np.asarray(origin, dtype=float) + x_coord * _np.asarray(u, dtype=float) + y_coord * _np.asarray(v, dtype=float)
+                        return f"H: {float(hkl[0]):.3f}, K: {float(hkl[1]):.3f}, L: {float(hkl[2]):.3f}  Intensity: {float(intensity):.1f}"
+                except Exception:
+                    pass
+                return f"U: {x_coord:.3f}, V: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
             ax.format_coord = _format_coord
 
             if axes is None:  # Only show if standalone
@@ -1646,7 +1688,39 @@ class DashAnalysis:
                 pass
 
         im = ax.imshow(img, origin='lower', extent=extent, cmap=cmap, vmin=vmin, vmax=vmax, aspect='auto')
-        # Interactive hover label using annotate + mouse events
+        # Apply rectangular view when requested without reshaping data
+        try:
+            if (not shape_data) and isinstance(shape, (tuple, list)) and len(shape) == 2:
+                _H, _W = int(shape[0]), int(shape[1])
+                _ratio = float(_H) / float(_W) if (_W != 0) else 1.0
+                try:
+                    ax.set_box_aspect(_ratio)
+                except Exception:
+                    try:
+                        ax.set_aspect(((extent[3] - extent[2]) / (extent[1] - extent[0])) * _ratio, adjustable='box')
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Origin overlay textbox
+        origin_text = f"Origin: H={origin[0]:.3f}, K={origin[1]:.3f}, L={origin[2]:.3f}"
+        origin_text_artist = None
+        origin_marker_artist = None
+        try:
+            origin_text_artist = ax.text(
+                0.0,
+                -0.15,
+                origin_text,
+                transform=ax.transAxes,
+                ha='left',
+                va='top',
+                fontsize=9,
+                color='black',
+                clip_on=False
+            )
+        except Exception:
+            origin_text_artist = None
+        # ----- START Interactive hover label using annotate + mouse events START ----- #
         fig = ax.figure
         ann = ax.annotate(
             "",
@@ -1661,20 +1735,30 @@ class DashAnalysis:
         ann.set_visible(False)
 
         def _label_text(x_coord, y_coord, intensity_val):
-            if axis_display == 'uv':
-                return f"U={x_coord:.3f}, V={y_coord:.3f}\nI={float(intensity_val):.1f}"
-            else:
-                # HKL formatting
-                if (u_label_fd is not None) and (v_label_fd is not None):
-                    return f"{u_label_fd}={x_coord:.3f}, {v_label_fd}={y_coord:.3f}\nI={float(intensity_val):.1f}"
-                elif orientation == "HK":
-                    return f"H={x_coord:.3f}, K={y_coord:.3f}\nI={float(intensity_val):.1f}"
-                elif orientation == "KL":
-                    return f"K={x_coord:.3f}, L={y_coord:.3f}\nI={float(intensity_val):.1f}"
-                elif orientation == "HL":
-                    return f"H={x_coord:.3f}, L={y_coord:.3f}\nI={float(intensity_val):.1f}"
-                else:
-                    return f"U={x_coord:.3f}, V={y_coord:.3f}\nI={float(intensity_val):.1f}"
+            # Hover: UV only when axis_display == 'uv'; else show H,K,L triple
+            try:
+                if axis_display == 'uv':
+                    return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                if orientation == "HK":
+                    return f"H={y_coord:.3f}, K={x_coord:.3f}, L={float(origin[2]):.3f}\nIntensity={float(intensity_val):.1f}"
+                if orientation == "KL":
+                    return f"H={float(origin[0]):.3f}, K={x_coord:.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                if orientation == "HL":
+                    return f"H={x_coord:.3f}, K={float(origin[1]):.3f}, L={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
+                if 'u' in locals() and 'v' in locals() and isinstance(u, _np.ndarray) and isinstance(v, _np.ndarray):
+                    hkl = _np.asarray(origin, dtype=float) + x_coord * _np.asarray(u, dtype=float) + y_coord * _np.asarray(v, dtype=float)
+                    X = _np.array([1.0, 0.0, 0.0], dtype=float)
+                    Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+                    Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+                    d = _np.asarray([abs(float(_np.dot(normal, X))),
+                                     abs(float(_np.dot(normal, Y))),
+                                     abs(float(_np.dot(normal, Z)))], dtype=float)
+                    idx = int(_np.argmax(d))
+                    hkl[idx] = float(origin[idx])
+                    return f"H={float(hkl[0]):.3f}, K={float(hkl[1]):.3f}, L={float(hkl[2]):.3f}\nIntensity={float(intensity_val):.1f}"
+            except Exception:
+                pass
+            return f"U={x_coord:.3f}, V={y_coord:.3f}\nIntensity={float(intensity_val):.1f}"
 
         def _on_move(event):
             if event.inaxes is not ax:
@@ -1739,10 +1823,28 @@ class DashAnalysis:
             else:
                 ax.set_xlabel('U')
                 ax.set_ylabel('V')
+        # --- END Set axis labels based on axis_display parameter ---- END #
 
-        # Title
+        # Title: include orth axis for canonical planes; for Custom, use nearest axis to normal
+        fallback_label = None
+        fallback_value = None
+        try:
+            X = _np.array([1.0, 0.0, 0.0], dtype=float)
+            Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+            Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+            dX = abs(float(_np.dot(normal, X)))
+            dY = abs(float(_np.dot(normal, Y)))
+            dZ = abs(float(_np.dot(normal, Z)))
+            idx = int(_np.argmax(_np.asarray([dX, dY, dZ], dtype=float)))
+            labels = ['H', 'K', 'L']
+            fallback_label = labels[idx]
+            fallback_value = float(origin[idx])
+        except Exception:
+            pass
         if orientation in ("HK", "KL", "HL") and (orth_label is not None) and (orth_value is not None) and _np.isfinite(orth_value):
             ax.set_title(f'{orientation} plane ({orth_label} = {orth_value:.3f})')
+        elif (fallback_label is not None) and (fallback_value is not None) and _np.isfinite(fallback_value):
+            ax.set_title(f'{orientation} slice ({fallback_label} = {fallback_value:.3f})')
         else:
             ax.set_title(f'{orientation} slice')
 
@@ -1762,20 +1864,40 @@ class DashAnalysis:
                 intensity = img[row, col]
             except Exception:
                 return ""
-            if axis_display == 'uv':
-                return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
-            else:
-                # HKL formatting
-                if u_label_fd is not None and v_label_fd is not None:
-                    return f"{u_label_fd}: {x_coord:.3f}, {v_label_fd}: {y_coord:.3f}  I: {float(intensity):.1f}"
-                elif orientation == "HK":
-                    return f"H: {x_coord:.3f}, K: {y_coord:.3f}  I: {float(intensity):.1f}"
-                elif orientation == "KL":
-                    return f"K: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
-                elif orientation == "HL":
-                    return f"H: {x_coord:.3f}, L: {y_coord:.3f}  I: {float(intensity):.1f}"
-                else:
-                    return f"U: {x_coord:.3f}, V: {y_coord:.3f}  I: {float(intensity):.1f}"
+            try:
+                if axis_display == 'uv':
+                    return f"U: {x_coord:.3f}, V: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                if orientation == "HK":
+                    return f"H: {y_coord:.3f}, K: {x_coord:.3f}, L: {float(origin[2]):.3f}  Intensity: {float(intensity):.1f}"
+                if orientation == "KL":
+                    return f"H: {float(origin[0]):.3f}, K: {x_coord:.3f}, L: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                if orientation == "HL":
+                    return f"H: {x_coord:.3f}, K: {float(origin[1]):.3f}, L: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
+                    if 'u' in locals() and 'v' in locals() and isinstance(u, _np.ndarray) and isinstance(v, _np.ndarray):
+                        hkl = _np.asarray(origin, dtype=float) + x_coord * _np.asarray(u, dtype=float) + y_coord * _np.asarray(v, dtype=float)
+                        X = _np.array([1.0, 0.0, 0.0], dtype=float)
+                        Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+                        Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+                        d = _np.asarray([abs(float(_np.dot(normal, X))),
+                                         abs(float(_np.dot(normal, Y))),
+                                         abs(float(_np.dot(normal, Z)))], dtype=float)
+                        idx = int(_np.argmax(d))
+                        hkl[idx] = float(origin[idx])
+                        return f"H: {float(hkl[0]):.3f}, K: {float(hkl[1]):.3f}, L: {float(hkl[2]):.3f}  Intensity: {float(intensity):.1f}"
+                if 'u' in locals() and 'v' in locals() and isinstance(u, _np.ndarray) and isinstance(v, _np.ndarray):
+                    hkl = _np.asarray(origin, dtype=float) + x_coord * _np.asarray(u, dtype=float) + y_coord * _np.asarray(v, dtype=float)
+                    X = _np.array([1.0, 0.0, 0.0], dtype=float)
+                    Y = _np.array([0.0, 1.0, 0.0], dtype=float)
+                    Z = _np.array([0.0, 0.0, 1.0], dtype=float)
+                    d = _np.asarray([abs(float(_np.dot(normal, X))),
+                                     abs(float(_np.dot(normal, Y))),
+                                     abs(float(_np.dot(normal, Z)))], dtype=float)
+                    idx = int(_np.argmax(d))
+                    hkl[idx] = float(origin[idx])
+                    return f"H: {float(hkl[0]):.3f}, K: {float(hkl[1]):.3f}, L: {float(hkl[2]):.3f}  Intensity: {float(intensity):.1f}"
+            except Exception:
+                pass
+            return f"U: {x_coord:.3f}, V: {y_coord:.3f}  Intensity: {float(intensity):.1f}"
         ax.format_coord = _format_coord
 
         if axes is None:
