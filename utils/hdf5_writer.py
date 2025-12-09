@@ -46,7 +46,6 @@ class HDF5Writer(QObject):
 
             len_images = len(images)
             len_attributes = len(attributes)
-            len_rsm = len(rsm[0])
             
             if len(OUTPUT_FILE_CONFIG) == 2:
                 file_path = Path(OUTPUT_FILE_CONFIG['FilePath']).expanduser()
@@ -107,20 +106,22 @@ class HDF5Writer(QObject):
                 print('metadata saved')
 
                 # Create HKL subgroup under images if HKL caches exist
-                if HKL_IN_CONFIG:
-                    print('attempting to save rsm attributes')
-                    if rsm:
-                        print('validating rsm data')
-                        if not (len_rsm == len_images):
-                            raise ValueError("[Saving Caches] qx, qy, and qz caches must have the same number of elements.")
-                        print('saving rsm attributes')
-                        hkl_grp = data_grp.create_group(name="hkl")
-                        hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx, shape) for qx in rsm[0]]), 
-                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                        hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy, shape) for qy in rsm[1]]), 
-                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                        hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz, shape) for qz in rsm[2]]), 
-                                              **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                # if not raw:
+                #     if HKL_IN_CONFIG and rsm:
+                #         print('attempting to save rsm attributes')
+                #         len_rsm = len(rsm[0])
+                #         if rsm and not raw:
+                #             print('validating rsm data')
+                #             if not (len_rsm == len_images):
+                #                 raise ValueError("[Saving Caches] qx, qy, and qz caches must have the same number of elements.")
+                #             print('saving rsm attributes')
+                #             hkl_grp = data_grp.create_group(name="hkl")
+                #             hkl_grp.create_dataset("qx", data=np.array([np.reshape(qx, shape) for qx in rsm[0]]), 
+                #                                 **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                #             hkl_grp.create_dataset("qy", data=np.array([np.reshape(qy, shape) for qy in rsm[1]]), 
+                #                                 **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                #             hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz, shape) for qz in rsm[2]]), 
+                #                                 **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
             self.hdf5_writer_finished.emit(f"Caches successfully saved to {OUTPUT_FILE_LOCATION}")
         except Exception as e:
             self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
