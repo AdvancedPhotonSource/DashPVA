@@ -215,6 +215,9 @@ python dashpva.py slice3d
 
 ### Quick Reference
 ```bash
+# Run the launcher
+python dashpva.py run 
+
 # Setup the system
 python dashpva.py setup
 
