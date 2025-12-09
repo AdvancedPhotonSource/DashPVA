@@ -81,7 +81,8 @@ class Data:
         self.shape = shape
 
 
-class LineCutData:
+
+class LineCutData(Data):
     """
     Container class for line cut analysis results.
     
@@ -139,7 +140,7 @@ class SliceData:
         orientation (int): Orientation identifier for the slice
     """
     
-    def __init__(self):
+    def __init__(self, data=None, orientation=0, shape=(512, 512)):
         """Initialize SliceData object with default values."""
         self.data = Data(np.array([]), np.array([]))
         self.orientation = 0
@@ -581,6 +582,10 @@ class DashAnalysis:
         W = max(int(W), 2)
 
         # Create plane sized by extents and interpolate point data onto it
+        # ORIGINAL (kept for reference):
+        # plane = pv.Plane(center=origin_vec.tolist(), direction=n_vec.tolist(),
+        #                  i_size=i_size, j_size=j_size, i_resolution=W, j_resolution=H)
+        # Use W-1/H-1 so plane.n_points == H*W; reduces work and aligns with stored slice_shape
         plane = pv.Plane(center=origin_vec.tolist(), direction=n_vec.tolist(),
                          i_size=i_size, j_size=j_size, i_resolution=W-1, j_resolution=H-1)
 
@@ -1306,7 +1311,7 @@ class DashAnalysis:
             orientation = "Custom"
             orth_label = None
             orth_value = None
-        
+        # --- END Infer orientation from normal END --- #
         # Apply intensity filtering if requested
         if (min_intensity is not None) or (max_intensity is not None):
             mask = _np.ones(vals.shape, dtype=bool)
@@ -1480,6 +1485,7 @@ class DashAnalysis:
             
             # ----- Interactive hover label using annotate + mouse events
             fig = ax.figure
+            # Interactive checkbox to toggle origin visibility
             ann = ax.annotate(
                 "",
                 xy=(0, 0),
@@ -1585,6 +1591,7 @@ class DashAnalysis:
                     ax.set_xlabel('U')
                     ax.set_ylabel('V')
 
+            # Title: include orth axis for canonical planes; for Custom, use nearest axis to normal
             title = None
             fallback_label = None
             fallback_value = None
@@ -1797,8 +1804,9 @@ class DashAnalysis:
             fig.canvas.mpl_connect("axes_leave_event", _on_leave)
         except Exception:
             pass
+        # ----- END Interactive hover label using annotate + mouse events END ----- #
 
-        # Set axis labels based on axis_display parameter
+        # --- START Set axis labels based on axis_display parameter ---- START #
         if axis_display == 'uv':
             # Simple U/V labels
             ax.set_xlabel('U')
@@ -1907,14 +1915,14 @@ class DashAnalysis:
             return img, extent
         return None
 
-    def show_point_cloud(self, cloud, intensities=None, *, notebook=True,
-                         point_size=2.0, cmap='viridis', opacity=1.0,
+    def show_point_cloud(self, data, intensities=None, *, notebook=True,
+                         point_size=1.0, cmap='viridis', opacity=1.0,
                          render_points_as_spheres=False, axes_labels=('H','K','L'),
-                         clim=None, show_bounds=True, hide_out_of_range=True, opacity_range=None):
+                         clim=None, show_bounds=True, opacity_range=None):
         """
         Render a point cloud in HKL space with advanced visualization options.
 
-        This method provides comprehensive 3D point cloud visualization with support for
+        This method provides comprehensive 3D point data visualization with support for
         multiple data formats, opacity control, intensity filtering, and interactive features.
         Supports both notebook and standalone rendering with customizable appearance.
 
@@ -1923,10 +1931,10 @@ class DashAnalysis:
             da.show_point_cloud(data.points, data.intensities)
             
             # Advanced rendering with opacity control
-            da.show_point_cloud(cloud, clim=(100, 1000), opacity_range=(0.1, 1.0))
+            da.show_point_cloud(data, clim=(100, 1000), opacity_range=(0.1, 1.0))
             
             # High-quality spherical rendering
-            da.show_point_cloud(data, render_points_as_spheres=True, point_size=5.0)
+            da.show_point_cloud(data, render_points_as_spheres=False, point_size=5.0)
 
         Parameters:
             cloud: Point cloud data. Supported formats:
@@ -1939,13 +1947,16 @@ class DashAnalysis:
             notebook (bool): Use notebook plotter (True) or regular plotter (False)
             point_size (float): Point size for rendering
             cmap (str): Colormap name for intensity visualization
-            opacity (float): Point opacity [0..1] (ignored if opacity_range is used)
+            opacity (float): Point opacity [0..1]
             render_points_as_spheres (bool): True for spherical glyphs, False for points
             axes_labels (tuple): Axis labels, default ('H','K','L')
             clim (tuple): Optional (vmin, vmax) intensity display limits
             show_bounds (bool): Whether to show coordinate bounds with labels
-            hide_out_of_range (bool): Hide intensities outside clim range using LookupTable
             opacity_range (tuple): Optional (min_opacity, max_opacity) for intensity-based opacity
+            Note: In notebook mode, rendering caps at 5,000,000 points; if more are provided,
+            the top 5,000,000 intensities are used to maintain interactive performance.
+            The optional clim=(vmin, vmax) controls color scaling only and does not affect
+            which points are selected or rendered.
 
         Returns:
             PyVista rendering result (displays inline in notebooks)
@@ -1953,7 +1964,6 @@ class DashAnalysis:
         Raises:
             ImportError: If PyVista is not available
             TypeError: If cloud format is not supported
-
         Examples:
             # Basic visualization
             da.show_point_cloud(point_data, intensity_data)
@@ -1964,92 +1974,104 @@ class DashAnalysis:
             # Opacity-based intensity mapping
             da.show_point_cloud(data, opacity_range=(0.2, 1.0), cmap='plasma')
         """
-        import numpy as np
-        import pyvista as pv
-
         # Normalize inputs to pv.PolyData + 'intensity' if available
         pts = None
         ints = None
-        poly = None
-
-        if isinstance(cloud, pv.PolyData):
-            poly = cloud
+        poly = None    
+        # Convert the data to polyData
+        if isinstance(data, pv.PolyData):
+            poly = data
             if ('intensity' not in poly.array_names) and (intensities is not None):
                 poly['intensity'] = np.asarray(intensities, dtype=np.float32)
-        elif hasattr(cloud, 'points') and hasattr(cloud, 'intensities'):
-            # Data object
-            pts = np.asarray(cloud.points, dtype=float)
-            ints = np.asarray(cloud.intensities, dtype=float)
+        elif hasattr(data, 'points') and hasattr(data, 'intensities'):
+            pts = np.asarray(data.points, dtype=float)
+            ints = np.asarray(data.intensities, dtype=float)
             poly = pv.PolyData(pts)
             poly['intensity'] = ints.astype(np.float32)
-        elif isinstance(cloud, (tuple, list)) and len(cloud) >= 2:
-            pts = np.asarray(cloud[0], dtype=float)
-            ints = np.asarray(cloud[1], dtype=float)
+        elif isinstance(data, (tuple, list)) and len(data) >= 2:
+            pts = np.asarray(data[0], dtype=float)
+            ints = np.asarray(data[1], dtype=float)
             poly = pv.PolyData(pts)
             poly['intensity'] = ints.astype(np.float32)
-        elif isinstance(cloud, dict) and ('points' in cloud):
-            pts = np.asarray(cloud['points'], dtype=float)
-            ints = np.asarray(cloud.get('intensities', intensities), dtype=float) if ('intensities' in cloud or intensities is not None) else None
+        elif isinstance(data, dict) and ('points' in data):
+            pts = np.asarray(data['points'], dtype=float)
+            ints = np.asarray(data.get('intensities', intensities), dtype=float) if ('intensities' in data or intensities is not None) else None
             poly = pv.PolyData(pts)
             if ints is not None and ints.shape[0] == pts.shape[0]:
                 poly['intensity'] = ints.astype(np.float32)
-        elif isinstance(cloud, np.ndarray) and cloud.ndim == 2 and cloud.shape[1] == 3:
-            pts = np.asarray(cloud, dtype=float)
+        elif isinstance(data, np.ndarray) and data.ndim == 2 and data.shape[1] == 3:
+            pts = np.asarray(data, dtype=float)
             poly = pv.PolyData(pts)
             if intensities is not None:
                 poly['intensity'] = np.asarray(intensities, dtype=np.float32)
         else:
-            raise TypeError("Unsupported cloud format. Provide (points, intensities), Data, dict, pv.PolyData, or Nx3 ndarray.")
+            raise TypeError("Unsupported data format. Provide (points, intensities), Data, dict, pv.PolyData, or Nx3 ndarray.")
+        print("Converted to poly data")
+
+        # Cap points to top 5,000,000 intensities for performance in notebook mode
+        MAX_POINTS = 5_000_000
+        try:
+            if bool(notebook) and poly is not None:
+                N = int(poly.n_points)
+                if N > MAX_POINTS:
+                    if 'intensity' in poly.array_names:
+                        ints_arr = np.asarray(poly['intensity'], dtype=np.float32).reshape(-1)
+                        if ints_arr.shape[0] == N:
+                            k = MAX_POINTS
+                            idx = np.argpartition(ints_arr, N - k)[N - k:]
+                            # Deterministic ordering by descending intensity
+                            idx = idx[np.argsort(ints_arr[idx])[::-1]]
+                            pts_arr = np.asarray(poly.points, dtype=float)
+                            poly = pv.PolyData(pts_arr[idx])
+                            poly['intensity'] = ints_arr[idx].astype(np.float32)
+                            try:
+                                print(f"Notebook mode: capped point cloud from {N} to {int(poly.n_points)} by top intensities.")
+                            except Exception:
+                                pass
+                        else:
+                            # Fallback: intensity length mismatch; random subsample
+                            rng = np.random.default_rng()
+                            idx = rng.choice(N, size=MAX_POINTS, replace=False)
+                            poly = pv.PolyData(np.asarray(poly.points, dtype=float)[idx])
+                            try:
+                                print(f"Notebook mode: capped point cloud from {N} to {int(poly.n_points)} (random fallback due to intensity mismatch).")
+                            except Exception:
+                                pass
+                    else:
+                        # No intensities; random subsample to respect cap
+                        rng = np.random.default_rng()
+                        idx = rng.choice(N, size=MAX_POINTS, replace=False)
+                        poly = pv.PolyData(np.asarray(poly.points, dtype=float)[idx])
+                        try:
+                            print(f"Notebook mode: capped point cloud from {N} to {int(poly.n_points)} (random fallback, no intensities).")
+                        except Exception:
+                            pass
+        except Exception as _cap_err:
+            # Be permissive; if capping fails, continue with original data
+            try:
+                print(f"Notebook mode capping failed: {_cap_err}")
+            except Exception:
+                pass
 
         # Create plotter
         p = pv.Plotter(notebook=bool(notebook))
         p.add_axes(xlabel=str(axes_labels[0]), ylabel=str(axes_labels[1]), zlabel=str(axes_labels[2]))
+        # Simple LUT configuration; use given clim for color scaling (if provided)
+        lut = pv.LookupTable(cmap=cmap)
+        lut.above_range_color = 'white'
+        lut.below_range_color = 'white'
+        lut.above_range_opacity= 0
+        lut.below_range_opacity= 0
+        lut.scalar_range = (opacity_range[0],opacity_range[1])
 
-        # Add points layer (with optional LUT gating)
-        has_intensity = ('intensity' in poly.array_names)
-        if has_intensity:
-            # Determine scalar range
-            if clim is not None and len(clim) == 2:
-                vmin, vmax = float(clim[0]), float(clim[1])
-            else:
-                arr = np.asarray(poly['intensity'])
-                vmin, vmax = float(np.nanmin(arr)), float(np.nanmax(arr))
-
-            if bool(hide_out_of_range) or (opacity_range is not None):
-                # Build a LookupTable that hides out-of-range values and sets an in-range opacity ramp
-                lut = pv.LookupTable(cmap=cmap)
-                lut.scalar_range = (vmin, vmax)
-                lut.below_range_color = 'black'
-                lut.above_range_color = 'black'
-                lut.below_range_opacity = 0.0
-                lut.above_range_opacity = 0.0
-                if opacity_range is not None:
-                    o0, o1 = float(opacity_range[0]), float(opacity_range[1])
-                    lut.apply_opacity([o0, o1])
-                # Important: do not pass a uniform opacity float; let LUT control per-intensity opacity
-                p.add_mesh(poly,
-                           scalars='intensity',
-                           cmap=lut,
-                           render_points_as_spheres=bool(render_points_as_spheres),
-                           point_size=float(point_size),
-                           name='points')
-            else:
-                # Original behavior: simple colormap and uniform opacity
-                p.add_mesh(poly,
-                           scalars='intensity',
-                           cmap=cmap,
-                           clim=(vmin, vmax),
-                           render_points_as_spheres=bool(render_points_as_spheres),
-                           point_size=float(point_size),
-                           opacity=float(opacity),
-                           name='points')
-        else:
-            p.add_mesh(poly,
-                       color='white',
-                       render_points_as_spheres=bool(render_points_as_spheres),
-                       point_size=float(point_size),
-                       opacity=float(opacity),
-                       name='points')
+        actor = p.add_mesh(poly,
+                   scalars='intensity',
+                    cmap=lut,
+                    render_points_as_spheres=bool(render_points_as_spheres),
+                    point_size=float(point_size),
+                    clim=clim,
+                    opacity=float(opacity) if opacity_range is None else 1.0,
+                    name='points')
 
         # Optional bounds
         if bool(show_bounds):
@@ -2235,7 +2257,12 @@ class DashAnalysis:
         try:
             loader = HDF5Loader()
             points_3d, intensities, num_images, shape = loader.load_h5_to_3d(path)
-            return Data(points_3d, intensities)
+            
+            # Load metadata using load_h5_with_coordinates which returns metadata
+            metadata_dict = loader.get_file_info(path, style='dict')
+            
+            # Create Data object with metadata
+            return Data(points_3d, intensities, metadata=metadata_dict)
         except Exception as e:
             raise Exception(f"Failed to load data using HDF5Loader: {e}")
 
