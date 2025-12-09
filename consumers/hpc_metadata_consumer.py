@@ -282,6 +282,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         return pvObject
     
     def compress_image(self, pvObject) -> None:
+        # Original bytes: 2097152, Compressed bytes: 55418, Codec: lz4, Image size 1024x1024
+        # Ratio 600 : 16
         # If already compressed, do nothing
         try:
             codec_name = pvObject['codec']['name']
@@ -341,7 +343,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             pvObject['codec']['parameters'] = ({'value': int(original_enum)},) if original_enum is not None else ()
             pvObject['uncompressedSize'] = raw_len
         # Debug
-        # print(f"Field: {field_name} Original bytes: {raw_len}, Compressed bytes: {len(comp_data)}, Codec: {codec}")
+        #msg = f"Original bytes: {raw_len}, Compressed bytes: {len(comp_data)}, Codec: {codec}" * 10
+        #print(msg)
 
 
     def resetStats(self):

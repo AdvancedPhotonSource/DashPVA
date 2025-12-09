@@ -1784,12 +1784,15 @@ class HKL3DSliceWindow(QMainWindow):
                 'num_images': int(self.num_images) if hasattr(self, 'num_images') and self.num_images else 1,
                 'original_shape': list(self.orig_shape) if hasattr(self, 'orig_shape') and isinstance(self.orig_shape, (tuple, list)) and any(self.orig_shape) else (0, 0),
                 'source': 'DashPVA 3D Slice Window',
-                'parent_channel': getattr(self.parent.reader, 'input_channel', 'unknown') if hasattr(self.parent, 'reader') else 'unknown',
+                'parent_channel': getattr(self.parent.reader, 'input_channel', 'unknown') if hasattr(self, 'parent') and hasattr(self.parent, 'reader') else 'unknown',
                 'extraction_timestamp': str(np.datetime64('now')),
-                'volume_shape': list(vol_array.shape),
+                'volume_shape': list(vol_array.shape),  # (D,H,W) cell-centered
                 'voxel_spacing': list(map(float, self.vol.spacing if hasattr(self.vol, 'spacing') else (self.grid.spacing if hasattr(self, 'grid') and self.grid is not None else (1.0, 1.0, 1.0)))),
                 'grid_origin': list(map(float, self.vol.origin if hasattr(self.vol, 'origin') else (self.grid.origin if hasattr(self, 'grid') and self.grid is not None else (0.0, 0.0, 0.0)))),
-                'intensity_range': [float(np.min(vol_array)), float(np.max(vol_array))]
+                'intensity_range': [float(np.min(vol_array)), float(np.max(vol_array))],
+                'grid_dimensions_cells': [int(x) for x in dims_cells],
+                'array_order': 'F',
+                'axes_labels': ['H', 'K', 'L']
             }
             
             # Add additional metadata if available

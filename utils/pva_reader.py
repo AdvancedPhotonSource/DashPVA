@@ -566,7 +566,7 @@ class PVAReader(QObject):
             return {'FilePath': file_path_pv,
                     'FileName': file_name_pv}
         else:
-            return {'FilePath': self.OUTPUT_FILE_LOCATION}
+            return {'FilePath': str(self.OUTPUT_FILE_LOCATION).strip()}
        
     
     def get_config_settings(self) -> dict:
