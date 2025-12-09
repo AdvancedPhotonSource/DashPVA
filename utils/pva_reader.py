@@ -17,7 +17,11 @@ class PVAReader(QObject):
     # signal_analysis_updated = pyqtSignal(dict)
     reader_scan_complete = pyqtSignal()  
     
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml', viewer_type:str='image'):
+    def __init__(self, 
+                 input_channel='s6lambda1:Pva1:Image', 
+                 provider=pva.PVA, 
+                 config_filepath: str = 'pv_configs/metadata_pvs.toml', 
+                 viewer_type:str='image'):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
 
@@ -554,7 +558,7 @@ class PVAReader(QObject):
         return data
     
     def get_output_file_location(self) -> dict:
-        if self.caches_initialized:   
+        if self.caches_initialized and self.cached_attributes:   
             latest_attribute: dict = self.cached_attributes[-1]
         else:
             latest_attribute: dict = self.pv_attributes
