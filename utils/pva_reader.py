@@ -16,6 +16,7 @@ class PVAReader(QObject):
     # signal_rsm_updated = pyqtSignal(dict)
     # signal_analysis_updated = pyqtSignal(dict)
     reader_scan_complete = pyqtSignal()  
+    scan_state_changed = pyqtSignal(bool)
     
     def __init__(self, 
                  input_channel='s6lambda1:Pva1:Image', 
@@ -445,11 +446,14 @@ class PVAReader(QObject):
             if self.FLAG_PV in pv_attributes:
                 flag_value = pv_attributes[self.FLAG_PV]
                 if flag_value == self.START_SCAN:
-                    self.is_caching = True
-                    self.is_scan_complete = False
+                    if not self.is_caching:
+                        self.is_caching = True
+                        self.is_scan_complete = False
+                        self.scan_state_changed.emit(True)
                 elif (flag_value == self.STOP_SCAN) and self.is_caching == True:
                     self.is_caching = False
                     self.is_scan_complete = True
+                    self.scan_state_changed.emit(False)
                     
                 if self.is_caching:
                     self.cached_attributes.append(pv_attributes)
@@ -541,15 +545,30 @@ class PVAReader(QObject):
         """
         images =  self.get_cached_images()
         attributes = self.get_cached_attributes()
-        rsm = self.get_cached_rsm()
-        if len(images) == len(attributes) == len(rsm[0]) == len(rsm[1]) == len(rsm[2]):
-            data = {
-                    'images': images,
-                    'attributes': attributes,
-                    'rsm': rsm
-                    }
+        
+        # Only get RSM data if HKL is configured and viewer type supports it
+        if self.HKL_IN_CONFIG and self.viewer_type != 'i':
+            rsm = self.get_cached_rsm()
+            # Check lengths including RSM data
+            if len(images) == len(attributes) == len(rsm[0]) == len(rsm[1]) == len(rsm[2]):
+                data = {
+                        'images': images,
+                        'attributes': attributes,
+                        'rsm': rsm
+                        }
+            else:
+                raise ValueError("[PVA Reader] Cached data must have the same length.")
         else:
-            raise ValueError("[PVA Reader] Cached data must have the same length.")
+            # For image viewer type or when no HKL config, only check images and attributes
+            rsm = ([], [], [])  # Empty RSM data
+            if len(images) == len(attributes):
+                data = {
+                        'images': images,
+                        'attributes': attributes,
+                        'rsm': rsm
+                        }
+            else:
+                raise ValueError("[PVA Reader] Cached data must have the same length.")
         
         
         if clear_caches:
