@@ -41,10 +41,21 @@ def setup(ioc):
 
 
 @cli.command()
-def run():
-    """Open DashPVA launcher menu with process tracking and indicators."""
-    click.echo('Opening DashPVA Launcher')
-    subprocess.run([sys.executable, 'viewer/launcher.py'])
+@click.argument('name', type=click.Choice(['scan']))
+@click.option('--channel', default='', help='PVA channel (optional).')
+@click.option('--config', 'config_path', default='', help='Path to TOML config file (optional).')
+def view(name, channel, config_path):
+    """Open a specific viewer by name. Currently supported: scan."""
+    click.echo(f'Opening view: {name}')
+    if name == 'scan':
+        command = [sys.executable, 'viewer/scan_view.py']
+    else:
+        raise click.BadParameter(f'Unknown view name: {name}')
+    if config_path:
+        command.extend(['--config', config_path])
+    if channel:
+        command.extend(['--channel', channel])
+    subprocess.run(command)
 
 
 if __name__ == '__main__':
