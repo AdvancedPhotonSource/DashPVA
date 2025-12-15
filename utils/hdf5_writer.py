@@ -15,7 +15,7 @@ class HDF5Writer(QObject):
         self.default_output_file_config = {'FilePath': 'SCAN_OUTPUT.h5'}
 
     @pyqtSlot()
-    def save_caches_to_h5(self, clear_caches:bool=True) -> None:
+    def save_caches_to_h5(self, clear_caches:bool=True, compress=False) -> None:
         # TODO: add analysis
         """
         Saves available caches (images and HKL data) to an HDF5 file under a branch structure.
