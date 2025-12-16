@@ -31,14 +31,14 @@
    </property>
    <item>
     <widget class="QLabel" name="lbl_header">
+     <property name="styleSheet">
+      <string notr="true">font-size: 16px; font-weight: bold;</string>
+     </property>
      <property name="text">
       <string>Select a module to launch</string>
      </property>
      <property name="alignment">
-      <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 16px; font-weight: bold;</string>
+      <set>Qt::AlignCenter</set>
      </property>
     </widget>
    </item>
@@ -47,18 +47,12 @@
      <property name="text">
       <string>HKL 3D Viewer</string>
      </property>
-     <property name="minimumHeight">
-      <number>34</number>
-     </property>
     </widget>
    </item>
    <item>
     <widget class="QPushButton" name="btn_hkl3d_slicer">
      <property name="text">
       <string>HKL 3D Slicer</string>
-     </property>
-     <property name="minimumHeight">
-      <number>34</number>
      </property>
     </widget>
    </item>
@@ -67,9 +61,6 @@
      <property name="text">
       <string>Area Detector Viewer</string>
      </property>
-     <property name="minimumHeight">
-      <number>34</number>
-     </property>
     </widget>
    </item>
    <item>
@@ -77,21 +68,15 @@
      <property name="text">
       <string>PVA Workflow Setup</string>
      </property>
-     <property name="minimumHeight">
-      <number>34</number>
-     </property>
     </widget>
    </item>
    <item>
     <widget class="QPushButton" name="btn_sim_setup">
-     <property name="text">
-      <string>Start Simulator (background)</string>
-     </property>
-     <property name="minimumHeight">
-      <number>34</number>
-     </property>
      <property name="toolTip">
       <string>Launch simulator in background (no console output)</string>
+     </property>
+     <property name="text">
+      <string>Start caIOC (background)</string>
      </property>
     </widget>
    </item>

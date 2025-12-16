@@ -7,6 +7,12 @@ def cli():
     pass
 
 @cli.command()
+def run():
+    """Open DashPVA launcher menu with process tracking and indicators."""
+    click.echo('Opening DashPVA Launcher')
+    subprocess.run([sys.executable, 'viewer/launcher.py'])
+
+@cli.command()
 def hkl3d():
     """Launch HKL 3D Viewer"""
     click.echo('Running HKL 3D Viewer')
