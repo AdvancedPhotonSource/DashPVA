@@ -1,3 +1,10 @@
+# Register HDF5 compression filters globally (e.g., blosc/bitshuffle)
+# Importing hdf5plugin once enables decompression support for all h5py reads in the app.
+try:
+    import hdf5plugin  # noqa: F401
+except Exception:
+    pass
+
 import sys
 import click
 import subprocess
@@ -44,6 +51,12 @@ def setup(ioc):
 
     click.echo('Running standard PVA setup...')
     subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py'])
+
+@cli.command()
+def workbench():
+    """Launch Workbench - Data Analysis Tool"""
+    click.echo('Running Workbench - Data Analysis Tool')
+    subprocess.run([sys.executable, 'viewer/workbench/workbench.py'])
 
 
 @cli.command()

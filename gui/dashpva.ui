@@ -94,15 +94,38 @@
     </spacer>
    </item>
    <item>
+    <widget class="QLabel" name="lbl_post_analysis_header">
+     <property name="styleSheet">
+      <string notr="true">font-weight: bold; color: #34495e; font-size: 12px;</string>
+     </property>
+     <property name="text">
+      <string>Post Analysis Tools</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_workbench">
+     <property name="text">
+      <string>Workbench</string>
+     </property>
+     <property name="toolTip">
+      <string>Launch Workbench - Data Analysis Tool</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="lbl_status">
+     <property name="styleSheet">
+      <string notr="true">color: #666;</string>
+     </property>
      <property name="text">
       <string>No modules running</string>
      </property>
      <property name="alignment">
-      <set>Qt::AlignLeft|Qt::AlignVCenter</set>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">color: #666;</string>
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
      </property>
     </widget>
    </item>
@@ -126,27 +149,15 @@
        <property name="text">
         <string>Settings</string>
        </property>
-       <property name="minimumWidth">
-        <number>110</number>
-       </property>
-       <property name="minimumHeight">
-        <number>28</number>
-       </property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="btn_shutdown_all">
-       <property name="text">
-        <string>Shutdown All</string>
-       </property>
        <property name="toolTip">
         <string>Force stop all running modules</string>
        </property>
-       <property name="minimumWidth">
-        <number>120</number>
-       </property>
-       <property name="minimumHeight">
-        <number>28</number>
+       <property name="text">
+        <string>Shutdown All</string>
        </property>
       </widget>
      </item>
@@ -154,12 +165,6 @@
       <widget class="QPushButton" name="btn_exit">
        <property name="text">
         <string>Exit</string>
-       </property>
-       <property name="minimumWidth">
-        <number>100</number>
-       </property>
-       <property name="minimumHeight">
-        <number>28</number>
        </property>
       </widget>
      </item>

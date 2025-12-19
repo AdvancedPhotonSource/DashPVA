@@ -62,6 +62,15 @@ class LauncherDialog(QDialog):
                     quiet=True
                 )
             )
+        if hasattr(self, 'btn_workbench'):
+            self.btn_workbench.clicked.connect(
+                lambda: self.launch(
+                    'workbench',
+                    [sys.executable, 'viewer/workbench/workbench.py'],
+                    self.btn_workbench,
+                    'Workbench — Running…'
+                )
+            )
         if hasattr(self, 'btn_settings'):
             self.btn_settings.clicked.connect(
                 lambda: self.launch(
