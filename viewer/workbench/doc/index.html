@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workbench Documentation</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 16px; line-height: 1.5; }
+    h1, h2, h3 { color: #2c3e50; }
+    .subtitle { color: #555; margin-bottom: 12px; }
+    code { background: #f5f5f5; padding: 2px 4px; border-radius: 4px; }
+    pre { background: #f8f9fa; padding: 8px; border-radius: 4px; overflow: auto; }
+    ul { margin: 8px 0 8px 20px; }
+    .note { font-size: 12px; color: #777; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Workbench Viewer Documentation</h1>
+  <div class="subtitle">Overview and usage notes for the Workbench.</div>
+
+  <p>The Workbench viewer provides 2D, 3D, and 1D visualization of HDF5 datasets along with tools for ROI and speckle analysis.</p>
+
+  <h2>Features</h2>
+  <ul>
+    <li>Load single HDF5 files or entire folders</li>
+    <li>Visualize datasets in 2D and 3D (when PyVista is available)</li>
+    <li>ROI creation and statistics</li>
+    <li>Playback of 3D stacks with FPS control</li>
+  </ul>
+
+  <h2>How to open this documentation</h2>
+  <p>Use the menu <code>Documentation → Open Documentation</code> or press <code>F1</code> within the Workbench window.</p>
+
+  <h2>Directory structure</h2>
+  <pre>
+viewer/
+  workbench/
+    workbench.py
+    doc/
+      index.html   ← you are here
+      README.md    ← optional alternative
+  </pre>
+  <section>
+    <h1>2D Viewer</h1>
+    <p>
+        Opening files
+        You can choose to open a file or a folder using the file button (h5 formats only)
+        Once selected selectable datasets will be highlighted in blue
+        You can edit the file however you want by right clicking on that file
+
+    </p>
+    <p>ROI
+        You can select to draw as many ROI's as you want by clicking draw ROI
+        You will be able to see it docked on the right or left side this can be docked anywhere on the right or left window
+    </p>
+
+    <p>Player</p>
+  </section>
+  <div class="note">
+    File edits at <code>viewer/workbench/doc/index.html</code>.
+  </div>
+</body>
+</html>
