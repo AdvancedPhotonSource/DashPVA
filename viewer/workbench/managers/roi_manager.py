@@ -153,6 +153,8 @@ class ROIManager:
             # Set container as dock widget
             self.main.roi_stats_dock.setWidget(container)
             self.main.addDockWidget(Qt.RightDockWidgetArea, self.main.roi_stats_dock)
+            # Register toggle under Windows->2d submenu
+            self.main.add_dock_toggle_action(self.main.roi_stats_dock, "ROI", segment_name="2d")
             try:
                 self.main.roi_stats_dock.visibilityChanged.connect(self.on_roi_stats_dock_visibility_changed)
             except Exception:

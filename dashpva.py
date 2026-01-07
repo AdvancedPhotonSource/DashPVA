@@ -9,8 +9,16 @@ import sys
 import click
 import subprocess
 
-@click.group()
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
+@click.group(context_settings=CONTEXT_SETTINGS)
 def cli():
+    """
+    DashPVA: High-Performance X-ray Visualization & Analysis Tool.
+    
+    This suite provides real-time monitoring (PVA), 3D Reciprocal Space Mapping (HKL), 
+    and post-processing workbenches to analyze and manipulate your data.
+    """
     pass
 
 @cli.command()

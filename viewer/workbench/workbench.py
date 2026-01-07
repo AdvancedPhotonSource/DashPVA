@@ -17,7 +17,7 @@ import glob
 import numpy as np
 import time
 import pyqtgraph as pg
-from viewer.workbench.workers import Render3D
+from viewer.workbench.tabs.tab_3d import Tab3D
 
 
 # Add the project root to the Python path
@@ -30,18 +30,10 @@ from utils.hdf5_loader import HDF5Loader
 # Dimension-specific controls
 from viewer.controls.controls_1d import Controls1D
 from viewer.controls.controls_2d import Controls2D
-from viewer.controls.controls_3d import Controls3D
 from viewer.workbench.managers.roi_manager import ROIManager
 from viewer.workbench.dock_window import DockWindow
-
-# Import 3D visualization components
-try:
-    import pyvista as pyv
-    from pyvistaqt import QtInteractor
-    PYVISTA_AVAILABLE = True
-except ImportError:
-    PYVISTA_AVAILABLE = False
-    print("Warning: PyVista not available. 3D visualization will be disabled.")
+from viewer.workbench.docks.data_structure import DataStructureDock
+from viewer.workbench.docks.dash_ai import DashAI
 
 
 class WorkbenchWindow(BaseWindow):
@@ -53,17 +45,42 @@ class WorkbenchWindow(BaseWindow):
     # === Initialization & UI Setup ===
     def __init__(self):
         """Initialize the Workbench window."""
-        super().__init__(ui_file_name="workbench.ui", viewer_name="Workbench")
+        super().__init__(ui_file_name="workbench/workbench.ui", viewer_name="Workbench")
         self.setup_window_properties("Workbench - Data Analysis", 1600, 1000)
-        # Make Data Structure (tree) a dockable widget
-        try:
-            self.setup_data_structure_dock()
-        except Exception:
-            pass
-        # Instantiate dimension-specific controls
+
+        # ====== DOCKS START ====== #
+        # 2d
+        self.dash_sam_dock = DashAI(main_window=self)
+
+        # 3d
+
+        # other
+        self.data_structure_dock = DataStructureDock(main_window=self, segment_name="other", dock_area=Qt.LeftDockWidgetArea)
+
+        # roi 
+
+        # Alias Workbench's tree to the dock's tree widget
+        self.tree_data = self.data_structure_dock.tree_data
+        # Hide any fixed left panel from the UI and give space to analysis
+        if hasattr(self, 'leftPanel') and self.leftPanel is not None:
+            self.leftPanel.hide()
+        if hasattr(self, 'mainSplitter') and self.mainSplitter is not None:
+            self.mainSplitter.setSizes([0, self.width()])
+        # ======= DOCKS END ======== #
+
+
+        # ======= TABS START ======= #
+        self.tab_1d = None
+        self.tab_2d = None
+        self.tab_3d = Tab3D(parent=self, main_window=self)
+        # ======= TABS END ========= #
+
+
+        # ===== CONTROLS START ===== #
         self.controls_1d = Controls1D(self)
         self.controls_2d = Controls2D(self)
-        self.controls_3d = Controls3D(self)
+        # ======== CONTROLS END ======= #
+
         # ROI manager to centralize ROI logic
         self.roi_manager = ROIManager(self)
         # Track secondary dock windows (modeless)
@@ -71,21 +88,16 @@ class WorkbenchWindow(BaseWindow):
 
         self.setup_2d_workspace()
         self.setup_1d_workspace()
-        self.setup_3d_workspace()
         self.setup_workbench_connections()
 
         # Use shared HDF5 loader utility
         self.h5loader = HDF5Loader()
 
-        # Store current file path and selected dataset for visualization
+        # == FILE PATH INFO START ====== #
         self.current_file_path = None
         self.selected_dataset_path = None
+        # ==== FILE PATH INFO END ====== #
 
-        # 3D viewer state
-        self.plotter_3d = None
-        self.current_3d_data = None
-        self.vol_3d = None
-        self.cloud_mesh_3d = None
 
         # ROI state
         self.rois = []
@@ -297,6 +309,11 @@ class WorkbenchWindow(BaseWindow):
             dock_title = f"ROI Math: {self.get_roi_name(roi)}"
             dock = ROIMathDock(self, dock_title, self, roi)
             self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            # Register toggle under Windows->2d submenu
+            try:
+                self.add_dock_toggle_action(dock, dock_title, segment_name="2d")
+            except Exception:
+                pass
             dock.show()
             # Track alive docks
             if not hasattr(self, '_roi_math_dock_widgets'):
@@ -339,6 +356,11 @@ class WorkbenchWindow(BaseWindow):
             dock_title = f"ROI: {self.get_roi_name(roi)}"
             dock = ROIPlotDock(self, dock_title, self, roi)
             self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            # Register toggle under Windows->2d submenu
+            try:
+                self.add_dock_toggle_action(dock, dock_title, segment_name="2d")
+            except Exception:
+                pass
             dock.show()
             # Track alive docks
             if not hasattr(self, '_roi_plot_dock_widgets'):
@@ -499,183 +521,50 @@ class WorkbenchWindow(BaseWindow):
             self.actionExpandAll.triggered.connect(self.expand_all)
 
         # Windows menu: add toggles to show/hide docks, with room for future items
-        try:
-            windows_menu = None
-            if hasattr(self, 'menuBar') and self.menuBar is not None:
-                try:
-                    windows_menu = self.menuBar.addMenu("Windows")
-                except Exception:
-                    windows_menu = QMenu("Windows", self)
-                    try:
-                        self.menuBar().addMenu(windows_menu)
-                    except Exception:
-                        pass
-            else:
-                windows_menu = QMenu("Windows", self)
-                try:
-                    self.menuBar().addMenu(windows_menu)
-                except Exception:
-                    pass
+        # try:
+        #     windows_menu = None
+        #     if hasattr(self, 'menuBar') and self.menuBar is not None:
+        #         try:
+        #             windows_menu = self.menuBar.addMenu("Windows")
+        #         except Exception:
+        #             windows_menu = QMenu("Windows", self)
+        #             try:
+        #                 self.menuBar().addMenu(windows_menu)
+        #             except Exception:
+        #                 pass
+        #     else:
+        #         windows_menu = QMenu("Windows", self)
+        #         try:
+        #             self.menuBar().addMenu(windows_menu)
+        #         except Exception:
+        #             pass
 
-            if windows_menu is not None:
-                # ROIs dock removed per request
+        #     # ROI dock toggle (renamed from 'ROI Stats' to 'ROI')
+        #         self.action_show_roi_stats_dock = QAction("ROI", self)
+        #         self.action_show_roi_stats_dock.setCheckable(True)
+        #         self.action_show_roi_stats_dock.setChecked(True if hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.isVisible() else True)
+        #         self.action_show_roi_stats_dock.toggled.connect(lambda checked: hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.setVisible(checked))
+        #         windows_menu.addAction(self.action_show_roi_stats_dock)
 
-                # Data Structure dock toggle
-                self.action_show_data_dock = QAction("Data Structure", self)
-                self.action_show_data_dock.setCheckable(True)
-                self.action_show_data_dock.setChecked(True if hasattr(self, 'data_structure_dock') and self.data_structure_dock.isVisible() else True)
-                self.action_show_data_dock.toggled.connect(lambda checked: hasattr(self, 'data_structure_dock') and self.data_structure_dock.setVisible(checked))
-                windows_menu.addAction(self.action_show_data_dock)
+        #         # Open ROI Math dock for the active ROI
+        #         self.action_open_roi_math_dock = QAction("ROI Math (Active ROI)", self)
+        #         self.action_open_roi_math_dock.setToolTip("Open ROI Math dock for the currently active ROI")
+        #         self.action_open_roi_math_dock.triggered.connect(lambda: hasattr(self, 'current_roi') and self.open_roi_math_dock(self.current_roi))
+        #         windows_menu.addAction(self.action_open_roi_math_dock)
 
-            # ROI dock toggle (renamed from 'ROI Stats' to 'ROI')
-                self.action_show_roi_stats_dock = QAction("ROI", self)
-                self.action_show_roi_stats_dock.setCheckable(True)
-                self.action_show_roi_stats_dock.setChecked(True if hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.isVisible() else True)
-                self.action_show_roi_stats_dock.toggled.connect(lambda checked: hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.setVisible(checked))
-                windows_menu.addAction(self.action_show_roi_stats_dock)
-
-                # Open ROI Math dock for the active ROI
-                self.action_open_roi_math_dock = QAction("ROI Math (Active ROI)", self)
-                self.action_open_roi_math_dock.setToolTip("Open ROI Math dock for the currently active ROI")
-                self.action_open_roi_math_dock.triggered.connect(lambda: hasattr(self, 'current_roi') and self.open_roi_math_dock(self.current_roi))
-                windows_menu.addAction(self.action_open_roi_math_dock)
-
-                # Add Window: open an empty, modeless window for dockables
-                self.action_add_window = QAction("Add Window", self)
-                self.action_add_window.setToolTip("Open a new empty window for dockable tools")
-                self.action_add_window.triggered.connect(self.create_dock_window_and_show)
-                windows_menu.addAction(self.action_add_window)
-        except Exception:
-            pass
+        #         # Add Window: open an empty, modeless window for dockables
+        #         self.action_add_window = QAction("Add Window", self)
+        #         self.action_add_window.setToolTip("Open a new empty window for dockable tools")
+        #         self.action_add_window.triggered.connect(self.create_dock_window_and_show)
+        #         windows_menu.addAction(self.action_add_window)
+        # except Exception:
+        #     pass
 
         # Set up default splitter sizes
         self.setup_default_splitter_sizes()
 
         # Initialize file info text box
         self.initialize_file_info_display()
-
-    def setup_data_structure_dock(self):
-        """Create a dockable widget for the Data Structure tree and hide the fixed left panel."""
-        try:
-            # Create dock widget
-            self.data_structure_dock = QDockWidget("Data Structure", self)
-            self.data_structure_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-
-            # Determine base widget to dock
-            widget_to_dock = None
-            if hasattr(self, 'groupBox_dataTree') and self.groupBox_dataTree is not None:
-                widget_to_dock = self.groupBox_dataTree
-            elif hasattr(self, 'tree_data') and self.tree_data is not None:
-                # Fallback container if group box is missing
-                from PyQt5.QtWidgets import QGroupBox, QVBoxLayout
-                base_container = QGroupBox("Data Structure")
-                base_layout = QVBoxLayout(base_container)
-                base_layout.addWidget(self.tree_data)
-                widget_to_dock = base_container
-
-            if widget_to_dock is not None:
-                # Reparent to dock
-                try:
-                    widget_to_dock.setParent(None)
-                except Exception:
-                    pass
-                # Wrap in a container with a header row containing a Refresh button
-                from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
-                container = QWidget(self.data_structure_dock)
-                vlayout = QVBoxLayout(container)
-                header = QHBoxLayout()
-                btn_refresh = QPushButton("Refresh")
-                try:
-                    btn_refresh.setToolTip("Refresh Data Structure")
-                except Exception:
-                    pass
-                try:
-                    btn_refresh.clicked.connect(self.refresh_data_structure)
-                except Exception:
-                    pass
-                header.addWidget(btn_refresh)
-                header.addStretch(1)
-                vlayout.addLayout(header)
-                vlayout.addWidget(widget_to_dock)
-                self.data_structure_dock.setWidget(container)
-
-            # Add dock to the main window on the left side
-            self.addDockWidget(Qt.LeftDockWidgetArea, self.data_structure_dock)
-
-            # Keep Windows menu toggle in sync
-            try:
-                self.data_structure_dock.visibilityChanged.connect(lambda visible: hasattr(self, 'action_show_data_dock') and self.action_show_data_dock.setChecked(bool(visible)))
-            except Exception:
-                pass
-
-            # Hide the fixed left panel in splitter, and give space to analysis panel
-            if hasattr(self, 'leftPanel') and self.leftPanel is not None:
-                try:
-                    self.leftPanel.hide()
-                except Exception:
-                    pass
-            if hasattr(self, 'mainSplitter') and self.mainSplitter is not None:
-                try:
-                    self.mainSplitter.setSizes([0, self.width()])
-                except Exception:
-                    pass
-        except Exception as e:
-            self.update_status(f"Error setting up Data Structure dock: {e}")
-
-    def refresh_data_structure(self):
-        """Refresh the Data Structure tree, reloading the current file or all loaded files."""
-        try:
-            if not hasattr(self, 'tree_data') or self.tree_data is None:
-                self.update_status("Data Structure not available", level='warning')
-                return
-            file_path = getattr(self, 'current_file_path', None)
-            if file_path and os.path.exists(file_path):
-                # Remove existing root item for this file
-                try:
-                    for i in range(self.tree_data.topLevelItemCount()):
-                        item = self.tree_data.topLevelItem(i)
-                        item_type = item.data(0, Qt.UserRole + 2)
-                        existing_path = item.data(0, Qt.UserRole + 1)
-                        if item_type == "file_root" and existing_path == file_path:
-                            root = self.tree_data.invisibleRootItem()
-                            root.removeChild(item)
-                            break
-                except Exception:
-                    pass
-                # Reload the file into the tree
-                self.load_file_content(file_path)
-                self.update_status("Data Structure refreshed")
-            else:
-                # Fallback: refresh all file roots
-                paths = []
-                try:
-                    for i in range(self.tree_data.topLevelItemCount()):
-                        item = self.tree_data.topLevelItem(i)
-                        item_type = item.data(0, Qt.UserRole + 2)
-                        existing_path = item.data(0, Qt.UserRole + 1)
-                        if item_type == "file_root" and existing_path:
-                            paths.append(existing_path)
-                except Exception:
-                    paths = []
-                try:
-                    root = self.tree_data.invisibleRootItem()
-                    for i in reversed(range(self.tree_data.topLevelItemCount())):
-                        root.removeChild(self.tree_data.topLevelItem(i))
-                except Exception:
-                    pass
-                refreshed = 0
-                for p in paths:
-                    try:
-                        self.load_file_content(p)
-                        refreshed += 1
-                    except Exception:
-                        pass
-                if refreshed > 0:
-                    self.update_status(f"Refreshed {refreshed} files in Data Structure")
-                else:
-                    self.update_status("No files to refresh", level='warning')
-        except Exception as e:
-            self.update_status(f"Error refreshing Data Structure: {e}", level='error')
 
     def setup_default_splitter_sizes(self):
         """Set default splitter sizes for the horizontal splitter."""
@@ -862,125 +751,15 @@ class WorkbenchWindow(BaseWindow):
         except Exception as e:
             self.update_status(f"Error setting up 1D connections: {e}")
 
-    def setup_3d_workspace(self):
-        """Set up the 3D workspace with PyVista functionality."""
-        try:
-            if not PYVISTA_AVAILABLE:
-                print("PyVista not available, 3D workspace disabled")
-                # Disable 3D tab if PyVista is not available
-                if hasattr(self, 'tabWidget_analysis'):
-                    # Find and disable the 3D tab
-                    for i in range(self.tabWidget_analysis.count()):
-                        if self.tabWidget_analysis.tabText(i) == "3D View":
-                            self.tabWidget_analysis.setTabEnabled(i, False)
-                            self.tabWidget_analysis.setTabToolTip(i, "PyVista not available")
-                return
+    
 
-            # Setup the 3D plot viewer with PyVista
-            self.setup_3d_plot_viewer()
 
-            # Setup 3D controls connections (delegated)
-            self.controls_3d.setup()
 
-        except Exception as e:
-            self.update_status(f"Error setting up 3D workspace: {e}")
-
-    def setup_3d_plot_viewer(self):
-        """Set up the 3D plot viewer with PyVista QtInteractor."""
-        try:
-            if not PYVISTA_AVAILABLE:
-                return
-
-            # Set PyVista theme
-            pyv.set_plot_theme('dark')
-
-            # Create the 3D plotter
-            print(f"[WB3D] setup_3d_plot_viewer: PYVISTA_AVAILABLE={PYVISTA_AVAILABLE}")
-            self.plotter_3d = QtInteractor()
-            print(f"[WB3D] QtInteractor created: {type(self.plotter_3d)}")
-            self.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            print("[WB3D] Axes added to plotter_3d")
-
-            # Add the plotter to the 3D container
-            if hasattr(self, 'layout3DPlotHost'):
-                self.layout3DPlotHost.addWidget(self.plotter_3d, 0, 0)
-                print("[WB3D] plotter_3d added to layout3DPlotHost")
-            else:
-                print("Warning: layout3DPlotHost not found, 3D plot may not display correctly")
-
-            # Create 3D info dock
-            try:
-                self.setup_3d_info_dock()
-            except Exception:
-                pass
-
-            # Initialize with empty state
-            self.clear_3d_plot()
-            try:
-                self._debug_3d_state("after setup_3d_plot_viewer init")
-            except Exception:
-                pass
-
-        except Exception as e:
-            self.update_status(f"Error setting up 3D plot viewer: {e}")
-
-    def setup_3d_info_dock(self):
-        """Create a small 3D Info dock to display render metrics (e.g., render time)."""
-        try:
-            self.three_d_info_dock = QDockWidget("3D Info", self)
-            self.three_d_info_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-            container = QWidget(self.three_d_info_dock)
-            layout = QVBoxLayout(container)
-            self.three_d_info_label = QLabel("Render time: - ms")
-            layout.addWidget(self.three_d_info_label)
-            self.three_d_info_dock.setWidget(container)
-            self.addDockWidget(Qt.RightDockWidgetArea, self.three_d_info_dock)
-        except Exception as e:
-            self.update_status(f"Error setting up 3D info dock: {e}")
-
-    def update_3d_info(self, render_ms: int):
-        """Update the 3D info dock with render timing in milliseconds."""
-        try:
-            if hasattr(self, 'three_d_info_label') and self.three_d_info_label is not None:
-                self.three_d_info_label.setText(f"Render time: {int(render_ms)} ms")
-        except Exception:
-            pass
+    
 
     # === Controls: 3D ===
     def setup_controls_3d(self):
-        """Set up minimal connections for the 3D tab: only Load Dataset, hide extra controls."""
-        try:
-            # Wire Load button
-            self.btn_load_3d_data.clicked.connect(self.load_3d_data)
-
-            # Hide extra controls to clean up the UI (keep Intensity Range visible)
-            for wname in ('gb_3d_visibility', 'gb_3d_slice_controls'):
-                w = getattr(self, wname, None)
-                try:
-                    if w is not None:
-                        w.setVisible(False)
-                except Exception:
-                    pass
-            # Ensure Intensity Range group is visible
-            try:
-                if hasattr(self, 'gb_3d_intensity') and self.gb_3d_intensity is not None:
-                    self.gb_3d_intensity.setVisible(True)
-            except Exception:
-                pass
-
-            # Disable non-intensity widgets; keep min/max intensity enabled
-            for wname in ('cb_colormap_3d', 'cb_show_volume', 'cb_show_slice', 'cb_show_pointer',
-                          'cb_slice_orientation', 'btn_reset_slice'):
-                w = getattr(self, wname, None)
-                try:
-                    if w is not None:
-                        w.setEnabled(False)
-                except Exception:
-                    pass
-            self.sb_min_intensity_3d.editingFinished.connect(self.update_3d_intensity)
-            self.sb_max_intensity_3d.editingFinished.connect(self.update_3d_intensity)
-        except Exception as e:
-            self.update_status(f"Error setting up 3D connections: {e}")
+        pass
 
     def setup_2d_file_display(self):
         """Set up the 2D file information display in the main workspace."""
@@ -1087,71 +866,71 @@ class WorkbenchWindow(BaseWindow):
         """
         return "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
 
-    def load_file_content(self, file_path):
-        """
-        Load HDF5 file content and add it to the top of the data tree.
+    # def load_file_content(self, file_path):
+    #     """
+    #     Load HDF5 file content and add it to the top of the data tree.
 
-        Args:
-            file_path (str): Path to the HDF5 file to load
-        """
-        try:
-            # Update UI to show loading state
-            self.update_status(f"Loading: {os.path.basename(file_path)}")
+    #     Args:
+    #         file_path (str): Path to the HDF5 file to load
+    #     """
+    #     try:
+    #         # Update UI to show loading state
+    #         self.update_status(f"Loading: {os.path.basename(file_path)}")
 
-            # Store the current file path
-            self.current_file_path = file_path
+    #         # Store the current file path
+    #         self.current_file_path = file_path
 
-            # Update file info display
-            self.update_file_info_display(file_path)
+    #         # Update file info display
+    #         self.update_file_info_display(file_path)
 
-            # Check if this file is already loaded to avoid duplicates
-            if hasattr(self, 'tree_data'):
-                for i in range(self.tree_data.topLevelItemCount()):
-                    existing_item = self.tree_data.topLevelItem(i)
-                    existing_path = existing_item.data(0, Qt.UserRole + 1)
-                    if existing_path == file_path:
-                        # File already loaded, just select it and return
-                        self.tree_data.setCurrentItem(existing_item)
-                        self.update_status(f"File already loaded: {os.path.basename(file_path)}")
-                        return
+    #         # Check if this file is already loaded to avoid duplicates
+    #         if hasattr(self, 'tree_data'):
+    #             for i in range(self.tree_data.topLevelItemCount()):
+    #                 existing_item = self.tree_data.topLevelItem(i)
+    #                 existing_path = existing_item.data(0, Qt.UserRole + 1)
+    #                 if existing_path == file_path:
+    #                     # File already loaded, just select it and return
+    #                     self.tree_data.setCurrentItem(existing_item)
+    #                     self.update_status(f"File already loaded: {os.path.basename(file_path)}")
+    #                     return
 
-            # Clear any existing visualizations
-            self.clear_2d_plot()
-            self.clear_3d_plot()
+    #         # Clear any existing visualizations
+    #         self.clear_2d_plot()
+    #         self.clear_3d_plot()
 
-            # Reset selected dataset path
-            self.selected_dataset_path = None
+    #         # Reset selected dataset path
+    #         self.selected_dataset_path = None
 
-            # Open and read HDF5 file
-            with h5py.File(file_path, 'r') as h5file:
-                # Create root item
-                root_item = QTreeWidgetItem([os.path.basename(file_path)])
-                root_item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
-                root_item.setData(0, Qt.UserRole + 2, "file_root")  # Mark as file root
+    #         # Open and read HDF5 file
+    #         with h5py.File(file_path, 'r') as h5file:
+    #             # Create root item
+    #             root_item = QTreeWidgetItem([os.path.basename(file_path)])
+    #             root_item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
+    #             root_item.setData(0, Qt.UserRole + 2, "file_root")  # Mark as file root
 
-                # Insert at the top (index 0) instead of adding to the end
-                self.tree_data.insertTopLevelItem(0, root_item)
+    #             # Insert at the top (index 0) instead of adding to the end
+    #             self.tree_data.insertTopLevelItem(0, root_item)
 
-                # Recursively populate tree
-                self._populate_tree_recursive(h5file, root_item)
+    #             # Recursively populate tree
+    #             self._populate_tree_recursive(h5file, root_item)
 
-                # Keep the root item collapsed by default
-                root_item.setExpanded(False)
+    #             # Keep the root item collapsed by default
+    #             root_item.setExpanded(False)
 
-                # Select the newly added item
-                self.tree_data.setCurrentItem(root_item)
+    #             # Select the newly added item
+    #             self.tree_data.setCurrentItem(root_item)
 
-            # Update workspace displays
-            if hasattr(self, 'file_status_label'):
-                self.file_status_label.setText(f"HDF5 file loaded: {os.path.basename(file_path)}")
-            if hasattr(self, 'dataset_info_text'):
-                self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
+    #         # Update workspace displays
+    #         if hasattr(self, 'file_status_label'):
+    #             self.file_status_label.setText(f"HDF5 file loaded: {os.path.basename(file_path)}")
+    #         if hasattr(self, 'dataset_info_text'):
+    #             self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
 
-            self.update_status("HDF5 File Loaded Successfully")
+    #         self.update_status("HDF5 File Loaded Successfully")
 
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load HDF5 file: {str(e)}")
-            self.update_status("Failed to load file")
+    #     except Exception as e:
+    #         QMessageBox.critical(self, "Error", f"Failed to load HDF5 file: {str(e)}")
+    #         self.update_status("Failed to load file")
 
     def save_file_content(self, file_path):
         """
@@ -1240,7 +1019,6 @@ class WorkbenchWindow(BaseWindow):
 
             # Clear any existing visualizations
             self.clear_2d_plot()
-            self.clear_3d_plot()
 
             # Update workspace displays
             if hasattr(self, 'file_status_label'):
@@ -1656,86 +1434,14 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(message)
         except Exception as e:
             self.update_status(f"Error updating failure status: {e}")
-        
-    
 
     def load_3d_data(self):
-        """Load dataset into the 3D viewer. If none selected, prompt for file and plot minimal view."""
-        start_all = time.perf_counter()
+        """Delegate 3D data loading to Tab3D."""
         try:
-            if not PYVISTA_AVAILABLE:
-                QMessageBox.warning(self, "3D Viewer", "PyVista is not available. Cannot load 3D data.")
-                return
-            
-            if not self.current_file_path and not self.selected_dataset_path:
-                # Prompt for file and plot minimal view (VTI or HDF5)
-                file_name, _ = QFileDialog.getOpenFileName(
-                    self, 'Select HDF5 or VTI File', '', 'HDF5 or VTI Files (*.h5 *.hdf5 *.vti);;All Files (*)'
-                )
-                if not file_name:
-                    return
-                self.current_file_path = file_name
-            data = self.h5loader.load_h5_to_3d(self.current_file_path)
-
-            self.current_3d_data = data
-
-            # Unpack data
-            points, intensities, num_images, shape = data
-
-            # Define main-thread slot to render once worker signals ready
-            def _on_ready(pts, ints, nimg, shp):
-                try:
-                    self.plot_3d_points(pts, ints, nimg, shp)
-                    # Switch to 3D viewer tab
-                    if hasattr(self, 'tabWidget_analysis'):
-                        for i in range(self.tabWidget_analysis.count()):
-                            if self.tabWidget_analysis.tabText(i) == "3D View":
-                                self.tabWidget_analysis.setCurrentIndex(i)
-                                break
-                    self.update_status("Loaded 3D data")
-                except Exception as e:
-                    self.update_status(f"Error rendering 3D data: {e}")
-
-            # Thread operations: run Render3D worker off the UI thread
-            self._render3d_thread = QThread(self)
-            self._render3d_worker = Render3D(points=points, intensities=intensities, num_images=num_images, shape=shape)
-            self._render3d_worker.moveToThread(self._render3d_thread)
-            self._render3d_thread.started.connect(self._render3d_worker.run)
-            self._render3d_worker.render_ready.connect(_on_ready)
-            self._render3d_worker.finished.connect(self._render3d_thread.quit)
-            self._render3d_worker.finished.connect(self._render3d_worker.deleteLater)
-            self._render3d_thread.finished.connect(self._render3d_thread.deleteLater)
-            self._render3d_thread.start()
-
-        #         # VTI volume path
-        #         try:
-        #             # Inspect HDF5 file type
-        #             points, intensities, num_images, shape = loader.load_h5_to_3d(file_name)
-        #             if int(points.size) == 0 or int(intensities.size) == 0:
-        #                 QMessageBox.warning(self, 'Load Error', f'No valid 3D point data found.\\nError: {loader.last_error}')
-        #                 return
-        #             self.plot_3d_points(points, intensities, num_images, shape)
-        #         except Exception as e:
-        #             QMessageBox.critical(self, 'Error Loading Data', f'Failed to load file:\\n{e}')
-        #             return
-
-        #     # Switch to 3D viewer tab
-        #     if hasattr(self, 'tabWidget_analysis'):
-        #         for i in range(self.tabWidget_analysis.count()):
-        #             if self.tabWidget_analysis.tabText(i) == "3D View":
-        #                 self.tabWidget_analysis.setCurrentIndex(i)
-        #                 break
-        #     self.update_status("Loaded 3D data")
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.load_data()
         except Exception as e:
-            error_msg = f"Error loading 3D data: {str(e)}"
-            QMessageBox.critical(self, "3D Viewer Error", error_msg)
-            self.update_status(error_msg)
-        finally:
-            try:
-                elapsed_ms_all = int((time.perf_counter() - start_all) * 1000)
-                self.update_3d_info(elapsed_ms_all)
-            except Exception:
-                pass
+            self.update_status(f"Error loading 3D data: {e}")
 
     # === 2D Helpers ===
     def clear_2d_plot(self):
@@ -1965,319 +1671,25 @@ class WorkbenchWindow(BaseWindow):
 
     # === 3D Helpers ===
     def _set_3d_overlay(self, text: str):
-        """Show a small HUD text overlay in the 3D view to confirm state (e.g., counts)."""
-        try:
-            if hasattr(self, 'plotter_3d') and self.plotter_3d is not None:
-                # Remove previous overlay if present
-                try:
-                    self.plotter_3d.remove_actor('hud_text')
-                except Exception:
-                    pass
-                # Add new overlay
-                try:
-                    self.plotter_3d.add_text(str(text), position='upper_left', font_size=12, color='white', name='hud_text')
-                except Exception:
-                    pass
-                # Render to display overlay
-                try:
-                    self.plotter_3d.render()
-                except Exception:
-                    pass
-                try:
-                    print(f"[WB3D] HUD overlay text set: {text}")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        pass
 
     def _debug_3d_state(self, tag: str = ""):
-        """Print and persist key state of the 3D plotter to help diagnose rendering issues."""
-        try:
-            lines = []
-            lines.append(f"[WB3D] STATE {tag}")
-            try:
-                actors = list(getattr(self.plotter_3d, 'actors', {}).keys())
-            except Exception:
-                actors = []
-            lines.append(f"actors: {actors}")
-            # Camera
-            try:
-                cam = getattr(self.plotter_3d, 'camera', None)
-                pos = getattr(cam, 'position', None)
-                focal = getattr(cam, 'focal_point', None)
-                lines.append(f"camera.position={pos} focal_point={focal}")
-            except Exception:
-                pass
-            # Volume/cloud bounds
-            try:
-                if hasattr(self, 'vol_3d') and self.vol_3d is not None:
-                    lines.append(f"vol_3d.bounds={self.vol_3d.bounds}")
-            except Exception:
-                pass
-            try:
-                if hasattr(self, 'cloud_mesh_3d') and self.cloud_mesh_3d is not None:
-                    lines.append(f"cloud_mesh_3d.bounds={self.cloud_mesh_3d.bounds}")
-            except Exception:
-                pass
-            # Scalar bars present?
-            try:
-                sbars = list(getattr(self.plotter_3d, 'scalar_bars', {}).keys())
-                lines.append(f"scalar_bars: {sbars}")
-            except Exception:
-                pass
-            msg = " | ".join(lines)
-            print(msg)
-            # Persist to file
-            try:
-                dbg_path = project_root / "logs" / "workbench_3d_debug.txt"
-                os.makedirs(str(dbg_path.parent), exist_ok=True)
-                with open(dbg_path, "a") as f:
-                    f.write(msg + "\n")
-            except Exception:
-                pass
-        except Exception:
-            pass
+        pass
     def clear_3d_plot(self):
-        """Clear the 3D plot and show placeholder."""
+        """Delegate 3D plot clearing to Tab3D."""
         try:
-            if hasattr(self, 'plotter_3d') and self.plotter_3d is not None:
-                try:
-                    print(f"[WB3D] clear_3d_plot: actors before clear: {list(getattr(self.plotter_3d,'actors',{}).keys())}")
-                except Exception:
-                    pass
-                self.plotter_3d.clear()
-                # Reset state variables
-                self.current_3d_data = None
-                self.vol_3d = None
-                self.cloud_mesh_3d = None
-                try:
-                    print(f"[WB3D] clear_3d_plot: actors after clear: {list(getattr(self.plotter_3d,'actors',{}).keys())}")
-                except Exception:
-                    pass
-
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.clear_plot()
         except Exception as e:
             self.update_status(f"Error clearing 3D plot: {e}")
 
     def create_3d_from_2d(self, data):
-        """Minimal 3D plotting from 2D: render grid points with intensity (no interpolation)."""
-        try:
-            start = time.perf_counter()
-            height, width = data.shape
-            X, Y = np.meshgrid(np.arange(width), np.arange(height))
-            Z = np.zeros_like(X, dtype=float)
-            points = np.column_stack([X.ravel().astype(float), Y.ravel().astype(float), Z.ravel()])
-            intens = np.asarray(data, dtype=float).ravel()
-            try:
-                imin = float(np.min(intens)); imax = float(np.max(intens))
-                print(f"[WB3D] create_3d_from_2d: h={height}, w={width}, points.shape={points.shape}, intens.range=[{imin:.3f},{imax:.3f}] ")
-            except Exception:
-                pass
-
-            # Clear previous visualization and add axes
-            self.plotter_3d.clear()
-            try:
-                self.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            except Exception:
-                pass
-
-            # Plot points
-            self.cloud_mesh_3d = pyv.PolyData(points)
-            self.cloud_mesh_3d['intensity'] = intens
-            self.plotter_3d.add_mesh(
-                self.cloud_mesh_3d,
-                scalars='intensity',
-                cmap='jet',
-                point_size=5.0,
-                name='points',
-                show_scalar_bar=True,
-                reset_camera=True,
-            )
-            try:
-                self.plotter_3d.show_bounds(
-                    mesh=self.cloud_mesh_3d,
-                    xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
-                    bounds=self.cloud_mesh_3d.bounds,
-                )
-            except Exception:
-                pass
-            self.plotter_3d.reset_camera()
-            self.plotter_3d.render()
-            try:
-                print(f"[WB3D] create_3d_from_2d: actors={list(getattr(self.plotter_3d,'actors',{}).keys())}, points_actor_present={'points' in getattr(self.plotter_3d,'actors',{})}")
-                cam = getattr(self.plotter_3d,'camera',None)
-                if cam:
-                    print(f"[WB3D] camera pos={getattr(cam,'position',None)}, focal={getattr(cam,'focal_point',None)}")
-            except Exception:
-                pass
-            try:
-                self._debug_3d_state("after create_3d_from_2d")
-            except Exception:
-                pass
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            try:
-                self._set_3d_overlay(f"Points: {height*width}")
-            except Exception:
-                pass
-            try:
-                self.update_3d_info(elapsed_ms)
-            except Exception:
-                pass
-        except Exception as e:
-            self.update_status(f"Error creating 3D from 2D: {e}")
+        pass
 
     def create_3d_from_3d(self, data):
-        """Minimal 3D plotting from 3D: render volume directly (no slice, no extra controls)."""
-        try:
-            start = time.perf_counter()
-            # Build ImageData with cell-centered scalars
-            grid = pyv.ImageData()
-            dims_cells = tuple(int(x) for x in data.shape)
-            grid.dimensions = (np.array(dims_cells, dtype=int) + 1).tolist()
-            try:
-                grid.spacing = (1.0, 1.0, 1.0)
-            except Exception:
-                pass
-            try:
-                grid.origin = (0.0, 0.0, 0.0)
-            except Exception:
-                pass
-            grid.cell_data['intensity'] = np.asarray(data, dtype=float).ravel(order='F')
-            self.vol_3d = grid
-            try:
-                print(f"[WB3D] create_3d_from_3d: data.shape={data.shape}, grid.dimensions={self.vol_3d.dimensions}, bounds={self.vol_3d.bounds}")
-            except Exception:
-                pass
+        pass
 
-            # Clear previous visualization and add axes
-            self.plotter_3d.clear()
-            print("[WB3D] Plot cleared")
-            try:
-                self.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            except Exception:
-                pass
 
-            # Add volume
-            self.plotter_3d.add_volume(
-                volume=self.vol_3d,
-                scalars='intensity',
-                name='cloud_volume',
-                reset_camera=True,
-                show_scalar_bar=True,
-            )
-            try:
-                self.plotter_3d.show_bounds(
-                    mesh=self.vol_3d,
-                    xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
-                    bounds=self.vol_3d.bounds,
-                )
-            except Exception:
-                pass
-            self.plotter_3d.reset_camera()
-            self.plotter_3d.render()
-            try:
-                print(f"[WB3D] create_3d_from_3d: actors={list(getattr(self.plotter_3d,'actors',{}).keys())}, volume_actor_present={'cloud_volume' in getattr(self.plotter_3d,'actors',{})}")
-                cam = getattr(self.plotter_3d,'camera',None)
-                if cam:
-                    print(f"[WB3D] camera pos={getattr(cam,'position',None)}, focal={getattr(cam,'focal_point',None)}")
-            except Exception:
-                pass
-            try:
-                self._debug_3d_state("after create_3d_from_3d")
-            except Exception:
-                pass
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            try:
-                _min = float(np.min(data)); _max = float(np.max(data))
-                self._set_3d_overlay(f"Volume: {tuple(data.shape)} | range [{_min:.3f}, {_max:.3f}]")
-            except Exception:
-                pass
-            try:
-                self.update_3d_info(elapsed_ms)
-            except Exception:
-                pass
-        except Exception as e:
-            self.update_status(f"Error creating 3D from 3D: {e}")
-
-    def plot_3d_points(self, points: np.ndarray, intensities: np.ndarray, num_images: int, shape: tuple):
-        """Minimal 3D plotting from raw HKL points with intensity scalars (no interpolation)."""
-        try:
-            self.setup_3d_plot_viewer()
-            start = time.perf_counter()
-            pts = np.asarray(points, dtype=float)
-            ints = np.asarray(intensities, dtype=float).ravel()
-            try:
-                print(f"[WB3D] plot_3d_points: pts.shape={pts.shape}, ints.shape={ints.shape}, ints.range=[{float(np.min(ints)):.3f},{float(np.max(ints)):.3f}] ")
-            except Exception:
-                pass
-            if pts.ndim != 2 or pts.shape[1] != 3 or ints.size != pts.shape[0]:
-                QMessageBox.warning(self, '3D Viewer', 'Invalid point cloud data.')
-                return
-            self.plotter_3d.clear()
-            self.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            
-            # Lut Tables
-            self.lut = pyv.LookupTable(cmap='viridis')  
-            self.lut.below_range_color = 'black'
-            self.lut.above_range_color = (1.0, 1.0, 0.0)
-            self.lut.below_range_opacity = 0
-            self.lut.apply_opacity([0,1]) 
-            self.lut.above_range_opacity = 1 
-
-            self.lut2 = pyv.LookupTable(cmap='viridis')
-            self.lut2.apply_opacity([0,1]) 
-
-            mesh = pyv.PolyData(pts)
-            mesh['intensity'] = ints
-            self.cloud_mesh_3d = mesh
-            self.plotter_3d.add_mesh(
-                mesh,
-                scalars='intensity',
-                cmap=self.lut,
-                point_size=5.0,
-                name='points',
-                show_scalar_bar=True,
-                reset_camera=True,
-                nan_color=None,
-                nan_opacity=0.0,
-                show_edges=False
-            )
-
-            self.plotter_3d.show_bounds(
-                mesh=mesh,
-                xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
-                bounds=mesh.bounds,
-            )
-            self.plotter_3d.reset_camera()
-            ints_range = int(np.min(ints)), int(np.max(ints))
-            self.sb_min_intensity_3d.setRange(*ints_range)
-            self.sb_min_intensity_3d.setValue(int(np.min(ints)))
-            self.sb_max_intensity_3d.setRange(*ints_range)
-            self.sb_max_intensity_3d.setValue(int(np.max(ints)))
-
-            self.update_3d_intensity()
-            self.plotter_3d.render()
-            try:
-                print(f"[WB3D] plot_3d_points: actors={list(getattr(self.plotter_3d,'actors',{}).keys())}, points_actor_present={'points' in getattr(self.plotter_3d,'actors',{})}")
-                cam = getattr(self.plotter_3d,'camera',None)
-                if cam:
-                    print(f"[WB3D] camera pos={getattr(cam,'position',None)}, focal={getattr(cam,'focal_point',None)}")
-            except Exception:
-                pass
-            try:
-                self._debug_3d_state("after plot_3d_points")
-            except Exception:
-                pass
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            try:
-                self._set_3d_overlay(f"Points: {pts.shape[0]}")
-            except Exception:
-                pass
-            try:
-                self.update_3d_info(elapsed_ms)
-            except Exception:
-                pass
-        except Exception as e:
-            self.update_status(f"Error plotting 3D points: {e}")
 
     def update_intensity_controls(self, data):
         """Update the intensity control ranges based on data."""
@@ -2297,173 +1709,61 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error updating intensity controls: {e}")
 
     def apply_3d_visibility_settings(self):
-        """Apply visibility settings based on checkbox states."""
-        try:
-            if not hasattr(self, 'plotter_3d') or self.plotter_3d is None:
-                return
-
-            # Volume visibility
-            if "volume" in self.plotter_3d.actors:
-                show_volume = hasattr(self, 'cb_show_volume') and self.cb_show_volume.isChecked()
-                self.plotter_3d.actors["volume"].SetVisibility(show_volume)
-                print(f"[WB3D] apply_3d_visibility_settings: volume visible -> {show_volume}")
-            else:
-                print("[WB3D] apply_3d_visibility_settings: no 'volume' actor")
-
-            # Slice visibility
-            if "slice" in self.plotter_3d.actors:
-                show_slice = hasattr(self, 'cb_show_slice') and self.cb_show_slice.isChecked()
-                self.plotter_3d.actors["slice"].SetVisibility(show_slice)
-                print(f"[WB3D] apply_3d_visibility_settings: slice visible -> {show_slice}")
-            else:
-                print("[WB3D] apply_3d_visibility_settings: no 'slice' actor")
-
-            self.plotter_3d.render()
-            try:
-                self._debug_3d_state("after apply_3d_visibility_settings")
-            except Exception:
-                pass
-
-        except Exception as e:
-            self.update_status(f"Error applying 3D visibility settings: {e}")
+        pass
 
     def on_3d_colormap_changed(self, colormap_name):
-        """Handle 3D colormap changes."""
+        """Delegate 3D colormap change to Tab3D."""
         try:
-            if not hasattr(self, 'plotter_3d') or self.plotter_3d is None:
-                return
-
-            # Update colormap for all actors
-            for actor_name in ["surface", "volume", "slice"]:
-                if actor_name in self.plotter_3d.actors:
-                    # Remove and re-add with new colormap
-                    if actor_name == "surface" and hasattr(self, 'cloud_mesh_3d'):
-                        self.plotter_3d.remove_actor(actor_name)
-                        self.plotter_3d.add_mesh(
-                            self.cloud_mesh_3d,
-                            scalars="intensity",
-                            cmap=colormap_name,
-                            point_size=3.0,
-                            name="surface",
-                            show_scalar_bar=True
-                        )
-
-            self.plotter_3d.render()
-
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.on_colormap_changed(colormap_name)
         except Exception as e:
             self.update_status(f"Error changing 3D colormap: {e}")
 
     def toggle_3d_volume(self, checked):
-        """Toggle 3D volume visibility."""
+        """Delegate 3D volume visibility toggle to Tab3D."""
         try:
-            if "volume" in self.plotter_3d.actors:
-                self.plotter_3d.actors["volume"].SetVisibility(checked)
-                self.plotter_3d.render()
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.toggle_volume(bool(checked))
         except Exception as e:
             self.update_status(f"Error toggling 3D volume: {e}")
 
     def toggle_3d_slice(self, checked):
-        """Toggle 3D slice visibility."""
+        """Delegate 3D slice visibility toggle to Tab3D."""
         try:
-            if "slice" in self.plotter_3d.actors:
-                self.plotter_3d.actors["slice"].SetVisibility(checked)
-                self.plotter_3d.render()
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.toggle_slice(bool(checked))
         except Exception as e:
             self.update_status(f"Error toggling 3D slice: {e}")
 
     def toggle_3d_pointer(self, checked):
-        """Toggle 3D pointer visibility."""
+        """Delegate 3D pointer visibility toggle to Tab3D."""
         try:
-            # This would toggle slice pointer/normal indicators
-            # Implementation depends on specific pointer visualization
-            pass
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.toggle_pointer(bool(checked))
         except Exception as e:
             self.update_status(f"Error toggling 3D pointer: {e}")
 
     def update_3d_intensity(self):
-        """Update 3D intensity levels (applied after editing is finished or Enter is pressed)."""
+        """Delegate 3D intensity update to Tab3D."""
         try:
-            min_val = int(self.sb_min_intensity_3d.value())
-            max_val = int(self.sb_max_intensity_3d.value())
-            if min_val > max_val:
-                min_val, max_val = max_val, min_val
-                self.sb_min_intensity_3d.setValue(min_val)
-                self.sb_max_intensity_3d.setValue(max_val)
-            new_range = (min_val, max_val)
-            for actor_name, actor in getattr(self.plotter_3d, 'actors', {}).items():
-                mapper = getattr(actor, 'mapper', None)
-                if mapper is not None:
-                        mapper.scalar_range = new_range
-
-            self.plotter_3d.update_scalar_bar_range(new_range)
-            
-                # Fallback: set lookup table ranges directly
-            for name, sbar in getattr(self.plotter_3d, 'scalar_bars', {}).items():
-                    lut = sbar.GetLookupTable()
-                    if lut is not None:
-                        lut.SetTableRange(float(min_val), float(max_val))
-                        sbar.Modified()
-
-            # Update any custom LUTs used for point cloud
-            self.lut.scalar_range = new_range
-            self.lut2.scalar_range = new_range
-            self.plotter_3d.render()
-            self.update_status(f"3D intensity range set to [{min_val}, {max_val}]")
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.update_intensity()
         except Exception as e:
             self.update_status(f"Error updating 3D intensity: {e}")
 
     def change_slice_orientation(self, orientation):
-        """Change the slice orientation in 3D view."""
+        """Delegate slice orientation change to Tab3D."""
         try:
-            if not hasattr(self, 'vol_3d') or self.vol_3d is None:
-                return
-
-            # Define normal vectors for different orientations
-            if "HK" in orientation or "xy" in orientation:
-                normal = (0, 0, 1)
-            elif "KL" in orientation or "yz" in orientation:
-                normal = (1, 0, 0)
-            elif "HL" in orientation or "xz" in orientation:
-                normal = (0, 1, 0)
-            else:
-                normal = (0, 0, 1)  # Default
-
-            # Create new slice
-            slice_origin = self.vol_3d.center
-            vol_slice = self.vol_3d.slice(normal=normal, origin=slice_origin)
-
-            print(f"[WB3D] change_slice_orientation: computed vol_slice points={int(getattr(vol_slice,'n_points',0))}")
-            if vol_slice.n_points > 0:
-                # Remove old slice and add new one
-                if "slice" in self.plotter_3d.actors:
-                    self.plotter_3d.remove_actor("slice")
-
-                self.plotter_3d.add_mesh(
-                    vol_slice,
-                    scalars="intensity",
-                    name="slice",
-                    show_edges=False
-                )
-
-                # Apply visibility setting
-                show_slice = hasattr(self, 'cb_show_slice') and self.cb_show_slice.isChecked()
-                self.plotter_3d.actors["slice"].SetVisibility(show_slice)
-
-                self.plotter_3d.render()
-                try:
-                    self._debug_3d_state("after change_slice_orientation")
-                except Exception:
-                    pass
-
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.change_slice_orientation(orientation)
         except Exception as e:
             self.update_status(f"Error changing slice orientation: {e}")
 
     def reset_3d_slice(self):
-        """Reset the 3D slice to default position and orientation."""
+        """Delegate resetting 3D slice to Tab3D."""
         try:
-            if hasattr(self, 'cb_slice_orientation'):
-                self.cb_slice_orientation.setCurrentIndex(0)  # Reset to first option
-            self.change_slice_orientation("HK (xy)")
+            if hasattr(self, 'tab_3d') and self.tab_3d is not None:
+                self.tab_3d.reset_slice()
         except Exception as e:
             self.update_status(f"Error resetting 3D slice: {e}")
 
