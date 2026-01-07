@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HKL3DTab</class>
+ <widget class="QWidget" name="HKL3DTab">
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <layout class="QHBoxLayout" name="container">
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QScrollArea" name="scrollArea_3d_controls">
+     <property name="maximumSize">
+      <size>
+       <width>300</width>
+       <height>16777215</height>
+      </size>
+     </property>
+     <property name="verticalScrollBarPolicy">
+      <enum>Qt::ScrollBarAsNeeded</enum>
+     </property>
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarAsNeeded</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents_3d">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>298</width>
+        <height>400</height>
+       </rect>
+      </property>
+      <layout class="QVBoxLayout" name="layout_3d_controls">
+       <item>
+        <widget class="QGroupBox" name="gb_3d_load_data">
+         <property name="title">
+          <string>Load Data</string>
+         </property>
+         <layout class="QVBoxLayout" name="layout_load_data">
+          <item>
+           <widget class="QPushButton" name="btn_load_3d_data">
+            <property name="text">
+             <string>Load Selected Dataset</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="gb_3d_visibility">
+         <property name="title">
+          <string>Visibility</string>
+         </property>
+         <layout class="QFormLayout" name="layout_visibility">
+          <item row="0" column="0">
+           <widget class="QLabel" name="lbl_colormap_3d">
+            <property name="text">
+             <string>Color Map:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QComboBox" name="cb_colormap_3d">
+            <item>
+             <property name="text">
+              <string>jet</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>viridis</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>plasma</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>magma</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QCheckBox" name="cb_show_slice">
+            <property name="text">
+             <string>Show Slice</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QCheckBox" name="cb_show_points">
+            <property name="text">
+             <string>Show Points</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="gb_3d_intensity">
+         <property name="title">
+          <string>Intensity Range</string>
+         </property>
+         <layout class="QFormLayout" name="layout_intensity">
+          <item row="0" column="0">
+           <widget class="QLabel" name="lbl_min_intensity_3d">
+            <property name="text">
+             <string>Min:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QSpinBox" name="sb_min_intensity_3d">
+            <property name="minimum">
+             <number>-999999</number>
+            </property>
+            <property name="maximum">
+             <number>999999</number>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="lbl_max_intensity_3d">
+            <property name="text">
+             <string>Max:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QSpinBox" name="sb_max_intensity_3d">
+            <property name="minimum">
+             <number>-999999</number>
+            </property>
+            <property name="maximum">
+             <number>999999</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_3d">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -8,11 +8,12 @@ Provides common functionality and consistent behavior across all windows.
 import sys
 import os
 from pathlib import Path
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QMessageBox
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QAction, QMenuBar, QLabel
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer
 from PyQt5 import uic
 from database import DatabaseInterface
 from viewer.documentation.dialog import DocumentationDialog
+import time, subprocess, shutil
 
 di = DatabaseInterface()
 
@@ -47,6 +48,9 @@ class BaseWindow(QMainWindow):
         
         self.setup_base_connections()
         
+        # CPU, GPU, runtime in status bar
+        self.init_perf_statusbar()
+        
     def load_ui(self):
         """Load the UI file for this window."""
         if not self.ui_file_name:
@@ -73,6 +77,111 @@ class BaseWindow(QMainWindow):
         # Documentation menu (wired here; content discovery handled by DocumentationDialog)
         if hasattr(self, 'actionOpenDocumentation'):
             self.actionOpenDocumentation.triggered.connect(self.open_documentation)
+
+        # Ensure a 'Windows' menu exists globally for docks to use
+        try:
+            self.ensure_windows_menu()
+        except Exception:
+            pass
+
+    def ensure_windows_menu(self):
+        """Create the 'Windows' menu on the menu bar if it doesn't already exist, and return it."""
+        # Acquire a QMenuBar without calling self.menuBar() directly to avoid shadowing issues
+        mbar = None
+        try:
+            mb_attr = getattr(self, 'menuBar', None)
+            # If UI provided a QMenuBar attribute, use it
+            if isinstance(mb_attr, QMenuBar):
+                mbar = mb_attr
+            else:
+                # Fallback to class-qualified method to avoid any overrides or shadowing
+                mbar = QMainWindow.menuBar(self)
+        except Exception:
+            mbar = None
+
+        # Strict type check before proceeding
+        if not isinstance(mbar, QMenuBar):
+            return None
+
+        # Try to find an existing 'Windows' menu
+        windows_menu = None
+        try:
+            for act in mbar.actions():
+                m = act.menu()
+                if m is not None and m.title() == "Windows":
+                    windows_menu = m
+                    break
+        except Exception:
+            windows_menu = None
+
+        # Create if missing, then store and return
+        if windows_menu is None:
+            try:
+                from PyQt5.QtWidgets import QMenu
+                windows_menu = QMenu("Windows", self)
+                mbar.addMenu(windows_menu)
+            except Exception:
+                windows_menu = None
+
+        self.windows_menu = windows_menu
+        return windows_menu
+
+    def get_windows_menu(self):
+        """Return the Windows menu, creating it if necessary."""
+        return self.ensure_windows_menu()
+
+    def ensure_windows_submenu(self, segment_key=None):
+        """Ensure and return a submenu under 'Windows' titled by normalized segment_key.
+        Normalization: (segment_key or "").strip().lower(); empty -> 'other'.
+        Keeps the 'other' submenu as the bottom-most entry within the Windows menu.
+        """
+        windows_menu = self.ensure_windows_menu()
+        if windows_menu is None:
+            return None
+        key = (segment_key or "").strip().lower()
+        if not key:
+            key = "other"
+        if not hasattr(self, '_windows_submenus'):
+            self._windows_submenus = {}
+        submenu = self._windows_submenus.get(key)
+        if submenu is None:
+            from PyQt5.QtWidgets import QMenu
+            submenu = QMenu(key, self)
+            windows_menu.addMenu(submenu)
+            self._windows_submenus[key] = submenu
+            # Keep 'other' at bottom by moving its action to end if it exists
+            other = self._windows_submenus.get('other')
+            if other is not None:
+                for act in list(windows_menu.actions()):
+                    if act.menu() is other:
+                        windows_menu.removeAction(act)
+                        windows_menu.addMenu(other)
+                        break
+        return submenu
+
+
+    def add_dock_toggle_action(self, dock, title: str, segment_name=None):
+        """Add a checkable action for the given dock under a segmented Windows submenu and wire visibility sync.
+        Segment normalization: (segment_name or "").strip().lower(); empty -> "other".
+        """
+        windows_menu = self.ensure_windows_menu()
+        if windows_menu is None:
+            return None
+        submenu = self.ensure_windows_submenu(segment_name)
+        action = QAction(str(title), self)
+        action.setCheckable(True)
+        action.setChecked(dock.isVisible())
+        action.toggled.connect(lambda checked: dock.setVisible(bool(checked)))
+        dock.visibilityChanged.connect(lambda visible: action.setChecked(bool(visible)))
+        submenu.addAction(action)
+        return action
+
+    def add_windows_menu_action(self, action, segment_name=None):
+        """Add an arbitrary action to the segmented Windows menu under the specified submenu."""
+        submenu = self.ensure_windows_submenu(segment_name)
+        if submenu is not None and action is not None:
+            submenu.addAction(action)
+        return action
             
     def open_file(self):
         """
@@ -221,6 +330,53 @@ class BaseWindow(QMainWindow):
             # Avoid raising during logging
             pass
             
+    def init_perf_statusbar(self):
+        sb = QMainWindow.statusBar(self)
+        self._cpu_label = QLabel("CPU: -%")
+        self._gpu_label = QLabel("GPU: N/A")
+        self._runtime_label = QLabel("Runtime: 0s")
+        sb.addPermanentWidget(self._cpu_label)
+        sb.addPermanentWidget(self._gpu_label)
+        sb.addPermanentWidget(self._runtime_label)
+        self._start_time = time.monotonic()
+        self._cpu_prev = None
+        self._perf_timer = QTimer(self)
+        self._perf_timer.setInterval(1000)
+        self._perf_timer.timeout.connect(self._update_perf_labels)
+        self._perf_timer.start()
+
+    def _update_perf_labels(self):
+        # CPU
+        with open("/proc/stat", "r") as f:
+            parts = f.readline().split()
+        vals = list(map(int, parts[1:]))
+        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+        total = sum(vals[:8]) if len(vals) >= 8 else sum(vals)
+        if self._cpu_prev is not None:
+            ptotal, pidle = self._cpu_prev
+            dt = total - ptotal
+            didle = idle - pidle
+            if dt > 0:
+                percent = (dt - didle) * 100.0 / dt
+                self._cpu_label.setText(f"CPU: {percent:.0f}%")
+        self._cpu_prev = (total, idle)
+
+        # GPU
+        gpu_text = "GPU: N/A"
+        smi = shutil.which("nvidia-smi")
+        if smi is not None:
+            res = subprocess.run([smi, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True)
+            lines = res.stdout.strip().splitlines()
+            if lines:
+                val = lines[0].strip()
+                if val.isdigit():
+                    gpu_text = f"GPU: {int(val)}%"
+        self._gpu_label.setText(gpu_text)
+
+        # Runtime
+        elapsed = int(time.monotonic() - self._start_time)
+        self._runtime_label.setText(f"Runtime: {elapsed}s")
+
     def setup_window_properties(self, title, width=800, height=600):
         """
         Set up basic window properties.

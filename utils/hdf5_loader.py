@@ -1,3 +1,4 @@
+import hdf5plugin  # Must be imported before h5py to register compression filters
 import h5py
 import numpy as np
 from typing import Tuple, Optional, Union
@@ -5,7 +6,6 @@ import os
 from pathlib import Path
 import traceback
 import sys, pathlib
-import hdf5plugin
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 class HDF5Loader:

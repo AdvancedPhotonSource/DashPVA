@@ -48,6 +48,12 @@ class HDF5Writer(QObject):
             len_attributes = len(attributes)
             
             if len(OUTPUT_FILE_CONFIG) == 2:
+                file_path = Path('~/DashPVA/test/').expanduser()
+                if not file_path.exists():
+                    file_path.mkdir(parents=True)
+                file_name = Path('mytemp')
+                TEMP_FILE_LOCATION = file_path.joinpath(file_name)
+                
                 file_path = Path(OUTPUT_FILE_CONFIG['FilePath']).expanduser()
                 if not file_path.exists():
                     file_path.mkdir(parents=True)
@@ -74,6 +80,7 @@ class HDF5Writer(QObject):
             merged_metadata = {}
             for attribute_dict in attributes:
                 for key, value in attribute_dict.items():
+                    print(f"DICT ATTRS: {key} {value}")
                     if not (key == 'RSM' or key == 'Analysis'):
                         if key not in merged_metadata:
                             merged_metadata[key] = []
@@ -91,6 +98,7 @@ class HDF5Writer(QObject):
                 motor_pos_grp = metadata_grp.create_group('motor_positions')
                 rois_grp = data_grp.create_group('rois')
                 for key, values in merged_metadata.items():
+                    print("Key",key,"Value",values)
                     if all(isinstance(v, (int, float, np.number)) for v in values):
                         if 'ROI' in key:
                             parts = key.split(':')
@@ -106,6 +114,7 @@ class HDF5Writer(QObject):
                         dt = h5py.string_dtype(encoding='utf-8')
                         metadata_grp.create_dataset(key, data=np.array(values, dtype=dt))
 
+            with h5py.File(TEMP_FILE_LOCATION, 'a') as h5f2:
                 # Create HKL subgroup under images if HKL caches exist
                 if not compress:
                     if HKL_IN_CONFIG and rsm:
