@@ -54,6 +54,13 @@ dependencies = [
     "markdown>=3.10",
     "jupyter>=1.1.1",
     "qtawesome>=1.4.0",
+    "torch>=2.9.1",
+    "torchvision>=0.24.1",
+    "segment-anything",
+    "pycocotools>=2.0.11",
+    "onnxruntime>=1.23.2",
+    "onnx>=1.20.0",
+    "deepinv>=0.3.7",
 ]
 
 [build-system]
@@ -63,6 +70,9 @@ build-backend = "hatchling.build"
 packages = ["."]
 
 [tool.uv]
+
+[tool.uv.sources]
+segment-anything = { git = "https://github.com/facebookresearch/segment-anything.git" }
 # dev-dependencies moved to dependency-groups (see below)
 
 [project.dependency-groups]
