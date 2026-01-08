@@ -54,24 +54,86 @@ class DataStructureDock(BaseDock):
 
     def _on_refresh_clicked(self):
         try:
-            mw = self.main_window
-            if hasattr(mw, 'refresh_data_structure'):
-                mw.refresh_data_structure()
-            else:
-                # Fallback: reload current file if available
-                fp = getattr(mw, 'current_file_path', None)
-                if fp and os.path.exists(fp) and hasattr(mw, 'load_file_content'):
-                    mw.load_file_content(fp)
-                else:
-                    QMessageBox.information(self, "Refresh", "No file loaded to refresh.")
+            # Perform refresh within the dock, using the same functions that populated the tree originally
+            self.refresh_data_structure_display()
         except Exception as e:
             QMessageBox.critical(self, "Refresh Error", f"Failed to refresh: {e}")
 
     def connect(self):
         pass
 
-    def refresh_data_structure_display(self, file_path):
-        pass
+    def refresh_data_structure_display(self, file_path=None):
+        """Refresh the data tree by reloading currently listed top-level items (files and folder sections).
+        This uses the main window's existing load functions to ensure identical population behavior.
+        If a specific file_path is provided, it will attempt to refresh only that entry; otherwise, refreshes all."""
+        try:
+            tree = getattr(self, 'tree_data', None)
+            if tree is None:
+                QMessageBox.information(self, "Refresh", "Data tree is not available.")
+                return
+            mw = getattr(self, 'main_window', None)
+            if mw is None:
+                QMessageBox.information(self, "Refresh", "Main window is not available.")
+                return
+
+            # Snapshot existing top-level items and their paths/types
+            snapshot = []
+            try:
+                if file_path:
+                    # If a specific path was requested, try to locate it among top-level items
+                    for i in range(tree.topLevelItemCount()):
+                        item = tree.topLevelItem(i)
+                        path = item.data(0, Qt.UserRole + 1)
+                        if path == file_path:
+                            item_type = item.data(0, Qt.UserRole + 2)
+                            snapshot.append((item_type, path))
+                            break
+                else:
+                    for i in range(tree.topLevelItemCount()):
+                        item = tree.topLevelItem(i)
+                        item_type = item.data(0, Qt.UserRole + 2)
+                        path = item.data(0, Qt.UserRole + 1)
+                        snapshot.append((item_type, path))
+            except Exception:
+                snapshot = []
+
+            # Clear the tree before repopulating
+            try:
+                tree.clear()
+            except Exception:
+                pass
+
+            # Rebuild using the same loading functions used initially
+            rebuilt_any = False
+            for item_type, path in snapshot:
+                if not path:
+                    continue
+                try:
+                    if item_type == "file_root" and os.path.exists(path) and hasattr(mw, 'load_single_h5_file'):
+                        mw.load_single_h5_file(path)
+                        rebuilt_any = True
+                    elif item_type == "folder_section" and os.path.isdir(path) and hasattr(mw, 'load_folder_content'):
+                        mw.load_folder_content(path)
+                        rebuilt_any = True
+                except Exception as e:
+                    print(f"[DataStructureDock] Refresh failed for {path}: {e}")
+
+            # Fallback: if nothing was rebuilt, try the current file
+            if not rebuilt_any:
+                fp = getattr(mw, 'current_file_path', None)
+                try:
+                    if fp and os.path.exists(fp) and hasattr(mw, 'load_single_h5_file'):
+                        mw.load_single_h5_file(fp)
+                        rebuilt_any = True
+                except Exception:
+                    pass
+
+            if rebuilt_any:
+                QMessageBox.information(self, "Refresh", "Data structure refreshed.")
+            else:
+                QMessageBox.information(self, "Refresh", "Nothing to refresh.")
+        except Exception as e:
+            QMessageBox.critical(self, "Refresh Error", f"Failed to refresh: {e}")
 
     def _load_data_structure(self):
         try: 
