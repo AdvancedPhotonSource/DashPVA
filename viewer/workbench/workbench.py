@@ -17,7 +17,7 @@ import glob
 import numpy as np
 import time
 import pyqtgraph as pg
-from viewer.workbench.tabs.tab_3d import Tab3D
+from viewer.workbench.tabs.workspace_3d import Workspace3D
 
 
 # Add the project root to the Python path
@@ -33,7 +33,7 @@ from viewer.controls.controls_2d import Controls2D
 from viewer.workbench.managers.roi_manager import ROIManager
 from viewer.workbench.dock_window import DockWindow
 from viewer.workbench.docks.data_structure import DataStructureDock
-from viewer.workbench.docks.dash_ai import DashAI
+#from viewer.workbench.docks.dash_ai import DashAI
 
 
 class WorkbenchWindow(BaseWindow):
@@ -50,7 +50,7 @@ class WorkbenchWindow(BaseWindow):
 
         # ====== DOCKS START ====== #
         # 2d
-        self.dash_sam_dock = DashAI(main_window=self)
+        #self.dash_sam_dock = DashAI(main_window=self)
 
         # 3d
 
@@ -72,7 +72,7 @@ class WorkbenchWindow(BaseWindow):
         # ======= TABS START ======= #
         self.tab_1d = None
         self.tab_2d = None
-        self.tab_3d = Tab3D(parent=self, main_window=self)
+        self.tab_3d = Workspace3D(parent=self, main_window=self)
         # ======= TABS END ========= #
 
 

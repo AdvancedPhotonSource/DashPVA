@@ -22,7 +22,7 @@ from viewer.workbench.workers import Render3D
 from utils.hdf5_loader import HDF5Loader
 from utils.rsm_converter import RSMConverter
 
-class Tab3D(BaseTab):
+class Workspace3D(BaseTab):
     """
     3D Tab encapsulating 3D viewer setup, loading, and plotting operations.
     Delegates UI widget access via main_window, but centralizes 3D actions here.
@@ -255,6 +255,7 @@ class Tab3D(BaseTab):
                 file_path = file_name
             conv = RSMConverter()
             # 2. Load the raw data
+            # if the data is uncompressed
             data = conv.load_h5_to_3d(file_path)
             points, intensities, num_images, shape = data
 
