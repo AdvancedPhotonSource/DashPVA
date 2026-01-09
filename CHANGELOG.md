@@ -4,6 +4,14 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 
 ---
 
+## Latest Changes (January 2026)
+- Workbench now supports loading compressed datasets for smoother analysis and smaller storage footprints. For legacy files, a converter will be provided to update the file structure so compression loads seamlessly.
+
+# Latest Changes (December 2025)
+Merry Christmas
+
+The Post-Analysis Workbench is a unified workspace that turns raw HKL data into an interactive 3D volume. It keeps 1D line profiles, 2D detector slices, and 3D voxel views in sync—select a point in any view and the others update instantly. This makes it easy to confirm peaks, filter noise in real time, and explore crystal symmetry from every angle.
+
 ## Latest Changes (November 2025)
 
 ### New Features
