@@ -1,3 +1,4 @@
+import hdf5plugin  # Must be imported before h5py to register compression filters
 import h5py
 import numpy as np
 from typing import Tuple, Optional, Union
@@ -165,7 +166,6 @@ class HDF5Loader:
             bool: True if file is a valid HDF5 file
         """
         try:
-            print('Validating File')
             # Basic file checks
             if not os.path.exists(file_path):
                 self.last_error = f"File does not exist: {file_path}"
@@ -181,7 +181,7 @@ class HDF5Loader:
                 if 'entry/data/data' not in f:
                     self.last_error = "Missing required image data path: entry/data/data"
                     return False
-            print('file valid')
+            
             return True
             
         except Exception as e:
@@ -205,31 +205,20 @@ class HDF5Loader:
             required_3d = ['qx', 'qy', 'qz', 'images']
             for key in required_3d:
                 if key not in data or data[key] is None:
-                    if self.debug_mode:
-                        print(f"Missing required 3D key: {key}")
                     return False
             
             # Check shapes match
             shapes = [data['qx'].shape, data['qy'].shape, data['qz'].shape, data['images'].shape]
             if not all(shape == shapes[0] for shape in shapes):
-                if self.debug_mode:
-                    print(f"Shape mismatch: qx{data['qx'].shape}, qy{data['qy'].shape}, qz{data['qz'].shape}, images{data['images'].shape}")
                 return False
             
             # Check arrays are not empty
             if data['qx'].size == 0:
-                if self.debug_mode:
-                    print("Coordinate arrays are empty")
                 return False
-            
-            if self.debug_mode:
-                print(f"3D validation passed: {data['qx'].shape} points")
             
             return True
             
         except Exception as e:
-            if self.debug_mode:
-                print(f"3D validation error: {e}")
             return False
 
     def _validate_for_2d(self, data: dict) -> bool:
@@ -299,10 +288,7 @@ class HDF5Loader:
                 - num_images (int): Number of images
                 - shape (Tuple[int, int]): Original image dimensions
         """
-        print('Loading to ')
         try:
-            if self.debug_mode:
-                print(f"Loading 3D data from: {file_path}")
             
             # Validate file
             if not self.validate_file(file_path):
@@ -313,13 +299,6 @@ class HDF5Loader:
             if not raw_data:
                 raise ValueError("Failed to load data from file")
             
-            if self.debug_mode:
-                print(f"Raw data keys: {list(raw_data.keys())}")
-                if 'qx' in raw_data:
-                    print(f"QX shape: {raw_data['qx'].shape}")
-                if 'images' in raw_data:
-                    print(f"Images shape: {raw_data['images'].shape}")
-            
             # Validate for 3D operations
             if not self._validate_for_3d(raw_data):
                 raise ValueError("File does not contain valid 3D coordinate data")
@@ -329,18 +308,12 @@ class HDF5Loader:
             qy_flat = self._flatten_coordinate_data(raw_data['qy'])
             qz_flat = self._flatten_coordinate_data(raw_data['qz'])
             
-            if self.debug_mode:
-                print(f"Flattened coordinates: qx={len(qx_flat)}, qy={len(qy_flat)}, qz={len(qz_flat)}")
-            
             # Check if flattening worked
             if len(qx_flat) == 0 or len(qy_flat) == 0 or len(qz_flat) == 0:
                 raise ValueError("Coordinate flattening resulted in empty arrays")
             
             # Create 3D points array
             points_3d = np.column_stack([qx_flat, qy_flat, qz_flat])
-            
-            if self.debug_mode:
-                print(f"Created 3D points array: {points_3d.shape}")
             
             # Process intensity data
             if self.flatten_intensities:
@@ -759,7 +732,8 @@ class HDF5Loader:
                 data_grp.create_dataset(
                     self.hdf5_structure['images'].split('/')[-1], 
                     data=intensities.reshape(-1, 1), 
-                    dtype=np.float32
+                    dtype=np.float32,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
                 )
                 print('Intensity data written to standard images path')
                 
@@ -770,17 +744,20 @@ class HDF5Loader:
                 hkl_grp.create_dataset(
                     self.hdf5_structure['qx'].split('/')[-1], 
                     data=points[:, 0], 
-                    dtype=np.float32
+                    dtype=np.float32,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
                 )
                 hkl_grp.create_dataset(
                     self.hdf5_structure['qy'].split('/')[-1], 
                     data=points[:, 1], 
-                    dtype=np.float32
+                    dtype=np.float32,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
                 )
                 hkl_grp.create_dataset(
                     self.hdf5_structure['qz'].split('/')[-1], 
                     data=points[:, 2], 
-                    dtype=np.float32
+                    dtype=np.float32,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
                 )
                 print('HKL coordinates written to standard paths')
                 
@@ -1101,12 +1078,16 @@ class HDF5Loader:
                 data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
                 # Image data
                 data_ds_name = self.hdf5_structure['images'].split('/')[-1]
-                data_grp.create_dataset(data_ds_name, data=image.astype(np.float32))
+                data_grp.create_dataset(data_ds_name, data=image.astype(np.float32),
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
                 # HKL 2D grids
                 hkl_grp = data_grp.create_group(self.hdf5_structure['hkl'].split('/')[-1])
-                hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=qx)
-                hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=qy)
-                hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=qz)
+                hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=qx,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=qy,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=qz,
+                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
                 # Metadata
                 metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
                 for key, value in meta.items():

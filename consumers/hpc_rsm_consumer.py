@@ -45,6 +45,34 @@ class HpcRsmProcessor(AdImageProcessor):
 
         }
 
+        # Reverse mapping from PVA codec enum to numpy dtype for decompression
+        self.PVA_TO_NUMPY_DTYPE_MAP = {
+            pva.UBYTE: np.uint8,
+            pva.BYTE: np.int8,
+            pva.USHORT: np.uint16,
+            pva.SHORT: np.int16,
+            pva.UINT: np.uint32,
+            pva.INT: np.int32,
+            pva.ULONG: np.uint64,
+            pva.LONG: np.int64,
+            pva.FLOAT: np.float32,
+            pva.DOUBLE: np.float64,
+        }
+
+        # Mapping from union field name to numpy dtype for uncompressed payloads
+        self.UNION_FIELD_TO_DTYPE = {
+            'ubyteValue': np.uint8,
+            'byteValue': np.int8,
+            'ushortValue': np.uint16,
+            'shortValue': np.int16,
+            'uintValue': np.uint32,
+            'intValue': np.int32,
+            'ulongValue': np.uint64,
+            'longValue': np.int64,
+            'floatValue': np.float32,
+            'doubleValue': np.float64,
+        }
+
         # PV attributes
         self.shape : tuple = (0,0)
         self.type_dict = {
@@ -242,6 +270,39 @@ class HpcRsmProcessor(AdImageProcessor):
         else:
             return False
         
+    def decompress_image(self, pvObject):
+        """Return image pixels as a NumPy array, handling compressed (lz4) and uncompressed payloads.
+        Kept intentionally simple: no dict.get usage on PvObject, no reshaping.
+        """
+        codec_name = pvObject['codec']['name']
+        if codec_name == 'lz4':
+            # Extract compressed bytes from UBYTE union branch
+            u8_pv = pvObject['value'][0]['ubyteValue']
+            u8_list = u8_pv.get() if hasattr(u8_pv, 'get') else u8_pv
+            comp_bytes = np.asarray(u8_list, dtype=np.uint8).tobytes()
+            # Decompress using explicit uncompressed size (store_size=False was used)
+            out_bytes = lz4.block.decompress(comp_bytes, uncompressed_size=pvObject['uncompressedSize'])
+            # Decode original dtype from codec.parameters
+            params = pvObject['codec']['parameters']
+            enum = params[0]['value'] if (isinstance(params, tuple) and len(params) > 0) else pva.UBYTE
+            dtype = self.PVA_TO_NUMPY_DTYPE_MAP.get(enum, np.uint8)
+            # DEBUG
+            # uncompressed_size = pvObject['uncompressedSize']
+            # compressed_size = len(comp_bytes)
+            # msg = f'Decompressing [lz4]: Compressed Size: {compressed_size}, Uncompressed Size: {uncompressed_size}'*10
+            # print(msg)
+            return np.frombuffer(out_bytes, dtype=dtype)
+        # Non-compressed path: convert the active union field to NumPy
+        union_dict = pvObject['value'][0]
+        field_name = next(iter(union_dict))
+        pv_arr = union_dict[field_name]
+        data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
+        dtype = self.UNION_FIELD_TO_DTYPE.get(field_name, None)
+        # msg = f"Handling [uncompressed]: Field: {field_name}, Array Length: {len(data_list)} Compressed Size" *10
+        # print(msg)
+        return np.asarray(data_list, dtype=dtype) if dtype is not None else np.asarray(data_list)
+        
+    
     def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
         if not isinstance(hkl_array, np.ndarray):
             raise TypeError("hkl_array must be a numpy array")
@@ -281,6 +342,9 @@ class HpcRsmProcessor(AdImageProcessor):
         if 'attribute' not in pvObject:
             print('attributes not in pvObject')
             return pvObject
+        
+        # Optionally decode image data for local use, but do not modify pvObject['value']
+        _ = self.decompress_image(pvObject)
                 
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
         self.shape = tuple([dim['size'] for dim in dims])
@@ -342,15 +406,36 @@ class HpcRsmProcessor(AdImageProcessor):
             # append the new attributes
             frameAttributes = pvObject['attribute']
             frameAttributes.append(rsm_object)
-            pvObject['attribute'] = frameAttributes
+            #pvObject['attribute'] = frameAttributes
             self.nFramesProcessed += 1
  
             # Update stats
             frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
             self.lastFrameTimestamp = frameTimestamp
             self.nFramesProcessed += 1
+            procTimes = {}
 
-            # Update output channel if needed
+            proc_time_start = pva.PvObject({'value': pva.DOUBLE})
+            proc_time_start['value'] = t0  # seconds, or multiply by 1000.0 for ms
+            frameAttributes.append({
+                'name': f'procTimeStart_{self.__class__.__name__}',
+                'value': proc_time_start
+            })
+            proc_time_end = pva.PvObject({'value': pva.DOUBLE})
+            proc_time_end['value'] = time.time()  # seconds, or multiply by 1000.0 for ms
+            frameAttributes.append({
+                'name': f'procTimeEnd_{self.__class__.__name__}',
+                'value': proc_time_end
+            })
+            proc_time = pva.PvObject({'value': pva.DOUBLE})
+            proc_time['value'] = (time.time() - t0)  # seconds, or multiply by 1000.0 for ms
+            frameAttributes.append({
+                'name': f'procTime_{self.__class__.__name__}',
+                'value': proc_time
+            })
+
+            pvObject['attribute'] = frameAttributes
+            
             self.updateOutputChannel(pvObject)
 
             # Update processing time

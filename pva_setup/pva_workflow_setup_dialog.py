@@ -407,7 +407,7 @@ class PVASetupDialog(QDialog):
         safe_text = text.replace('<', '&lt;').replace('>', '&gt;')
 
         # Apply color based on keywords
-        color = "#FFFFFF" # Default to white (or your theme's default)
+        color = "#000000" # Default to white (or your theme's default)
         if "ERROR" in text.upper():
             color = "#FF5733"  # Red
         elif "WARNING" in text.upper():
