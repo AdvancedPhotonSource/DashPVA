@@ -382,20 +382,26 @@ class DiffractionImageWindow(QMainWindow):
 
     def start_stats_monitors(self)  -> None:
         """
-        Initializes monitors for updating stats values.
+        Initializes monitors for updating stats values. If a PV fails to read, it's skipped.
+        If all Stats PVs fail, Stats feature is disabled (like no TOML config).
 
         This method uses `camonitor` to observe changes in the stats PVs and update
         them in the UI accordingly.
         """
-        try:
-            if self.reader.stats:
-                for stat_num in self.reader.stats.keys():
-                    for stat in self.reader.stats[stat_num].keys():
-                        pv = f"{self.reader.stats[stat_num][stat]}"
-                        self.stats_data[pv] = caget(pv)
+        if not self.reader.stats:
+            return
+        
+        for stat_num in self.reader.stats.keys():
+            for stat in self.reader.stats[stat_num].keys():
+                pv = f"{self.reader.stats[stat_num][stat]}"
+                try:
+                    pv_value = caget(pv)
+                    if pv_value is not None:
+                        self.stats_data[pv] = pv_value
                         camonitor(pvname=pv, callback=self.stats_ca_callback)
-        except Exception as e:
-            print(f"[Diffraction Image Viewer] Failed to Connect to Stats CA Monitors: {e}")
+                except Exception as e:
+                    print(f'[Diffraction Image Viewer] Failed to read Stats PV {pv}: {e}. Skipping.')
+                    # Skip this PV, continue with others
 
     def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """

@@ -1,5 +1,5 @@
 # Required Setup
-DETECTOR_PREFIX = 'dp-ADSim'
+DETECTOR_PREFIX = 'BL172:eiger4M'
 OUTPUT_FILE_LOCATION = 'NEW_TEST.h5' # file must end with .h5 # can probably be made into it's own section
 CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how consumer is performing analysis calculations
 
@@ -30,48 +30,48 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
     [METADATA.PVA]
 
 # Section for ROI PVs
-# [ROI]
+[ROI]
 
-#     [ROI.ROI1]
-#     MIN_X = 'dp-ADSim:ROI1:MinX'
-#     MIN_Y = 'dp-ADSim:ROI1:MinY'
-#     SIZE_X = 'dp-ADSim:ROI1:SizeX'
-#     SIZE_Y = 'dp-ADSim:ROI1:SizeY'
+    [ROI.ROI1]
+    MIN_X = 'BL172:eiger4M:ROI1:MinX'
+    MIN_Y = 'BL172:eiger4M:ROI1:MinY'
+    SIZE_X = 'BL172:eiger4M:ROI1:SizeX'
+    SIZE_Y = 'BL172:eiger4M:ROI1:SizeY'
 
-#     [ROI.ROI2]
-#     MIN_X = 'dp-ADSim:ROI2:MinX'
-#     MIN_Y = 'dp-ADSim:ROI2:MinY'
-#     SIZE_X = 'dp-ADSim:ROI2:SizeX'
-#     SIZE_Y = 'dp-ADSim:ROI2:SizeY'
+    [ROI.ROI2]
+    MIN_X = 'BL172:eiger4M:ROI2:MinX'
+    MIN_Y = 'BL172:eiger4M:ROI2:MinY'
+    SIZE_X = 'BL172:eiger4M:ROI2:SizeX'
+    SIZE_Y = 'BL172:eiger4M:ROI2:SizeY'
 
-#     [ROI.ROI3]
-#     MIN_X = 'dp-ADSim:ROI3:MinX'
-#     MIN_Y = 'dp-ADSim:ROI3:MinY'
-#     SIZE_X = 'dp-ADSim:ROI3:SizeX'
-#     SIZE_Y = 'dp-ADSim:ROI3:SizeY'
+    [ROI.ROI3]
+    MIN_X = 'BL172:eiger4M:ROI3:MinX'
+    MIN_Y = 'BL172:eiger4M:ROI3:MinY'
+    SIZE_X = 'BL172:eiger4M:ROI3:SizeX'
+    SIZE_Y = 'BL172:eiger4M:ROI3:SizeY'
 
-#     [ROI.ROI4]
-#     MIN_X = 'dp-ADSim:ROI4:MinX'
-#     MIN_Y = 'dp-ADSim:ROI4:MinY'
-#     SIZE_X = 'dp-ADSim:ROI4:SizeX'
-#     SIZE_Y = 'dp-ADSim:ROI4:SizeY'
+    [ROI.ROI4]
+    MIN_X = 'BL172:eiger4M:ROI4:MinX'
+    MIN_Y = 'BL172:eiger4M:ROI4:MinY'
+    SIZE_X = 'BL172:eiger4M:ROI4:SizeX'
+    SIZE_Y = 'BL172:eiger4M:ROI4:SizeY'
 
 # Section for Stats PVs
-# [STATS]
+[STATS]
 
-#     [STATS.STATS1]
-#     TOTAL = 'dp-ADSim:Stats1:Total_RBV'
-#     MIN = 'dp-ADSim:Stats1:MinValue_RBV'
-#     MAX = 'dp-ADSim:Stats1:MaxValue_RBV'
-#     SIGMA = 'dp-ADSim:Stats1:Sigma_RBV'
-#     MEAN = 'dp-ADSim:Stats1:MeanValue_RBV'
+    [STATS.STATS1]
+    TOTAL = 'BL172:eiger4M:Stats1:Total_RBV'
+    MIN = 'BL172:eiger4M:Stats1:MinValue_RBV'
+    MAX = 'BL172:eiger4M:Stats1:MaxValue_RBV'
+    SIGMA = 'BL172:eiger4M:Stats1:Sigma_RBV'
+    MEAN = 'BL172:eiger4M:Stats1:MeanValue_RBV'
 
-#     [STATS.STATS4]
-#     TOTAL = 'dp-ADSim:Stats4:Total_RBV'
-#     MIN = 'dp-ADSim:Stats4:MinValue_RBV'
-#     MAX = 'dp-ADSim:Stats4:MaxValue_RBV'
-#     SIGMA = 'dp-ADSim:Stats4:Sigma_RBV'
-#     MEAN = 'dp-ADSim:Stats4:MeanValue_RBV'
+    [STATS.STATS4]
+    TOTAL = 'BL172:eiger4M:Stats4:Total_RBV'
+    MIN = 'BL172:eiger4M:Stats4:MinValue_RBV'
+    MAX = 'BL172:eiger4M:Stats4:MaxValue_RBV'
+    SIGMA = 'BL172:eiger4M:Stats4:Sigma_RBV'
+    MEAN = 'BL172:eiger4M:Stats4:MeanValue_RBV'
 
 # Section for Analysis PVs
 # These PVs are used in the analysis server, not on the User side.

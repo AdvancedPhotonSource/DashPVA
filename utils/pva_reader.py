@@ -506,18 +506,26 @@ class PVAReader(QObject):
         self.channel.stopMonitor()
 
     def start_roi_backup_monitor(self) -> None:
-        try:
-            for roi_num, roi_dict in self.config['ROI'].items():
-                for config_key, pv_name in roi_dict.items():
+        """
+        Starts monitoring ROI PVs. If a PV fails to read, it's skipped.
+        If all ROI PVs fail, ROI feature is disabled (like no TOML config).
+        """
+        if not self.config.get('ROI'):
+            return
+        
+        for roi_num, roi_dict in self.config['ROI'].items():
+            for config_key, pv_name in roi_dict.items():
+                try:
                     name_components = pv_name.split(":")
-
                     roi_key = name_components[1] # ROI1-ROI4
                     pv_key = name_components[2] # MinX, MinY, SizeX, SizeY
 
-                    self.rois.setdefault(roi_key, {}).update({pv_key: caget(pv_name)})
-                    camonitor(pvname=pv_name, callback=self.roi_backup_callback)
-        except Exception:
-            pass
+                    pv_value = caget(pv_name)
+                    if pv_value is not None:
+                        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+                        camonitor(pvname=pv_name, callback=self.roi_backup_callback)
+                except Exception as e:
+                    print(f'[PVA Reader] Failed to read ROI PV {pv_name}: {e}. Skipping.')
 
     ################################# Getters ################################# 
     def get_cached_images(self) -> list[np.ndarray]:
