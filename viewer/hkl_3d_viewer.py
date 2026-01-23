@@ -341,7 +341,7 @@ class HKLImageWindow(QMainWindow, LogMixin):
                     self.cloud = pyv.PolyData(points)
                     self.cloud['intensity'] = flat_intensity 
 
-                    self.lut = pyv.LookupTable(cmap='viridis')  
+                    self.lut = pyv.LookupTable(cmap='magma')  
                     self.lut.below_range_color = 'black'
                     self.lut.above_range_color = 'black'
                     self.lut.below_range_opacity = 0

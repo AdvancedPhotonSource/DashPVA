@@ -5,6 +5,8 @@ import subprocess
 import numpy as np
 import os.path as osp
 import pyqtgraph as pg
+from pyqtgraph.colormap import get as get_colormap
+from pyqtgraph.colormap import listMaps
 import xrayutilities as xu
 from PyQt5 import uic
 # from epics import caget
@@ -144,11 +146,32 @@ class DiffractionImageWindow(QMainWindow):
         self.qz = None
         self.processes = {}
         
+        # Initialize colormap once for better performance
+        try:
+            # Try magma first
+            self.cet_colormap = get_colormap('magma')
+        except Exception:
+            try:
+                # Try from colorcet source
+                self.cet_colormap = get_colormap('magma', source='colorcet')
+            except Exception:
+                self.cet_colormap = get_colormap('magma')  # fallback
+        
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
+        # Set the default colormap when ImageView is created
+        self.image_view.setColorMap(self.cet_colormap)
         self.viewer_layout.addWidget(self.image_view,0,1)
         self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+        
+        # Initialize crosshair lines (hidden initially)
+        self.crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('red', width=2))
+        self.crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('red', width=2))
+        self.image_view.addItem(self.crosshair_v, ignoreBounds=True)
+        self.image_view.addItem(self.crosshair_h, ignoreBounds=True)
+        self.crosshair_v.hide()
+        self.crosshair_h.hide()
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
@@ -180,8 +203,21 @@ class DiffractionImageWindow(QMainWindow):
         self.plotting_frequency.valueChanged.connect(self.start_timers)
         self.max_setting_val.valueChanged.connect(self.update_min_max_setting)
         self.min_setting_val.valueChanged.connect(self.update_min_max_setting)
+        self.chk_autoscale.stateChanged.connect(self.autoscale_checked)
+        self.chk_threshold.stateChanged.connect(self.threshold_checked)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
+        self.image_view.getView().mouseDoubleClickEvent = self.on_double_click
         self.hkl_data_updated.connect(self.handle_hkl_data_update)
+        
+        # Set checkboxes to checked by default
+        self.chk_autoscale.setChecked(True)
+        self.chk_threshold.setChecked(True)
+        
+        # Initialize threshold label - show it since threshold is checked by default
+        self.update_threshold_label()
+        self.lbl_threshold_range.show()
+        
+        self.analysis_window = None  # Initialize as None
 
     def start_timers(self) -> None:
         """
@@ -236,11 +272,43 @@ class DiffractionImageWindow(QMainWindow):
     def open_analysis_window_clicked(self) -> None:
         """
         Opens the analysis window if the reader and image are initialized.
+        Also supports launching pyFAI analysis window as a separate independent process.
         """
         if self.reader is not None:
             if self.reader.image is not None:
-                self.analysis_window = AnalysisWindow(parent=self)
-                self.analysis_window.show()        
+                # Launch pyFAI analysis window as a separate independent process
+                analysis_script = os.path.join(os.path.dirname(__file__), 'pyFAI_analysis.py')
+                if os.path.exists(analysis_script):
+                    # Use sys.executable to ensure we use the correct Python interpreter
+                    import sys
+                    # Launch as fully independent process:
+                    # - start_new_session: Creates new process session (Unix) for independence
+                    # - stdout/stderr: Redirect to devnull to avoid blocking parent
+                    # - No reference kept: Process is fully detached
+                    try:
+                        # Pass PV address as command-line argument
+                        pv_address = self._input_channel if self._input_channel else "pvapy:image"
+                        # Don't redirect stderr so errors are visible in terminal for debugging
+                        # Redirect stdout to avoid clutter, but keep stderr visible
+                        process = subprocess.Popen(
+                            [sys.executable, analysis_script, "--pv-address", pv_address], 
+                            cwd=os.path.dirname(os.path.dirname(analysis_script)),
+                            stdout=subprocess.DEVNULL,
+                            # stderr=None means it goes to terminal - helpful for debugging
+                            stderr=None,  # Let stderr go to terminal so we can see errors
+                            start_new_session=True  # Creates new process group (Unix) or job (Windows)
+                        )
+                        print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
+                        print(f"Note: Check terminal/console for any error messages if window doesn't appear")
+                    except Exception as e:
+                        print(f"Error launching pyFAI_analysis.py: {e}")
+                        # Fallback to regular analysis window
+                        self.analysis_window = AnalysisWindow(parent=self)
+                        self.analysis_window.show()
+                else:
+                    # Fallback to regular analysis window
+                    self.analysis_window = AnalysisWindow(parent=self)
+                    self.analysis_window.show()        
 
     def start_live_view_clicked(self) -> None:
         """
@@ -710,6 +778,29 @@ class DiffractionImageWindow(QMainWindow):
         """
         self._input_channel = self.pv_prefix.text()
     
+    def on_double_click(self, event) -> None:
+        """
+        Handle double-click events on the image view to place crosshairs.
+        
+        Args:
+            event: Mouse event containing position information
+        """
+        if self.reader is not None and self.reader.image is not None:
+            # Get the position in scene coordinates, then map to view coordinates
+            scene_pos = event.scenePos()
+            view_box = self.image_view.getView().getViewBox()
+            view_pos = view_box.mapSceneToView(scene_pos)
+            
+            # Set crosshair positions
+            self.crosshair_v.setPos(view_pos.x())
+            self.crosshair_h.setPos(view_pos.y())
+            
+            # Show crosshairs
+            self.crosshair_v.show()
+            self.crosshair_h.show()
+            
+            print(f"Crosshairs placed at: ({view_pos.x():.1f}, {view_pos.y():.1f})")
+    
     def update_mouse_pos(self, pos) -> None:
         """
         Maps the mouse position in the Image Viewer to the corresponding pixel value.
@@ -753,6 +844,7 @@ class DiffractionImageWindow(QMainWindow):
                 self.size_x_val.setText(f'{self.reader.shape[0]:d}')
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
             self.data_type_val.setText(self.reader.display_dtype)
+            self.update_threshold_label()
             self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
             self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
             self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
@@ -783,6 +875,9 @@ class DiffractionImageWindow(QMainWindow):
                 self.image = np.reshape(np.mean(np.stack(self.reader.cached_images[index]), axis=0), self.reader.shape) # (self.reader.shape)
 
             if self.image is not None:
+                # Apply vectorized thresholding if enabled
+                if self.chk_threshold.isChecked():
+                    self.image = self.apply_threshold(self.image)
                 self.image = np.transpose(self.image) if self.image_is_transposed else self.image
                 self.image = np.rot90(m=self.image, k=self.rot_num)
                 if len(self.image.shape) == 2:
@@ -800,15 +895,21 @@ class DiffractionImageWindow(QMainWindow):
                                                 autoLevels=False, 
                                                 levels=(min_level, max_level),
                                                 autoHistogramRange=False)
+                        # Set colormap separately
+                        self.image_view.setColorMap(self.cet_colormap)
                         # Auto sets the max value based on first incoming image
-                        self.max_setting_val.setValue(max_level)
-                        self.min_setting_val.setValue(min_level)
+                        if not self.chk_autoscale.isChecked():
+                            self.max_setting_val.setValue(max_level)
+                            self.min_setting_val.setValue(min_level)
                         self.first_plot = False
                     else:
                         self.image_view.setImage(self.image,
                                                 autoRange=False, 
                                                 autoLevels=False, 
                                                 autoHistogramRange=False)
+                    # Apply autoscale if checkbox is checked (after image is set)
+                    if self.chk_autoscale.isChecked():
+                        self.apply_autoscale()
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
                                             y=np.arange(self.image.shape[1]), 
@@ -821,9 +922,109 @@ class DiffractionImageWindow(QMainWindow):
         """
         Updates the min/max pixel levels in the Image Viewer based on UI settings.
         """
-        min = self.min_setting_val.value()
-        max = self.max_setting_val.value()
-        self.image_view.setLevels(min, max)
+        # Only update if autoscale is not checked (to prevent feedback loop)
+        if not self.chk_autoscale.isChecked():
+            min = self.min_setting_val.value()
+            max = self.max_setting_val.value()
+            self.image_view.setLevels(min, max)
+    
+    def autoscale_checked(self) -> None:
+        """
+        Handles autoscale checkbox state changes.
+        When checked, calculates and sets min/max based on 5th and 95th percentiles of intensity histogram.
+        """
+        if self.chk_autoscale.isChecked() and self.image is not None:
+            self.apply_autoscale()
+    
+    def apply_autoscale(self) -> None:
+        """
+        Calculates and applies autoscale based on 5th and 95th percentiles of the intensity histogram.
+        Sets min to 5th percentile and max to 95th percentile.
+        """
+        if self.image is not None:
+            # Flatten the image to get all intensity values
+            intensities = self.image.flatten()
+            
+            # Remove any NaN or infinite values
+            intensities = intensities[np.isfinite(intensities)]
+            
+            if len(intensities) > 0:
+                # Calculate 5th and 95th percentiles
+                min_percentile = np.percentile(intensities, 5)
+                max_percentile = np.percentile(intensities, 95)
+                
+                # Update the spinbox values (this will trigger update_min_max_setting)
+                # Temporarily block signals to prevent feedback loop
+                self.min_setting_val.blockSignals(True)
+                self.max_setting_val.blockSignals(True)
+                self.min_setting_val.setValue(min_percentile)
+                self.max_setting_val.setValue(max_percentile)
+                self.min_setting_val.blockSignals(False)
+                self.max_setting_val.blockSignals(False)
+                
+                # Apply the levels directly
+                self.image_view.setLevels(min_percentile, max_percentile)
+    
+    def get_threshold_range(self) -> tuple:
+        """
+        Determines the threshold range based on the data type.
+        
+        Returns:
+            tuple: (min_threshold, max_threshold) based on data type
+        """
+        if self.reader is None or self.reader.display_dtype is None:
+            return (0, 0)
+        
+        dtype_map = {
+            'ubyteValue': (0, 2**8 - 2),      # uint8: 0 to 254 (accounting for zero-based indexing)
+            'ushortValue': (0, 2**16 - 2),    # uint16: 0 to 65534 (accounting for zero-based indexing)
+            'uintValue': (0, 2**32 - 2),      # uint32: 0 to 4294967294 (accounting for zero-based indexing)
+            'floatValue': (0, 2**16 - 1),     # float32: 0 to 65535
+            'doubleValue': (0, 2**16 - 1),    # float64: 0 to 65535
+        }
+        
+        return dtype_map.get(self.reader.display_dtype, (0, 0))
+    
+    def update_threshold_label(self) -> None:
+        """
+        Updates the threshold range label based on current data type.
+        """
+        min_thresh, max_thresh = self.get_threshold_range()
+        self.lbl_threshold_range.setText(f"{min_thresh} to {max_thresh}")
+    
+    def threshold_checked(self) -> None:
+        """
+        Handles threshold checkbox state changes.
+        Updates the label visibility and applies thresholding if enabled.
+        """
+        if self.chk_threshold.isChecked():
+            self.update_threshold_label()
+            self.lbl_threshold_range.show()
+        else:
+            self.lbl_threshold_range.hide()
+    
+    def apply_threshold(self, image: np.ndarray) -> np.ndarray:
+        """
+        Applies vectorized thresholding to the image based on data type limits.
+        Values below min_thresh are set to min_thresh, values above max_thresh are set to 0.
+        
+        Args:
+            image: Input image array
+            
+        Returns:
+            Thresholded image array
+        """
+        min_thresh, max_thresh = self.get_threshold_range()
+        if min_thresh == 0 and max_thresh == 0:
+            return image
+        
+        # Vectorized thresholding: 
+        # - Values below min_thresh are set to min_thresh
+        # - Values above max_thresh are set to 0
+        result = image.copy()
+        result[result < min_thresh] = min_thresh
+        result[result > max_thresh] = 0
+        return result
     
     def closeEvent(self, event):
         """
