@@ -309,7 +309,9 @@ class DiffractionImageWindow(QMainWindow):
                             stderr=None,  # Let stderr go to terminal so we can see errors
                             start_new_session=True  # Creates new process group (Unix) or job (Windows)
                         )
+                        output_pv = f"{pv_address}:pyFAI"
                         print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
+                        print(f"Broadcasting pyFAI results to: {output_pv}")
                         if threshold_enabled and max_thresh > 0:
                             print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
                         elif threshold_enabled:

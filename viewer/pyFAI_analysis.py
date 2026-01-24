@@ -247,6 +247,12 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.last_error_message = None  # Store last error message for display
             self._processing_image = False  # Flag to throttle updates
             
+            # Initialize PV server for publishing pyFAI results
+            self.output_pv_address = f"{self.pv_address}:pyFAI"  # Append :pyFAI to input PV
+            self.pv_server = None
+            self.pv_output_channel = None
+            self._init_pv_publisher()
+            
             # Initialize threshold values (from area_det_viewer)
             self.threshold_min = threshold_min if threshold_min is not None else None
             self.threshold_max = threshold_max if threshold_max is not None else None
@@ -316,7 +322,8 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.channel.startMonitor()
             logger.debug(f"Started PV channel monitor with interactive UI. PV address: {self.pv_address}")
             threshold_msg = f" (Threshold: {self.threshold_min}-{self.threshold_max})" if self.threshold_enabled else ""
-            self.statusBar().showMessage(f"Connected to PV: {self.pv_address}{threshold_msg}")
+            output_msg = f" | Publishing to: {self.output_pv_address}" if self.pv_server is not None else ""
+            self.statusBar().showMessage(f"Connected to PV: {self.pv_address}{threshold_msg}{output_msg}")
         except Exception as e:
             error_msg = f"Failed to connect to PV channel '{self.pv_address}': {e}"
             logger.error(error_msg)
@@ -801,6 +808,9 @@ class PyFAIAnalysisWindow(QMainWindow):
             # Update status bar with success
             self.statusBar().showMessage(f"Processing frame {self.frame_count} - Connected to {self.pv_address}", 2000)
 
+            # Publish pyFAI results to output PV
+            self._publish_pyfai_results(q, intensity)
+
             self.canvas.draw_idle()
             logger.debug("Plot updated with new azimuthal integration data.")
 
@@ -963,6 +973,103 @@ Current Status:
     def update_max_frames(self):
         """Updates the max_frames attribute with the value from the spinbox."""
         self.max_frames = self.max_frames_spinbox.value()
+    
+    def closeEvent(self, event):
+        """
+        Clean up resources when the window is closed.
+        Stops PV monitoring and shuts down the PV server.
+        """
+        try:
+            # Stop PV channel monitoring
+            if hasattr(self, 'channel') and self.channel is not None:
+                try:
+                    if self.channel.isMonitorActive():
+                        self.channel.stopMonitor()
+                except Exception as e:
+                    logger.warning(f"Error stopping PV channel monitor: {e}")
+            
+            # Shutdown PV server
+            if hasattr(self, 'pv_server') and self.pv_server is not None:
+                try:
+                    # PvaServer doesn't have an explicit shutdown, but we can clear the reference
+                    self.pv_server = None
+                    logger.debug("PV server cleaned up")
+                except Exception as e:
+                    logger.warning(f"Error shutting down PV server: {e}")
+        except Exception as e:
+            logger.error(f"Error during window close: {e}")
+        
+        # Call parent close event
+        super(PyFAIAnalysisWindow, self).closeEvent(event)
+    
+    def _init_pv_publisher(self):
+        """
+        Initializes the PV server and channel for publishing pyFAI integration results.
+        The output PV address is the input PV address with ':pyFAI' appended.
+        """
+        try:
+            # Create a PV server to publish data
+            self.pv_server = pva.PvaServer()
+            
+            # Define the structure for pyFAI results
+            # Using a simple structure with q_values and intensity as double arrays
+            # Arrays are indicated by wrapping the type in a list: [pva.DOUBLE]
+            pyfai_type_dict = {
+                'q_values': [pva.DOUBLE],
+                'intensity': [pva.DOUBLE],
+                'timeStamp': pva.PvTimeStamp(),
+                'frame_number': pva.INT
+            }
+            
+            # Create initial PvObject with the structure
+            initial_pv_object = pva.PvObject(pyfai_type_dict)
+            
+            # Add the record to the server
+            self.pv_server.addRecord(self.output_pv_address, initial_pv_object, None)
+            
+            # Store the type dict for later use
+            self.pyfai_type_dict = pyfai_type_dict
+            
+            logger.info(f"Initialized PV publisher at: {self.output_pv_address}")
+        except Exception as e:
+            logger.error(f"Failed to initialize PV publisher: {e}")
+            self.pv_server = None
+            self.pyfai_type_dict = None
+    
+    def _publish_pyfai_results(self, q, intensity):
+        """
+        Publishes pyFAI integration results (q and intensity arrays) to the output PV.
+        
+        Args:
+            q: Q values array (1D numpy array)
+            intensity: Intensity values array (1D numpy array)
+        """
+        if self.pv_server is None or self.pyfai_type_dict is None:
+            return
+        
+        try:
+            # Convert numpy arrays to lists for PV transmission
+            q_list = q.tolist() if isinstance(q, np.ndarray) else list(q)
+            intensity_list = intensity.tolist() if isinstance(intensity, np.ndarray) else list(intensity)
+            
+            # Create timestamp
+            current_time = time.time()
+            timestamp = pva.PvTimeStamp(current_time)
+            
+            # Create PV object with the integration results
+            pv_object = pva.PvObject(self.pyfai_type_dict, {
+                'q_values': q_list,
+                'intensity': intensity_list,
+                'timeStamp': timestamp,
+                'frame_number': self.frame_count
+            })
+            
+            # Publish the data using updateUnchecked for better performance
+            self.pv_server.updateUnchecked(self.output_pv_address, pv_object)
+            logger.debug(f"Published pyFAI results to {self.output_pv_address} (frame {self.frame_count}, {len(q_list)} points)")
+            
+        except Exception as e:
+            logger.error(f"Failed to publish pyFAI results: {e}")
 
 if __name__ == "__main__":
     import argparse
