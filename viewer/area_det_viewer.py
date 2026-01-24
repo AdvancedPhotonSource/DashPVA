@@ -288,10 +288,21 @@ class DiffractionImageWindow(QMainWindow):
                     try:
                         # Pass PV address as command-line argument
                         pv_address = self._input_channel if self._input_channel else "pvapy:image"
+                        
+                        # Get threshold values if threshold is enabled
+                        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
+                        min_thresh, max_thresh = self.get_threshold_range() if self.reader is not None else (0, 0)
+                        
+                        # Build command arguments
+                        cmd_args = [sys.executable, analysis_script, "--pv-address", pv_address]
+                        # Note: min_thresh is typically 0, so we check max_thresh > 0 to ensure valid thresholds
+                        if threshold_enabled and max_thresh > 0:
+                            cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
+                        
                         # Don't redirect stderr so errors are visible in terminal for debugging
                         # Redirect stdout to avoid clutter, but keep stderr visible
                         process = subprocess.Popen(
-                            [sys.executable, analysis_script, "--pv-address", pv_address], 
+                            cmd_args, 
                             cwd=os.path.dirname(os.path.dirname(analysis_script)),
                             stdout=subprocess.DEVNULL,
                             # stderr=None means it goes to terminal - helpful for debugging
@@ -299,6 +310,10 @@ class DiffractionImageWindow(QMainWindow):
                             start_new_session=True  # Creates new process group (Unix) or job (Windows)
                         )
                         print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
+                        if threshold_enabled and max_thresh > 0:
+                            print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
+                        elif threshold_enabled:
+                            print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
                         print(f"Note: Check terminal/console for any error messages if window doesn't appear")
                     except Exception as e:
                         print(f"Error launching pyFAI_analysis.py: {e}")

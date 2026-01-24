@@ -218,7 +218,8 @@ class PyFAIAnalysisWindow(QMainWindow):
     image_received = pyqtSignal(object)  # Signal emitted when image is received (np.ndarray)
     error_occurred = pyqtSignal(str)  # Signal emitted when error occurs
     
-    def __init__(self, expected_image_shape=(2048, 2048), parent=None, pv_address=None):
+    def __init__(self, expected_image_shape=(2048, 2048), parent=None, pv_address=None, 
+                 threshold_min=None, threshold_max=None):
         try:
             super(PyFAIAnalysisWindow, self).__init__(parent)
             self.setWindowTitle("pyFAI Diffraction Integration - Interactive PyQt")
@@ -245,6 +246,17 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.error_count = 0  # Track consecutive errors
             self.last_error_message = None  # Store last error message for display
             self._processing_image = False  # Flag to throttle updates
+            
+            # Initialize threshold values (from area_det_viewer)
+            self.threshold_min = threshold_min if threshold_min is not None else None
+            self.threshold_max = threshold_max if threshold_max is not None else None
+            # Note: threshold_min can be 0 (which is valid), so we only check that max_thresh > 0
+            self.threshold_enabled = (self.threshold_min is not None and self.threshold_max is not None 
+                                     and self.threshold_max > 0)
+            if self.threshold_enabled:
+                logger.warning(f"Threshold initialized: min={self.threshold_min}, max={self.threshold_max}")
+            else:
+                logger.debug(f"Threshold not enabled. Received: min={threshold_min}, max={threshold_max}")
 
             # IMPORTANT: Build the UI first so that all UI elements (metadata_panel, status bar, etc.) are available.
             self.initUI()
@@ -303,7 +315,8 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.channel.subscribe("update", self.pva_callback)
             self.channel.startMonitor()
             logger.debug(f"Started PV channel monitor with interactive UI. PV address: {self.pv_address}")
-            self.statusBar().showMessage(f"Connected to PV: {self.pv_address}")
+            threshold_msg = f" (Threshold: {self.threshold_min}-{self.threshold_max})" if self.threshold_enabled else ""
+            self.statusBar().showMessage(f"Connected to PV: {self.pv_address}{threshold_msg}")
         except Exception as e:
             error_msg = f"Failed to connect to PV channel '{self.pv_address}': {e}"
             logger.error(error_msg)
@@ -709,6 +722,26 @@ class PyFAIAnalysisWindow(QMainWindow):
             else:
                 logger.debug("Incoming image is already 2D.")
 
+            # Apply thresholding if enabled (before pyFAI integration)
+            if self.threshold_enabled:
+                # Store original image stats for debugging
+                original_min, original_max = float(image.min()), float(image.max())
+                # Vectorized thresholding: 
+                # - Values below min_thresh are set to min_thresh
+                # - Values above max_thresh are set to 0
+                image = image.copy()
+                pixels_below_min = np.sum(image < self.threshold_min)
+                pixels_above_max = np.sum(image > self.threshold_max)
+                image[image < self.threshold_min] = self.threshold_min
+                image[image > self.threshold_max] = 0
+                new_min, new_max = float(image.min()), float(image.max())
+                # Use warning level so it's visible (logger is set to ERROR level)
+                logger.warning(f"THRESHOLD APPLIED: min={self.threshold_min}, max={self.threshold_max}. "
+                              f"{pixels_below_min} pixels clipped to min, {pixels_above_max} pixels set to 0. "
+                              f"Range: [{original_min:.1f}, {original_max:.1f}] -> [{new_min:.1f}, {new_max:.1f}]")
+            else:
+                logger.debug("Threshold not enabled or not configured")
+
             # If a mask is provided, ensure its shape matches
             if self.mask is not None:
                 if self.mask.shape != image.shape:
@@ -940,11 +973,19 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description='pyFAI Analysis Window')
         parser.add_argument('--pv-address', type=str, default='pvapy:image',
                             help='PV address for image channel (default: pvapy:image)')
+        parser.add_argument('--threshold-min', type=float, default=None,
+                            help='Minimum threshold value (values below this are set to this value)')
+        parser.add_argument('--threshold-max', type=float, default=None,
+                            help='Maximum threshold value (values above this are set to 0)')
         args, unknown = parser.parse_known_args()
         pv_address = args.pv_address
+        threshold_min = args.threshold_min
+        threshold_max = args.threshold_max
     except Exception as e:
         # If argument parsing fails, use default
         pv_address = 'pvapy:image'
+        threshold_min = None
+        threshold_max = None
         unknown = []
         print(f"Warning: Failed to parse arguments: {e}, using default PV address")
     
@@ -962,7 +1003,9 @@ if __name__ == "__main__":
     # Now try to create the window
     window = None
     try:
-        window = PyFAIAnalysisWindow(pv_address=pv_address)
+        window = PyFAIAnalysisWindow(pv_address=pv_address, 
+                                     threshold_min=threshold_min, 
+                                     threshold_max=threshold_max)
         # Make sure window is visible
         window.setVisible(True)
         window.show()
