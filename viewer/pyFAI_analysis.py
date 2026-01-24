@@ -370,6 +370,8 @@ class PyFAIAnalysisWindow(QMainWindow):
         self.max_frames_spinbox.setValue(300)
         self.max_frames_spinbox.setSingleStep(50)
         self.max_frames_spinbox.valueChanged.connect(self.update_max_frames)
+        # Sync max_frames with spinbox initial value
+        self.update_max_frames()
         
         controls_layout.addWidget(max_frames_label)
         controls_layout.addWidget(self.max_frames_spinbox)

@@ -621,6 +621,48 @@ QPushButton:pressed {
                 </property>
                </widget>
               </item>
+              <item row="7" column="0" colspan="2">
+               <widget class="QCheckBox" name="chk_autoscale">
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+                <property name="text">
+                 <string>Autoscale (5%-95% histogram)</string>
+                </property>
+               </widget>
+              </item>
+              <item row="8" column="0">
+               <widget class="QCheckBox" name="chk_threshold">
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+                <property name="text">
+                 <string>Auto threshold:</string>
+                </property>
+               </widget>
+              </item>
+              <item row="8" column="1">
+               <widget class="QLabel" name="lbl_threshold_range">
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="text">
+                 <string>0 to 0</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </widget>
