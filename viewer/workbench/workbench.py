@@ -1844,7 +1844,7 @@ class WorkbenchWindow(BaseWindow):
 
             # Load and visualize the dataset
             try:
-                self.visualize_selected_dataset()
+                self.start_dataset_load()
                 print("[DEBUG] visualize_selected_dataset call completed")
             except Exception as e:
                 self.update_status(f"Error in double-click load: {e}")
