@@ -50,12 +50,31 @@ import time
 import json
 import h5py
 import shutil
+
+# Compression libraries for handling compressed PVA data
+try:
+    import blosc2
+    BLOSC2_AVAILABLE = True
+except ImportError:
+    BLOSC2_AVAILABLE = False
+
+try:
+    import lz4.block
+    LZ4_AVAILABLE = True
+except ImportError:
+    LZ4_AVAILABLE = False
+
+try:
+    import bitshuffle
+    BITSHUFFLE_AVAILABLE = True
+except ImportError:
+    BITSHUFFLE_AVAILABLE = False
+
 try:
     import hdf5plugin
     HDF5PLUGIN_AVAILABLE = True
 except ImportError:
     HDF5PLUGIN_AVAILABLE = False
-    logger.warning("hdf5plugin not available. Compression options will be limited.")
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -246,6 +265,21 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.error_count = 0  # Track consecutive errors
             self.last_error_message = None  # Store last error message for display
             self._processing_image = False  # Flag to throttle updates
+            
+            # Map PVA scalar types to numpy dtypes (matching PVAReader)
+            # Each PVA ScalarType is enumerated in C++ starting 1-10
+            self.NUMPY_DATA_TYPE_MAP = {
+                pva.UBYTE   : np.dtype('uint8'),
+                pva.BYTE    : np.dtype('int8'),
+                pva.USHORT  : np.dtype('uint16'),
+                pva.SHORT   : np.dtype('int16'),
+                pva.UINT    : np.dtype('uint32'),
+                pva.INT     : np.dtype('int32'),
+                pva.ULONG   : np.dtype('uint64'),
+                pva.LONG    : np.dtype('int64'),
+                pva.FLOAT   : np.dtype('float32'),
+                pva.DOUBLE  : np.dtype('float64')
+            }
             
             # Initialize PV server for publishing pyFAI results
             self.output_pv_address = f"{self.pv_address}:pyFAI"  # Append :pyFAI to input PV
@@ -593,6 +627,154 @@ class PyFAIAnalysisWindow(QMainWindow):
         # Clean up worker
         self.save_worker = None
 
+    def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray:
+        """
+        Decompresses array data using the specified codec.
+        Matches PVAReader.decompress_array() logic.
+        
+        Args:
+            compressed_array: Compressed numpy array
+            codec: Codec name ('lz4', 'bslz4', or 'blosc')
+            uncompressed_size: Size of uncompressed data in bytes
+            dtype: NumPy dtype for the decompressed data
+            
+        Returns:
+            Decompressed numpy array with specified dtype
+        """
+        if codec == 'lz4':
+            if not LZ4_AVAILABLE:
+                raise ImportError("lz4 library not available. Install with: pip install lz4")
+            decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
+            return np.frombuffer(decompressed_bytes, dtype=dtype)
+        elif codec == 'bslz4':
+            if not BITSHUFFLE_AVAILABLE:
+                raise ImportError("bitshuffle library not available. Install with: pip install bitshuffle")
+            # uncompressed size has to be divided by the number of bytes needed to store the desired output dtype
+            uncompressed_shape = (uncompressed_size // dtype.itemsize,)
+            return bitshuffle.decompress_lz4(compressed_array, uncompressed_shape, dtype)
+        elif codec == 'blosc':
+            if not BLOSC2_AVAILABLE:
+                raise ImportError("blosc2 library not available. Install with: pip install blosc2")
+            decompressed_bytes = blosc2.decompress(compressed_array)
+            return np.frombuffer(decompressed_bytes, dtype=dtype)
+        else:
+            raise ValueError(f"Unsupported codec: {codec}. Supported codecs: 'lz4', 'bslz4', 'blosc'")
+
+    def extract_image_data(self, pv_object):
+        """
+        Extracts image data from PVA structure, handling multiple data types and compression.
+        """
+        # Map of possible PVA data type keys
+        possible_type_keys = [
+            'ubyteValue', 'byteValue', 'ushortValue', 'shortValue',
+            'uintValue', 'intValue', 'ulongValue', 'longValue',
+            'floatValue', 'doubleValue'
+        ]
+        
+        # 1. VALIDATE STRUCTURE
+        if 'value' not in pv_object:
+            raise ValueError("PV object does not contain 'value' key")
+        
+        value = pv_object['value']
+        if not isinstance(value, (list, tuple, np.ndarray)) or len(value) < 1:
+            raise ValueError("PV 'value' is not in expected format")
+        
+        first_element = value[0]
+        if not isinstance(first_element, dict):
+            # Attempt to handle cases where it might not be a standard dict
+            # but usually first_element should be the structure containing the union
+            if not hasattr(first_element, 'keys'): 
+                 raise ValueError("PV value[0] is not a dictionary/structure")
+
+        # 2. CHECK FOR COMPRESSION
+        # We use explicit 'in' checks because PvObject does not support .get(key, default)
+        codec_name = ''
+        if 'codec' in pv_object:
+            codec_obj = pv_object['codec']
+            # codec_obj might be a structure, check for 'name'
+            if 'name' in codec_obj:
+                codec_name = codec_obj['name']
+
+        # 3. DETECT DATA TYPE KEY
+        detected_type = None
+        for key in possible_type_keys:
+            if key in first_element:
+                # Check if the value is not None (some bindings return None for empty union fields)
+                if first_element[key] is not None:
+                    detected_type = key
+                    break
+        
+        if detected_type is None:
+            available = list(first_element.keys()) if hasattr(first_element, 'keys') else "Unknown"
+            raise ValueError(f"Could not find image data. Keys found: {available}")
+        
+        # 4. HANDLE COMPRESSED VS UNCOMPRESSED
+        if codec_name != '':
+            # --- COMPRESSED DATA PATH ---
+            compressed_array = first_element[detected_type]
+            
+            # FIX: Used to say 'pva_object', changed to 'pv_object'
+            if 'uncompressedSize' not in pv_object:
+                 raise ValueError("Compressed data missing 'uncompressedSize'")
+            
+            uncompressed_size = pv_object['uncompressedSize']
+            
+            # Extract parameters safely
+            pva_scalar_type = None
+            if 'codec' in pv_object:
+                if 'parameters' in pv_object['codec']:
+                    params = pv_object['codec']['parameters']
+                    if len(params) > 0:
+                         # Handle PvObject structure access safely
+                         param0 = params[0]
+                         if 'value' in param0:
+                             pva_scalar_type = param0['value']
+
+            # Determine Dtype
+            dtype = None
+            if pva_scalar_type is not None:
+                dtype = self.NUMPY_DATA_TYPE_MAP.get(pva_scalar_type)
+            
+            if dtype is None:
+                # Fallback map
+                dtype_map = {
+                    'ubyteValue': np.dtype('uint8'),   'byteValue': np.dtype('int8'),
+                    'ushortValue': np.dtype('uint16'), 'shortValue': np.dtype('int16'),
+                    'uintValue': np.dtype('uint32'),   'intValue': np.dtype('int32'),
+                    'ulongValue': np.dtype('uint64'),  'longValue': np.dtype('int64'),
+                    'floatValue': np.dtype('float32'), 'doubleValue': np.dtype('float64')
+                }
+                dtype = dtype_map.get(detected_type, np.dtype('float32'))
+            
+            # Decompress
+            try:
+                image = self.decompress_array(compressed_array, codec_name, uncompressed_size, dtype)
+            except ImportError as ie:
+                raise ImportError(f"Compression library missing for '{codec_name}': {ie}")
+            except Exception as e:
+                raise ValueError(f"Decompression failed ({codec_name}): {e}")
+
+            logger.debug(f"Decompressed: {codec_name}, shape={image.shape}")
+
+        else:
+            # --- UNCOMPRESSED DATA PATH ---
+            image_data = first_element[detected_type]
+            
+            # Type casting
+            if detected_type == 'floatValue':
+                image = np.array(image_data, dtype=np.float32)
+            elif detected_type == 'doubleValue':
+                image = np.array(image_data, dtype=np.float64).astype(np.float32)
+            elif detected_type in ['ushortValue', 'shortValue']:
+                 # Cast up to int32 first to prevent overflow during processing
+                image = np.array(image_data, dtype=np.int32).astype(np.float32)
+            else:
+                image = np.array(image_data).astype(np.float32)
+            
+            logger.debug(f"Extracted Raw: {detected_type}, shape={image.shape}")
+        
+        return image, detected_type
+
     def pva_callback(self, pv_object, offset=None):
         """
         Callback function invoked on every PV update from background thread.
@@ -625,50 +807,38 @@ class PyFAIAnalysisWindow(QMainWindow):
                         except Exception:
                             pass
             
-            if 'value' in pv_object:
-                value = pv_object['value']
+            # Extract image data using robust extraction function (handles multiple data types)
+            try:
+                image, detected_type = self.extract_image_data(pv_object)
                 timestamp = time.time()
-                logger.debug(f"Received PV object at {timestamp}: {value}")
+                logger.debug(f"Received PV object at {timestamp}, detected data type: {detected_type}")
 
-                # Check if 'value' is a list/tuple-like and process the first element
-                if isinstance(value, (list, tuple, np.ndarray)) and len(value) >= 1:
-                    first_element = value[0]
-                    if isinstance(first_element, dict) and 'floatValue' in first_element:
-                        image_data = first_element['floatValue']
-                        image = np.array(image_data, dtype=np.float32)
-                        logger.debug(f"Extracted image data type: {image.dtype}, shape: {image.shape}, ndim: {image.ndim}")
-
-                        # Log a short sample of the data for debugging
-                        if image.size > 10:
-                            logger.debug(f"Image data sample: {image.flatten()[:10]}...")
-                        else:
-                            logger.debug(f"Image data sample: {image.flatten()}")
-
-                        # Emit signal to update GUI in main thread (thread-safe)
-                        # Skip if still processing previous frame to avoid queue buildup
-                        if not self._processing_image:
-                            try:
-                                self.image_received.emit(image)
-                            except RuntimeError:
-                                # Window deleted, ignore
-                                return
-                    else:
-                        error_msg = "PV data structure invalid: 'floatValue' not found. This PV may not contain image data suitable for pyFAI analysis."
-                        logger.error(error_msg)
-                        try:
-                            self.error_occurred.emit(error_msg)
-                        except RuntimeError:
-                            return
+                # Log a short sample of the data for debugging
+                if image.size > 10:
+                    logger.debug(f"Image data sample: {image.flatten()[:10]}...")
                 else:
-                    error_msg = "PV 'value' is not in expected format (list/tuple with image data). This PV may not contain diffraction images."
-                    logger.error(error_msg)
+                    logger.debug(f"Image data sample: {image.flatten()}")
+
+                # Emit signal to update GUI in main thread (thread-safe)
+                # Skip if still processing previous frame to avoid queue buildup
+                if not self._processing_image:
                     try:
-                        self.error_occurred.emit(error_msg)
+                        self.image_received.emit(image)
                     except RuntimeError:
+                        # Window deleted, ignore
                         return
-            else:
-                error_msg = "PV object does not contain 'value' key. Check if this is the correct PV for image data."
-                logger.warning(error_msg)
+            except ValueError as ve:
+                # extract_image_data raised a ValueError with detailed message
+                error_msg = f"PV data extraction failed: {ve}. This PV may not contain image data suitable for pyFAI analysis."
+                logger.error(error_msg)
+                try:
+                    self.error_occurred.emit(error_msg)
+                except RuntimeError:
+                    return
+            except Exception as e:
+                # Other unexpected errors during extraction
+                error_msg = f"Unexpected error extracting image data: {e}. Check PV address and data format."
+                logger.error(error_msg)
                 try:
                     self.error_occurred.emit(error_msg)
                 except RuntimeError:
@@ -707,15 +877,54 @@ class PyFAIAnalysisWindow(QMainWindow):
             if image.ndim != 2:
                 logger.warning("Incoming image data is not 2D. Attempting to reshape or convert.")
                 if image.ndim == 1:
-                    # Check if the 1D image can be reshaped to the expected dimensions
-                    if image.size == self.expected_image_shape[0] * self.expected_image_shape[1]:
+                    # Try to reshape to expected dimensions first
+                    expected_size = self.expected_image_shape[0] * self.expected_image_shape[1]
+                    if image.size == expected_size:
                         image = image.reshape(self.expected_image_shape)
                         logger.debug(f"Reshaped 1D image to 2D with shape: {image.shape}")
                     else:
-                        error_msg = f"Image data cannot be reshaped. Expected shape: {self.expected_image_shape}, got size: {image.size}. This may not be a diffraction image."
-                        logger.error(error_msg)
-                        self.handle_invalid_image(error_msg)
-                        return
+                        # Try to auto-detect shape from common detector dimensions
+                        # Common detector shapes: Eiger4M (2167, 2070), Eiger2M, etc.
+                        common_shapes = [
+                            (2167, 2070),  # Eiger4M
+                            (2162, 2068),  # Eiger2M
+                            (2048, 2048),  # Common square
+                            (1024, 1024),  # Smaller square
+                        ]
+                        
+                        reshaped = False
+                        for height, width in common_shapes:
+                            if image.size == height * width:
+                                image = image.reshape((height, width))
+                                logger.debug(f"Auto-detected and reshaped 1D image to 2D with shape: {image.shape}")
+                                reshaped = True
+                                break
+                        
+                        if not reshaped:
+                            # Try to find a reasonable 2D factorization
+                            # Find factors close to square
+                            total_pixels = image.size
+                            best_shape = None
+                            min_diff = float('inf')
+                            
+                            # Try to find dimensions that are close to square
+                            for h in range(int(np.sqrt(total_pixels)) - 100, int(np.sqrt(total_pixels)) + 100):
+                                if h > 0 and total_pixels % h == 0:
+                                    w = total_pixels // h
+                                    diff = abs(h - w)
+                                    if diff < min_diff:
+                                        min_diff = diff
+                                        best_shape = (h, w)
+                            
+                            if best_shape:
+                                image = image.reshape(best_shape)
+                                logger.warning(f"Auto-detected shape {best_shape} from pixel count {total_pixels}. "
+                                             f"Original expected: {self.expected_image_shape}")
+                            else:
+                                error_msg = f"Image data cannot be reshaped. Expected shape: {self.expected_image_shape}, got size: {image.size}. This may not be a diffraction image."
+                                logger.error(error_msg)
+                                self.handle_invalid_image(error_msg)
+                                return
                 elif image.ndim == 3:
                     # For example: Convert colored (RGB) 3D images to grayscale by averaging channels
                     logger.debug("Incoming image is 3D. Converting to grayscale by averaging channels.")
@@ -754,15 +963,12 @@ class PyFAIAnalysisWindow(QMainWindow):
                 if self.mask.shape != image.shape:
                     logger.warning(f"Mask shape {self.mask.shape} does not match image shape {image.shape}. Resizing mask.")
                     image_height, image_width = image.shape
-                    resized_mask = cv2.resize(self.mask.astype(np.uint8),
-                                              (image_width, image_height),
-                                              interpolation=cv2.INTER_NEAREST)
-                    
+                    # Use skimage.transform.resize for mask resizing
                     resized_mask = resize(self.mask.astype(np.uint8),
                                           (image_height, image_width),
                                           order=0,  # Nearest-neighbor interpolation
                                           preserve_range=True,
-                                          anti_aliasing=framePublisher).astype(bool)
+                                          anti_aliasing=False).astype(bool)
                     self.mask = resized_mask.astype(bool)
                     logger.debug(f"Resized mask to {self.mask.shape}")
                 mask = self.mask
@@ -770,6 +976,31 @@ class PyFAIAnalysisWindow(QMainWindow):
             else:
                 mask = None
                 logger.debug("No mask applied to the image.")
+
+            # =================================================================
+            # FIX: Override strict Eiger4M geometry if shapes don't match
+            # This handles cases where PONI file expects a specific detector
+            # shape (e.g., Eiger4M: 2167x2070) but simulation provides
+            # different dimensions (e.g., 2048x2048)
+            # =================================================================
+            if self.ai.detector.shape is not None and self.ai.detector.shape != image.shape:
+                logger.warning(
+                    f"Shape Mismatch! PONI expects {self.ai.detector.shape}, "
+                    f"Incoming Image is {image.shape}. Switching to Generic Detector."
+                )
+                
+                # 1. Grab pixel sizes from the loaded detector (preserves calibration)
+                p1 = self.ai.detector.pixel1
+                p2 = self.ai.detector.pixel2
+                
+                # 2. Create a generic detector (No gaps, no fixed shape enforcement)
+                from pyFAI.detectors import Detector
+                generic_det = Detector(pixel1=p1, pixel2=p2)
+                
+                # 3. Force the integrator to use this flexible detector
+                self.ai.detector = generic_det
+                logger.debug(f"Switched to generic detector with pixel sizes: pixel1={p1}, pixel2={p2}")
+            # =================================================================
 
             # Perform azimuthal integration with pyFAI
             q, intensity = self.ai.integrate1d(image, 1000, mask=mask, unit="q_A^-1", method='bbox')
