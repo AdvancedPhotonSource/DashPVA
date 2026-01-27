@@ -395,10 +395,14 @@ class DiffractionImageWindow(QMainWindow):
                 if not(self.reader.rois):
                     if 'ROI' in self.reader.config:
                         self.reader.start_roi_backup_monitor()
-                    self.start_hkl_monitors()
-                    self.start_stats_monitors()
-                    self.add_rois()
-                    self.start_timers()
+                # Start monitoring CA metadata PVs if configured
+                if 'METADATA' in self.reader.config:
+                    self.reader.start_metadata_ca_monitor()
+                # HKL monitoring disabled - uncomment to enable
+                # self.start_hkl_monitors()
+                self.start_stats_monitors()
+                self.add_rois()
+                self.start_timers()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
@@ -480,13 +484,14 @@ class DiffractionImageWindow(QMainWindow):
             for stat in self.reader.stats[stat_num].keys():
                 pv = f"{self.reader.stats[stat_num][stat]}"
                 try:
-                    pv_value = caget(pv)
+                    # Use timeout to avoid blocking on slow PVs
+                    pv_value = caget(pv, timeout=0.5)
                     if pv_value is not None:
                         self.stats_data[pv] = pv_value
                         camonitor(pvname=pv, callback=self.stats_ca_callback)
                 except Exception as e:
-                    print(f'[Diffraction Image Viewer] Failed to read Stats PV {pv}: {e}. Skipping.')
-                    # Skip this PV, continue with others
+                    # Silently skip failed PVs to avoid spam
+                    pass
 
     def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -561,19 +566,100 @@ class DiffractionImageWindow(QMainWindow):
         """
         try:
             roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            # Track how many ROIs are too big for offset calculation
+            too_big_count = 0
             # TODO: can just loop through values rather than lookup with keys
             for roi_num, roi in self.reader.rois.items():
                 x = roi.get("MinX", 0) if not(self.image_is_transposed) else roi.get('MinY',0)
                 y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
                 width = roi.get("SizeX", 0) if not(self.image_is_transposed) else roi.get('SizeY',0)
                 height = roi.get("SizeY", 0) if not(self.image_is_transposed) else roi.get('SizeX',0)
-                roi_color = int(roi_num[-1]) - 1 
+                
+                # Skip ROIs with invalid dimensions
+                if width <= 0 or height <= 0:
+                    continue
+                
+                # Extract ROI number from key (e.g., "ROI1" -> 1, "ROI2" -> 2)
+                try:
+                    # Try to extract number from ROI key (e.g., "ROI1" -> 1)
+                    # Look for digits in the key
+                    digits = ''.join(c for c in roi_num if c.isdigit())
+                    if digits:
+                        roi_index = int(digits) - 1
+                    else:
+                        # Fallback: use index in dictionary
+                        roi_index = list(self.reader.rois.keys()).index(roi_num)
+                except (ValueError, IndexError):
+                    # Final fallback: use 0 (first color)
+                    roi_index = 0
+                
+                # Ensure index is within bounds
+                roi_index = max(0, min(roi_index, len(roi_colors) - 1))
+                roi_color = roi_colors[roi_index]
+                
+                # Check if ROI is unreasonably large (> 10000 pixels) - always resize these
+                MAX_REASONABLE_SIZE = 10000
+                roi_too_big = False
+                original_width = width
+                original_height = height
+                
+                if width > MAX_REASONABLE_SIZE or height > MAX_REASONABLE_SIZE:
+                    roi_too_big = True
+                    # Get image dimensions if available, otherwise use default
+                    image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
+                    if image_shape:
+                        img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                        img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                    else:
+                        # Fallback: use reasonable default size
+                        img_width = 2000
+                        img_height = 2000
+                    # Force resize: Draw ROI just slightly bigger than image (100 pixels bigger)
+                    x = -50
+                    y = -50
+                    width = img_width + 100  # Force resize to image + 100px
+                    height = img_height + 100  # Force resize to image + 100px
+                else:
+                    # Check if ROI is larger than image (for smaller but still too large ROIs)
+                    image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
+                    if image_shape:
+                        img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                        img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                        if width > img_width or height > img_height:
+                            roi_too_big = True
+                            # Draw ROI just slightly bigger than image (100 pixels bigger)
+                            x = -50
+                            y = -50
+                            width = img_width + 100  # Always image + 100px when too large
+                            height = img_height + 100  # Always image + 100px when too large
+                
+                # Final safety check: if still too large, force resize to reasonable size
+                if width > MAX_REASONABLE_SIZE:
+                    width = 2100
+                    roi_too_big = True
+                if height > MAX_REASONABLE_SIZE:
+                    height = 2100
+                    roi_too_big = True
+                if roi_too_big:
+                    # Add horizontal offset so multiple "too large" ROIs don't overlay
+                    x = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
+                    y = -50
+                    too_big_count += 1
+                
+                # Create ROI with final dimensions (ensured to be reasonable)
                 roi = pg.ROI(pos=[x,y],
                             size=[width, height],
                             movable=False,
-                            pen=pg.mkPen(color=roi_colors[roi_color]))
+                            pen=pg.mkPen(color=roi_color))
                 self.rois.append(roi)
                 self.image_view.addItem(roi)
+                
+                # Add label if ROI is too big
+                if roi_too_big:
+                    label = pg.TextItem(f'{roi_num} - ROI too large', color=roi_color, anchor=(0, 0))
+                    label.setPos(x + 5, y + 5)
+                    self.image_view.addItem(label)
+                
                 roi.sigRegionChanged.connect(self.update_roi_region)
         except Exception as e:
             print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
@@ -612,11 +698,13 @@ class DiffractionImageWindow(QMainWindow):
             self.hkl_data_updated.emit(True)
 
     def handle_hkl_data_update(self):
-        if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
-            self.hkl_setup()
-            if self.q_conv is None:
-                raise ValueError("QConversion object is not initialized.")
-            self.update_rsm()
+        # HKL functionality disabled - return early to prevent errors
+        return
+        # if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
+        #     self.hkl_setup()
+        #     if self.q_conv is None:
+        #         raise ValueError("QConversion object is not initialized.")
+        #     self.update_rsm()
   
                 
     def hkl_setup(self) -> None:
@@ -774,11 +862,32 @@ class DiffractionImageWindow(QMainWindow):
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
+        MAX_REASONABLE_SIZE = 3000
+        too_big_count = 0
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
             x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
             y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
             width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
             height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
+            
+            # Enforce size limits when updating from callback
+            if width > MAX_REASONABLE_SIZE or height > MAX_REASONABLE_SIZE:
+                image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
+                if image_shape:
+                    img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                    img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                    width = img_width + 100
+                    height = img_height + 100
+                    x_pos = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
+                    y_pos = -50
+                    too_big_count += 1
+                else:
+                    width = 2100
+                    height = 2100
+                    x_pos = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
+                    y_pos = -50
+                    too_big_count += 1
+            
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
         self.image_view.update()
@@ -786,7 +895,23 @@ class DiffractionImageWindow(QMainWindow):
     def update_roi_region(self) -> None:
         """
         Forces the image viewer to refresh when an ROI region changes.
+        Also ensures ROIs don't exceed reasonable size limits.
         """
+        # Ensure ROIs don't get resized to unreasonable sizes by callbacks
+        MAX_REASONABLE_SIZE = 10000
+        for roi in self.rois:
+            current_size = roi.size()
+            if current_size[0] > MAX_REASONABLE_SIZE or current_size[1] > MAX_REASONABLE_SIZE:
+                # Get image dimensions if available
+                image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
+                if image_shape:
+                    img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                    img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                    roi.setSize([img_width + 100, img_height + 100])
+                    roi.setPos([-50, -50])
+                else:
+                    roi.setSize([2100, 2100])
+                    roi.setPos([-50, -50])
         self.image_view.update()
 
     def update_pv_prefix(self) -> None:

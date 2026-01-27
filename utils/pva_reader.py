@@ -114,6 +114,7 @@ class PVAReader(QObject):
         self.numpy_dtype = None
         self.attributes = []
         self.pv_attributes = {}
+        self.metadata_ca = {}  # Store CA metadata PVs
 
         # variables used for image manipulaiton
         self.pixel_ordering = 'F'
@@ -184,15 +185,15 @@ class PVAReader(QObject):
         if self.CACHING_MODE != '':
             self.caches_needed = True
             if self.CACHING_MODE == 'alignment':
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 1}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'scan':
                 self.FLAG_PV = self.CACHE_OPTIONS.setdefault('SCAN', {'FLAG_PV': ''}).get('FLAG_PV')
                 self.START_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'START_SCAN': True}).get('START_SCAN')
                 self.STOP_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'STOP_SCAN': False}).get('STOP_SCAN')
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 1}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'bin':
                 self.BIN_COUNT = self.CACHE_OPTIONS.setdefault('BIN', {'COUNT': 10}).get('COUNT')
-                self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 16}).get('SIZE')
+                self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 1}).get('SIZE')
 
     def init_caches(self) -> None:
         if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
@@ -278,12 +279,31 @@ class PVAReader(QObject):
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         name_components = pvname.split(":")
-        roi_key = name_components[1]
-        pv_key = name_components[2]
+        # PV format: BL172:eiger4M:ROI1:MinX
+        # name_components[0] = "BL172"
+        # name_components[1] = "eiger4M"
+        # name_components[2] = "ROI1" (this is the roi_key)
+        # name_components[3] = "MinX" (this is the pv_key)
+        if len(name_components) >= 4:
+            roi_key = name_components[2]
+            pv_key = name_components[3]
+        else:
+            # Fallback - try to extract from PV name
+            roi_key = name_components[1] if len(name_components) > 1 else "ROI1"
+            pv_key = name_components[2] if len(name_components) > 2 else "MinX"
         pv_value = value
         # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
         # then adds the key to the inner dictionary with update
         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+    
+    def metadata_ca_callback(self, pvname, value, **kwargs) -> None:
+        """
+        Callback for CA metadata PV updates.
+        Stores the value in self.metadata_ca and also updates pv_attributes.
+        """
+        self.metadata_ca[pvname] = value
+        # Also update pv_attributes so it's available in the same way as PVA attributes
+        self.pv_attributes[pvname] = value
         
 ########################### PVA PARSING ##################################
     def locate_analysis_index(self) -> int|None:
@@ -517,15 +537,57 @@ class PVAReader(QObject):
             for config_key, pv_name in roi_dict.items():
                 try:
                     name_components = pv_name.split(":")
-                    roi_key = name_components[1] # ROI1-ROI4
-                    pv_key = name_components[2] # MinX, MinY, SizeX, SizeY
+                    # PV format: BL172:eiger4M:ROI1:MinX
+                    # name_components[0] = "BL172"
+                    # name_components[1] = "eiger4M"
+                    # name_components[2] = "ROI1" (this is the roi_key)
+                    # name_components[3] = "MinX" (this is the pv_key)
+                    if len(name_components) >= 4:
+                        roi_key = name_components[2] # ROI1-ROI4
+                        pv_key = name_components[3] # MinX, MinY, SizeX, SizeY
+                    else:
+                        # Fallback for different PV naming conventions
+                        roi_key = roi_num  # Use config key (ROI1, ROI2, etc.)
+                        # Map config keys to PV keys: MIN_X -> MinX, SIZE_X -> SizeX, etc.
+                        pv_key_map = {'MIN_X': 'MinX', 'MIN_Y': 'MinY', 'SIZE_X': 'SizeX', 'SIZE_Y': 'SizeY'}
+                        pv_key = pv_key_map.get(config_key, config_key)
 
-                    pv_value = caget(pv_name)
+                    # Use timeout to avoid blocking on slow PVs
+                    pv_value = caget(pv_name, timeout=0.5)
                     if pv_value is not None:
                         self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
                         camonitor(pvname=pv_name, callback=self.roi_backup_callback)
                 except Exception as e:
-                    print(f'[PVA Reader] Failed to read ROI PV {pv_name}: {e}. Skipping.')
+                    # Silently skip failed PVs to avoid spam
+                    pass
+
+    def start_metadata_ca_monitor(self) -> None:
+        """
+        Starts monitoring CA metadata PVs from the [METADATA.CA] section.
+        If a PV fails to read, it's skipped. Values are stored in self.metadata_ca
+        and also added to self.pv_attributes for consistency.
+        """
+        metadata_config = self.config.get('METADATA', {})
+        if not metadata_config:
+            return
+
+        ca_config = metadata_config.get('CA', {})
+        if not ca_config:
+            return
+
+        for config_key, pv_name in ca_config.items():
+            try:
+                # Use timeout to avoid blocking on slow PVs
+                pv_value = caget(pv_name, timeout=0.5)
+                if pv_value is not None:
+                    self.metadata_ca[pv_name] = pv_value
+                    # Also add to pv_attributes so it's available like PVA attributes
+                    self.pv_attributes[pv_name] = pv_value
+                    # Start monitoring for updates
+                    camonitor(pvname=pv_name, callback=self.metadata_ca_callback)
+            except Exception as e:
+                # Silently skip failed PVs to avoid spam
+                pass
 
     ################################# Getters ################################# 
     def get_cached_images(self) -> list[np.ndarray]:

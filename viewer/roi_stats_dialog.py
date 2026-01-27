@@ -38,5 +38,5 @@ class RoiStatsDialog(QDialog):
         Keyword Args:
         event -- closing event sent by dialog window
         """
-        self.parent.stats_dialog[self.stats_text] = None
+        self.parent.stats_dialogs[self.stats_text] = None
         super(RoiStatsDialog,self).closeEvent(event)

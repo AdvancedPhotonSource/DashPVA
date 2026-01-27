@@ -7,7 +7,7 @@ CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how 
 CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether the caching should be done the entire time, when a flag is seen, or if it should be put into bins based on number of frames
 
     [CACHE_OPTIONS.ALIGNMENT]
-    MAX_CACHE_SIZE = 1000
+    MAX_CACHE_SIZE = 1
 
     [CACHE_OPTIONS.SCAN]
     # FLAG PV MUST BE IN METADATA SECTION   
@@ -15,11 +15,11 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
     START_SCAN = true
     STOP_SCAN = false 
     THRESHOLD = 0.05 # use if start and stop values are not binary/boolean
-    MAX_CACHE_SIZE = 1000
+    MAX_CACHE_SIZE = 1
 
     [CACHE_OPTIONS.BIN]
     COUNT = 10
-    SIZE = 16
+    SIZE = 1
 
 # Section for Metadata PVs
 [METADATA]
@@ -65,6 +65,20 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
     MAX = 'BL172:eiger4M:Stats1:MaxValue_RBV'
     SIGMA = 'BL172:eiger4M:Stats1:Sigma_RBV'
     MEAN = 'BL172:eiger4M:Stats1:MeanValue_RBV'
+
+    [STATS.STATS2]
+    TOTAL = 'BL172:eiger4M:Stats2:Total_RBV'
+    MIN = 'BL172:eiger4M:Stats2:MinValue_RBV'
+    MAX = 'BL172:eiger4M:Stats2:MaxValue_RBV'
+    SIGMA = 'BL172:eiger4M:Stats2:Sigma_RBV'
+    MEAN = 'BL172:eiger4M:Stats2:MeanValue_RBV'
+
+    [STATS.STATS3]
+    TOTAL = 'BL172:eiger4M:Stats3:Total_RBV'
+    MIN = 'BL172:eiger4M:Stats3:MinValue_RBV'
+    MAX = 'BL172:eiger4M:Stats3:MaxValue_RBV'
+    SIGMA = 'BL172:eiger4M:Stats3:Sigma_RBV'
+    MEAN = 'BL172:eiger4M:Stats3:MeanValue_RBV'
 
     [STATS.STATS4]
     TOTAL = 'BL172:eiger4M:Stats4:Total_RBV'
