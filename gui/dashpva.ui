@@ -57,6 +57,19 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="lbl_live_header">
+     <property name="styleSheet">
+      <string notr="true">font-weight: bold; color: #34495e; font-size: 12px;</string>
+     </property>
+     <property name="text">
+      <string>Live Analysis</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QPushButton" name="btn_area_detector">
      <property name="text">
       <string>Area Detector Viewer</string>
