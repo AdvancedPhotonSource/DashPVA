@@ -1,8 +1,10 @@
 import sys
-import subprocess
+import os, subprocess, sys
+from pathlib import Path
 from PyQt5 import uic
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
-from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
+from PyQt5.QtCore import QTimer, Qt
+from viewer.views_registry.registry import VIEWS
 
 
 class LauncherDialog(QDialog):
