@@ -33,6 +33,9 @@ from viewer.controls.controls_2d import Controls2D
 from viewer.workbench.managers.roi_manager import ROIManager
 from viewer.workbench.dock_window import DockWindow
 from viewer.workbench.docks.data_structure import DataStructureDock
+from viewer.workbench.docks.info_2d_dock import Info2DDock
+from viewer.workbench.docks.info_3d_dock import Info3DDock
+from viewer.workbench.docks.slice_plane import SlicePlaneDock
 #from viewer.workbench.docks.dash_ai import DashAI
 
 
@@ -56,7 +59,10 @@ class WorkbenchWindow(BaseWindow):
 
         # other
         self.data_structure_dock = DataStructureDock(main_window=self, segment_name="other", dock_area=Qt.LeftDockWidgetArea)
-
+        # info dock (2D)
+        self.info_2d_dock = Info2DDock(main_window=self, title="2D Info", segment_name="2d", dock_area=Qt.RightDockWidgetArea)
+        # info dock (3D)
+        self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea)
         # roi 
 
         # Alias Workbench's tree to the dock's tree widget
@@ -73,6 +79,16 @@ class WorkbenchWindow(BaseWindow):
         self.tab_1d = None
         self.tab_2d = None
         self.tab_3d = Workspace3D(parent=self, main_window=self)
+        # Slice Controls dock (left, under Data Structure)
+        try:
+            self.slice_plane_dock = SlicePlaneDock(main_window=self, segment_name="3d", dock_area=Qt.LeftDockWidgetArea)
+            # Position below Data Structure dock
+            try:
+                self.splitDockWidget(self.data_structure_dock, self.slice_plane_dock, Qt.Vertical)
+            except Exception:
+                pass
+        except Exception:
+            pass
         # ======= TABS END ========= #
 
 
@@ -111,6 +127,12 @@ class WorkbenchWindow(BaseWindow):
         # Setup dock to track ROIs and stats
         try:
             self.roi_manager.setup_docks()
+        except Exception:
+            pass
+        # Initialize 2D axis variables
+        try:
+            self.axis_2d_x = "Columns"
+            self.axis_2d_y = "Row"
         except Exception:
             pass
 
@@ -622,6 +644,18 @@ class WorkbenchWindow(BaseWindow):
             # Initialize with empty data
             self.clear_2d_plot()
 
+            # Setup hover overlays and mouse tracking
+            self._setup_2d_hover()
+
+            # Set default hover enabled and preserve default context menu
+            try:
+                self._hover_enabled = True
+                if hasattr(self, 'image_view') and self.image_view is not None:
+                    # Restore default context menu (do not override with custom)
+                    self.image_view.setContextMenuPolicy(Qt.DefaultContextMenu)
+            except Exception:
+                pass
+
         except Exception as e:
             self.update_status(f"Error setting up 2D plot viewer: {e}")
 
@@ -750,12 +784,6 @@ class WorkbenchWindow(BaseWindow):
             pass
         except Exception as e:
             self.update_status(f"Error setting up 1D connections: {e}")
-
-    
-
-
-
-    
 
     # === Controls: 3D ===
     def setup_controls_3d(self):
@@ -1415,10 +1443,20 @@ class WorkbenchWindow(BaseWindow):
                 if hasattr(self, 'file_status_label'):
                     self.file_status_label.setText(f"Loaded: {os.path.basename(self.selected_dataset_path)}")
                 self.update_status(f"Loaded dataset: {self.selected_dataset_path}")
+                try:
+                    if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                        self.info_2d_dock.refresh()
+                except Exception:
+                    pass
             else:
                 if data.ndim == 1:
                     self.display_1d_data(data)
                     self.update_status("Loaded 1D dataset")
+                    try:
+                        if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                            self.info_2d_dock.refresh()
+                    except Exception:
+                        pass
                 else:
                     self.clear_2d_plot()
                     self.update_status("Dataset loaded but not visualizable")
@@ -1432,6 +1470,11 @@ class WorkbenchWindow(BaseWindow):
             if hasattr(self, 'dataset_info_text'):
                 self.dataset_info_text.setPlainText(message)
             self.update_status(message)
+            try:
+                if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                    self.info_2d_dock.refresh()
+            except Exception:
+                pass
         except Exception as e:
             self.update_status(f"Error updating failure status: {e}")
 
@@ -1444,6 +1487,18 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error loading 3D data: {e}")
 
     # === 2D Helpers ===
+    def set_2d_axes(self, x_axis, y_axis):
+        try:
+            self.axis_2d_x = str(x_axis) if x_axis else None
+            self.axis_2d_y = str(y_axis) if y_axis else None
+            if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                try:
+                    self.info_2d_dock.refresh()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
     def clear_2d_plot(self):
         """Clear the 2D plot and show placeholder."""
         try:
@@ -1480,6 +1535,15 @@ class WorkbenchWindow(BaseWindow):
                 # Set default axis labels
                 self.plot_item.setLabel('bottom', 'X')
                 self.plot_item.setLabel('left', 'Y')
+                try:
+                    self.set_2d_axes("Columns", "Row")
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                        self.info_2d_dock.refresh()
+                except Exception:
+                    pass
 
                 # Update above-image info label with placeholder dimensions
                 if hasattr(self, 'image_info_label'):
@@ -1488,15 +1552,74 @@ class WorkbenchWindow(BaseWindow):
                     except Exception:
                         pass
 
+                # Remove hover overlays and clear HKL caches
+                try:
+                    view = self.image_view.getView() if hasattr(self.image_view, 'getView') else None
+                    if view is not None:
+                        if hasattr(self, '_hover_hline') and self._hover_hline is not None:
+                            try:
+                                view.removeItem(self._hover_hline)
+                            except Exception:
+                                pass
+                            self._hover_hline = None
+                        if hasattr(self, '_hover_vline') and self._hover_vline is not None:
+                            try:
+                                view.removeItem(self._hover_vline)
+                            except Exception:
+                                pass
+                            self._hover_vline = None
+                        if hasattr(self, '_hover_text') and self._hover_text is not None:
+                            try:
+                                view.removeItem(self._hover_text)
+                            except Exception:
+                                pass
+                            self._hover_text = None
+                    self._mouse_proxy = None
+                    self._qx_grid = None
+                    self._qy_grid = None
+                    self._qz_grid = None
+                except Exception:
+                    pass
+
         except Exception as e:
             self.update_status(f"Error clearing 2D plot: {e}")
 
     def update_overlay_text(self, width, height, frame_info=None):
-        """Update the label above the image with dimensions and optional frame info."""
+        """Update the label above the image with dimensions and optional frame info.
+        Augmented to append current motor position (if available) for the selected frame.
+        """
         try:
             text = f"Image Dimensions: {width}x{height} pixels"
-            if frame_info:
-                text = f"{text} ({frame_info})"
+            info = frame_info or ""
+            # Try to append motor position for current frame if 3D data
+            try:
+                if hasattr(self, 'current_2d_data') and self.current_2d_data is not None and self.current_2d_data.ndim == 3:
+                    num_frames = int(self.current_2d_data.shape[0])
+                    idx = 0
+                    if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
+                        try:
+                            idx = int(self.frame_spinbox.value())
+                        except Exception:
+                            idx = 0
+                    motor_val = None
+                    fp = getattr(self, 'current_file_path', None)
+                    if fp and os.path.exists(fp):
+                        try:
+                            with h5py.File(fp, 'r') as h5f:
+                                arr = self._find_motor_positions(h5f, num_frames)
+                                if arr is not None and 0 <= idx < arr.size:
+                                    motor_val = float(arr[idx])
+                        except Exception:
+                            motor_val = None
+                    if motor_val is not None:
+                        if info:
+                            info = f"{info} | Motor {motor_val:.6f}"
+                        else:
+                            info = f"Motor {motor_val:.6f}"
+            except Exception:
+                pass
+            if info:
+                text = f"{text} ({info})"
             if hasattr(self, 'image_info_label'):
                 self.image_info_label.setText(text)
         except Exception as e:
@@ -1556,11 +1679,20 @@ class WorkbenchWindow(BaseWindow):
                 autoRange=True,
                 autoHistogramRange=auto_levels
             )
+            # Ensure hover overlays exist after any prior clear
+            try:
+                self._setup_2d_hover()
+            except Exception:
+                pass
 
             # Update axis labels based on data shape
             height, width = image_data.shape
             self.plot_item.setLabel('bottom', f'Columns [pixels] (0 to {width-1})')
             self.plot_item.setLabel('left', f'Row [pixels] (0 to {height-1})')
+            try:
+                self.set_2d_axes("Columns", "Row")
+            except Exception:
+                pass
 
             # Apply current colormap
             if hasattr(self, 'cbColorMapSelect_2d'):
@@ -1578,9 +1710,579 @@ class WorkbenchWindow(BaseWindow):
                 self.roi_manager.update_all_roi_stats()
             except Exception:
                 pass
+            try:
+                if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                    self.info_2d_dock.refresh()
+            except Exception:
+                pass
+            # Refresh any open ROI Plot docks to reflect dataset change (axes and series)
+            try:
+                docks = []
+                if hasattr(self, '_roi_plot_dock_widgets') and self._roi_plot_dock_widgets:
+                    docks.extend(list(self._roi_plot_dock_widgets))
+                if hasattr(self, 'roi_plot_docks_by_roi_id') and self.roi_plot_docks_by_roi_id:
+                    for lst in self.roi_plot_docks_by_roi_id.values():
+                        docks.extend(list(lst))
+                for d in docks:
+                    try:
+                        if hasattr(d, 'refresh_for_dataset_change'):
+                            d.refresh_for_dataset_change()
+                    except Exception:
+                        continue
+            except Exception:
+                pass
 
         except Exception as e:
             self.update_status(f"Error displaying 2D data: {e}")
+
+    def _show_image_context_menu(self, pos):
+        """Show right-click menu for the 2D image with hover toggle and HKL plotting."""
+        try:
+            menu = QMenu(self)
+            # Enable/Disable Hover
+            action_hover = QAction("Enable Hover", self)
+            action_hover.setCheckable(True)
+            action_hover.setChecked(bool(getattr(self, '_hover_enabled', True)))
+            action_hover.toggled.connect(self._toggle_hover_enabled)
+            menu.addAction(action_hover)
+            # Show current hover state explicitly (do not remove original options)
+            try:
+                state_text = "Hover: ON" if bool(getattr(self, '_hover_enabled', True)) else "Hover: OFF"
+            except Exception:
+                state_text = "Hover: ON"
+            action_state = QAction(state_text, self)
+            action_state.setEnabled(False)
+            menu.addAction(action_state)
+            # Show last HKL value if available (disabled info item)
+            hkl_label = "HKL: N/A"
+            try:
+                xy = getattr(self, '_last_hover_xy', None)
+                qxg = getattr(self, '_qx_grid', None)
+                qyg = getattr(self, '_qy_grid', None)
+                qzg = getattr(self, '_qz_grid', None)
+                if xy and qxg is not None and qyg is not None and qzg is not None:
+                    x, y = int(xy[0]), int(xy[1])
+                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                        idx = 0
+                        try:
+                            idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+                        except Exception:
+                            idx = 0
+                        if 0 <= idx < qxg.shape[0]:
+                            H = float(qxg[idx, y, x]); K = float(qyg[idx, y, x]); L = float(qzg[idx, y, x])
+                            hkl_label = f"HKL: H={H:.6f}, K={K:.6f}, L={L:.6f}"
+                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                        H = float(qxg[y, x]); K = float(qyg[y, x]); L = float(qzg[y, x])
+                        hkl_label = f"HKL: H={H:.6f}, K={K:.6f}, L={L:.6f}"
+            except Exception:
+                pass
+            action_hkl_info = QAction(hkl_label, self)
+            action_hkl_info.setEnabled(False)
+            menu.addAction(action_hkl_info)
+            # Plot HKL in 3D
+            action_plot_hkl = QAction("Plot HKL (3D)", self)
+            action_plot_hkl.setToolTip("Plot current frame intensity at HKL (qx,qy,qz) points")
+            action_plot_hkl.triggered.connect(self._plot_current_hkl_points)
+            menu.addAction(action_plot_hkl)
+            # Show menu at global position
+            try:
+                gpos = self.image_view.mapToGlobal(pos)
+            except Exception:
+                gpos = QCursor.pos()
+            menu.exec_(gpos)
+        except Exception as e:
+            self.update_status(f"Error showing image context menu: {e}")
+
+    def _toggle_hover_enabled(self, enabled: bool):
+        try:
+            self._hover_enabled = bool(enabled)
+            self._update_hover_visibility()
+        except Exception:
+            pass
+
+    def _update_hover_visibility(self):
+        try:
+            visible = bool(getattr(self, '_hover_enabled', True))
+            for item_name in ['_hover_hline', '_hover_vline', '_hover_text']:
+                it = getattr(self, item_name, None)
+                try:
+                    if it is not None:
+                        it.setVisible(visible)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _update_hover_text_at(self, x: int, y: int):
+        """Update hover crosshair and tooltip for given pixel coordinates on current frame."""
+        try:
+            frame = self.get_current_frame_data()
+            if frame is None or frame.ndim != 2:
+                return
+            height, width = frame.shape
+            if x < 0 or y < 0 or x >= width or y >= height:
+                return
+            # Update crosshair positions
+            try:
+                if hasattr(self, '_hover_hline') and self._hover_hline is not None:
+                    self._hover_hline.setPos(float(y))
+                if hasattr(self, '_hover_vline') and self._hover_vline is not None:
+                    self._hover_vline.setPos(float(x))
+            except Exception:
+                pass
+            # Intensity
+            try:
+                intensity = float(frame[y, x])
+            except Exception:
+                intensity = float('nan')
+            # HKL text
+            hkl_str = ""
+            try:
+                qxg = getattr(self, '_qx_grid', None)
+                qyg = getattr(self, '_qy_grid', None)
+                qzg = getattr(self, '_qz_grid', None)
+                if qxg is not None and qyg is not None and qzg is not None:
+                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                        idx = 0
+                        try:
+                            idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+                        except Exception:
+                            idx = 0
+                        if 0 <= idx < qxg.shape[0]:
+                            H = float(qxg[idx, y, x]); K = float(qyg[idx, y, x]); L = float(qzg[idx, y, x])
+                            hkl_str = f" | H={H:.6f}, K={K:.6f}, L={L:.6f}"
+                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                        H = float(qxg[y, x]); K = float(qyg[y, x]); L = float(qzg[y, x])
+                        hkl_str = f" | H={H:.6f}, K={K:.6f}, L={L:.6f}"
+            except Exception:
+                hkl_str = ""
+            # Tooltip text removed; keep crosshair only
+            try:
+                if hasattr(self, '_hover_text') and self._hover_text is not None:
+                    self._hover_text.setVisible(False)
+            except Exception:
+                pass
+            # Update 2D Info dock Mouse section even during playback
+            try:
+                if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                    H_val = K_val = L_val = None
+                    try:
+                        qxg = getattr(self, '_qx_grid', None)
+                        qyg = getattr(self, '_qy_grid', None)
+                        qzg = getattr(self, '_qz_grid', None)
+                        if qxg is not None and qyg is not None and qzg is not None:
+                            if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                                idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+                                if 0 <= idx < qxg.shape[0]:
+                                    H_val = float(qxg[idx, y, x]); K_val = float(qyg[idx, y, x]); L_val = float(qzg[idx, y, x])
+                            elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                                H_val = float(qxg[y, x]); K_val = float(qyg[y, x]); L_val = float(qzg[y, x])
+                    except Exception:
+                        H_val = K_val = L_val = None
+                    self.info_2d_dock.set_mouse_info((x, y), intensity, H_val, K_val, L_val)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _plot_current_hkl_points(self):
+        """Plot current frame intensities at HKL positions in an HKL 3D Plot Dock."""
+        try:
+            # Ensure q-grids are available
+            if getattr(self, '_qx_grid', None) is None or getattr(self, '_qy_grid', None) is None or getattr(self, '_qz_grid', None) is None:
+                try:
+                    self._try_load_hkl_grids()
+                except Exception:
+                    pass
+            qxg = getattr(self, '_qx_grid', None)
+            qyg = getattr(self, '_qy_grid', None)
+            qzg = getattr(self, '_qz_grid', None)
+            frame = self.get_current_frame_data()
+            if qxg is None or qyg is None or qzg is None or frame is None:
+                self.update_status("HKL grids or frame not available for plotting")
+                return
+            # Select frame index if 3D
+            idx = 0
+            try:
+                idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+            except Exception:
+                idx = 0
+            # Extract H,K,L arrays matching frame
+            try:
+                if qxg.ndim == 3:
+                    qx = qxg[idx]; qy = qyg[idx]; qz = qzg[idx]
+                else:
+                    qx = qxg; qy = qyg; qz = qzg
+            except Exception:
+                self.update_status("Error extracting HKL arrays for current frame")
+                return
+            # Build points and intensities
+            try:
+                H = np.asarray(qx, dtype=np.float32).ravel()
+                K = np.asarray(qy, dtype=np.float32).ravel()
+                L = np.asarray(qz, dtype=np.float32).ravel()
+                points = np.column_stack([H, K, L])
+                intens = np.asarray(frame, dtype=np.float32).ravel()
+            except Exception:
+                self.update_status("Error building HKL points")
+                return
+            # Create or reuse HKL 3D Plot Dock
+            try:
+                from viewer.workbench.hkl_3d_plot_dock import HKL3DPlotDock
+            except Exception:
+                HKL3DPlotDock = None
+            if HKL3DPlotDock is None:
+                self.update_status("HKL3DPlotDock not available")
+                return
+            if not hasattr(self, '_hkl3d_plot_dock') or self._hkl3d_plot_dock is None:
+                dock_title = "HKL 3D Plot"
+                dock = HKL3DPlotDock(self, dock_title, self)
+                self.addDockWidget(Qt.RightDockWidgetArea, dock)
+                try:
+                    self.add_dock_toggle_action(dock, dock_title, segment_name="2d")
+                except Exception:
+                    pass
+                dock.show()
+                self._hkl3d_plot_dock = dock
+            # Plot points
+            try:
+                self._hkl3d_plot_dock._plot_points(points, intens)
+                self.update_status("Plotted HKL points for current frame")
+            except Exception as e:
+                self.update_status(f"Error plotting HKL points: {e}")
+        except Exception as e:
+            self.update_status(f"Error in HKL plot: {e}")
+
+    def _update_hkl3d_plot_for_current_frame(self):
+        """If HKL 3D plot dock is open, update it to current frame."""
+        try:
+            if hasattr(self, '_hkl3d_plot_dock') and self._hkl3d_plot_dock is not None:
+                self._plot_current_hkl_points()
+        except Exception:
+            pass
+
+    def _setup_2d_hover(self):
+        """Create crosshair and tooltip overlays, and connect mouse move events via SignalProxy."""
+        try:
+            if not hasattr(self, 'image_view') or self.image_view is None:
+                return
+            view = self.image_view.getView() if hasattr(self.image_view, 'getView') else None
+            if view is None:
+                return
+            # Create overlays only once
+            if not hasattr(self, '_hover_hline') or self._hover_hline is None:
+                try:
+                    self._hover_hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen(color=(255, 255, 0, 150), width=1))
+                    self.plot_item.addItem(self._hover_hline)
+                    try:
+                        self._hover_hline.setZValue(1000)
+                    except Exception:
+                        pass
+                except Exception:
+                    self._hover_hline = None
+            if not hasattr(self, '_hover_vline') or self._hover_vline is None:
+                try:
+                    self._hover_vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(color=(255, 255, 0, 150), width=1))
+                    self.plot_item.addItem(self._hover_vline)
+                    try:
+                        self._hover_vline.setZValue(1000)
+                    except Exception:
+                        pass
+                except Exception:
+                    self._hover_vline = None
+            if not hasattr(self, '_hover_text') or self._hover_text is None:
+                try:
+                    self._hover_text = pg.TextItem("", color=(255, 255, 255))
+                    try:
+                        self._hover_text.setAnchor((0, 1))
+                    except Exception:
+                        pass
+                    self.plot_item.addItem(self._hover_text)
+                    try:
+                        self._hover_text.setZValue(1000)
+                    except Exception:
+                        pass
+                except Exception:
+                    self._hover_text = None
+            # Connect mouse move via SignalProxy to throttle updates
+            try:
+                vb = getattr(self.plot_item, 'vb', None)
+                scene = vb.scene() if vb is not None else self.plot_item.scene()
+                self._mouse_proxy = pg.SignalProxy(scene.sigMouseMoved, rateLimit=60, slot=self._on_2d_mouse_moved)
+            except Exception:
+                self._mouse_proxy = None
+        except Exception as e:
+            try:
+                self.update_status(f"Error setting up 2D hover: {e}")
+            except Exception:
+                pass
+
+    def _on_2d_mouse_moved(self, evt):
+        """Map scene coordinates to pixel indices; update crosshair and tooltip with intensity and HKL if available."""
+        try:
+            # evt may be (QPointF,) from SignalProxy
+            pos = evt[0] if isinstance(evt, (tuple, list)) and len(evt) > 0 else evt
+            if not hasattr(self, 'image_view') or self.image_view is None:
+                return
+            view = self.image_view.getView() if hasattr(self.image_view, 'getView') else None
+            image_item = getattr(self.image_view, 'imageItem', None)
+            if view is None or image_item is None:
+                return
+            # Map to data coordinates
+            try:
+                vb = getattr(self.plot_item, 'vb', None)
+                if vb is not None:
+                    mouse_point = vb.mapSceneToView(pos)
+                else:
+                    mouse_point = view.mapSceneToView(pos)
+            except Exception:
+                return
+            # Respect hover enabled flag
+            if not bool(getattr(self, '_hover_enabled', True)):
+                return
+            x = int(round(float(mouse_point.x())))
+            y = int(round(float(mouse_point.y())))
+            frame = self.get_current_frame_data()
+            if frame is None or frame.ndim != 2:
+                return
+            height, width = frame.shape
+            # Move crosshairs regardless, using float positions
+            try:
+                if hasattr(self, '_hover_hline') and self._hover_hline is not None:
+                    self._hover_hline.setPos(mouse_point.y())
+                if hasattr(self, '_hover_vline') and self._hover_vline is not None:
+                    self._hover_vline.setPos(mouse_point.x())
+            except Exception:
+                pass
+            if x < 0 or y < 0 or x >= width or y >= height:
+                return
+            # Remember last valid hover position
+            try:
+                self._last_hover_xy = (x, y)
+            except Exception:
+                pass
+            # Intensity at pixel
+            try:
+                intensity = float(frame[y, x])
+            except Exception:
+                intensity = float('nan')
+            # HKL from cached q-grids if present
+            hkl_str = ""
+            try:
+                qxg = getattr(self, '_qx_grid', None)
+                qyg = getattr(self, '_qy_grid', None)
+                qzg = getattr(self, '_qz_grid', None)
+                if qxg is not None and qyg is not None and qzg is not None:
+                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                        idx = 0
+                        try:
+                            if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
+                                idx = int(self.frame_spinbox.value())
+                        except Exception:
+                            idx = 0
+                        if 0 <= idx < qxg.shape[0]:
+                            H = float(qxg[idx, y, x])
+                            K = float(qyg[idx, y, x])
+                            L = float(qzg[idx, y, x])
+                            hkl_str = f" | H={H:.6f}, K={K:.6f}, L={L:.6f}"
+                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                        H = float(qxg[y, x])
+                        K = float(qyg[y, x])
+                        L = float(qzg[y, x])
+                        hkl_str = f" | H={H:.6f}, K={K:.6f}, L={L:.6f}"
+            except Exception:
+                hkl_str = ""
+            # Update tooltip text near cursor
+            try:
+                if hasattr(self, '_hover_text') and self._hover_text is not None:
+                    # Hide hover text; keep crosshair only
+                    self._hover_text.setVisible(False)
+                    # Update 2D Info dock Mouse section
+                    try:
+                        if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                            # Derive H,K,L values again here for precision
+                            H_val = K_val = L_val = None
+                            try:
+                                qxg = getattr(self, '_qx_grid', None)
+                                qyg = getattr(self, '_qy_grid', None)
+                                qzg = getattr(self, '_qz_grid', None)
+                                if qxg is not None and qyg is not None and qzg is not None:
+                                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                                        idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+                                        if 0 <= idx < qxg.shape[0]:
+                                            H_val = float(qxg[idx, y, x]); K_val = float(qyg[idx, y, x]); L_val = float(qzg[idx, y, x])
+                                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                                        H_val = float(qxg[y, x]); K_val = float(qyg[y, x]); L_val = float(qzg[y, x])
+                            except Exception:
+                                H_val = K_val = L_val = None
+                            self.info_2d_dock.set_mouse_info((x, y), intensity, H_val, K_val, L_val)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _try_load_hkl_grids(self):
+        """Load and cache qx/qy/qz grids (supports 2D HxW and 3D FxHxW). Called after display_2d_data."""
+        try:
+            # Reset caches by default
+            self._qx_grid = None
+            self._qy_grid = None
+            self._qz_grid = None
+            if not getattr(self, 'current_file_path', None) or not getattr(self, 'selected_dataset_path', None):
+                return
+            with h5py.File(self.current_file_path, 'r') as h5f:
+                sel_path = str(self.selected_dataset_path)
+                parent_path = sel_path.rsplit('/', 1)[0] if '/' in sel_path else '/'
+                candidates = []
+                try:
+                    if parent_path in h5f:
+                        candidates.append(h5f[parent_path])
+                except Exception:
+                    pass
+                try:
+                    if '/entry/data' in h5f:
+                        candidates.append(h5f['/entry/data'])
+                except Exception:
+                    pass
+                qx = qy = qz = None
+                def find_in_group(g, name):
+                    for key in g.keys():
+                        try:
+                            if isinstance(g[key], h5py.Dataset) and key.lower() == name:
+                                return g[key]
+                        except Exception:
+                            pass
+                    return None
+                # Try strict names first
+                for g in candidates:
+                    if g is None:
+                        continue
+                    try:
+                        qx = find_in_group(g, 'qx')
+                        qy = find_in_group(g, 'qy')
+                        qz = find_in_group(g, 'qz')
+                    except Exception:
+                        qx = qy = qz = None
+                    if qx is not None and qy is not None and qz is not None:
+                        break
+                # Fallback: case-insensitive suffix match within parent group
+                if (qx is None or qy is None or qz is None) and parent_path in h5f:
+                    g = h5f[parent_path]
+                    for key in g.keys():
+                        try:
+                            if not isinstance(g[key], h5py.Dataset):
+                                continue
+                        except Exception:
+                            continue
+                        lk = key.lower()
+                        # Support additional naming conventions for HKL/q grids
+                        if lk.endswith('qx') or lk == 'qx' or lk in ('q_x', 'qx_grid', 'qgrid_x', 'h', 'QX'.lower()):
+                            qx = g[key]
+                        elif lk.endswith('qy') or lk == 'qy' or lk in ('q_y', 'qy_grid', 'qgrid_y', 'k', 'QY'.lower()):
+                            qy = g[key]
+                        elif lk.endswith('qz') or lk == 'qz' or lk in ('q_z', 'qz_grid', 'qgrid_z', 'l', 'QZ'.lower()):
+                            qz = g[key]
+                # Last resort: search entire file for datasets named like qx/qy/qz
+                if qx is None or qy is None or qz is None:
+                    for group in [h5f]:
+                        for key in group.keys():
+                            try:
+                                item = group[key]
+                                if not isinstance(item, h5py.Dataset):
+                                    continue
+                                lk = key.lower()
+                                if qx is None and (lk.endswith('qx') or lk == 'qx' or lk in ('q_x', 'h')):
+                                    qx = item
+                                elif qy is None and (lk.endswith('qy') or lk == 'qy' or lk in ('q_y', 'k')):
+                                    qy = item
+                                elif qz is None and (lk.endswith('qz') or lk == 'qz' or lk in ('q_z', 'l')):
+                                    qz = item
+                            except Exception:
+                                continue
+                if qx is None or qy is None or qz is None:
+                    return
+                # Read arrays
+                try:
+                    qx_arr = np.asarray(qx[...], dtype=np.float32)
+                    qy_arr = np.asarray(qy[...], dtype=np.float32)
+                    qz_arr = np.asarray(qz[...], dtype=np.float32)
+                except Exception:
+                    return
+                frame = self.get_current_frame_data()
+                if frame is None or frame.ndim != 2:
+                    return
+                h, w = frame.shape
+                # Normalize shapes: transpose 2D grids if (w,h)
+                if qx_arr.ndim == 2 and qy_arr.ndim == 2 and qz_arr.ndim == 2:
+                    if qx_arr.shape == (w, h) and qy_arr.shape == (w, h) and qz_arr.shape == (w, h):
+                        try:
+                            qx_arr = qx_arr.T; qy_arr = qy_arr.T; qz_arr = qz_arr.T
+                        except Exception:
+                            pass
+                    if qx_arr.shape == (h, w) and qy_arr.shape == (h, w) and qz_arr.shape == (h, w):
+                        self._qx_grid = qx_arr
+                        self._qy_grid = qy_arr
+                        self._qz_grid = qz_arr
+                    else:
+                        return
+                elif qx_arr.ndim == 3 and qy_arr.ndim == 3 and qz_arr.ndim == 3:
+                    # Expect (F, H, W), but reorder axes if needed
+                    def reorder_to_fhw(arr, h, w):
+                        try:
+                            shp = arr.shape
+                            if len(shp) != 3:
+                                return None
+                            # Identify axes matching h and w
+                            idx_h = None; idx_w = None
+                            for i, d in enumerate(shp):
+                                if d == h and idx_h is None:
+                                    idx_h = i
+                            for i, d in enumerate(shp):
+                                if d == w and i != idx_h and idx_w is None:
+                                    idx_w = i
+                            if idx_h is None or idx_w is None:
+                                return None
+                            idx_f = [0, 1, 2]
+                            idx_f.remove(idx_h); idx_f.remove(idx_w)
+                            idx_f = idx_f[0]
+                            order = [idx_f, idx_h, idx_w]
+                            return np.transpose(arr, axes=order)
+                        except Exception:
+                            return None
+                    if not (qx_arr.shape[1:] == (h, w) and qy_arr.shape[1:] == (h, w) and qz_arr.shape[1:] == (h, w)):
+                        rqx = reorder_to_fhw(qx_arr, h, w)
+                        rqy = reorder_to_fhw(qy_arr, h, w)
+                        rqz = reorder_to_fhw(qz_arr, h, w)
+                        if rqx is not None and rqy is not None and rqz is not None:
+                            qx_arr, qy_arr, qz_arr = rqx, rqy, rqz
+                    if qx_arr.shape[1:] == (h, w) and qy_arr.shape[1:] == (h, w) and qz_arr.shape[1:] == (h, w):
+                        self._qx_grid = qx_arr
+                        self._qy_grid = qy_arr
+                        self._qz_grid = qz_arr
+                    else:
+                        return
+                else:
+                    return
+                try:
+                    self.update_status("HKL q-grids loaded for hover")
+                except Exception:
+                    pass
+                try:
+                    self.set_2d_axes("h", "k")
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                        self.info_2d_dock.refresh()
+                except Exception:
+                    pass
+        except Exception as e:
+            try:
+                self.update_status(f"HKL q-grids load failed: {e}")
+            except Exception:
+                pass
 
     def clear_1d_plot(self):
         """Clear the 1D plot."""
@@ -2131,7 +2833,7 @@ class WorkbenchWindow(BaseWindow):
 
             # Get the selected frame
             if frame_index < 0 or frame_index >= self.current_2d_data.shape[0]:
-                return
+                frame_index = 0
 
             frame_data = np.asarray(self.current_2d_data[frame_index], dtype=np.float32)
 
@@ -2153,6 +2855,20 @@ class WorkbenchWindow(BaseWindow):
             # Update overlay text
             self.update_overlay_text(width, height, f"Frame {frame_index} of {num_frames}")
 
+            # Update hover tooltip/crosshair at last position during playback
+            try:
+                xy = getattr(self, '_last_hover_xy', None)
+                if xy and bool(getattr(self, '_hover_enabled', True)):
+                    self._update_hover_text_at(int(xy[0]), int(xy[1]))
+            except Exception:
+                pass
+
+            # Update HKL 3D plot if open
+            try:
+                self._update_hkl3d_plot_for_current_frame()
+            except Exception:
+                pass
+
             # Update button states
             if hasattr(self, 'btn_prev_frame'):
                 self.btn_prev_frame.setEnabled(frame_index > 0)
@@ -2162,6 +2878,11 @@ class WorkbenchWindow(BaseWindow):
             # Refresh ROI stats when frame changes
             try:
                 self.roi_manager.update_all_roi_stats()
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'info_2d_dock') and self.info_2d_dock is not None:
+                    self.info_2d_dock.refresh()
             except Exception:
                 pass
 
@@ -2189,6 +2910,12 @@ class WorkbenchWindow(BaseWindow):
                 fps = 2
             interval_ms = int(1000 / max(1, fps))
             print(f"[PLAYBACK] start_playback: num_frames={num_frames}, fps={fps}, interval_ms={interval_ms}")
+            # Reset frame index to 0 at playback start to avoid stale index from previous data
+            try:
+                if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
+                    self.frame_spinbox.setValue(0)
+            except Exception:
+                pass
             if hasattr(self, 'play_timer') and self.play_timer is not None:
                 try:
                     self.play_timer.setInterval(interval_ms)
@@ -2257,6 +2984,9 @@ class WorkbenchWindow(BaseWindow):
                     idx = int(self.frame_spinbox.value())
                 except Exception:
                     idx = 0
+            # Clamp idx to valid range for current data
+            if idx < 0 or idx >= num_frames:
+                idx = 0
             next_idx = idx + 1
             if next_idx >= num_frames:
                 # Auto replay from beginning if checked

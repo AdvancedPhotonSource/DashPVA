@@ -1479,3 +1479,88 @@ class HDF5Loader:
         f.write(f'Error Saving HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
         f.close()
         print(self.last_error)
+
+# ================= HKL METADATA DISCOVERY HELPER ======================= #
+
+def discover_hkl_axis_labels(file_path: str) -> dict:
+    """
+    Discover friendly HKL axis/motor labels from /entry/data/metadata/HKL only.
+    
+    New format:
+      - Read NAME datasets under SAMPLE_CIRCLE_AXIS_1..4 and DETECTOR_CIRCLE_AXIS_1..2
+    Legacy format:
+      - If NAME is not present but MU/ETA/CHI/PHI/NU/DELTA subgroups exist, use those identifiers
+    
+    Returns a dict with keys:
+      - present: bool (True if HKL metadata group exists)
+      - sample_axes: list of strings from NAME datasets (new format)
+      - detector_axes: list of strings from NAME datasets (new format)
+      - legacy_sample: list of legacy identifiers (MU/ETA/CHI/PHI) if found
+      - legacy_detector: list of legacy identifiers (NU/DELTA) if found
+      - display_text: single-line summary suitable for UI overlays
+    """
+    labels = {
+        'present': False,
+        'sample_axes': [],
+        'detector_axes': [],
+        'legacy_sample': [],
+        'legacy_detector': [],
+        'display_text': 'HKL metadata: -'
+    }
+    try:
+        if not os.path.exists(file_path) or not h5py.is_hdf5(file_path):
+            return labels
+        with h5py.File(file_path, 'r') as f:
+            base = '/entry/data/metadata/HKL'
+            if base not in f:
+                return labels
+            grp = f[base]
+            labels['present'] = True
+
+            def _read_name_from(subgrp) -> Optional[str]:
+                if not isinstance(subgrp, h5py.Group):
+                    return None
+                ds = subgrp.get('NAME')
+                if not isinstance(ds, h5py.Dataset):
+                    return None
+                try:
+                    val = ds.asstr()[()] if hasattr(ds, 'asstr') else ds[()]
+                except Exception:
+                    return None
+                # Normalize to str
+                if isinstance(val, (bytes, np.bytes_)):
+                    try:
+                        val = val.decode('utf-8', errors='ignore')
+                    except Exception:
+                        val = str(val)
+                return str(val)
+
+            # New format axes discovery
+            for i in range(1, 5):
+                nm = _read_name_from(grp.get(f'SAMPLE_CIRCLE_AXIS_{i}'))
+                if nm:
+                    labels['sample_axes'].append(nm)
+            for i in range(1, 3):
+                nm = _read_name_from(grp.get(f'DETECTOR_CIRCLE_AXIS_{i}'))
+                if nm:
+                    labels['detector_axes'].append(nm)
+
+            # Legacy fallback when NAME not present
+            for key in ('MU', 'ETA', 'CHI', 'PHI'):
+                if key in grp and isinstance(grp[key], h5py.Group):
+                    labels['legacy_sample'].append(key)
+            for key in ('NU', 'DELTA'):
+                if key in grp and isinstance(grp[key], h5py.Group):
+                    labels['legacy_detector'].append(key)
+
+            # Build display text prioritizing new format
+            def fmt_list(lst):
+                return ', '.join([str(x) for x in lst]) if lst else '-'
+
+            sample = labels['sample_axes'] if labels['sample_axes'] else labels['legacy_sample']
+            detector = labels['detector_axes'] if labels['detector_axes'] else labels['legacy_detector']
+            labels['display_text'] = f"Sample motors: {fmt_list(sample)} | Detector motors: {fmt_list(detector)}"
+    except Exception:
+        # Best-effort: return what we have
+        pass
+    return labels

@@ -9,6 +9,11 @@ except Exception:
     pass
 
 try:
+    from utils.hdf5_handler import HDF5Handler
+except Exception:
+    pass
+
+try:
     from utils.pva_reader import PVAReader
 except Exception:
     pass
@@ -25,5 +30,10 @@ except Exception:
 
 try:
     from utils.dash_analysis import DashAnalysis
+except Exception:
+    pass
+
+try:
+    from utils.rsm_converter import RSMConverter
 except Exception:
     pass

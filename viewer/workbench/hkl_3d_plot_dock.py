@@ -7,7 +7,7 @@ HKL 3D Plot Dock for Workbench (Minimal)
 - Just plotting when 'Load Dataset' is clicked
 - Supports HDF5 (points or volume) and VTI volumes
 """
-from PyQt5.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox
+from PyQt5.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QLabel
 from PyQt5.QtCore import Qt
 import numpy as np
 
@@ -41,6 +41,10 @@ class HKL3DPlotDock(QDockWidget):
         top.addWidget(self.btn_load)
         layout.addLayout(top)
 
+        # HKL label info
+        self.hkl_info_label = QLabel("HKL Motors: -")
+        layout.addWidget(self.hkl_info_label)
+
         # Plotter
         self.plotter = None
         if PYVISTA_AVAILABLE:
@@ -48,12 +52,26 @@ class HKL3DPlotDock(QDockWidget):
                 pyv.set_plot_theme('dark')
             except Exception:
                 pass
+            try:
             self.plotter = QtInteractor(container)
             try:
                 self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
             except Exception:
                 pass
             layout.addWidget(self.plotter)
+        except Exception:
+            self.plotter = None
+            self.btn_load.setEnabled(False)
+            msg = QLabel("3D (VTK) unavailable in tunnel mode.")
+            try:
+                msg.setAlignment(Qt.AlignCenter)
+            except Exception:
+                pass
+            try:
+                msg.setWordWrap(True)
+            except Exception:
+                pass
+            layout.addWidget(msg)
         else:
             # Fallback: button disabled and message
             self.btn_load.setEnabled(False)
@@ -104,6 +122,20 @@ class HKL3DPlotDock(QDockWidget):
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.cloud_mesh.bounds,
             )
+            try:
+                ca = getattr(self.plotter.renderer, 'cube_axes_actor', None)
+                if ca:
+                    ca.GetXAxesLinesProperty().SetColor(1.0, 0.0, 0.0)
+                    ca.GetYAxesLinesProperty().SetColor(0.0, 1.0, 0.0)
+                    ca.GetZAxesLinesProperty().SetColor(0.0, 0.0, 1.0)
+                    ca.GetTitleTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                    ca.GetTitleTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                    ca.GetTitleTextProperty(2).SetColor(0.0, 0.0, 1.0)
+                    ca.GetLabelTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                    ca.GetLabelTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                    ca.GetLabelTextProperty(2).SetColor(0.0, 0.0, 1.0)
+            except Exception:
+                pass
         except Exception:
             pass
         try:
@@ -148,6 +180,21 @@ class HKL3DPlotDock(QDockWidget):
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.volume_grid.bounds,
             )
+            # Color cube axes H/K/L
+            try:
+                ca = getattr(self.plotter.renderer, 'cube_axes_actor', None)
+                if ca:
+                    ca.GetXAxesLinesProperty().SetColor(1.0, 0.0, 0.0)
+                    ca.GetYAxesLinesProperty().SetColor(0.0, 1.0, 0.0)
+                    ca.GetZAxesLinesProperty().SetColor(0.0, 0.0, 1.0)
+                    ca.GetTitleTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                    ca.GetTitleTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                    ca.GetTitleTextProperty(2).SetColor(0.0, 0.0, 1.0)
+                    ca.GetLabelTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                    ca.GetLabelTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                    ca.GetLabelTextProperty(2).SetColor(0.0, 0.0, 1.0)
+            except Exception:
+                pass
         except Exception:
             pass
         try:
