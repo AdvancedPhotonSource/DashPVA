@@ -19,7 +19,7 @@ except ImportError:
 
 # Worker for off-UI-thread 3D prep
 from viewer.workbench.workers import Render3D
-from utils.hdf5_loader import HDF5Loader
+from utils.hdf5_loader import HDF5Loader, discover_hkl_axis_labels
 from utils.rsm_converter import RSMConverter
 
 class Workspace3D(BaseTab):
@@ -54,15 +54,101 @@ class Workspace3D(BaseTab):
                 pass
     
     def build(self):
-        self.plotter = QtInteractor(self)
-        self.container.insertWidget(0, self.plotter, stretch=1)
-        self.scrollArea_3d_controls.setMinimumWidth(280)
-        self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        # Try to create VTK QtInteractor; fall back if unavailable
+        try:
+            self.plotter = QtInteractor(self)
+        except Exception:
+            self.plotter = None
+
+        # HKL labels derived from metadata/HKL
+        try:
+            self.hkl_info_label = QLabel("HKL Motors: -")
+            # Insert above plotter/placeholder
+            self.container.insertWidget(0, self.hkl_info_label)
+        except Exception:
+            self.hkl_info_label = None
+
+        if self.plotter is None:
+            placeholder = QLabel("3D (VTK) unavailable in tunnel mode.")
+            try:
+                placeholder.setAlignment(Qt.AlignCenter)
+            except Exception:
+                pass
+            try:
+                placeholder.setWordWrap(True)
+            except Exception:
+                pass
+            try:
+                self.container.insertWidget(1, placeholder, stretch=1)
+            except Exception:
+                pass
+            # Disable 3D controls that would require the plotter
+            for w in [getattr(self, "btn_load_3d_data", None),
+                      getattr(self, "cb_show_points", None),
+                      getattr(self, "cb_show_slice", None),
+                      getattr(self, "sb_min_intensity_3d", None),
+                      getattr(self, "sb_max_intensity_3d", None)]:
+                try:
+                    if w is not None:
+                        w.setEnabled(False)
+                except Exception:
+                    pass
+            # Initialize defaults
+            self.cloud_mesh_3d = None
+            self.slab_actor = None
+            self.plane_widget = None
+            self.lut = None
+            self.lut2 = None
+            # Default target raster shape (HxW) for slice rasterization
+            self.orig_shape = (0, 0)
+            self.curr_shape = (0, 0)
+            # Slice & Camera defaults
+            self._slice_translate_step = 0.01
+            self._slice_rotate_step_deg = 1.0
+            self._custom_normal = np.array([0.0, 0.0, 1.0], dtype=float)
+            self._zoom_step = 1.5
+            return
+
+        # If plotter exists, proceed to embed and configure
+        self.container.insertWidget(1, self.plotter, stretch=1)
+        try:
+            self.scrollArea_3d_controls.setMinimumWidth(280)
+        except Exception:
+            pass
+        try:
+            self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L', x_color='red', y_color='green', z_color='blue')
+        except Exception:
+            pass
+
+        # Color axes: H=red (X), K=green (Y), L=blue (Z)
+        try:
+            ca = getattr(self.plotter.renderer, 'cube_axes_actor', None)
+            if ca:
+                ca.GetXAxesLinesProperty().SetColor(1.0, 0.0, 0.0)
+                ca.GetYAxesLinesProperty().SetColor(0.0, 1.0, 0.0)
+                ca.GetZAxesLinesProperty().SetColor(0.0, 0.0, 1.0)
+                ca.GetTitleTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                ca.GetTitleTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                ca.GetTitleTextProperty(2).SetColor(0.0, 0.0, 1.0)
+                ca.GetLabelTextProperty(0).SetColor(1.0, 0.0, 0.0)
+                ca.GetLabelTextProperty(1).SetColor(0.0, 1.0, 0.0)
+                ca.GetLabelTextProperty(2).SetColor(0.0, 0.0, 1.0)
+        except Exception:
+            pass
         self.cloud_mesh_3d = None
         self.slab_actor = None
         self.plane_widget = None
         self.lut = None
         self.lut2 = None
+        # Default target raster shape (HxW) for slice rasterization
+        self.orig_shape = (0, 0)
+        self.curr_shape = (0, 0)
+        # Slice & Camera defaults
+        self._slice_translate_step = 0.01
+        self._slice_rotate_step_deg = 1.0
+        self._custom_normal = np.array([0.0, 0.0, 1.0], dtype=float)
+        self._zoom_step = 1.5
+
         
     def setup_plot_viewer(self):
         """
@@ -74,7 +160,7 @@ class Workspace3D(BaseTab):
                 return
             pyv.set_plot_theme('dark')
             mw.plotter_3d = QtInteractor()
-            mw.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L')
+            mw.plotter_3d.add_axes(xlabel='H', ylabel='K', zlabel='L', x_color='red', y_color='green', z_color='blue')
             if hasattr(mw, 'layout3DPlotHost') and mw.layout3DPlotHost is not None:
                 try:
                     # layout3DPlotHost may be a grid layout from the UI
@@ -145,6 +231,9 @@ class Workspace3D(BaseTab):
             cmap_name = getattr(self.cb_colormap_3d, 'currentText', lambda: 'viridis')()
         except Exception:
             cmap_name = 'viridis'
+        self.lut = pv.LookupTable(cmap=cmap_name)
+        self.lut.apply_opacity([0,1])
+
 
         # Update points colormap by re-adding the mesh with new cmap
         try:
@@ -156,7 +245,7 @@ class Workspace3D(BaseTab):
                 self.points_actor = self.plotter.add_mesh(
                     self.cloud_mesh_3d,
                     scalars='intensity',
-                    cmap=cmap_name,
+                    cmap=self.lut,
                     point_size=5.0,
                     name='points',
                     show_scalar_bar=True,
@@ -253,6 +342,14 @@ class Workspace3D(BaseTab):
                 )
                 if not file_name: return
                 file_path = file_name
+            # Update HKL label from metadata/HKL
+            try:
+                lbls = discover_hkl_axis_labels(file_path)
+                txt = lbls.get('display_text', '') or "HKL Motors: -"
+                if self.hkl_info_label is not None:
+                    self.hkl_info_label.setText(txt)
+            except Exception:
+                pass
             conv = RSMConverter()
             # 2. Load the raw data
             # if the data is uncompressed
@@ -336,6 +433,26 @@ class Workspace3D(BaseTab):
             self.slab_actor.mapper.scalar_range = clim
             
         self.plotter.render()
+        
+        # Update the 3D Info dock with HKL slice information
+        try:
+            info_dock = getattr(self.main_window, 'info_3d_dock', None)
+            if info_dock is not None:
+                shape = None
+                try:
+                    shape = tuple(getattr(self, 'curr_shape', None) or ())
+                    if not (isinstance(shape, tuple) and len(shape) == 2):
+                        shape = (0, 0)
+                except Exception:
+                    shape = (0, 0)
+                info_dock.update_from_slice(
+                    slab,
+                    np.asarray(normal, dtype=float),
+                    np.asarray(origin, dtype=float),
+                    target_shape=shape
+                )
+        except Exception:
+            pass
 
     def update_intensity(self):
         """Updates the min/max intensity levels and scalar bar range"""
@@ -400,13 +517,27 @@ class Workspace3D(BaseTab):
 
 
     def reset_slice(self):
-        mw = self.main_window
+        """Reset slice to HK (xy) preset at the data center."""
         try:
-            if hasattr(mw, 'cb_slice_orientation'):
-                mw.cb_slice_orientation.setCurrentIndex(0)
-            self.change_slice_orientation("HK (xy)")
+            # Determine a reasonable center
+            origin = None
+            try:
+                if self.cloud_mesh_3d is not None and hasattr(self.cloud_mesh_3d, 'center'):
+                    origin = np.array(self.cloud_mesh_3d.center, dtype=float)
+                elif self.mesh is not None and hasattr(self.mesh, 'center'):
+                    origin = np.array(self.mesh.center, dtype=float)
+            except Exception:
+                origin = None
+            if origin is None:
+                origin = np.array([0.0, 0.0, 0.0], dtype=float)
+            # Normal along L for HK plane
+            normal = np.array([0.0, 0.0, 1.0], dtype=float)
+            self.set_plane_state(normal, origin)
         except Exception as e:
-            mw.update_status(f"Error resetting 3D slice: {e}")
+            try:
+                self.main_window.update_status(f"Error resetting 3D slice: {e}")
+            except Exception:
+                pass
 
     def _remove_plane_widget(self):
         """Safely remove existing plane widget (if any)."""
@@ -426,20 +557,321 @@ class Workspace3D(BaseTab):
         except Exception:
             pass
 
-    def toggle_pointer(self):
-        """Toggle visibility of the cloud volume"""
-        is_visible_pointer = self.cbToggleSlicePointer.isChecked()
-        self.plotter.renderer._actors["slab_points"].SetVisibility(is_visible_pointer)
-
+    def toggle_pointer(self, checked: bool):
+        """Enable/Disable the interactive plane widget and show/hide slab points."""
         try:
-            widgets = getattr(self.plotter, "plane_widgets", [])
-            for pw in widgets or []:
+            # Plane widget visibility
+            if self.plane_widget is not None:
                 try:
-                    if is_visible_pointer:
-                        pw.EnabledOn()
+                    if checked:
+                        self.plane_widget.On()
                     else:
-                        pw.EnabledOff()
+                        self.plane_widget.Off()
                 except Exception:
                     pass
+            else:
+                # Fallback: use plotter.plane_widgets list if available
+                widgets = getattr(self.plotter, "plane_widgets", [])
+                for pw in widgets or []:
+                    try:
+                        if checked:
+                            pw.EnabledOn()
+                        else:
+                            pw.EnabledOff()
+                    except Exception:
+                        pass
+            # Slab points actor visibility
+            if "slab_points" in self.plotter.actors:
+                try:
+                    self.plotter.actors["slab_points"].SetVisibility(bool(checked))
+                except Exception:
+                    try:
+                        self.plotter.renderer._actors["slab_points"].SetVisibility(bool(checked))
+                    except Exception:
+                        pass
+            self.plotter.render()
+        except Exception:
+            pass
+
+    # ===== Slice Plane helpers =====
+    def get_plane_state(self):
+        """Return (normal, origin) for current plane; defaults to Z-axis and mesh center."""
+        try:
+            if self.plane_widget is not None:
+                try:
+                    normal = np.array(self.plane_widget.GetNormal(), dtype=float)
+                    origin = np.array(self.plane_widget.GetOrigin(), dtype=float)
+                    return normal, origin
+                except Exception:
+                    pass
+            # Fallback to first plane widget if present
+            widgets = getattr(self.plotter, 'plane_widgets', [])
+            if widgets:
+                pw = widgets[0]
+                try:
+                    normal = np.array(pw.GetNormal(), dtype=float)
+                    origin = np.array(pw.GetOrigin(), dtype=float)
+                    return normal, origin
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Defaults
+        normal = np.array([0.0, 0.0, 1.0], dtype=float)
+        try:
+            if self.cloud_mesh_3d is not None and hasattr(self.cloud_mesh_3d, 'center'):
+                origin = np.array(self.cloud_mesh_3d.center, dtype=float)
+            elif self.mesh is not None and hasattr(self.mesh, 'center'):
+                origin = np.array(self.mesh.center, dtype=float)
+            else:
+                origin = np.array([0.0, 0.0, 0.0], dtype=float)
+        except Exception:
+            origin = np.array([0.0, 0.0, 0.0], dtype=float)
+        return normal, origin
+
+    def set_plane_state(self, normal, origin):
+        """Programmatically set plane state and trigger slice update."""
+        try:
+            n = self.normalize_vector(np.array(normal, dtype=float))
+            o = np.array(origin, dtype=float)
+            # Update widget if available
+            if self.plane_widget is not None:
+                try:
+                    self.plane_widget.SetNormal(n)
+                    self.plane_widget.SetOrigin(o)
+                except Exception:
+                    pass
+            else:
+                widgets = getattr(self.plotter, 'plane_widgets', [])
+                if widgets:
+                    try:
+                        widgets[0].SetNormal(n)
+                        widgets[0].SetOrigin(o)
+                    except Exception:
+                        pass
+            # Refresh slice
+            try:
+                self.on_plane_update(n, o)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    @staticmethod
+    def normalize_vector(v):
+        try:
+            v = np.array(v, dtype=float)
+            norm = float(np.linalg.norm(v))
+            if norm <= 0.0:
+                return np.array([0.0, 0.0, 1.0], dtype=float)
+            return v / norm
+        except Exception:
+            return np.array([0.0, 0.0, 1.0], dtype=float)
+
+    def set_custom_normal(self, n):
+        try:
+            self._custom_normal = np.array(n, dtype=float)
+        except Exception:
+            self._custom_normal = np.array([0.0, 0.0, 1.0], dtype=float)
+
+    def set_plane_preset(self, preset_text: str):
+        """Set plane normal to preset HK/KL/HL or custom vector."""
+        try:
+            preset = (preset_text or '').lower()
+        except Exception:
+            preset = ''
+        if ('xy' in preset) or ('hk' in preset):
+            n = np.array([0.0, 0.0, 1.0], dtype=float)
+        elif ('yz' in preset) or ('kl' in preset):
+            n = np.array([1.0, 0.0, 0.0], dtype=float)
+        elif ('xz' in preset) or ('hl' in preset):
+            n = np.array([0.0, 1.0, 0.0], dtype=float)
+        else:
+            # Custom
+            n = self.normalize_vector(getattr(self, '_custom_normal', np.array([0.0, 0.0, 1.0], dtype=float)))
+        _, origin = self.get_plane_state()
+        self.set_plane_state(n, origin)
+
+    # ===== Translation =====
+    def nudge_along_normal(self, sign: int):
+        try:
+            normal, origin = self.get_plane_state()
+            step = float(getattr(self, '_slice_translate_step', 0.01))
+            origin_new = origin + float(sign) * step * normal
+            self.set_plane_state(normal, origin_new)
+        except Exception:
+            pass
+
+    def nudge_along_axis(self, axis: str, sign: int):
+        try:
+            axis = (axis or 'H').upper()
+            if axis == 'H':
+                d = np.array([1.0, 0.0, 0.0], dtype=float)
+            elif axis == 'K':
+                d = np.array([0.0, 1.0, 0.0], dtype=float)
+            else:
+                d = np.array([0.0, 0.0, 1.0], dtype=float)
+            normal, origin = self.get_plane_state()
+            step = float(getattr(self, '_slice_translate_step', 0.01))
+            origin_new = origin + float(sign) * step * d
+            self.set_plane_state(normal, origin_new)
+        except Exception:
+            pass
+
+    # ===== Rotation =====
+    def rotate_about_axis(self, axis: str, deg: float):
+        try:
+            axis = (axis or 'H').upper()
+            if axis == 'H':
+                u = np.array([1.0, 0.0, 0.0], dtype=float)
+            elif axis == 'K':
+                u = np.array([0.0, 1.0, 0.0], dtype=float)
+            else:
+                u = np.array([0.0, 0.0, 1.0], dtype=float)
+            normal, origin = self.get_plane_state()
+            theta = float(np.deg2rad(deg))
+            ux, uy, uz = u
+            c, s = np.cos(theta), np.sin(theta)
+            R = np.array([
+                [c+ux*ux*(1-c),    ux*uy*(1-c)-uz*s, ux*uz*(1-c)+uy*s],
+                [uy*ux*(1-c)+uz*s, c+uy*uy*(1-c),    uy*uz*(1-c)-ux*s],
+                [uz*ux*(1-c)-uy*s, uz*uy*(1-c)+ux*s, c+uz*uz*(1-c)]
+            ], dtype=float)
+            new_normal = R @ normal
+            new_normal = self.normalize_vector(new_normal)
+            self.set_plane_state(new_normal, origin)
+        except Exception:
+            pass
+
+    # ===== Camera =====
+    def zoom_in(self):
+        try:
+            step = float(getattr(self, '_zoom_step', 1.5))
+            if step <= 1.0:
+                step = 1.5
+            self.plotter.camera.zoom(step)
+            self.plotter.render()
+        except Exception:
+            pass
+
+    def zoom_out(self):
+        try:
+            step = float(getattr(self, '_zoom_step', 1.5))
+            if step <= 1.0:
+                step = 1.5
+            self.plotter.camera.zoom(1.0 / step)
+            self.plotter.render()
+        except Exception:
+            pass
+
+    def reset_camera(self):
+        try:
+            self.plotter.reset_camera()
+            self.plotter.render()
+        except Exception:
+            pass
+
+    def set_camera_position(self, preset: str):
+        try:
+            txt = (preset or '').strip().lower()
+            p = self.plotter
+            cam = getattr(p, 'camera', None)
+            # center focus
+            try:
+                if self.cloud_mesh_3d is not None and hasattr(self.cloud_mesh_3d, 'center'):
+                    p.set_focus(self.cloud_mesh_3d.center)
+            except Exception:
+                pass
+            if txt in ('hk', 'xy'):
+                p.view_xy()
+            elif txt in ('kl', 'yz'):
+                p.view_yz()
+            elif txt in ('hl', 'xz'):
+                p.view_xz()
+            elif 'iso' in txt:
+                try:
+                    p.view_isometric()
+                except Exception:
+                    try:
+                        p.view_vector((1.0, 1.0, 1.0))
+                        if cam is not None:
+                            cam.view_up = (0.0, 0.0, 1.0)
+                    except Exception:
+                        pass
+            else:
+                # Axis-aligned
+                if 'h+' in txt:
+                    p.view_vector((1.0, 0.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif 'h-' in txt:
+                    p.view_vector((-1.0, 0.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif 'k+' in txt:
+                    p.view_vector((0.0, 1.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif 'k-' in txt:
+                    p.view_vector((0.0, -1.0, 0.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 0.0, 1.0)
+                elif 'l+' in txt:
+                    p.view_vector((0.0, 0.0, 1.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 1.0, 0.0)
+                elif 'l-' in txt:
+                    p.view_vector((0.0, 0.0, -1.0))
+                    if cam is not None:
+                        cam.view_up = (0.0, 1.0, 0.0)
+            try:
+                if cam is not None and hasattr(cam, 'orthogonalize_view_up'):
+                    cam.orthogonalize_view_up()
+            except Exception:
+                pass
+            try:
+                p.render()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def view_slice_normal(self):
+        try:
+            normal, origin = self.get_plane_state()
+            normal = self.normalize_vector(normal)
+            origin = np.array(origin, dtype=float)
+            cam = getattr(self.plotter, 'camera', None)
+            if cam is None:
+                return
+            # distance heuristic
+            try:
+                rng = None
+                if self.cloud_mesh_3d is not None and hasattr(self.cloud_mesh_3d, 'points'):
+                    rng = self.cloud_mesh_3d.points.max(axis=0) - self.cloud_mesh_3d.points.min(axis=0)
+                d = float(np.linalg.norm(rng)) * 0.5 if rng is not None else 1.0
+            except Exception:
+                d = 1.0
+            try:
+                cam.focal_point = origin.tolist()
+            except Exception:
+                pass
+            try:
+                cam.position = (origin + normal * d).tolist()
+            except Exception:
+                pass
+            # adjust view up if parallel
+            try:
+                up = np.array(getattr(cam, 'view_up', [0.0, 1.0, 0.0]), dtype=float)
+                upn = self.normalize_vector(up)
+                if abs(float(np.dot(upn, normal))) > 0.99:
+                    new_up = np.array([0.0, 1.0, 0.0], dtype=float) if abs(normal[1]) < 0.99 else np.array([1.0, 0.0, 0.0], dtype=float)
+                    cam.view_up = new_up.tolist()
+            except Exception:
+                pass
+            try:
+                self.plotter.render()
+            except Exception:
+                pass
         except Exception:
             pass

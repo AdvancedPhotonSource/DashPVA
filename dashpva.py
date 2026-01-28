@@ -12,14 +12,45 @@ import subprocess
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 @click.group(context_settings=CONTEXT_SETTINGS)
-def cli():
+@click.option('-d', '--detector', 'help_detector', is_flag=True, help='Show help for detector')
+@click.option('-r', '--run', 'help_run', is_flag=True, help='Show help for run')
+@click.option('-k', '--hkl3d', 'help_hkl3d', is_flag=True, help='Show help for hkl3d')
+@click.option('-l', '--slice3d', 'help_slice3d', is_flag=True, help='Show help for slice3d')
+@click.option('-S', '--setup', 'help_setup', is_flag=True, help='Show help for setup')
+@click.option('-w', '--workbench', 'help_workbench', is_flag=True, help='Show help for workbench')
+@click.option('-v', '--view', 'help_view', is_flag=True, help='Show help for view')
+@click.pass_context
+def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help_workbench, help_view):
     """
     DashPVA: High-Performance X-ray Visualization & Analysis Tool.
     
     This suite provides real-time monitoring (PVA), 3D Reciprocal Space Mapping (HKL), 
     and post-processing workbenches to analyze and manipulate your data.
     """
-    pass
+    # Handle global help flags that print subcommand help and exit
+    selected = [name for name, flag in [
+        ('detector', help_detector),
+        ('run', help_run),
+        ('hkl3d', help_hkl3d),
+        ('slice3d', help_slice3d),
+        ('setup', help_setup),
+        ('workbench', help_workbench),
+        ('view', help_view),
+    ] if flag]
+
+    if len(selected) > 1:
+        raise click.UsageError('Please pick only one global help flag (e.g., -d/--detector, -r/--run, -k/--hkl3d, -l/--slice3d, -S/--setup, -w/--workbench, -v/--view).')
+
+    if len(selected) == 1:
+        sub_name = selected[0]
+        sub_cmd = cli.get_command(ctx, sub_name)
+        if sub_cmd is None:
+            raise click.UsageError(f'Unknown command: {sub_name}')
+        sub_ctx = click.Context(sub_cmd, info_name=f"{ctx.info_name} {sub_name}", parent=ctx)
+        click.echo(sub_cmd.get_help(sub_ctx))
+        ctx.exit()
+
+    # Otherwise, proceed normally
 
 @cli.command()
 def run():
