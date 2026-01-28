@@ -15,7 +15,7 @@ class ScanViewWindow(QMainWindow):
     def __init__(self, channel: str = "", config_filepath: str = ""):
         super(ScanViewWindow, self).__init__()
         uic.loadUi('gui/scan_view.ui', self)
-        self.setWindowTitle('Scan View')
+        self.setWindowTitle('Scan Monitors')
 
         self.channel = channel
         self.config_filepath = config_filepath
@@ -23,6 +23,8 @@ class ScanViewWindow(QMainWindow):
         # Track applied state to determine if current inputs are being listened to
         self.applied_channel = None
         self.applied_config = None
+        # Track frame activity to infer scanning even without a flag PV
+        self._last_frames_received = 0
         
         self.h5_handler_thread = QThread()
         self.reader_thread = QThread()
@@ -47,6 +49,8 @@ class ScanViewWindow(QMainWindow):
         # Initialize listening label to False until Apply is pressed
         if hasattr(self, 'label_listening'):
             self.label_listening.setText('False')
+            # Apply initial listening style (red for False)
+            self._apply_listening_style(False)
 
         self.lineedit_channel.setText(self.channel or "")
         self.lineedit_channel.textChanged.connect(self._on_channel_changed) 
@@ -102,6 +106,7 @@ class ScanViewWindow(QMainWindow):
             self.applied_config = self.config_filepath
             if hasattr(self, 'label_listening'):
                 self.label_listening.setText('True')
+                self._apply_listening_style(True)
             
             # Start the info update timer
             self.info_timer.start(1000)  # Update every second
@@ -163,6 +168,7 @@ class ScanViewWindow(QMainWindow):
         self.applied_channel = None
         if hasattr(self, 'label_listening'):
             self.label_listening.setText('False')
+            self._apply_listening_style(False)
 
     def _on_config_path_changed(self, text: str) -> None:
         """Handle config path input text change."""
@@ -172,6 +178,7 @@ class ScanViewWindow(QMainWindow):
         self.applied_config = None
         if hasattr(self, 'label_listening'):
             self.label_listening.setText('False')
+            self._apply_listening_style(False)
 
     # ================================================================================================
     # SCAN OPERATIONS & SIGNAL HANDLERS
@@ -312,6 +319,17 @@ class ScanViewWindow(QMainWindow):
         except Exception:
             pass
 
+    def _apply_listening_style(self, is_listening: bool) -> None:
+        """Set the Listening label color to green when True and red when False."""
+        try:
+            if hasattr(self, 'label_listening') and self.label_listening:
+                if is_listening:
+                    self.label_listening.setStyleSheet('color: green; font-weight: bold;')
+                else:
+                    self.label_listening.setStyleSheet('color: red; font-weight: bold;')
+        except Exception:
+            pass
+
     def _update_label_from_config(self) -> None:
         """Update mode label based on configuration file contents."""
         if hasattr(self, 'label_mode'):
@@ -363,19 +381,40 @@ class ScanViewWindow(QMainWindow):
                 pass
             if hasattr(self, 'label_listening'):
                 self.label_listening.setText(listening)
+                # Apply listening style based on current listening state
+                self._apply_listening_style(listening == "True")
             
             # Update caching status
             is_caching = "No"
+            bool_is_caching = False
             if self.reader and hasattr(self.reader, 'is_caching'):
                 try:
-                    is_caching = "Yes" if self.reader.is_caching else "No"
+                    bool_is_caching = bool(self.reader.is_caching)
+                    is_caching = "Yes" if bool_is_caching else "No"
                 except Exception:
                     pass
             elif self.scan_state:
                 is_caching = "Yes"
+                bool_is_caching = True
             
             if hasattr(self, 'label_is_caching'):
                 self.label_is_caching.setText(is_caching)
+
+            # Ensure scan indicator reflects actual scanning state only (no auto-on on Apply).
+            try:
+                if hasattr(self, 'label_indicator'):
+                    if self.scan_state:
+                        # Scanning active only when explicit scan state indicates so
+                        if self.label_indicator.text().strip().lower() != 'scan: on':
+                            self.label_indicator.setText('scan: on')
+                            self.label_indicator.setStyleSheet('color: green; font-weight: bold;')
+                    else:
+                        # Not scanning
+                        if self.label_indicator.text().strip().lower() != 'scan: off':
+                            self.label_indicator.setText('scan: off')
+                            self.label_indicator.setStyleSheet('color: red; font-weight: bold;')
+            except Exception:
+                pass
             
             # Update scan time
             scan_time_text = "--"
