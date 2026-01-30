@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MetadataConverterDialog</class>
+ <widget class="QDialog" name="MetadataConverterDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Metadata Converter</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="lbl_description">
+     <property name="styleSheet">
+      <string notr="true">color: #666;</string>
+     </property>
+     <property name="text">
+      <string>Convert metadata in an HDF5 file or all .h5 files in a folder recursively. Files already in the format are skipped. Defaults: modify files in place, include data/constants, base group entry/data/metadata. Select a TOML mapping file; change options if you don&apos;t want the defaults.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grp_source">
+     <property name="title">
+      <string>HDF5 Source</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutSource">
+      <item row="0" column="0">
+       <widget class="QLabel" name="lbl_hdf5">
+        <property name="text">
+         <string>HDF5 File or Directory:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="txt_hdf5_path">
+        <property name="placeholderText">
+         <string>Select a .h5 file or a directory</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QPushButton" name="btn_browse_hdf5_file">
+        <property name="text">
+         <string>Browse File…</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QPushButton" name="btn_browse_hdf5_dir">
+        <property name="text">
+         <string>Browse Folder…</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grp_toml">
+     <property name="title">
+      <string>TOML Mapping</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutToml">
+      <item row="0" column="0">
+       <widget class="QLabel" name="lbl_toml">
+        <property name="text">
+         <string>TOML File:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="txt_toml_path">
+        <property name="placeholderText">
+         <string>Select a mapping .toml file</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QPushButton" name="btn_browse_toml">
+        <property name="text">
+         <string>Browse…</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grp_options">
+     <property name="title">
+      <string>Options</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutOptions">
+      <item row="0" column="0">
+       <widget class="QLabel" name="lbl_base_group">
+        <property name="text">
+         <string>Base Group:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1" colspan="2">
+       <widget class="QLineEdit" name="txt_base_group">
+        <property name="text">
+         <string>entry/data/metadata</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QCheckBox" name="chk_include">
+        <property name="text">
+         <string>Include data and constants (full conversion)</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QCheckBox" name="chk_in_place">
+        <property name="text">
+         <string>Modify files in place</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutButtons">
+     <item>
+      <widget class="QPushButton" name="btn_convert">
+       <property name="text">
+        <string>Convert</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="spacer1">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_close">
+       <property name="text">
+        <string>Close</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="txt_log">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="placeholderText">
+      <string>Conversion log will appear here…</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+ </ui>

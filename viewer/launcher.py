@@ -17,6 +17,21 @@ class LauncherDialog(QDialog):
         self._timer.timeout.connect(self._poll_processes)
         self._timer.start()
 
+        # Insert dynamic "Views" section (from registry) just before Post Analysis Tools
+        try:
+            self._insert_views_section()
+        except Exception:
+            # Robust to UI changes; if insertion fails, skip silently
+            pass
+
+        # Insert a Tools section with utility buttons (e.g., Metadata Converter) at the bottom
+        try:
+            self._insert_utils_section()
+        except Exception:
+            # Fail silently if layout changes; section is optional
+            pass
+
+        
         # Wire buttons to launchers
         if hasattr(self, 'btn_hkl3d_viewer'):
             self.btn_hkl3d_viewer.clicked.connect(
