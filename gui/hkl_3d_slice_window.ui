@@ -753,24 +753,6 @@
              </property>
             </widget>
            </item>
-           <item row="3" column="0">
-            <widget class="QCheckBox" name="cbToggleCloudVolume">
-             <property name="enabled">
-              <bool>true</bool>
-             </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
-             <property name="text">
-              <string>Cloud Volume</string>
-             </property>
-             <property name="checked">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
            <item row="5" column="1">
             <widget class="QCheckBox" name="cbToggleSliceMesh">
              <property name="enabled">
@@ -870,6 +852,42 @@
                <string>x8</string>
               </property>
              </item>
+            </widget>
+           </item>
+           <item row="6" column="1">
+            <widget class="QCheckBox" name="cbTogglePoints">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Points</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="7" column="1">
+            <widget class="QCheckBox" name="cbLockSlice">
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>12</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>Lock Slice</string>
+             </property>
+             <property name="checked">
+              <bool>false</bool>
+             </property>
             </widget>
            </item>
           </layout>

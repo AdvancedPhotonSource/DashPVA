@@ -18,9 +18,9 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.option('-l', '--slice3d', 'help_slice3d', is_flag=True, help='Show help for slice3d')
 @click.option('-S', '--setup', 'help_setup', is_flag=True, help='Show help for setup')
 @click.option('-w', '--workbench', 'help_workbench', is_flag=True, help='Show help for workbench')
-@click.option('-v', '--view', 'help_view', is_flag=True, help='Show help for view')
+@click.option('-m', '--monitor', 'help_monitor', is_flag=True, help='Show help for monitor')
 @click.pass_context
-def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help_workbench, help_view):
+def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help_workbench, help_monitor):
     """
     DashPVA: High-Performance X-ray Visualization & Analysis Tool.
     
@@ -35,7 +35,7 @@ def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help
         ('slice3d', help_slice3d),
         ('setup', help_setup),
         ('workbench', help_workbench),
-        ('view', help_view),
+        ('monitor', help_monitor),
     ] if flag]
 
     if len(selected) > 1:
@@ -102,9 +102,9 @@ def workbench():
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
 @click.option('--config', 'config_path', default='', help='Path to TOML config file (optional).')
-def view(name, channel, config_path):
-    """Open a specific viewer by name. Supported: scan (alias: scan-monitors)."""
-    click.echo(f'Opening view: {name}')
+def monitor(name, channel, config_path):
+    """Open a specific monitor by name. Supported: scan (alias: scan-monitors)."""
+    click.echo(f'Opening monitor: {name}')
     if name in ('scan', 'scan-monitors'):
         command = [sys.executable, 'viewer/scan_view.py']
     else:
