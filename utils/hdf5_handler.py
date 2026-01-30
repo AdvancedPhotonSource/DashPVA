@@ -7,6 +7,8 @@ from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import hdf5plugin
 from utils.pva_reader import PVAReader
+from utils.metadata_converter import convert_files_or_dir
+import settings
 from pathlib import Path
 import toml
 
@@ -299,7 +301,26 @@ class HDF5Handler(QObject):
                 except Exception:
                     pass
 
-        self.hdf5_writer_finished.emit(f"Saved to: {self.file_path}\nFormat: unified-structure")
+        # Auto-convert metadata structure per current TOML before emitting signal
+        conversion_suffix = ""
+        try:
+            toml_path = settings.ensure_path()
+            if toml_path:
+                convert_files_or_dir(
+                    toml_path=toml_path,
+                    hdf5_path=str(self.file_path),
+                    base_group="entry/data/metadata",
+                    include=True,
+                    in_place=True,
+                    recursive=False,
+                )
+                conversion_suffix = " (converted)"
+            else:
+                conversion_suffix = " (conversion skipped: no TOML path)"
+        except Exception as conv_err:
+            conversion_suffix = f" (conversion failed: {conv_err})"
+
+        self.hdf5_writer_finished.emit(f"Saved to: {self.file_path}\nFormat: unified-structure{conversion_suffix}")
 
     def save_as_scan_format(self, compress:bool=True, clear_caches:bool=True):
         all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
@@ -411,7 +432,7 @@ class HDF5Handler(QObject):
             data_grp['rotation_angle'] = h5py.SoftLink(f'/{entry_cfg["name"]}/sample/rotation_angle')
         self.hdf5_writer_finished.emit(f'\
                                     Saved to: {self.file_path}\n \
-                                    Format: {formatter["name"]}\
+                                    Format: {formatter["name"]} (conversion skipped for scan-format)\
                                     ')
 
     # Info

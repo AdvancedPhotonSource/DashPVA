@@ -8,13 +8,13 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
 from utils import PVAReader, HDF5Writer
 from epics import caput
 
-class ScanViewWindow(QMainWindow):
+class ScanMonitorWindow(QMainWindow):
     signal_start_monitor = pyqtSignal()
     
     def __init__(self, channel: str = "", config_filepath: str = ""):
-        super(ScanViewWindow, self).__init__()
+        super(ScanMonitorWindow, self).__init__()
         uic.loadUi('gui/scan_view.ui', self)
-        self.setWindowTitle('Scan Monitors')
+        # Title comes from UI; ensure consistent naming in code comments
 
         self.channel = channel
         self.config_filepath = config_filepath
@@ -124,7 +124,7 @@ class ScanViewWindow(QMainWindow):
 
     def _on_reader_scan_complete(self) -> None:
         """Slot executed when PVAReader emits the completion signal."""
-        print(f"LOG: reader_scan_complete received by ScanView at {datetime.now()}")
+        print(f"LOG: reader_scan_complete received by ScanMonitor at {datetime.now()}")
         self._trigger_automatic_save()
 
     def _trigger_automatic_save(self) -> None:
@@ -281,6 +281,6 @@ class ScanViewWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = ScanViewWindow()
+    window = ScanMonitorWindow()
     window.show()
     sys.exit(app.exec_())

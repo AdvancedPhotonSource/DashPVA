@@ -2533,7 +2533,13 @@ class WorkbenchWindow(BaseWindow):
         full_path = item.data(0, 32)  # Qt.UserRole = 32
         print(f"[DEBUG] Double-clicked item text: {item.text(0)}")
         print(f"[DEBUG] Double-clicked item full_path (Qt.UserRole=32): {full_path}")
+        # Detect file root items to auto-open default dataset
+        try:
+            item_type = item.data(0, Qt.UserRole + 2)
+        except Exception:
+            item_type = None
 
+        # If a dataset/group path exists, load it as before
         if full_path:
             # Update status to show loading
             self.update_status(f"Loading dataset: {full_path}")
@@ -2552,12 +2558,37 @@ class WorkbenchWindow(BaseWindow):
                 self.update_status(f"Error in double-click load: {e}")
                 print(f"[DEBUG] Exception in double-click load: {e}")
         else:
-            # Root item or group - expand/collapse on double-click
-            print("[DEBUG] Double-clicked a non-dataset (root/group). Toggling expand/collapse.")
-            if item.isExpanded():
-                item.setExpanded(False)
+            # If this is a file root, auto-select and visualize the default 2D dataset
+            if item_type == "file_root":
+                print("[DEBUG] Double-clicked file root; attempting to load default dataset '/entry/data/data'")
+                # Ensure current_file_path points to this file
+                self._ensure_current_file_from_item(item)
+                # Set the default dataset path
+                self.selected_dataset_path = '/entry/data/data'
+                # Verify the dataset exists; if not, show message
+                try:
+                    with h5py.File(self.current_file_path, 'r') as h5f:
+                        exists = self.selected_dataset_path in h5f
+                    print(f"[DEBUG] Default dataset exists? {exists}")
+                    if not exists:
+                        self.update_status("Default dataset '/entry/data/data' not found in file")
+                        return
+                except Exception as e:
+                    self.update_status(f"Error verifying default dataset: {e}")
+                    return
+                # Visualize using existing logic (will use HDF5Loader for image data)
+                try:
+                    self.visualize_selected_dataset()
+                    print("[DEBUG] Default dataset visualization completed")
+                except Exception as e:
+                    self.update_status(f"Error loading default dataset: {e}")
             else:
-                item.setExpanded(True)
+                # Non-dataset/group: toggle expand/collapse
+                print("[DEBUG] Double-clicked a non-dataset (root/group). Toggling expand/collapse.")
+                if item.isExpanded():
+                    item.setExpanded(False)
+                else:
+                    item.setExpanded(True)
 
     def show_context_menu(self, position):
         """

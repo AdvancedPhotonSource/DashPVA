@@ -3,6 +3,9 @@ import numpy as np
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import hdf5plugin
+from utils.metadata_converter import convert_files_or_dir
+import settings
+# removed traceback import
 # from utils import PVAReader
 
 class HDF5Writer(QObject):
@@ -160,6 +163,25 @@ class HDF5Writer(QObject):
                                                         **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
                                     # removed debug prints: (TEMP) qx/qy/qz writes and finished HKL datasets
             
-            self.hdf5_writer_finished.emit(f"{len_images} successfully saved to {OUTPUT_FILE_LOCATION}")
+            # Auto-convert metadata structure per current TOML before emitting signal
+            conversion_suffix = ""
+            try:
+                toml_path = settings.ensure_path()
+                if toml_path:
+                    convert_files_or_dir(
+                        toml_path=toml_path,
+                        hdf5_path=str(OUTPUT_FILE_LOCATION),
+                        base_group="entry/data/metadata",
+                        include=True,
+                        in_place=True,
+                        recursive=False,
+                    )
+                    conversion_suffix = " (converted)"
+                else:
+                    conversion_suffix = " (conversion skipped: no TOML path)"
+            except Exception as conv_err:
+                conversion_suffix = f" (conversion failed: {conv_err})"
+
+            self.hdf5_writer_finished.emit(f"{len_images} successfully saved to {OUTPUT_FILE_LOCATION}{conversion_suffix}")
         except Exception as e:
             self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")

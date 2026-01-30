@@ -138,8 +138,15 @@ class Workspace3D(BaseTab):
         self.cloud_mesh_3d = None
         self.slab_actor = None
         self.plane_widget = None
-        self.lut = None
-        self.lut2 = None
+        # Initialize LUTs similar to viewer/hkl_3d.py
+        try:
+            self.lut = pv.LookupTable(cmap='jet')
+            self.lut.apply_opacity([0, 1])
+            self.lut2 = pv.LookupTable(cmap='jet')
+            self.lut2.apply_opacity([0, 1])
+        except Exception:
+            self.lut = None
+            self.lut2 = None
         # Default target raster shape (HxW) for slice rasterization
         self.orig_shape = (0, 0)
         self.curr_shape = (0, 0)
@@ -206,24 +213,63 @@ class Workspace3D(BaseTab):
 
     def toggle_3d_points(self, checked: bool):
         """Shows/Hides the main HKL point cloud."""
-        if "points" in self.plotter.actors:
-            self.plotter.actors["points"].SetVisibility(checked)
-            self.plotter.render()
+        try:
+            # Support either actor name used by different paths
+            actor = None
+            if "points" in getattr(self.plotter, 'actors', {}):
+                actor = self.plotter.actors.get("points")
+            elif "cloud_volume" in getattr(self.plotter, 'actors', {}):
+                actor = self.plotter.actors.get("cloud_volume")
+            if actor is not None:
+                actor.SetVisibility(bool(checked))
+                self.plotter.render()
+        except Exception:
+            pass
 
     def toggle_3d_slice(self, checked: bool):
         """Shows/Hides the interactive plane and the extracted slice points."""
-        # Toggle the points extracted by the plane
-        if "slab_points" in self.plotter.actors:
-            self.plotter.actors["slab_points"].SetVisibility(checked)
-        
-        # Toggle the white plane widget tool
-        if self.plane_widget:
-            if checked:
-                self.plane_widget.On()
+        try:
+            # Toggle the points extracted by the plane
+            if "slab_points" in getattr(self.plotter, 'actors', {}):
+                try:
+                    self.plotter.actors["slab_points"].SetVisibility(bool(checked))
+                except Exception:
+                    try:
+                        self.plotter.renderer._actors["slab_points"].SetVisibility(bool(checked))
+                    except Exception:
+                        pass
+
+            # Toggle the interactive plane widget tool
+            if self.plane_widget is not None:
+                try:
+                    if checked:
+                        # Try both enable methods to support different versions
+                        try:
+                            self.plane_widget.EnabledOn()
+                        except Exception:
+                            self.plane_widget.On()
+                    else:
+                        try:
+                            self.plane_widget.EnabledOff()
+                        except Exception:
+                            self.plane_widget.Off()
+                except Exception:
+                    pass
             else:
-                self.plane_widget.Off()
-        
-        self.plotter.render()
+                # Fallback: use plotter.plane_widgets list if available
+                widgets = getattr(self.plotter, "plane_widgets", [])
+                for pw in widgets or []:
+                    try:
+                        if checked:
+                            pw.EnabledOn()
+                        else:
+                            pw.EnabledOff()
+                    except Exception:
+                        pass
+
+            self.plotter.render()
+        except Exception:
+            pass
 
     def on_3d_colormap_changed(self):
         """Apply selected colormap to the points (and slab if available)."""
@@ -231,52 +277,53 @@ class Workspace3D(BaseTab):
             cmap_name = getattr(self.cb_colormap_3d, 'currentText', lambda: 'viridis')()
         except Exception:
             cmap_name = 'viridis'
-        self.lut = pv.LookupTable(cmap=cmap_name)
-        self.lut.apply_opacity([0,1])
-
-
-        # Update points colormap by re-adding the mesh with new cmap
+        # Primary LUT used for the main cloud volume/points
         try:
-            if "points" in self.plotter.actors and self.cloud_mesh_3d is not None:
+            self.lut = pv.LookupTable(cmap=cmap_name)
+            self.lut.apply_opacity([0, 1])
+            self.lut2 = pv.LookupTable(cmap=cmap_name)
+            self.lut2.apply_opacity([0, 1])
+        except Exception:
+            self.lut = None
+            self.lut2 = None
+
+        # Update points/cloud actor by changing the mapper's lookup table (no re-add)
+        try:
+            actors = getattr(self.plotter, 'actors', {}) or {}
+            tgt_name = 'points' if 'points' in actors else ('cloud_volume' if 'cloud_volume' in actors else None)
+            if tgt_name and self.lut is not None:
+                actor = actors.get(tgt_name)
                 try:
-                    self.plotter.remove_actor("points", reset_camera=False)
+                    # Prefer direct mapper property
+                    actor.mapper.lookup_table = self.lut
                 except Exception:
-                    pass
-                self.points_actor = self.plotter.add_mesh(
-                    self.cloud_mesh_3d,
-                    scalars='intensity',
-                    cmap=self.lut,
-                    point_size=5.0,
-                    name='points',
-                    show_scalar_bar=True,
-                    reset_camera=False,
-                )
-                # Reapply current intensity range
+                    try:
+                        actor.GetMapper().SetLookupTable(self.lut)
+                    except Exception:
+                        pass
+                # Maintain scalar range and visibility
                 try:
                     rng = [self.sb_min_intensity_3d.value(), self.sb_max_intensity_3d.value()]
-                    self.points_actor.mapper.scalar_range = rng
+                    actor.mapper.scalar_range = rng
                 except Exception:
                     pass
-                # Respect checkbox visibility
                 try:
-                    self.points_actor.SetVisibility(bool(self.cb_show_points.isChecked()))
+                    actor.SetVisibility(bool(self.cb_show_points.isChecked()))
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Attempt to update slab colormap (best-effort)
+        # Attempt to update slab colormap (best-effort) using a separate LUT
         try:
             if self.slab_actor is not None:
                 try:
-                    import pyvista as pyv
-                    lut = pyv.LookupTable(cmap=cmap_name)
-                    # Some PyVista versions expose mapper.lookup_table, others require SetLookupTable
                     try:
-                        self.slab_actor.mapper.lookup_table = lut
+                        # Prefer self.lut2 if available
+                        self.slab_actor.mapper.lookup_table = (self.lut2 or self.lut)
                     except Exception:
                         try:
-                            self.slab_actor.GetMapper().SetLookupTable(lut)
+                            self.slab_actor.GetMapper().SetLookupTable(self.lut2 or self.lut)
                         except Exception:
                             pass
                 except Exception:
@@ -291,6 +338,14 @@ class Workspace3D(BaseTab):
 
         # Render and ensure ranges/visibility remain in sync
         try:
+            # Update existing scalar bars with the new LUT
+            if hasattr(self.plotter, 'scalar_bars') and self.lut is not None:
+                for _, scalar_bar in self.plotter.scalar_bars.items():
+                    try:
+                        scalar_bar.SetLookupTable(self.lut)
+                        scalar_bar.Modified()
+                    except Exception:
+                        pass
             self.plotter.render()
         except Exception:
             pass
@@ -317,7 +372,7 @@ class Workspace3D(BaseTab):
                 self.mesh = None
         except Exception as e:
             try:
-                mw.update_status(f"Error clearing 3D plot: {e}")
+                self.main_window.update_status(f"Error clearing 3D plot: {e}")
             except Exception:
                 pass
 
@@ -362,7 +417,64 @@ class Workspace3D(BaseTab):
                     # IMPORTANT: Tell the worker to plot to THIS tab's plotter
                     # We pass 'self.plotter' instead of 'mw'
                     self._render3d_worker.plot_3d_points(self)
-                    
+                    # Cache a reference to the main points/cloud actor for fast updates
+                    try:
+                        if "points" in self.plotter.actors:
+                            self.points_actor = self.plotter.actors.get("points")
+                        elif "cloud_volume" in self.plotter.actors:
+                            self.points_actor = self.plotter.actors.get("cloud_volume")
+                    except Exception:
+                        self.points_actor = None
+
+                    # Set LUT scalar ranges based on loaded intensities
+                    try:
+                        if self.lut is not None:
+                            self.lut.scalar_range = (float(np.min(intensities)), float(np.max(intensities)))
+                        if self.lut2 is not None:
+                            self.lut2.scalar_range = (float(np.min(intensities)), float(np.max(intensities)))
+                    except Exception:
+                        pass
+                    # Apply LUTs to actors
+                    try:
+                        if self.points_actor is not None and self.lut is not None:
+                            self.points_actor.mapper.lookup_table = self.lut
+                    except Exception:
+                        pass
+                    try:
+                        if self.slab_actor is not None and (self.lut2 or self.lut) is not None:
+                            self.slab_actor.mapper.lookup_table = (self.lut2 or self.lut)
+                    except Exception:
+                        pass
+                    # Show bounds like in hkl_3d
+                    try:
+                        self.plotter.show_bounds(
+                            mesh=self.points_actor.mapper.input if self.points_actor is not None else None,
+                            xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+                            ticks='inside', minor_ticks=True,
+                            n_xlabels=7, n_ylabels=7, n_zlabels=7,
+                            x_color='red', y_color='green', z_color='blue',
+                            font_size=20
+                        )
+                    except Exception:
+                        pass
+                    # Sync scalar bars to primary LUT
+                    try:
+                        if hasattr(self.plotter, 'scalar_bars') and self.lut is not None:
+                            for _, sb in self.plotter.scalar_bars.items():
+                                try:
+                                    sb.SetLookupTable(self.lut)
+                                    sb.Modified()
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    # Ensure visibility respects checkboxes
+                    try:
+                        self.toggle_3d_points(self.cb_show_points.isChecked())
+                        self.toggle_3d_slice(self.cb_show_slice.isChecked())
+                    except Exception:
+                        pass
+
                     # Switch to this tab automatically
                     if hasattr(mw, 'tabWidget_analysis'):
                         idx = mw.tabWidget_analysis.indexOf(self)
@@ -409,8 +521,8 @@ class Workspace3D(BaseTab):
         vec = self.cloud_mesh_3d.points - origin
         dist = np.dot(vec, normal)
         
-        # Thickness of the slice in HKL units
-        thickness = 0.005 
+        # Thickness of the slice in HKL units (align with HKL3D)
+        thickness = 0.002 
         mask = np.abs(dist) < thickness
         
         slab = self.cloud_mesh_3d.extract_points(mask)
@@ -422,7 +534,7 @@ class Workspace3D(BaseTab):
                 render_points_as_spheres=True, 
                 point_size=8, 
                 scalars='intensity', 
-                cmap=self.lut, 
+                cmap=(self.lut2 or self.lut), 
                 show_scalar_bar=False
             )
             # Ensure the new slab respects the current checkbox state
@@ -431,8 +543,25 @@ class Workspace3D(BaseTab):
             # Match current intensity
             clim = [self.sb_min_intensity_3d.value(), self.sb_max_intensity_3d.value()]
             self.slab_actor.mapper.scalar_range = clim
+        
+        # Keep plane widget synchronized to final state
+        try:
+            widgets = getattr(self.plotter, 'plane_widgets', [])
+            if self.plane_widget is not None:
+                self.plane_widget.SetNormal(normal)
+                self.plane_widget.SetOrigin(origin)
+            elif widgets:
+                widgets[0].SetNormal(normal)
+                widgets[0].SetOrigin(origin)
+        except Exception:
+            pass
             
         self.plotter.render()
+        # Respect slice toggle state after update
+        try:
+            self.toggle_3d_slice(self.cb_show_slice.isChecked())
+        except Exception:
+            pass
         
         # Update the 3D Info dock with HKL slice information
         try:
@@ -470,8 +599,15 @@ class Workspace3D(BaseTab):
         # Define the new scalar range
         new_range = [self.min_intensity, self.max_intensity]
 
-        if "points" in self.plotter.actors:
-            self.plotter.actors["points"].mapper.scalar_range = new_range
+        # Update main cloud/points actor scalar range
+        try:
+            actors = getattr(self.plotter, 'actors', {}) or {}
+            if "points" in actors:
+                actors["points"].mapper.scalar_range = (new_range[0], new_range[1])
+            if "cloud_volume" in actors:
+                actors["cloud_volume"].mapper.scalar_range = (new_range[0], new_range[1])
+        except Exception:
+            pass
 
         if "slab_points" in self.plotter.actors:
             self.plotter.actors["slab_points"].mapper.scalar_range = new_range
@@ -479,14 +615,20 @@ class Workspace3D(BaseTab):
         # Update the volume actor by re-adding with new clim range
         if hasattr(self.plotter, 'scalar_bars'):
             for bar in self.plotter.scalar_bars.values():
-                bar.GetLookupTable().SetTableRange(new_range[0], new_range[1])
+                try:
+                    bar.GetLookupTable().SetTableRange(new_range[0], new_range[1])
+                except Exception:
+                    pass
 
         # Force update of all scalar bars with the new range
         if hasattr(self.plotter, 'scalar_bars'):
             for name, scalar_bar in self.plotter.scalar_bars.items():
                 if scalar_bar:
-                    scalar_bar.GetLookupTable().SetTableRange(new_range[0], new_range[1])
-                    scalar_bar.Modified()
+                    try:
+                        scalar_bar.GetLookupTable().SetTableRange(new_range[0], new_range[1])
+                        scalar_bar.Modified()
+                    except Exception:
+                        pass
 
         # Update slice actor scalar range if it exists
         if "slice" in self.plotter.actors:
@@ -506,7 +648,7 @@ class Workspace3D(BaseTab):
         except Exception:
             pass
 
-        # Update Info labels and availability after intensity changes
+        # Update Info labels and availability after intensity changes (best-effort)
         try:
             self.update_info_slice_labels()
             self._refresh_availability()
@@ -542,9 +684,10 @@ class Workspace3D(BaseTab):
     def _remove_plane_widget(self):
         """Safely remove existing plane widget (if any)."""
         try:
-            if self._plane_widget is not None:
+            # Use the same attribute name that is set by the Render3D worker
+            if self.plane_widget is not None:
                 try:
-                    self._plane_widget.EnabledOff()
+                    self.plane_widget.EnabledOff()
                 except Exception:
                     pass
 
@@ -553,7 +696,7 @@ class Workspace3D(BaseTab):
                 except Exception:
                     pass
 
-                self._plane_widget = None
+                self.plane_widget = None
         except Exception:
             pass
 
@@ -590,6 +733,42 @@ class Workspace3D(BaseTab):
                     except Exception:
                         pass
             self.plotter.render()
+        except Exception:
+            pass
+
+    # ===== Info/Availability (align with hkl_3d patterns) =====
+    def update_info_slice_labels(self):
+        """Best-effort update of slice info; workspace may not have dedicated labels."""
+        try:
+            normal, origin = self.get_plane_state()
+            n = self.normalize_vector(np.array(normal, dtype=float))
+            o = np.array(origin, dtype=float)
+            # If we have an HKL info label, append simple position info
+            if self.hkl_info_label is not None:
+                try:
+                    pos_text = "-"
+                    # Determine slice position similar to hkl_3d
+                    # Assume orientation HK(xy) by default; derive component from origin
+                    pos_text = f"L = {o[2]:0.2f}"
+                    self.hkl_info_label.setText(f"HKL Motors: -    Slice: {pos_text}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _refresh_availability(self):
+        """Enable/disable controls depending on plotter/data availability."""
+        try:
+            has_data = bool(self.cloud_mesh_3d is not None or getattr(self, 'points_actor', None) is not None)
+            for w in [getattr(self, "cb_show_points", None),
+                      getattr(self, "cb_show_slice", None),
+                      getattr(self, "sb_min_intensity_3d", None),
+                      getattr(self, "sb_max_intensity_3d", None)]:
+                try:
+                    if w is not None:
+                        w.setEnabled(has_data)
+                except Exception:
+                    pass
         except Exception:
             pass
 

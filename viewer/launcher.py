@@ -104,6 +104,88 @@ class LauncherDialog(QDialog):
 
         self._update_status()
 
+
+    def _insert_views_section(self):
+        """Insert a Monitor header and a single Monitor button before Post Analysis Tools."""
+        layout = self.layout()
+        if layout is None:
+            return
+        target = getattr(self, 'lbl_post_analysis_header', None)
+        insert_at = layout.indexOf(target) if target is not None else -1
+        if insert_at < 0:
+            # Fallback: append near end
+            insert_at = layout.count()
+
+        # Header: Monitor
+        header = QLabel("Monitor", self)
+        header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
+        header.setAlignment(Qt.AlignCenter)
+        layout.insertWidget(insert_at, header)
+        insert_at += 1
+
+        # Single Monitor button
+        btn = QPushButton("Monitor", self)
+        btn.setToolTip("Open the scan monitor")
+        layout.insertWidget(insert_at, btn)
+        insert_at += 1
+
+        # Bind to existing launch(...) for process tracking
+        btn.clicked.connect(
+            lambda _=False: self.launch(
+                'monitor_scan',
+                [sys.executable, 'viewer/scan_view.py'],
+                btn,
+                'Monitor — Running…'
+            )
+        )
+
+    def _insert_utils_section(self):
+        """Insert a 'Tools' header and buttons for utility tools (like Metadata Converter)
+        below the entire 'Post Analysis Tools' section, but above the status and bottom bar."""
+        layout = self.layout()
+        if layout is None:
+            return
+        # Compute insertion point:
+        # Place just before the status label if present, otherwise before the bottom button bar,
+        # otherwise append at the end.
+        insert_at = -1
+        target_status = getattr(self, 'lbl_status', None)
+        if target_status is not None:
+            idx = layout.indexOf(target_status)
+            if idx >= 0:
+                insert_at = idx
+        if insert_at < 0:
+            target_bar = getattr(self, 'horizontalLayout', None)
+            if target_bar is not None:
+                idx = layout.indexOf(target_bar)
+                if idx >= 0:
+                    insert_at = idx
+        if insert_at < 0:
+            insert_at = layout.count()
+
+        # Header
+        header = QLabel("Tools", self)
+        header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
+        header.setAlignment(Qt.AlignCenter)
+        layout.insertWidget(insert_at, header)
+        insert_at += 1
+
+        # Metadata Converter button
+        btn = QPushButton("Metadata Converter", self)
+        btn.setToolTip("Open the Metadata Converter tool")
+        layout.insertWidget(insert_at, btn)
+        insert_at += 1
+
+        # Bind to existing launch(...) for process tracking
+        btn.clicked.connect(
+            lambda _=False: self.launch(
+                'metadata_converter',
+                [sys.executable, 'viewer/tools/metadata_converter_gui.py'],
+                btn,
+                'Metadata Converter — Running…'
+            )
+        )
+
     def launch(self, key, cmd, button, running_text, quiet=False):
         """Start a child process and update UI indicators."""
         if key in self.processes and self.processes[key]['popen'].poll() is None:
