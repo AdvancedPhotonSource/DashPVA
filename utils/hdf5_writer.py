@@ -158,7 +158,8 @@ class HDF5Writer(QObject):
                                                         **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
                                     hkl_grp.create_dataset("qz", data=np.array([np.reshape(qz, shape) for qz in rsm[2]]), 
                                                         **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                print(f'HDF5 file save completed successfully: {OUTPUT_FILE_LOCATION} and temp {TEMP_FILE_LOCATION }')
-            self.hdf5_writer_finished.emit(f"Caches successfully saved to {OUTPUT_FILE_LOCATION}")
+                                    # removed debug prints: (TEMP) qx/qy/qz writes and finished HKL datasets
+            
+            self.hdf5_writer_finished.emit(f"{len_images} successfully saved to {OUTPUT_FILE_LOCATION}")
         except Exception as e:
             self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
