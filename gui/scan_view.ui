@@ -242,6 +242,36 @@
      </widget>
     </item>
     <item>
+     <widget class="QGroupBox" name="groupBox_graph">
+      <property name="title">
+       <string>Activity</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_graph">
+       <item>
+        <widget class="QLabel" name="label_graph_title">
+         <property name="text">
+          <string>Images collected over time</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <!-- Placeholder widget; replaced at runtime with a PyQtGraph PlotWidget -->
+        <widget class="QWidget" name="widget_graph">
+         <property name="minimumSize">
+          <size>
+           <width>200</width>
+           <height>120</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
      <spacer name="verticalSpacerBottom">
       <property name="orientation">
        <enum>Qt::Vertical</enum>
