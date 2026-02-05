@@ -8,6 +8,11 @@ from collections import deque
 from epics import camonitor, caget
 from PyQt5.QtCore import QObject, pyqtSignal
 
+try:
+    from . import vit_stitch as _vit_stitch
+except Exception:
+    _vit_stitch = None
+
 class PVAReader(QObject):
     # Signals
     # signal_image_updated = pyqtSignal(np.ndarray)
@@ -19,7 +24,7 @@ class PVAReader(QObject):
     scan_state_changed = pyqtSignal(bool)
     
     def __init__(self, 
-                 input_channel='s6lambda1:Pva1:Image', 
+                 input_channel='vit:1:input_phase', 
                  provider=pva.PVA, 
                  config_filepath: str = 'pv_configs/metadata_pvs.toml', 
                  viewer_type:str='image'):
@@ -228,10 +233,30 @@ class PVAReader(QObject):
             self.frames_received += 1
             self.pva_object = pv
 
-            # parse data required to manipulate pv image
-            self.parse_image_data_type(pv)
-            self.shape = self.parse_img_shape(pv)
-            self.image = self.pva_to_image(pv)
+            # vit:1:input_phase — stitch path: raw 512x256 -> 3-panel [diff | single | accumulated]
+            if (
+                self.input_channel == 'vit:1:input_phase'
+                and _vit_stitch is not None
+            ):
+                raw = pv.get('value')
+                fv = raw[0].get('floatValue') if raw and len(raw) > 0 else None
+                if fv is not None:
+                    stream = np.asarray(fv, dtype=np.float32).reshape(512, 256)
+                    unique_id = int(pv.get('uniqueId', 0))
+                    composite = _vit_stitch.get_stitcher().process_frame(stream, unique_id)
+                    self.shape = composite.shape
+                    self.image = composite
+                    self.data_type = 'floatValue'
+                    self.display_dtype = 'floatValue'
+                    self.numpy_dtype = np.dtype('float32')
+                else:
+                    self.shape = (0, 0)
+                    self.image = None
+            else:
+                # parse data required to manipulate pv image
+                self.parse_image_data_type(pv)
+                self.shape = self.parse_img_shape(pv)
+                self.image = self.pva_to_image(pv)
 
             # update with latest pv metadata
             self.pv_attributes = self.parse_attributes(pv)
@@ -249,7 +274,8 @@ class PVAReader(QObject):
             
             if self.caches_initialized:
                 self.cache_attributes(self.pv_attributes, self.rsm_attributes)
-                self.cache_image(np.ravel(self.image))
+                if self.image is not None:
+                    self.cache_image(np.ravel(self.image))
 
             #TODO: depreciated change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
             if self.ANALYSIS_IN_CONFIG:

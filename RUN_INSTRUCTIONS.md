@@ -101,6 +101,13 @@ source .venv/bin/activate  # Linux/macOS
 # OR: uv run python dashpva.py setup  # No activation needed
 ```
 
+**RHEL7 / older glibc (manylinux_2_17):** If `uv sync` fails building packages (e.g. numexpr, "NumPy requires GCC >= 9.3"), use:
+```bash
+uv pip install numpy
+UV_NO_BUILD_ISOLATION=1 uv sync
+```
+Omit `--extra onnx` and `--extra open3d` if you hit wheel errors for those; add them on systems with newer glibc.
+
 **Verify Installation:**
 ```bash
 uv --version
@@ -143,6 +150,30 @@ Instead of using the `environment.yml` file, you can follow these manual instruc
 Ensure all dependencies are installed correctly:
 ```bash
 conda list
+```
+
+---
+
+## PVA network (vit setup)
+
+DashPVA is configured to use the ptycho-vit PVA server at **10.54.116.22** with input channel **vit:1:input_phase**.
+
+- **EPICS_PVA_ADDR_LIST=10.54.116.22** – PVA server address (set automatically by `dashpva.py` if not already set).
+- **EPICS_PVA_AUTO_ADDR_LIST=NO** – Use only the address list above (set automatically by `dashpva.py` if not already set).
+- **Input channel** – Default in the PV config dialog is **vit:1:input_phase** (Area Detector Viewer and HKL viewer use this when you click Start Live View).
+
+To override the server (e.g. for a different host), export before running:
+
+```bash
+export EPICS_PVA_ADDR_LIST=10.54.116.22
+export EPICS_PVA_AUTO_ADDR_LIST=NO
+python dashpva.py detector
+```
+
+To verify PVA connectivity from the command line:
+
+```bash
+EPICS_PVA_ADDR_LIST=10.54.116.22 EPICS_PVA_AUTO_ADDR_LIST=NO pvget vit:1:input_phase
 ```
 
 ---

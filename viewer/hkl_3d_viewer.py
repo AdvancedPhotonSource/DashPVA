@@ -1,5 +1,10 @@
 import sys, pathlib
 import os
+# PVA network (vit setup): set before utils.PVAReader (pvaccess) is imported
+if 'EPICS_PVA_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_ADDR_LIST'] = '10.54.116.22'
+if 'EPICS_PVA_AUTO_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_AUTO_ADDR_LIST'] = 'NO'
 import h5py
 import time
 import subprocess
@@ -86,7 +91,7 @@ class ConfigDialog(QDialog):
 class HKLImageWindow(QMainWindow):
     images_plotted = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
+    def __init__(self, input_channel='vit:1:input_phase', file_path=''): 
         """
         Initializes the main window for real-time image visualization and manipulation.
 

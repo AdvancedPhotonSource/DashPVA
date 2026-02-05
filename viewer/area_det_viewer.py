@@ -1,4 +1,10 @@
 import os
+# PVA network (vit setup): set before utils.PVAReader (pvaccess) is imported
+if 'EPICS_PVA_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_ADDR_LIST'] = '10.54.116.22'
+if 'EPICS_PVA_AUTO_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_AUTO_ADDR_LIST'] = 'NO'
+
 import sys
 import time
 import subprocess
@@ -18,7 +24,7 @@ from analysis_window import AnalysisWindow
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
-from utils import PVAReader, HDF5Writer
+from utils import PVAReader #, HDF5Writer
 # from ..utils.size_manager import SizeManager
 
 
@@ -91,7 +97,7 @@ class ConfigDialog(QDialog):
 class DiffractionImageWindow(QMainWindow):
     hkl_data_updated = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
+    def __init__(self, input_channel='vit:1:input_phase', file_path=''): 
         """
         Initializes the main window for real-time image visualization and manipulation.
 
@@ -256,7 +262,7 @@ class DiffractionImageWindow(QMainWindow):
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, 
                                          config_filepath=self._file_path)
-                self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
+                # self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
                 if self.reader.channel.isMonitorActive():

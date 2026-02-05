@@ -5,6 +5,14 @@ try:
 except Exception:
     pass
 
+# PVA network: set before any process imports pvaccess (subprocesses inherit).
+# Override by exporting EPICS_PVA_ADDR_LIST / EPICS_PVA_AUTO_ADDR_LIST in the shell.
+import os
+if 'EPICS_PVA_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_ADDR_LIST'] = '10.54.116.22'
+if 'EPICS_PVA_AUTO_ADDR_LIST' not in os.environ:
+    os.environ['EPICS_PVA_AUTO_ADDR_LIST'] = 'NO'
+
 import sys
 import click
 import subprocess
