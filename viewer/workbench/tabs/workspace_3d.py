@@ -7,7 +7,7 @@ import pyvista as pv
 
 
 # Import BaseTab using existing tabs package alias
-from tabs.base_tab import BaseTab
+from .base_tab import BaseTab
 
 # Import 3D visualization components
 try:
@@ -60,13 +60,7 @@ class Workspace3D(BaseTab):
         except Exception:
             self.plotter = None
 
-        # HKL labels derived from metadata/HKL
-        try:
-            self.hkl_info_label = QLabel("HKL Motors: -")
-            # Insert above plotter/placeholder
-            self.container.insertWidget(0, self.hkl_info_label)
-        except Exception:
-            self.hkl_info_label = None
+        self.hkl_info_label = None
 
         if self.plotter is None:
             placeholder = QLabel("3D (VTK) unavailable in tunnel mode.")
@@ -155,6 +149,9 @@ class Workspace3D(BaseTab):
         self._slice_rotate_step_deg = 1.0
         self._custom_normal = np.array([0.0, 0.0, 1.0], dtype=float)
         self._zoom_step = 1.5
+        # Cached true data intensity bounds (set on data load)
+        self._data_intensity_min = None
+        self._data_intensity_max = None
 
         
     def setup_plot_viewer(self):
@@ -397,14 +394,6 @@ class Workspace3D(BaseTab):
                 )
                 if not file_name: return
                 file_path = file_name
-            # Update HKL label from metadata/HKL
-            try:
-                lbls = discover_hkl_axis_labels(file_path)
-                txt = lbls.get('display_text', '') or "HKL Motors: -"
-                if self.hkl_info_label is not None:
-                    self.hkl_info_label.setText(txt)
-            except Exception:
-                pass
             conv = RSMConverter()
             # 2. Load the raw data
             # if the data is uncompressed
@@ -426,12 +415,14 @@ class Workspace3D(BaseTab):
                     except Exception:
                         self.points_actor = None
 
-                    # Set LUT scalar ranges based on loaded intensities
+                    # Cache true data intensity bounds and set LUT scalar ranges
                     try:
+                        self._data_intensity_min = float(np.min(intensities))
+                        self._data_intensity_max = float(np.max(intensities))
                         if self.lut is not None:
-                            self.lut.scalar_range = (float(np.min(intensities)), float(np.max(intensities)))
+                            self.lut.scalar_range = (self._data_intensity_min, self._data_intensity_max)
                         if self.lut2 is not None:
-                            self.lut2.scalar_range = (float(np.min(intensities)), float(np.max(intensities)))
+                            self.lut2.scalar_range = (self._data_intensity_min, self._data_intensity_max)
                     except Exception:
                         pass
                     # Apply LUTs to actors
@@ -472,6 +463,12 @@ class Workspace3D(BaseTab):
                     try:
                         self.toggle_3d_points(self.cb_show_points.isChecked())
                         self.toggle_3d_slice(self.cb_show_slice.isChecked())
+                    except Exception:
+                        pass
+
+                    # Align current intensity range with data bounds and reflect in UI
+                    try:
+                        self.update_intensity()
                     except Exception:
                         pass
 
@@ -587,17 +584,39 @@ class Workspace3D(BaseTab):
         """Updates the min/max intensity levels and scalar bar range"""
         if not self.plotter:
             return
-        
-        self.min_intensity = self.sb_min_intensity_3d.value()
-        self.max_intensity = self.sb_max_intensity_3d.value()
-        
-        if self.min_intensity > self.max_intensity:
-            self.min_intensity, self.max_intensity = self.max_intensity, self.min_intensity
-            self.sb_min_intensity_3d.setValue(self.min_intensity)
-            self.sb_max_intensity_3d.setValue(self.max_intensity)
-        
+
+        # Read requested values from UI
+        try:
+            requested_min = float(self.sb_min_intensity_3d.value())
+            requested_max = float(self.sb_max_intensity_3d.value())
+        except Exception:
+            # Fallback to current mapper range if spinboxes unavailable
+            requested_min, requested_max = 0.0, 1.0
+
+        # Clamp to true data range if available
+        data_min = getattr(self, '_data_intensity_min', None)
+        data_max = getattr(self, '_data_intensity_max', None)
+        vmin = requested_min
+        vmax = requested_max
+        if data_min is not None and data_max is not None:
+            vmin = max(requested_min, data_min)
+            vmax = min(requested_max, data_max)
+
+        # Enforce ordering and non-zero span
+        if vmin > vmax:
+            vmin, vmax = vmax, vmin
+        if vmin == vmax:
+            vmax = vmin + 1e-6
+
+        # Reflect applied values back to the UI
+        try:
+            self.sb_min_intensity_3d.setValue(vmin)
+            self.sb_max_intensity_3d.setValue(vmax)
+        except Exception:
+            pass
+
         # Define the new scalar range
-        new_range = [self.min_intensity, self.max_intensity]
+        new_range = [vmin, vmax]
 
         # Update main cloud/points actor scalar range
         try:
@@ -610,7 +629,7 @@ class Workspace3D(BaseTab):
             pass
 
         if "slab_points" in self.plotter.actors:
-            self.plotter.actors["slab_points"].mapper.scalar_range = new_range
+            self.plotter.actors["slab_points"].mapper.scalar_range = (new_range[0], new_range[1])
             
         # Update the volume actor by re-adding with new clim range
         if hasattr(self.plotter, 'scalar_bars'):
@@ -737,24 +756,6 @@ class Workspace3D(BaseTab):
             pass
 
     # ===== Info/Availability (align with hkl_3d patterns) =====
-    def update_info_slice_labels(self):
-        """Best-effort update of slice info; workspace may not have dedicated labels."""
-        try:
-            normal, origin = self.get_plane_state()
-            n = self.normalize_vector(np.array(normal, dtype=float))
-            o = np.array(origin, dtype=float)
-            # If we have an HKL info label, append simple position info
-            if self.hkl_info_label is not None:
-                try:
-                    pos_text = "-"
-                    # Determine slice position similar to hkl_3d
-                    # Assume orientation HK(xy) by default; derive component from origin
-                    pos_text = f"L = {o[2]:0.2f}"
-                    self.hkl_info_label.setText(f"HKL Motors: -    Slice: {pos_text}")
-                except Exception:
-                    pass
-        except Exception:
-            pass
 
     def _refresh_availability(self):
         """Enable/disable controls depending on plotter/data availability."""

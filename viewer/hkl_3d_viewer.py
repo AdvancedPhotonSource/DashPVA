@@ -195,8 +195,8 @@ class HKLImageWindow(QMainWindow):
             self.btn_save_h5.clicked.connect(self.save_caches_clicked)
             self.btn_plot_cache.clicked.connect(self.update_image_from_button)
             self.reader.reader_scan_complete.connect(self.update_image_from_scan)
-            self.images_plotted.connect(self.trigger_save_caches)
-            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
+            #self.images_plotted.connect(self.trigger_save_caches)
+            #self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
             if self.reader.CACHING_MODE == 'scan':
                 self.file_writer_thread.start()
         except Exception as e:

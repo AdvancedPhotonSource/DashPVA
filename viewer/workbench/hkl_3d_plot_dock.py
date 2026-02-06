@@ -41,9 +41,6 @@ class HKL3DPlotDock(QDockWidget):
         top.addWidget(self.btn_load)
         layout.addLayout(top)
 
-        # HKL label info
-        self.hkl_info_label = QLabel("HKL Motors: -")
-        layout.addWidget(self.hkl_info_label)
 
         # Plotter
         self.plotter = None
@@ -53,25 +50,25 @@ class HKL3DPlotDock(QDockWidget):
             except Exception:
                 pass
             try:
-            self.plotter = QtInteractor(container)
-            try:
-                self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+                self.plotter = QtInteractor(container)
+                try:
+                    self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+                except Exception:
+                    pass
+                layout.addWidget(self.plotter)
             except Exception:
-                pass
-            layout.addWidget(self.plotter)
-        except Exception:
-            self.plotter = None
-            self.btn_load.setEnabled(False)
-            msg = QLabel("3D (VTK) unavailable in tunnel mode.")
-            try:
-                msg.setAlignment(Qt.AlignCenter)
-            except Exception:
-                pass
-            try:
-                msg.setWordWrap(True)
-            except Exception:
-                pass
-            layout.addWidget(msg)
+                self.plotter = None
+                self.btn_load.setEnabled(False)
+                msg = QLabel("3D (VTK) unavailable in tunnel mode.")
+                try:
+                    msg.setAlignment(Qt.AlignCenter)
+                except Exception:
+                    pass
+                try:
+                    msg.setWordWrap(True)
+                except Exception:
+                    pass
+                layout.addWidget(msg)
         else:
             # Fallback: button disabled and message
             self.btn_load.setEnabled(False)
