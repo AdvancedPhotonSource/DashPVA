@@ -338,16 +338,16 @@
        </widget>
       </item>
       <item row="1" column="0">
-       <widget class="QLabel" name="labelShowPointer">
+       <widget class="QLabel" name="labelShowPoints">
         <property name="text">
-         <string>Show Pointer</string>
+         <string>Show Points</string>
         </property>
        </widget>
       </item>
       <item row="1" column="1">
-       <widget class="QCheckBox" name="cb_show_pointer">
+       <widget class="QCheckBox" name="cb_show_points">
         <property name="checked">
-         <bool>false</bool>
+         <bool>true</bool>
         </property>
        </widget>
       </item>

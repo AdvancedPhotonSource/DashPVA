@@ -3,7 +3,8 @@ import toml
 from datetime import datetime
 from PyQt5 import uic
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout
+import pyqtgraph as pg
 
 from utils import PVAReader, HDF5Writer
 from epics import caput
@@ -35,6 +36,18 @@ class ScanMonitorWindow(QMainWindow):
         # Timer for updating info display
         self.info_timer = QTimer()
         self.info_timer.timeout.connect(self._update_info_display)
+
+        # Graph state
+        self.graph_plot = None
+        self.graph_curve = None
+        self.graph_x = []
+        self.graph_y = []
+        self._frames_baseline = 0
+        self.graph_window_seconds = 60  # sliding window length; newest point centered
+        # Separate timeline for activity monitor (distinct from actual scan time)
+        self.activity_start_time = None
+        # Track how long the monitor has been actively listening
+        self.listening_start_time = None
         
         # Scan timing variables
         self.scan_start_time = None
@@ -43,6 +56,7 @@ class ScanMonitorWindow(QMainWindow):
 
         # Setup Initial UI State
         self._setup_ui_elements()
+        self._setup_graph()
 
     def _setup_ui_elements(self):
         if hasattr(self, 'label_mode'):
@@ -51,7 +65,8 @@ class ScanMonitorWindow(QMainWindow):
             self.label_indicator.setText('scan: off')
             self._apply_indicator_style()
         if hasattr(self, 'label_listening'):
-            self.label_listening.setText('False')
+            # Initialize listening elapsed time display as mm:ss
+            self.label_listening.setText('00:00')
             self._apply_listening_style(False)
 
         self.lineedit_channel.setText(self.channel or "")
@@ -63,6 +78,40 @@ class ScanMonitorWindow(QMainWindow):
         self.btn_apply.clicked.connect(self._on_apply_clicked)
         
         self._update_info_display()
+
+    def _setup_graph(self):
+        """Initialize the PyQtGraph PlotWidget inside the placeholder widget."""
+        try:
+            if hasattr(self, 'widget_graph') and self.widget_graph is not None:
+                # Create a layout for the placeholder widget if it doesn't have one
+                layout = self.widget_graph.layout() if hasattr(self.widget_graph, 'layout') else None
+                if layout is None:
+                    layout = QVBoxLayout(self.widget_graph)
+                    self.widget_graph.setLayout(layout)
+
+                # Create and configure the plot
+                self.graph_plot = pg.PlotWidget(background='w')
+                self.graph_plot.showGrid(x=True, y=True)
+                self.graph_plot.setLabel('bottom', 'Time', units='s')
+                self.graph_plot.setLabel('left', 'Frames collected')
+                # Keep Y auto-range; control X via sliding window
+                try:
+                    self.graph_plot.enableAutoRange(x=False, y=True)
+                except Exception:
+                    pass
+                self.graph_curve = self.graph_plot.plot([], [], pen=pg.mkPen(color=(30, 144, 255), width=2))
+
+                # Center indicator line; we'll place it at the center of the X range (latest time)
+                try:
+                    self.center_line = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(color=(128, 128, 128), style=Qt.DashLine))
+                    self.graph_plot.addItem(self.center_line)
+                except Exception:
+                    self.center_line = None
+
+                layout.addWidget(self.graph_plot)
+                self._reset_graph()
+        except Exception as e:
+            print(f"Graph setup error: {e}")
 
     # ================================================================================================
     # CORE LOGIC & THREADING
@@ -116,6 +165,15 @@ class ScanMonitorWindow(QMainWindow):
             
             self.info_timer.start(1000) 
             self._update_info_display()
+            # For continuous monitoring, start a fresh graph timeline on apply
+            self._reset_graph()
+            # Initialize a timeline for the activity monitor (separate from scan time)
+            self.activity_start_time = datetime.now()
+            # Reset frames baseline to current reader count if available
+            try:
+                self._frames_baseline = int(getattr(self.reader, 'frames_received', 0) or 0)
+            except Exception:
+                self._frames_baseline = 0
             
         except Exception as e:
             print(f"Apply Error: {e}")
@@ -183,14 +241,18 @@ class ScanMonitorWindow(QMainWindow):
         self.channel = text
         self.applied_channel = None
         if hasattr(self, 'label_listening'):
-            self.label_listening.setText('False')
+            # Reset listening timer when channel changes
+            self.listening_start_time = None
+            self.label_listening.setText('0')
             self._apply_listening_style(False)
 
     def _on_config_path_changed(self, text):
         self.config_filepath = text
         self.applied_config = None
         if hasattr(self, 'label_listening'):
-            self.label_listening.setText('False')
+            # Reset listening timer when config changes
+            self.listening_start_time = None
+            self.label_listening.setText('0')
             self._apply_listening_style(False)
 
     def _on_browse_config_clicked(self):
@@ -201,6 +263,7 @@ class ScanMonitorWindow(QMainWindow):
         if is_on:
             self.scan_start_time = datetime.now()
             self.scan_end_time = None
+            self._reset_graph()
         else:
             self.scan_end_time = datetime.now()
             self.last_scan_completion_time = self.scan_end_time
@@ -249,17 +312,29 @@ class ScanMonitorWindow(QMainWindow):
 
             # Update Monitor Activity
             channel_active = "No"
-            listening = "False"
+            is_listening = False
             if self.reader and hasattr(self.reader, 'channel'):
-                is_active = self.reader.channel.isMonitorActive()
+                is_active = bool(self.reader.channel.isMonitorActive())
                 channel_active = "Yes" if is_active else "No"
-                if is_active and (self.applied_channel == self.channel):
-                    listening = "True"
-            
-            if hasattr(self, 'label_channel_active'): self.label_channel_active.setText(channel_active)
-            if hasattr(self, 'label_listening'): 
-                self.label_listening.setText(listening)
-                self._apply_listening_style(listening == "True")
+                is_listening = is_active and (self.applied_channel == self.channel)
+
+            if hasattr(self, 'label_channel_active'):
+                self.label_channel_active.setText(channel_active)
+
+            # Update Listening label to show elapsed listening time (positive integers)
+            if hasattr(self, 'label_listening'):
+                if is_listening:
+                    if self.listening_start_time is None:
+                        self.listening_start_time = datetime.now()
+                    elapsed = int(max(0, (datetime.now() - self.listening_start_time).total_seconds()))
+                    # Format as mm:ss
+                    m, s = divmod(elapsed, 60)
+                    self.label_listening.setText(f"{m:02d}:{s:02d}")
+                else:
+                    # Reset when not listening
+                    self.listening_start_time = None
+                    self.label_listening.setText('00:00')
+                self._apply_listening_style(is_listening)
 
             # Update Timing
             if self.scan_start_time:
@@ -272,7 +347,76 @@ class ScanMonitorWindow(QMainWindow):
 
             if self.last_scan_completion_time and hasattr(self, 'label_last_scan_date'):
                 self.label_last_scan_date.setText(self.last_scan_completion_time.strftime("%Y-%m-%d %H:%M:%S"))
+            # Update graph after refreshing labels
+            self._update_graph()
         except: pass
+
+    def _reset_graph(self):
+        self.graph_x = []
+        self.graph_y = []
+        if self.graph_curve:
+            self.graph_curve.setData([], [])
+        # Reset baseline when graph resets
+        try:
+            self._frames_baseline = int(getattr(self.reader, 'frames_received', 0) or 0)
+        except Exception:
+            self._frames_baseline = 0
+        # Restart activity monitor timeline
+        self.activity_start_time = datetime.now()
+
+    def _update_graph(self):
+        """Append the latest frame count against elapsed time and update the curve."""
+        try:
+            if not self.graph_curve or not self.graph_plot:
+                return
+            # Use activity monitor time (separate from actual scan time)
+            if self.activity_start_time and self.reader is not None:
+                # Only update when monitor is actively listening
+                is_active = False
+                is_listening = False
+                try:
+                    if hasattr(self.reader, 'channel') and self.reader.channel is not None:
+                        is_active = bool(self.reader.channel.isMonitorActive())
+                    # Listening indicates we applied the current channel successfully
+                    is_listening = (self.applied_channel == self.channel) and is_active
+                except Exception:
+                    is_active = False
+                    is_listening = False
+                if not (is_active and is_listening):
+                    return
+                t = int(max(0, (datetime.now() - self.activity_start_time).total_seconds()))
+                # Prefer frames collected during active caching; fallback to total frames_received
+                frames_total = getattr(self.reader, 'frames_received', None)
+                if frames_total is None:
+                    return
+                # Continuous monitor: always update regardless of scan_state
+                self.graph_x.append(t)
+                # Plot delta frames collected since baseline
+                try:
+                    delta = int(frames_total) - int(self._frames_baseline)
+                    self.graph_y.append(max(0, int(delta)))
+                except Exception:
+                    self.graph_y.append(int(max(0, frames_total)))
+                # Keep last N points to avoid excessive memory (e.g., last 600 seconds)
+                max_points = 600
+                if len(self.graph_x) > max_points:
+                    self.graph_x = self.graph_x[-max_points:]
+                    self.graph_y = self.graph_y[-max_points:]
+                self.graph_curve.setData(self.graph_x, self.graph_y)
+
+                # Sliding window: keep newest time centered; move the view range accordingly
+                try:
+                    half = self.graph_window_seconds / 2.0
+                    # Clamp x_min to 0 to avoid negative time display
+                    x_min = max(0.0, float(t) - half)
+                    x_max = x_min + self.graph_window_seconds
+                    self.graph_plot.setXRange(x_min, x_max, padding=0)
+                    if self.center_line:
+                        self.center_line.setPos(float(t))
+                except Exception as _:
+                    pass
+        except Exception as e:
+            print(f"Graph update error: {e}")
 
     def closeEvent(self, event):
         self.info_timer.stop()
@@ -280,7 +424,13 @@ class ScanMonitorWindow(QMainWindow):
         super().closeEvent(event)
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Scan Monitor Window')
+    parser.add_argument('--channel', default='', help='PVA channel name')
+    parser.add_argument('--config', dest='config_path', default='', help='Path to TOML config file')
+    args = parser.parse_args()
+
     app = QApplication(sys.argv)
-    window = ScanMonitorWindow()
+    window = ScanMonitorWindow(channel=args.channel, config_filepath=args.config_path)
     window.show()
     sys.exit(app.exec_())

@@ -118,8 +118,9 @@ class SlicePlaneDock(BaseDock):
             # Visibility
             if hasattr(w, 'cb_show_slice'):
                 w.cb_show_slice.toggled.connect(lambda checked: tab.toggle_3d_slice(bool(checked)))
-            if hasattr(w, 'cb_show_pointer'):
-                w.cb_show_pointer.toggled.connect(lambda checked: tab.toggle_pointer(bool(checked)))
+            # Show Points (main cloud)
+            if hasattr(w, 'cb_show_points'):
+                w.cb_show_points.toggled.connect(lambda checked: tab.toggle_3d_points(bool(checked)))
 
             # Camera
             if hasattr(w, 'cb_cam_preset'):
@@ -140,8 +141,8 @@ class SlicePlaneDock(BaseDock):
                 if hasattr(w, 'cb_show_slice'):
                     # Mirror current Tab state if available by checking actor existence
                     w.cb_show_slice.setChecked(True)
-                if hasattr(w, 'cb_show_pointer'):
-                    w.cb_show_pointer.setChecked(False)
+                if hasattr(w, 'cb_show_points'):
+                    w.cb_show_points.setChecked(True)
             except Exception:
                 pass
         except Exception:
