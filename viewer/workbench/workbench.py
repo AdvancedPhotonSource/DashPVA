@@ -1832,7 +1832,7 @@ class WorkbenchWindow(BaseWindow):
                 pass
             # Intensity
             try:
-                intensity = float(frame[y, x])
+                intensity = float(frame[x, y])
             except Exception:
                 intensity = float('nan')
             # HKL text
@@ -2063,7 +2063,7 @@ class WorkbenchWindow(BaseWindow):
                 pass
             # Intensity at pixel
             try:
-                intensity = float(frame[y, x])
+                intensity = float(frame[x, y])
             except Exception:
                 intensity = float('nan')
             # HKL from cached q-grids if present
