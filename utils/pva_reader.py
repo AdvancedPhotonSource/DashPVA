@@ -1,4 +1,6 @@
 import toml
+import time
+import threading
 import blosc2
 import lz4.block
 import bitshuffle
@@ -6,11 +8,13 @@ import numpy as np
 import pvaccess as pva
 from collections import deque
 from epics import camonitor, caget
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 
 try:
     from . import vit_stitch as _vit_stitch
-except Exception:
+    print("[PVAReader] Successfully imported vit_stitch")
+except ImportError as e:
+    print(f"[PVAReader] WARNING: Could not import vit_stitch: {e}")
     _vit_stitch = None
 
 class PVAReader(QObject):
@@ -112,6 +116,7 @@ class PVAReader(QObject):
         # variables that will store pva data
         self.pva_object = None
         self.image = None
+        self.vit_panels = None  # [diff, single, accumulated] when channel is vit:1:input_phase
         self.shape = (0,0)
         self.timestamp = None
         self.data_type = None
@@ -147,6 +152,27 @@ class PVAReader(QObject):
         # self._on_scan_complete_callbacks = []
 
         self._configure(config_filepath)
+
+        # Use channel.monitor(callback, request) for vit:1:input_phase (same as LiveStitch4) so callback gets correct structure
+        self._vit_use_monitor_api = (
+            self.input_channel == 'vit:1:input_phase' and _vit_stitch is not None
+        )
+        self._vit_monitoring = False
+        if self._vit_use_monitor_api:
+            print("[PVAReader] Initializing in VIT STITCH mode (channel.monitor with record[queueSize=100]field(uniqueId, value))")
+            # Cyclic buffer (1000). Drain removes frames (popleft); we take large batches to stitch aggressively.
+            self._vit_frame_queue = deque(maxlen=1000)
+            self._vit_last_processed_id = None
+            self._vit_batch_size = 100
+            self._vit_thread = None
+            self._vit_thread_running = False
+            _reader = self
+            self.channel.isMonitorActive = lambda: getattr(_reader, '_vit_monitoring', False)
+        else:
+            if self.input_channel == 'vit:1:input_phase' and _vit_stitch is None:
+                print("[PVAReader] vit:1:input_phase requested but vit_stitch not available — using standard viewer (no stitch panels).")
+            else:
+                print(f"[PVAReader] Initializing in STANDARD mode for {self.input_channel}")
 
 ############################# Configuration #############################
     def _configure(self, config_path: str) -> None:
@@ -189,12 +215,12 @@ class PVAReader(QObject):
         if self.CACHING_MODE != '':
             self.caches_needed = True
             if self.CACHING_MODE == 'alignment':
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 0}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'scan':
                 self.FLAG_PV = self.CACHE_OPTIONS.setdefault('SCAN', {'FLAG_PV': ''}).get('FLAG_PV')
                 self.START_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'START_SCAN': True}).get('START_SCAN')
                 self.STOP_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'STOP_SCAN': False}).get('STOP_SCAN')
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 0}).get('MAX_CACHE_SIZE')
             elif self.CACHING_MODE == 'bin':
                 self.BIN_COUNT = self.CACHE_OPTIONS.setdefault('BIN', {'COUNT': 10}).get('COUNT')
                 self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 16}).get('SIZE')
@@ -222,6 +248,65 @@ class PVAReader(QObject):
     # def add_on_scan_complete_callback(self, callback_func):
     #     if callable(callback_func):
     #         self._on_scan_complete_callbacks.append(callback_func)
+
+    def _vit_monitor_callback(self, response) -> None:
+        """
+        PVA callback: enqueue (stream, unique_id) only. Stitching runs in _drain_vit_queue on timer.
+        Keeps callback fast so 50 Hz+ doesn't drop frames; drain batches when queue backs up.
+        """
+        try:
+            self.frames_received += 1
+            self.pva_object = response
+            raw_data = response['value'][0]['floatValue']
+            try:
+                unique_id = int(response['uniqueId'])
+            except (KeyError, TypeError, IndexError):
+                unique_id = 0
+            stream = np.asarray(raw_data, dtype=np.float32).reshape(512, 256).copy()
+            # Cyclic: when full, append (below) drops oldest and we count it as missed
+            if len(self._vit_frame_queue) >= self._vit_frame_queue.maxlen:
+                self.frames_missed += 1
+            self._vit_frame_queue.append((stream, unique_id))
+            self.data_type = 'floatValue'
+            self.display_dtype = 'floatValue'
+            self.numpy_dtype = np.dtype('float32')
+            try:
+                self.pv_attributes = self.parse_attributes(response)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[PVAReader] vit monitor callback error: {e}")
+            self.frames_received -= 1
+            self.frames_missed += 1
+
+    def _drain_loop(self) -> None:
+        """Background thread loop to drain queue and run vectorized stitching."""
+        while self._vit_thread_running:
+            if not self._vit_frame_queue:
+                time.sleep(0.002)
+                continue
+            q = self._vit_frame_queue
+            batch = []
+            try:
+                for _ in range(self._vit_batch_size):
+                    batch.append(q.popleft())
+            except IndexError:
+                pass
+            if not batch:
+                continue
+            if _vit_stitch:
+                stitcher = _vit_stitch.get_stitcher()
+                for _, unique_id in batch:
+                    last_id = getattr(self, "_vit_last_processed_id", None)
+                    if last_id is not None and unique_id > last_id + 1:
+                        self.frames_missed += unique_id - last_id - 1
+                    self._vit_last_processed_id = unique_id
+                composite, panels = stitcher.process_frames_batch(batch)
+                if composite is not None:
+                    self.image = composite
+                    self.vit_panels = list(panels) if panels else None
+                    self.shape = (self.vit_panels[0].shape if self.vit_panels else composite.shape)
+
     def pva_callbackSuccess(self, pv) -> None:
         """
         Callback for handling monitored PVA changes.
@@ -233,26 +318,53 @@ class PVAReader(QObject):
             self.frames_received += 1
             self.pva_object = pv
 
-            # vit:1:input_phase — stitch path: raw 512x256 -> 3-panel [diff | single | accumulated]
+            # vit:1:input_phase — stitch path: match LiveStitch4 exactly x['value'][0]['floatValue'].reshape(512,256)
             if (
                 self.input_channel == 'vit:1:input_phase'
                 and _vit_stitch is not None
             ):
-                raw = pv.get('value')
-                fv = raw[0].get('floatValue') if raw and len(raw) > 0 else None
+                # Unwrap if callback received an event object (e.g. .getPV() or .get())
+                pv_obj = pv
+                if hasattr(pv, "getPV"):
+                    try:
+                        pv_obj = pv.getPV()
+                    except Exception:
+                        pass
+                fv = None
+                raw_value = None
+                # Try exact LiveStitch4 bracket access first: x['value'][0]['floatValue']
+                try:
+                    raw_value = pv_obj['value']
+                    fv = raw_value[0]['floatValue']
+                except Exception as e1:
+                    try:
+                        raw_value = pv_obj.get('value')
+                        if raw_value is not None and (hasattr(raw_value, '__len__') and len(raw_value) > 0):
+                            r0 = raw_value[0]
+                            fv = r0.get('floatValue') if hasattr(r0, 'get') else (r0['floatValue'] if hasattr(r0, '__getitem__') else None)
+                        elif raw_value is not None and hasattr(raw_value, 'get'):
+                            fv = raw_value.get('floatValue')
+                    except Exception:
+                        pass
                 if fv is not None:
                     stream = np.asarray(fv, dtype=np.float32).reshape(512, 256)
-                    unique_id = int(pv.get('uniqueId', 0))
-                    composite = _vit_stitch.get_stitcher().process_frame(stream, unique_id)
+                    try:
+                        unique_id = int(pv_obj['uniqueId'] if hasattr(pv_obj, '__getitem__') else pv_obj.get('uniqueId', 0))
+                    except Exception:
+                        unique_id = int(pv_obj.get('uniqueId', 0))
+                    composite, panels = _vit_stitch.get_stitcher().process_frame(stream, unique_id)
                     self.shape = composite.shape
                     self.image = composite
+                    self.vit_panels = list(panels) if panels is not None else None
                     self.data_type = 'floatValue'
                     self.display_dtype = 'floatValue'
                     self.numpy_dtype = np.dtype('float32')
                 else:
                     self.shape = (0, 0)
                     self.image = None
+                    self.vit_panels = None
             else:
+                self.vit_panels = None
                 # parse data required to manipulate pv image
                 self.parse_image_data_type(pv)
                 self.shape = self.parse_img_shape(pv)
@@ -520,20 +632,39 @@ class PVAReader(QObject):
     def start_channel_monitor(self, callback=None) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
-        Args:
-            callback (function, optional): A custom callback to use for the monitor. 
-                                           If None, defaults to self.pva_callbackSuccess.
+        For vit:1:input_phase uses channel.monitor(callback, request) with same request as LiveStitch4
+        so the callback receives response['value'][0]['floatValue'] and response.get('uniqueId').
         """
-        monitor_callback = callback if callback is not None else self.pva_callbackSuccess
-        self.channel.subscribe('pva_monitor', monitor_callback)
-        self.channel.startMonitor()
+
+        if self._vit_use_monitor_api:
+            request = 'record[queueSize=100]field(uniqueId, value)'
+            self.channel.monitor(self._vit_monitor_callback, request)
+            self._vit_monitoring = True
+            self._vit_frame_queue.clear()
+            self._vit_last_processed_id = None
+            self._vit_thread_running = True
+            self._vit_thread = threading.Thread(target=self._drain_loop, daemon=True)
+            self._vit_thread.start()
+            print("[PVAReader] vit:1:input_phase monitoring started (threaded drain).")
+        else:
+            monitor_callback = callback if callback is not None else self.pva_callbackSuccess
+            self.channel.subscribe('pva_monitor', monitor_callback)
+            self.channel.startMonitor()
 
     def stop_channel_monitor(self) -> None:
         """
         Stops all monitoring and callback functions.
         """
-        self.channel.unsubscribe('pva_monitor')
-        self.channel.stopMonitor()
+        if self._vit_use_monitor_api:
+            self._vit_thread_running = False
+            if self._vit_thread and self._vit_thread.is_alive():
+                self._vit_thread.join(timeout=1.0)
+            self._vit_frame_queue.clear()
+            self.channel.stopMonitor()
+            self._vit_monitoring = False
+        else:
+            self.channel.unsubscribe('pva_monitor')
+            self.channel.stopMonitor()
 
     def start_roi_backup_monitor(self) -> None:
         try:

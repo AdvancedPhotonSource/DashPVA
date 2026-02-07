@@ -1770,7 +1770,7 @@ QPushButton::pressed {
               </rect>
              </property>
              <property name="text">
-              <string>Open Analysis Window</string>
+              <string>Open Status Window</string>
              </property>
             </widget>
            </widget>
