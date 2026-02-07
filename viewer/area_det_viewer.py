@@ -1186,7 +1186,7 @@ class DiffractionImageWindow(QMainWindow):
                         p = np.maximum(p, 0)
                         p = np.log10(p + 1e-10)
                         if i == 0:
-                            p = np.maximum(p, -8.0)
+                            p = np.maximum(p, 0.0)
                     panels[i] = p
                 panels_for_display = [panels[0], panels[2], panels[1]]  # image1=diff, image2=pred, image3=stitch
                 self._apply_autoscale_vit(panels_for_display, views)

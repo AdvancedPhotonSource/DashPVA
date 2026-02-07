@@ -279,27 +279,23 @@ class VitStitcher:
         self._patch_edge_crop = (
             patch_edge_crop
             if patch_edge_crop is not None
-            else _parse_int_env("VIT_STITCH_PATCH_EDGE_CROP", 32)
+            else _parse_int_env("VIT_STITCH_PATCH_EDGE_CROP", 66)
         )
         self._center_crop_display = (
             center_crop_display
             if center_crop_display is not None
-            else _parse_int_env("VIT_STITCH_CENTER_CROP", 0)
+            else _parse_int_env("VIT_STITCH_CENTER_CROP", 150)
         )
         # Load the offset from environment (start-from-correct-place for spiral)
         self._id_offset = _parse_int_env("VIT_STITCH_ID_OFFSET", 507270)
-        # Clear stitched canvas when (unique_id - offset) % reset_period == 0 (start of cycle). 0 = disabled.
-        self._reset_period = _parse_int_env("VIT_STITCH_RESET_PERIOD", 10100)
+        # Reset period set from number of positions when CSV/NPZ load (env override still applies). 0 = disabled.
+        self._reset_period = _parse_int_env("VIT_STITCH_RESET_PERIOD", 0)
 
         csv_path = _find_csv_path(
             os.environ.get("VIT_STITCH_POSITIONS_CSV", ""),
             positions_csv_path,
         )
         if csv_path and os.path.isfile(csv_path):
-            if patch_edge_crop is None and "VIT_STITCH_PATCH_EDGE_CROP" not in os.environ:
-                self._patch_edge_crop = 66
-            if center_crop_display is None and "VIT_STITCH_CENTER_CROP" not in os.environ:
-                self._center_crop_display = 150
             self._load_positions_csv(csv_path)
         else:
             npz_path = _find_npz_path(
@@ -307,10 +303,6 @@ class VitStitcher:
                 positions_npz_path,
             )
             if npz_path and os.path.isfile(npz_path):
-                if patch_edge_crop is None and "VIT_STITCH_PATCH_EDGE_CROP" not in os.environ:
-                    self._patch_edge_crop = 66
-                if center_crop_display is None and "VIT_STITCH_CENTER_CROP" not in os.environ:
-                    self._center_crop_display = 150
                 self._load_positions_npz(npz_path)
             else:
                 path = positions_hdf5_path or os.environ.get("VIT_STITCH_POSITIONS_HDF5", "")
@@ -322,6 +314,22 @@ class VitStitcher:
                         "Set VIT_STITCH_POSITIONS_CSV to a CSV path (col0=y_m, col1=x_m in meters) or VIT_STITCH_NPZ_PATH."
                     )
 
+    def _compute_canvas_size_from_positions(
+        self, pos_x_pix: np.ndarray, pos_y_pix: np.ndarray
+    ) -> tuple:
+        """Compute (obj_h, obj_w) so that all positions fit with patch and margin.
+        Works for both raster (arbitrary min/max) and spiral/circular (centered) scans.
+        Origin remains at canvas center; nothing gets cropped."""
+        patch_side = 256 - 2 * self._patch_edge_crop  # placed patch size
+        margin = int(os.environ.get("VIT_STITCH_OBJECT_MARGIN", "256"))
+        # Require: origin (obj/2) + pos in [patch_side/2, obj - patch_side/2] for both dims
+        half = patch_side / 2.0
+        extent_y = float(np.ceil(2 * max(np.max(pos_y_pix) + half, half - np.min(pos_y_pix))))
+        extent_x = float(np.ceil(2 * max(np.max(pos_x_pix) + half, half - np.min(pos_x_pix))))
+        obj_h = max(int(extent_y) + margin, margin)
+        obj_w = max(int(extent_x) + margin, margin)
+        return (obj_h, obj_w)
+
     def _load_positions_npz(self, path: str) -> None:
         """Load positions from npz. Supports:
         - 'x_pix', 'y_pix': pixel offsets from center (used as-is).
@@ -330,11 +338,6 @@ class VitStitcher:
         """
         try:
             data = np.load(path)
-            obj_h = int(os.environ.get("VIT_STITCH_OBJECT_H", "1161"))
-            obj_w = int(os.environ.get("VIT_STITCH_OBJECT_W", "1161"))
-            self._object_size = (obj_h, obj_w)
-            origin = np.round(np.array(self._object_size, dtype=np.float64) / 2.0) + 0.5
-
             use_pixel_offsets = os.environ.get("VIT_STITCH_NPZ_PIXEL_OFFSETS", "").strip().lower() in ("1", "true", "yes")
             if "x_pix" in data and "y_pix" in data:
                 pos_x_pix = np.asarray(data["x_pix"], dtype=np.float64)
@@ -361,6 +364,22 @@ class VitStitcher:
                 self._pos_y_pix = np.asarray(pos_y_pix, dtype=np.float64)
                 mode = "meters (step/pixel_size)"
 
+            # Object size: from env if both set, else from position range (raster or spiral; no crop)
+            obj_h_env = os.environ.get("VIT_STITCH_OBJECT_H", "").strip()
+            obj_w_env = os.environ.get("VIT_STITCH_OBJECT_W", "").strip()
+            if obj_h_env.isdigit() and obj_w_env.isdigit():
+                obj_h = int(obj_h_env)
+                obj_w = int(obj_w_env)
+            elif len(self._pos_x_pix) > 0 and len(self._pos_y_pix) > 0:
+                obj_h, obj_w = self._compute_canvas_size_from_positions(
+                    self._pos_x_pix, self._pos_y_pix
+                )
+            else:
+                obj_h = 1161
+                obj_w = 1161
+            self._object_size = (obj_h, obj_w)
+            origin = np.round(np.array(self._object_size, dtype=np.float64) / 2.0) + 0.5
+
             if _USE_TORCH:
                 self._pos_origin_coords = (torch.tensor(self._object_size, dtype=torch.float32) / 2.0).round() + 0.5
                 self._pred_ph = torch.zeros(self._object_size, dtype=torch.float32)
@@ -372,8 +391,10 @@ class VitStitcher:
 
             self._ready = True
             npos = len(self._pos_x_pix)
+            if self._reset_period == 0 and npos > 0:
+                self._reset_period = npos
             backend = "torch" if _USE_TORCH else "numpy"
-            print(f"[VitStitcher] LiveStitch4 positions loaded from {path} — {npos} points, object {self._object_size}, backend={backend}, mode={mode}")
+            print(f"[VitStitcher] LiveStitch4 positions loaded from {path} — {npos} points, object {self._object_size}, backend={backend}, mode={mode}, reset_period={self._reset_period}")
 
             # Sanity check: first position after adding origin should be inside image
             if npos > 0:
@@ -403,18 +424,14 @@ class VitStitcher:
             pos_y_pix = y_m / pixel_size
             self._pos_x_pix = pos_x_pix
             self._pos_y_pix = pos_y_pix
-            # Object size: from env if set, else from position range (origin at center; add margin for patch)
+            # Object size: from env if set, else from position range (raster or spiral; no crop)
             obj_h_env = os.environ.get("VIT_STITCH_OBJECT_H", "")
             obj_w_env = os.environ.get("VIT_STITCH_OBJECT_W", "")
             if obj_h_env.isdigit() and obj_w_env.isdigit():
                 obj_h = int(obj_h_env)
                 obj_w = int(obj_w_env)
             elif len(pos_x_pix) > 0 and len(pos_y_pix) > 0:
-                patch_margin = int(os.environ.get("VIT_STITCH_OBJECT_MARGIN", "256"))
-                extent_x = 2 * float(np.ceil(np.max(np.abs(pos_x_pix))))
-                extent_y = 2 * float(np.ceil(np.max(np.abs(pos_y_pix))))
-                obj_w = max(int(extent_x) + patch_margin, patch_margin)
-                obj_h = max(int(extent_y) + patch_margin, patch_margin)
+                obj_h, obj_w = self._compute_canvas_size_from_positions(pos_x_pix, pos_y_pix)
             else:
                 obj_h = 1161
                 obj_w = 1161
@@ -430,8 +447,10 @@ class VitStitcher:
                 self._buffer = np.zeros(self._object_size, dtype=np.float32)
             self._ready = True
             npos = len(self._pos_x_pix)
+            if self._reset_period == 0 and npos > 0:
+                self._reset_period = npos
             backend = "torch" if _USE_TORCH else "numpy"
-            print(f"[VitStitcher] Positions loaded from CSV {path} — {npos} points, object {self._object_size}, backend={backend}")
+            print(f"[VitStitcher] Positions loaded from CSV {path} — {npos} points, object {self._object_size}, backend={backend}, reset_period={self._reset_period}")
             if npos > 0:
                 py0 = self._pos_y_pix[0] + origin[0]
                 px0 = self._pos_x_pix[0] + origin[1]
@@ -478,14 +497,14 @@ class VitStitcher:
 
     def process_frames_batch(self, frames: list) -> tuple:
         """
-        Vectorized batch processing. Stacks 'data' from all frames to update accumulation
-        in one pass, but only processes 'diff'/'single' for the final frame in the batch.
+        Batch processing: runs reference-accurate accumulation (clamp buffer to 1 before every add)
+        so newest frame has ~50% weight. Processes batch sequentially; each step uses vectorized
+        place_patches for speed. Returns (acc_panel, [diff_panel, single_panel, acc_panel]).
         """
         if not frames:
             return None, None
 
         # 1. Unpack the batch — frames is list of (stream, unique_id)
-        # We need the LAST stream for the 'diff' panel display
         last_stream, last_unique_id = frames[-1]
 
         # 2. If not ready (no positions), fallback to single frame logic on the last frame
@@ -496,17 +515,15 @@ class VitStitcher:
         ec = self._patch_edge_crop
         npos = len(self._pos_x_pix)
 
-        # Extract streams and stack: (N, 512, 256)
         streams = [x[0] for x in frames]
         batch_stream = np.stack(streams, axis=0) if len(streams) > 1 else np.asarray(streams[0])[None, ...]
         if batch_stream.ndim == 2:
             batch_stream = batch_stream[None, ...]
 
-        # Data is the bottom half [:, 256:, :]; patches: crop [:, 256+ec:-ec, ec:-ec]
+        # Patches: data[66:-66, 66:-66] from bottom half (reference crop)
         data_patches = batch_stream[:, 256 + ec : -ec, ec:-ec]
 
         unique_ids = np.array([x[1] for x in frames], dtype=np.int64)
-        # At scan position 0 (start of cycle), clear stitched canvas before adding this batch
         if self._reset_period > 0 and (unique_ids[0] - self._id_offset) % self._reset_period == 0:
             self.reset_accumulator()
         uids = (unique_ids - self._id_offset) % npos if npos else np.zeros_like(unique_ids)
@@ -514,84 +531,61 @@ class VitStitcher:
         batch_ys = self._pos_y_pix[uids]
         batch_xs = self._pos_x_pix[uids]
 
-        # 4. Run vectorized stitching (same logic as original: add patches to pred_ph, add ones to buffer, then divide)
+        # 4. Run stitching: sequential to match reference (NewAvg = (OldAvg + NewVal) / 2).
+        # Clamp buffer to 1.0 before every add so live view is responsive.
         if _USE_TORCH:
             patches_t = torch.from_numpy(data_patches.astype(np.float32))
             pos_y_t = torch.from_numpy(batch_ys.astype(np.float32))
             pos_x_t = torch.from_numpy(batch_xs.astype(np.float32))
             pos_tensor = torch.stack([pos_y_t, pos_x_t], dim=1) + self._pos_origin_coords.to(pos_y_t.device)
-            ones_t = torch.ones_like(patches_t)
+            ones_t = torch.ones_like(patches_t[0:1])
 
-            # Original order: add patches to pred_ph, clamp buffer then add ones, then divide
-            self._pred_ph = _place_patches_fourier_shift(
-                self._pred_ph, pos_tensor, patches_t, op="add", adjoint_mode=False, pad=PAD
-            )
-            self._buffer = torch.clamp(self._buffer, max=1.0)
-            self._buffer = _place_patches_fourier_shift(
-                self._buffer, pos_tensor, ones_t, op="add", adjoint_mode=False, pad=PAD
-            )
-            self._pred_ph = self._pred_ph / torch.clamp(self._buffer, min=1.0)
+            for i in range(len(patches_t)):
+                curr_pos = pos_tensor[i : i + 1]
+                curr_patch = patches_t[i : i + 1]
+                self._pred_ph = _place_patches_fourier_shift(
+                    self._pred_ph, curr_pos, curr_patch, op="add", adjoint_mode=False, pad=PAD
+                )
+                self._buffer = torch.clamp(self._buffer, max=1.0)
+                self._buffer = _place_patches_fourier_shift(
+                    self._buffer, curr_pos, ones_t, op="add", adjoint_mode=False, pad=PAD
+                )
+                self._pred_ph = self._pred_ph / torch.clamp(self._buffer, min=1.0)
 
-            # Single panel: last frame only
-            last_pos_t = pos_tensor[-1:, :]
-            last_patch_t = patches_t[-1:, ...]
-            tmp = torch.zeros(self._object_size, dtype=torch.float32, device=patches_t.device)
-            single_t = _place_patches_fourier_shift(
-                tmp, last_pos_t, last_patch_t, op="add", adjoint_mode=False, pad=PAD
-            )
-            single_np = single_t.cpu().numpy()
             acc_np = self._pred_ph.cpu().numpy()
         else:
             origin = np.asarray(self._pos_origin_coords, dtype=np.float64)
             positions = (np.column_stack([batch_ys, batch_xs]) + origin).astype(np.float64)
-            ones_batch = np.ones_like(data_patches)
+            ones_batch = np.ones_like(data_patches[0:1])
 
-            # Original order: add patches to pred_ph, clamp buffer then add ones, then divide
-            self._pred_ph = _place_patches_fourier_shift_np(
-                self._pred_ph, positions, data_patches, op="add", adjoint_mode=False, pad=PAD
-            )
-            self._buffer = np.clip(self._buffer, None, 1.0)
-            self._buffer = _place_patches_fourier_shift_np(
-                self._buffer, positions, ones_batch, op="add", adjoint_mode=False, pad=PAD
-            )
-            self._pred_ph = self._pred_ph / np.clip(self._buffer, 1.0, None)
+            for i in range(len(data_patches)):
+                curr_pos = positions[i : i + 1]
+                curr_patch = data_patches[i : i + 1]
+                self._pred_ph = _place_patches_fourier_shift_np(
+                    self._pred_ph, curr_pos, curr_patch, op="add", adjoint_mode=False, pad=PAD
+                )
+                self._buffer = np.clip(self._buffer, None, 1.0)
+                self._buffer = _place_patches_fourier_shift_np(
+                    self._buffer, curr_pos, ones_batch, op="add", adjoint_mode=False, pad=PAD
+                )
+                self._pred_ph = self._pred_ph / np.clip(self._buffer, 1.0, None)
+
             acc_np = self._pred_ph.copy()
 
-            tmp = np.zeros(self._object_size, dtype=np.float32)
-            single_np = _place_patches_fourier_shift_np(
-                tmp, positions[-1:], data_patches[-1:], op="add", adjoint_mode=False, pad=PAD
-            )
+        # Prediction panel: raw inference patch (e.g. 64x64 or 124x124), not placed on canvas
+        single_np = data_patches[-1].copy()
 
-        # 5. Prepare final composite for display
-        diff = np.maximum(last_stream[:256, :], 0.0).astype(np.float32)
+        # 5. Display crops: only accumulator gets center crop; single panel is raw patch
+        diff_panel = np.maximum(last_stream[:256, :], 0.0).astype(np.float32)
         cc = self._center_crop_display
-        if cc > 0 and single_np.shape[0] > 2 * cc and single_np.shape[1] > 2 * cc:
-            single_np = single_np[cc:-cc, cc:-cc].copy()
-            acc_np = acc_np[cc:-cc, cc:-cc].copy()
-
-        diff_panel = diff
-        single_panel = single_np
         acc_panel = acc_np
+        if cc > 0:
+            h, w = acc_np.shape
+            if h > 2 * cc and w > 2 * cc:
+                acc_panel = acc_np[cc:-cc, cc:-cc].copy()
+        single_panel = single_np
 
-        h_diff, w_diff = diff.shape
-        h_obj, w_obj = single_np.shape[0], single_np.shape[1]
-        h_common = max(h_diff, h_obj)
-        if h_diff < h_common:
-            d_comp = np.zeros((h_common, w_diff), dtype=np.float32)
-            d_comp[:h_diff, :] = diff
-        else:
-            d_comp = diff
-        if h_obj < h_common:
-            s_comp = np.zeros((h_common, w_obj), dtype=np.float32)
-            a_comp = np.zeros((h_common, w_obj), dtype=np.float32)
-            s_comp[:h_obj, :] = single_np
-            a_comp[:h_obj, :] = acc_np
-        else:
-            s_comp, a_comp = single_np, acc_np
-        composite = np.hstack([d_comp, s_comp, a_comp])
-        # Raw patch for last frame (no ghostly canvas); order so View 2 = stitched, View 3 = raw patch
-        raw_patch = data_patches[-1].copy()
-        return composite.astype(np.float32), [diff_panel, raw_patch, acc_panel]
+        return acc_panel, [diff_panel, single_panel, acc_panel]
 
     def process_frame(self, stream_512_256: np.ndarray, unique_id: int) -> np.ndarray:
         """
@@ -640,36 +634,34 @@ class VitStitcher:
             pos_tensor = torch.tensor([[pos_y_pix, pos_x_pix]], dtype=torch.float32) + self._pos_origin_coords
             patch_t = torch.from_numpy(patch[np.newaxis, ...].astype(np.float32))
             ones_t = torch.ones_like(patch_t)
-            tmp = torch.zeros(self._object_size, dtype=torch.float32)
-            tmp = _place_patches_fourier_shift(tmp, pos_tensor, patch_t, op="add", adjoint_mode=False, pad=PAD)
             self._pred_ph = _place_patches_fourier_shift(self._pred_ph, pos_tensor, patch_t, op="add", adjoint_mode=False, pad=PAD)
             self._buffer = torch.clamp(self._buffer, max=1.0)
             self._buffer = _place_patches_fourier_shift(self._buffer, pos_tensor, ones_t, op="add", adjoint_mode=False, pad=PAD)
             self._pred_ph = self._pred_ph / torch.clamp(self._buffer, min=1.0)
-            single_np = tmp.numpy()
             acc_np = self._pred_ph.numpy()
         else:
             origin = np.asarray(self._pos_origin_coords, dtype=np.float64)
             positions = (np.array([[pos_y_pix, pos_x_pix]], dtype=np.float64) + origin).astype(np.float64)
             patch_batch = patch[np.newaxis, :, :]
             ones_batch = np.ones_like(patch_batch)
-            tmp = np.zeros(self._object_size, dtype=np.float32)
-            tmp = _place_patches_fourier_shift_np(tmp, positions, patch_batch, op="add", adjoint_mode=False, pad=PAD)
             self._pred_ph = _place_patches_fourier_shift_np(self._pred_ph, positions, patch_batch, op="add", adjoint_mode=False, pad=PAD)
             self._buffer = np.clip(self._buffer, None, 1.0)
             self._buffer = _place_patches_fourier_shift_np(self._buffer, positions, ones_batch, op="add", adjoint_mode=False, pad=PAD)
             self._pred_ph = self._pred_ph / np.clip(self._buffer, 1.0, None)
-            single_np = tmp
             acc_np = self._pred_ph.copy()
+
+        # Prediction panel: raw inference patch, not placed on canvas
+        single_np = patch.copy()
+
+        # Display crops: only accumulator gets center crop
         cc = self._center_crop_display
-        if cc > 0 and single_np.shape[0] > 2 * cc and single_np.shape[1] > 2 * cc:
-            single_np = single_np[cc:-cc, cc:-cc].copy()
-            acc_np = acc_np[cc:-cc, cc:-cc].copy()
-        # Panels for viewer: original diff (256x256), single and acc at their natural size (e.g. 861x861)
-        diff_panel = diff.copy()   # (256, 256) — do not pad for panel 1
-        single_panel = single_np.copy()
-        acc_panel = acc_np.copy()
-        # Build composite (padded) only for optional hstack display; viewer uses panels list
+        acc_panel = acc_np
+        if cc > 0:
+            h, w = acc_np.shape
+            if h > 2 * cc and w > 2 * cc:
+                acc_panel = acc_np[cc:-cc, cc:-cc].copy()
+        diff_panel = diff.copy()
+        single_panel = single_np
         h_diff, w_diff = diff.shape[0], diff.shape[1]
         h_obj, w_obj = single_np.shape[0], single_np.shape[1]
         h_common = max(h_diff, h_obj)
@@ -682,13 +674,13 @@ class VitStitcher:
             single_for_composite = np.zeros((h_common, w_obj), dtype=np.float32)
             acc_for_composite = np.zeros((h_common, w_obj), dtype=np.float32)
             single_for_composite[:h_obj, :] = single_np
-            acc_for_composite[:h_obj, :] = acc_np
+            # acc_np can be full canvas; take (h_obj, w_obj) slice to fit composite
+            acc_for_composite[:h_obj, :] = acc_np[:h_obj, :w_obj]
         else:
             single_for_composite = single_np
             acc_for_composite = acc_np
         composite = np.hstack([diff_for_composite, single_for_composite, acc_for_composite])
-        # Return raw patch (no ghostly canvas); order so View 2 = stitched, View 3 = raw 64×64 patch
-        return composite.astype(np.float32), [diff_panel, patch.copy(), acc_panel]
+        return composite.astype(np.float32), [diff_panel, single_panel, acc_panel]
 
 
 # Module-level singleton for PVAReader (one channel = one stitcher)
