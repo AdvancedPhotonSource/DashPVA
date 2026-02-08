@@ -116,7 +116,7 @@ class PVAReader(QObject):
         # variables that will store pva data
         self.pva_object = None
         self.image = None
-        self.vit_panels = None  # [diff, single, accumulated] when channel is vit:1:input_phase
+        self.vit_panels = None  # [transmission, diffraction, beam_position, nn_prediction, nn_stitched] when channel is vit:1:input_phase
         self.shape = (0,0)
         self.timestamp = None
         self.data_type = None

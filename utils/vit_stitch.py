@@ -1,6 +1,6 @@
 """
 LiveStitch-style patching/stitching for vit:1:input_phase.
-Produces three panels: raw diff, single patch placed, accumulated stitched image.
+Produces five panels: transmission, diffraction, beam position, NN prediction, NN stitched.
 Used by PVAReader when subscribing to vit:1:input_phase.
 Works with or without PyTorch (numpy fallback when torch unavailable).
 """
@@ -214,8 +214,8 @@ def _parse_int_env(name: str, default: int) -> int:
         return default
 
 
-# Default CSV positions path (format: no header, col0=y_m, col1=x_m in meters)
-DEFAULT_POSITIONS_CSV = "/home/beams/AILEENLUO/ptycho-vit/workspace/positions78.csv"
+# Default CSV path — match LiveStitch7.py reference (no header, col0=y_m, col1=x_m in meters).
+DEFAULT_POSITIONS_CSV = "/home/beams/AILEENLUO/ptycho-vit/workspace/positions_10um.csv"
 
 
 def _find_csv_path(env_path: str = "", explicit_path: str = None) -> str:
@@ -258,7 +258,8 @@ class VitStitcher:
     Stateful stitcher for vit:1:input_phase stream.
     Expects stream shape (512, 256): diff = stream[:256,:], data = stream[256:,:].
     Positions: from CSV (default) if VIT_STITCH_POSITIONS_CSV or default path exists, else npz, else HDF5.
-    - LiveStitch4: patch_edge_crop=66 (data[66:-66]), center_crop_display=150 for panels 2 & 3.
+    Returns five panels: transmission, diffraction, beam_position, nn_prediction, nn_stitched.
+    LiveStitch7: patch_edge_crop=32 (data[32:-32]), id_offset=621356, CSV col0=y_m, col1=x_m.
     """
 
     def __init__(
@@ -276,18 +277,24 @@ class VitStitcher:
         self._pos_origin_coords = None
         self._pred_ph = None
         self._buffer = None
+        self._fly_ny = None
+        self._fly_nx = None
+        self._accu_int = None  # (fly_ny, fly_nx) masked array for transmission panel
+        self._curr_traj = None  # 1D flattened (fly_ny+sq_size)*(fly_nx+sq_size) for beam position
+        self._sq_size = 5
+        self._half_sq_size = 2
         self._patch_edge_crop = (
             patch_edge_crop
             if patch_edge_crop is not None
-            else _parse_int_env("VIT_STITCH_PATCH_EDGE_CROP", 66)
+            else _parse_int_env("VIT_STITCH_PATCH_EDGE_CROP", 32)
         )
         self._center_crop_display = (
             center_crop_display
             if center_crop_display is not None
             else _parse_int_env("VIT_STITCH_CENTER_CROP", 150)
         )
-        # Load the offset from environment (start-from-correct-place for spiral)
-        self._id_offset = _parse_int_env("VIT_STITCH_ID_OFFSET", 507270)
+        # Load the offset from environment (start-from-correct-place for spiral). Match LiveStitch7 default.
+        self._id_offset = _parse_int_env("VIT_STITCH_ID_OFFSET", 621356)
         # Reset period set from number of positions when CSV/NPZ load (env override still applies). 0 = disabled.
         self._reset_period = _parse_int_env("VIT_STITCH_RESET_PERIOD", 0)
 
@@ -393,6 +400,7 @@ class VitStitcher:
             npos = len(self._pos_x_pix)
             if self._reset_period == 0 and npos > 0:
                 self._reset_period = npos
+            self._init_transmission_beam(npos)
             backend = "torch" if _USE_TORCH else "numpy"
             print(f"[VitStitcher] LiveStitch4 positions loaded from {path} — {npos} points, object {self._object_size}, backend={backend}, mode={mode}, reset_period={self._reset_period}")
 
@@ -410,18 +418,46 @@ class VitStitcher:
         except Exception as e:
             print(f"[VitStitcher] Failed to load positions from npz {path}: {e}")
 
+    def _init_transmission_beam(self, npos: int) -> None:
+        """Initialize fly_ny, fly_nx, accu_int, curr_traj for transmission and beam position panels (LiveStitch7 style)."""
+        fly_nx = _parse_int_env("VIT_STITCH_FLY_NX", 100)
+        fly_ny = npos // fly_nx
+        if fly_ny * fly_nx != npos:
+            fly_ny = int(np.sqrt(npos))
+            fly_nx = npos // fly_ny
+            if fly_ny * fly_nx != npos:
+                fly_nx = npos
+                fly_ny = 1
+        fly_ny_env = os.environ.get("VIT_STITCH_FLY_NY", "").strip()
+        if fly_ny_env.isdigit():
+            fly_ny = int(fly_ny_env)
+            fly_nx = npos // fly_ny if fly_ny > 0 else fly_nx
+        self._fly_nx = fly_nx
+        self._fly_ny = fly_ny
+        self._accu_int = np.ma.masked_array(
+            data=np.zeros((fly_ny, fly_nx), dtype=np.float64),
+            mask=np.ones((fly_ny, fly_nx), dtype=bool),
+        )
+        # curr_traj: 1D flattened (fly_ny+sq_size)*(fly_nx+sq_size) with cursor pattern at top-left (LiveStitch7)
+        traj_shape = (self._fly_ny + self._sq_size, self._fly_nx + self._sq_size)
+        self._curr_traj = np.zeros(traj_shape, dtype=np.float64)
+        self._curr_traj[self._half_sq_size, : self._sq_size] = 1
+        self._curr_traj[: self._sq_size, self._half_sq_size] = 1
+        self._curr_traj = self._curr_traj.flatten()
+
     def _load_positions_csv(self, path: str) -> None:
-        """Load positions from CSV: no header, col0=x_m, col1=y_m (meters). Converts to pixels via VIT_STITCH_PIXEL_SIZE.
-        Object size (prediction/stitch canvas) is computed from position range so all positions fit with patch margin."""
+        """Load positions from CSV: no header, col0=y_m, col1=x_m (meters). Converts to pixels via VIT_STITCH_PIXEL_SIZE.
+        Object size (prediction/stitch canvas) is computed from position range so all positions fit with patch margin.
+        Matches LiveStitch7 column order and sign convention."""
         try:
             data = np.loadtxt(path, delimiter=",", dtype=np.float64)
             if data.ndim == 1:
                 data = data.reshape(-1, 2)
-            x_m = np.asarray(data[:, 0], dtype=np.float64)
-            y_m = np.asarray(data[:, 1], dtype=np.float64)
+            y_m = np.asarray(data[:, 0], dtype=np.float64)
+            x_m = np.asarray(data[:, 1], dtype=np.float64)
             pixel_size = float(os.environ.get("VIT_STITCH_PIXEL_SIZE", "6.89e-9"))
-            pos_x_pix = -x_m / pixel_size
             pos_y_pix = y_m / pixel_size
+            pos_x_pix = x_m / pixel_size
             self._pos_x_pix = pos_x_pix
             self._pos_y_pix = pos_y_pix
             # Object size: from env if set, else from position range (raster or spiral; no crop)
@@ -449,8 +485,9 @@ class VitStitcher:
             npos = len(self._pos_x_pix)
             if self._reset_period == 0 and npos > 0:
                 self._reset_period = npos
+            self._init_transmission_beam(npos)
             backend = "torch" if _USE_TORCH else "numpy"
-            print(f"[VitStitcher] Positions loaded from CSV {path} — {npos} points, object {self._object_size}, backend={backend}, reset_period={self._reset_period}")
+            print(f"[VitStitcher] Positions loaded from CSV {path} — {npos} points, object {self._object_size}, backend={backend}, reset_period={self._reset_period}, fly_ny={self._fly_ny}, fly_nx={self._fly_nx}")
             if npos > 0:
                 py0 = self._pos_y_pix[0] + origin[0]
                 px0 = self._pos_x_pix[0] + origin[1]
@@ -481,6 +518,9 @@ class VitStitcher:
                 self._pred_ph = np.zeros(self._object_size, dtype=np.float32)
                 self._buffer = np.zeros(self._object_size, dtype=np.float32)
             self._ready = True
+            npos = len(self._pos_x_pix)
+            if npos > 0:
+                self._init_transmission_beam(npos)
         except Exception as e:
             print(f"[VitStitcher] Failed to load positions from {path}: {e}")
 
@@ -494,12 +534,27 @@ class VitStitcher:
         else:
             self._pred_ph.fill(0)
             self._buffer.fill(0)
+        if self._accu_int is not None:
+            self._accu_int.data[...] = 0
+            self._accu_int.mask[...] = True
+
+    def _beam_panel_for_uid(self, uid: int) -> np.ndarray:
+        """Build (fly_ny, fly_nx) beam position panel for given uid (LiveStitch7 style roll and crop)."""
+        if self._curr_traj is None or self._fly_ny is None or self._fly_nx is None:
+            return np.zeros((2, 2), dtype=np.float32)  # placeholder
+        fly_ny, fly_nx = self._fly_ny, self._fly_nx
+        sq = self._sq_size
+        half = self._half_sq_size
+        offset = int(uid // fly_nx) * (fly_nx + sq) + half + int(uid % fly_nx)
+        rolled = np.roll(self._curr_traj, offset)
+        traj_2d = rolled.reshape(fly_ny + sq, fly_nx + sq)
+        return traj_2d[half : half + fly_ny, half : half + fly_nx].astype(np.float32)
 
     def process_frames_batch(self, frames: list) -> tuple:
         """
         Batch processing: runs reference-accurate accumulation (clamp buffer to 1 before every add)
         so newest frame has ~50% weight. Processes batch sequentially; each step uses vectorized
-        place_patches for speed. Returns (acc_panel, [diff_panel, single_panel, acc_panel]).
+        place_patches for speed. Returns (composite, [transmission, diffraction, beam_position, nn_prediction, nn_stitched]).
         """
         if not frames:
             return None, None
@@ -520,7 +575,7 @@ class VitStitcher:
         if batch_stream.ndim == 2:
             batch_stream = batch_stream[None, ...]
 
-        # Patches: data[66:-66, 66:-66] from bottom half (reference crop)
+        # Patches: data[ec:-ec, ec:-ec] from bottom half
         data_patches = batch_stream[:, 256 + ec : -ec, ec:-ec]
 
         unique_ids = np.array([x[1] for x in frames], dtype=np.int64)
@@ -531,8 +586,7 @@ class VitStitcher:
         batch_ys = self._pos_y_pix[uids]
         batch_xs = self._pos_x_pix[uids]
 
-        # 4. Run stitching: sequential to match reference (NewAvg = (OldAvg + NewVal) / 2).
-        # Clamp buffer to 1.0 before every add so live view is responsive.
+        # 4. Run stitching and transmission updates in the same loop
         if _USE_TORCH:
             patches_t = torch.from_numpy(data_patches.astype(np.float32))
             pos_y_t = torch.from_numpy(batch_ys.astype(np.float32))
@@ -551,6 +605,13 @@ class VitStitcher:
                     self._buffer, curr_pos, ones_t, op="add", adjoint_mode=False, pad=PAD
                 )
                 self._pred_ph = self._pred_ph / torch.clamp(self._buffer, min=1.0)
+                if self._accu_int is not None:
+                    uid_i = int(uids[i])
+                    diff_i = np.maximum(batch_stream[i, :256, :], 0.0)
+                    row, col = uid_i // self._fly_nx, uid_i % self._fly_nx
+                    if 0 <= row < self._fly_ny and 0 <= col < self._fly_nx:
+                        self._accu_int.data[row, col] = float(np.sum(diff_i))
+                        self._accu_int.mask[row, col] = False
 
             acc_np = self._pred_ph.cpu().numpy()
         else:
@@ -569,13 +630,20 @@ class VitStitcher:
                     self._buffer, curr_pos, ones_batch, op="add", adjoint_mode=False, pad=PAD
                 )
                 self._pred_ph = self._pred_ph / np.clip(self._buffer, 1.0, None)
+                if self._accu_int is not None:
+                    uid_i = int(uids[i])
+                    diff_i = np.maximum(batch_stream[i, :256, :], 0.0)
+                    row, col = uid_i // self._fly_nx, uid_i % self._fly_nx
+                    if 0 <= row < self._fly_ny and 0 <= col < self._fly_nx:
+                        self._accu_int.data[row, col] = float(np.sum(diff_i))
+                        self._accu_int.mask[row, col] = False
 
             acc_np = self._pred_ph.copy()
 
-        # Prediction panel: raw inference patch (e.g. 64x64 or 124x124), not placed on canvas
+        # Prediction panel: raw inference patch
         single_np = data_patches[-1].copy()
 
-        # 5. Display crops: only accumulator gets center crop; single panel is raw patch
+        # 5. Display crops and build five panels
         diff_panel = np.maximum(last_stream[:256, :], 0.0).astype(np.float32)
         cc = self._center_crop_display
         acc_panel = acc_np
@@ -585,15 +653,20 @@ class VitStitcher:
                 acc_panel = acc_np[cc:-cc, cc:-cc].copy()
         single_panel = single_np
 
-        return acc_panel, [diff_panel, single_panel, acc_panel]
+        transmission_panel = self._accu_int.data.astype(np.float32).copy() if self._accu_int is not None else np.zeros((self._fly_ny or 2, self._fly_nx or 2), dtype=np.float32)
+        last_uid = int(uids[-1]) if len(uids) else 0
+        beam_panel = self._beam_panel_for_uid(last_uid)
+
+        panels = [transmission_panel, diff_panel, beam_panel, single_panel, acc_panel]
+        composite = transmission_panel  # PVAReader uses vit_panels; composite kept for shape/backward compat
+        return composite, panels
 
     def process_frame(self, stream_512_256: np.ndarray, unique_id: int) -> np.ndarray:
         """
         stream_512_256: (512, 256) float32 from PVA value.
         unique_id: PVA uniqueId, used to index position.
-        Returns (composite, panels): composite (H, 3*W), panels [diff, single, accumulated]
-        for separate image views with per-panel color bars.
-        If positions not loaded, returns composite and [diff, zeros, zeros].
+        Returns (composite, panels): panels [transmission, diffraction, beam_position, nn_prediction, nn_stitched].
+        If positions not loaded, returns 5 panels with zeros where needed.
         """
         stream = np.asarray(stream_512_256, dtype=np.float32)
         if stream.shape != STREAM_SHAPE:
@@ -601,33 +674,36 @@ class VitStitcher:
                 stream.ravel()[: np.prod(STREAM_SHAPE)].reshape(STREAM_SHAPE),
                 STREAM_SHAPE,
             ).copy()
-        # Diffraction: clamp to >= 0 so log scale and percentiles are well-defined
-        diff = np.maximum(stream[:DIFF_ROWS, :], 0.0).astype(np.float32)   # (256, 256)
-        data = stream[DIFF_ROWS:, :]   # (256, 256)
+        diff = np.maximum(stream[:DIFF_ROWS, :], 0.0).astype(np.float32)
+        data = stream[DIFF_ROWS:, :]
 
-        # Warn once if detector patch data is all zeros (shutter closed or wrong channel)
         data_max = float(np.max(data))
         if data_max == 0 and not getattr(self, "_zero_data_warned", False):
             self._zero_data_warned = True
             print("[VitStitcher] WARNING: Input patch data is all zero. Stitching panels will be black (check shutter / vit:1:input_phase).")
 
         if not self._ready:
-            # No positions: show diff in first panel, zeros in others
+            transmission = np.zeros((2, 2), dtype=np.float32)
+            beam = np.zeros((2, 2), dtype=np.float32)
             single = np.zeros_like(diff)
             acc = np.zeros_like(diff)
-            composite = np.hstack([diff, single, acc])
-            return composite.astype(np.float32), [diff, single, acc]
+            panels = [transmission, diff.copy(), beam, single, acc]
+            return transmission, panels
 
         npos = len(self._pos_x_pix)
-        # Subtract offset, then modulo (treat offset as spiral index 0)
         uid = int(unique_id - self._id_offset) % npos if npos else 0
-        # At scan position 0 (start of cycle), clear stitched canvas for fresh accumulation
         if self._reset_period > 0 and (unique_id - self._id_offset) % self._reset_period == 0:
             self.reset_accumulator()
 
+        if self._accu_int is not None:
+            row, col = uid // self._fly_nx, uid % self._fly_nx
+            if 0 <= row < self._fly_ny and 0 <= col < self._fly_nx:
+                self._accu_int.data[row, col] = float(np.sum(diff))
+                self._accu_int.mask[row, col] = False
+
         pos_y_pix = float(self._pos_y_pix[uid])
         pos_x_pix = float(self._pos_x_pix[uid])
-        ec = self._patch_edge_crop  # 32 -> (192,192); 66 -> (124,124) LiveStitch4
+        ec = self._patch_edge_crop
         patch = data[ec:-ec, ec:-ec].astype(np.float32)
 
         if _USE_TORCH:
@@ -650,10 +726,7 @@ class VitStitcher:
             self._pred_ph = self._pred_ph / np.clip(self._buffer, 1.0, None)
             acc_np = self._pred_ph.copy()
 
-        # Prediction panel: raw inference patch, not placed on canvas
         single_np = patch.copy()
-
-        # Display crops: only accumulator gets center crop
         cc = self._center_crop_display
         acc_panel = acc_np
         if cc > 0:
@@ -662,25 +735,12 @@ class VitStitcher:
                 acc_panel = acc_np[cc:-cc, cc:-cc].copy()
         diff_panel = diff.copy()
         single_panel = single_np
-        h_diff, w_diff = diff.shape[0], diff.shape[1]
-        h_obj, w_obj = single_np.shape[0], single_np.shape[1]
-        h_common = max(h_diff, h_obj)
-        if h_diff < h_common:
-            diff_for_composite = np.zeros((h_common, w_diff), dtype=np.float32)
-            diff_for_composite[:h_diff, :] = diff
-        else:
-            diff_for_composite = diff
-        if h_obj < h_common:
-            single_for_composite = np.zeros((h_common, w_obj), dtype=np.float32)
-            acc_for_composite = np.zeros((h_common, w_obj), dtype=np.float32)
-            single_for_composite[:h_obj, :] = single_np
-            # acc_np can be full canvas; take (h_obj, w_obj) slice to fit composite
-            acc_for_composite[:h_obj, :] = acc_np[:h_obj, :w_obj]
-        else:
-            single_for_composite = single_np
-            acc_for_composite = acc_np
-        composite = np.hstack([diff_for_composite, single_for_composite, acc_for_composite])
-        return composite.astype(np.float32), [diff_panel, single_panel, acc_panel]
+
+        transmission_panel = self._accu_int.data.astype(np.float32).copy() if self._accu_int is not None else np.zeros((self._fly_ny or 2, self._fly_nx or 2), dtype=np.float32)
+        beam_panel = self._beam_panel_for_uid(uid)
+
+        panels = [transmission_panel, diff_panel, beam_panel, single_panel, acc_panel]
+        return transmission_panel, panels
 
 
 # Module-level singleton for PVAReader (one channel = one stitcher)
