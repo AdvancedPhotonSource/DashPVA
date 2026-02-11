@@ -17,7 +17,7 @@ import glob
 import numpy as np
 import time
 import pyqtgraph as pg
-from viewer.workbench.tabs.workspace_3d import Workspace3D
+from viewer.workbench.workspace.workspace_3d import Workspace3D
 
 
 # Add the project root to the Python path
