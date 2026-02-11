@@ -1,10 +1,11 @@
 import sys
-import os, subprocess, sys
+import os, subprocess
+from collections import OrderedDict
 from pathlib import Path
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtCore import QTimer, Qt
-from viewer.views_registry.registry import VIEWS
+from .registry import VIEWS
 
 
 class LauncherDialog(QDialog):
@@ -17,77 +18,9 @@ class LauncherDialog(QDialog):
         self._timer.timeout.connect(self._poll_processes)
         self._timer.start()
 
-        # Insert dynamic "Views" section (from registry) just before Post Analysis Tools
-        try:
-            self._insert_views_section()
-        except Exception:
-            # Robust to UI changes; if insertion fails, skip silently
-            pass
+        # Build all sections and buttons dynamically from the registry
+        self._insert_registry_sections()
 
-        # Insert a Tools section with utility buttons (e.g., Metadata Converter) at the bottom
-        try:
-            self._insert_utils_section()
-        except Exception:
-            # Fail silently if layout changes; section is optional
-            pass
-
-        
-        # Wire buttons to launchers
-        if hasattr(self, 'btn_hkl3d_viewer'):
-            self.btn_hkl3d_viewer.clicked.connect(
-                lambda: self.launch(
-                    'hkl3d_viewer',
-                    [sys.executable, 'viewer/hkl_3d_viewer.py'],
-                    self.btn_hkl3d_viewer,
-                    'HKL 3D Viewer — Running…'
-                )
-            )
-        if hasattr(self, 'btn_hkl3d_slicer'):
-            self.btn_hkl3d_slicer.clicked.connect(
-                lambda: self.launch(
-                    'hkl3d_slicer',
-                    [sys.executable, 'viewer/hkl_3d_slice_window.py'],
-                    self.btn_hkl3d_slicer,
-                    'HKL 3D Slicer — Running…'
-                )
-            )
-        if hasattr(self, 'btn_area_detector'):
-            self.btn_area_detector.clicked.connect(
-                lambda: self.launch(
-                    'area_detector',
-                    [sys.executable, 'viewer/area_det_viewer.py'],
-                    self.btn_area_detector,
-                    'Area Detector Viewer — Running…'
-                )
-            )
-        if hasattr(self, 'btn_pva_setup'):
-            self.btn_pva_setup.clicked.connect(
-                lambda: self.launch(
-                    'pva_setup',
-                    [sys.executable, 'pva_setup/pva_workflow_setup_dialog.py'],
-                    self.btn_pva_setup,
-                    'PVA Workflow Setup — Running…'
-                )
-            )
-        if hasattr(self, 'btn_sim_setup'):
-            self.btn_sim_setup.clicked.connect(
-                lambda: self.launch(
-                    'sim_setup',
-                    [sys.executable, 'consumers/sim_rsm_data.py'],
-                    self.btn_sim_setup,
-                    'caIOC(Name) — Running…',
-                    quiet=True
-                )
-            )
-        if hasattr(self, 'btn_workbench'):
-            self.btn_workbench.clicked.connect(
-                lambda: self.launch(
-                    'workbench',
-                    [sys.executable, 'viewer/workbench/workbench.py'],
-                    self.btn_workbench,
-                    'Workbench — Running…'
-                )
-            )
         if hasattr(self, 'btn_settings'):
             self.btn_settings.clicked.connect(
                 lambda: self.launch(
@@ -104,50 +37,19 @@ class LauncherDialog(QDialog):
 
         self._update_status()
 
+    def _insert_registry_sections(self):
+        """Build all section headers and buttons from the VIEWS registry.
 
-    def _insert_views_section(self):
-        """Insert a Monitor header and a single Monitor button before Post Analysis Tools."""
+        Entries are grouped by their 'section' key.  Sections appear in the
+        order they are first encountered in the registry list.  Each section
+        gets a bold header label followed by its buttons, inserted just above
+        the status label / bottom bar.
+        """
         layout = self.layout()
         if layout is None:
             return
-        target = getattr(self, 'lbl_post_analysis_header', None)
-        insert_at = layout.indexOf(target) if target is not None else -1
-        if insert_at < 0:
-            # Fallback: append near end
-            insert_at = layout.count()
 
-        # Header: Monitor
-        header = QLabel("Monitor", self)
-        header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
-        header.setAlignment(Qt.AlignCenter)
-        layout.insertWidget(insert_at, header)
-        insert_at += 1
-
-        # Single Monitor button
-        btn = QPushButton("Monitor", self)
-        btn.setToolTip("Open the scan monitor")
-        layout.insertWidget(insert_at, btn)
-        insert_at += 1
-
-        # Bind to existing launch(...) for process tracking
-        btn.clicked.connect(
-            lambda _=False: self.launch(
-                'monitor_scan',
-                [sys.executable, 'viewer/scan_view.py'],
-                btn,
-                'Monitor — Running…'
-            )
-        )
-
-    def _insert_utils_section(self):
-        """Insert a 'Tools' header and buttons for utility tools (like Metadata Converter)
-        below the entire 'Post Analysis Tools' section, but above the status and bottom bar."""
-        layout = self.layout()
-        if layout is None:
-            return
-        # Compute insertion point:
-        # Place just before the status label if present, otherwise before the bottom button bar,
-        # otherwise append at the end.
+        # Determine insertion point — just above the status label or bottom bar
         insert_at = -1
         target_status = getattr(self, 'lbl_status', None)
         if target_status is not None:
@@ -163,28 +65,38 @@ class LauncherDialog(QDialog):
         if insert_at < 0:
             insert_at = layout.count()
 
-        # Header
-        header = QLabel("Tools", self)
-        header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
-        header.setAlignment(Qt.AlignCenter)
-        layout.insertWidget(insert_at, header)
-        insert_at += 1
+        # Group entries by section, preserving first-seen order
+        sections: OrderedDict[str, list] = OrderedDict()
+        for entry in VIEWS:
+            section = entry.get('section', 'Other')
+            sections.setdefault(section, []).append(entry)
 
-        # Metadata Converter button
-        btn = QPushButton("Metadata Converter", self)
-        btn.setToolTip("Open the Metadata Converter tool")
-        layout.insertWidget(insert_at, btn)
-        insert_at += 1
+        # Render each section
+        for section_name, entries in sections.items():
+            # Section header
+            header = QLabel(section_name, self)
+            header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
+            header.setAlignment(Qt.AlignCenter)
+            layout.insertWidget(insert_at, header)
+            insert_at += 1
 
-        # Bind to existing launch(...) for process tracking
-        btn.clicked.connect(
-            lambda _=False: self.launch(
-                'metadata_converter',
-                [sys.executable, 'viewer/tools/metadata_converter_gui.py'],
-                btn,
-                'Metadata Converter — Running…'
-            )
-        )
+            # Buttons
+            for entry in entries:
+                try:
+                    label = entry.get('label', entry.get('key', ''))
+                    tooltip = entry.get('tooltip', '')
+                    btn = QPushButton(label, self)
+                    if tooltip:
+                        btn.setToolTip(tooltip)
+                    layout.insertWidget(insert_at, btn)
+                    insert_at += 1
+                    btn.clicked.connect(
+                        lambda _=False, e=entry, b=btn: self.launch(
+                            e['key'], e['cmd'], b, e['running_text']
+                        )
+                    )
+                except Exception:
+                    pass
 
     def launch(self, key, cmd, button, running_text, quiet=False):
         """Start a child process and update UI indicators."""
@@ -240,10 +152,8 @@ class LauncherDialog(QDialog):
         if hasattr(self, 'lbl_status'):
             self.lbl_status.setText('No modules running' if count == 0 else f'{count} module(s) running')
         if hasattr(self, 'btn_exit'):
-            # Exit remains enabled; closing will prompt if processes are running
             self.btn_exit.setEnabled(True)
         if hasattr(self, 'btn_shutdown_all'):
-            # Enable Shutdown All only when there are running modules
             self.btn_shutdown_all.setEnabled(count > 0)
 
     def _format_running_modules_list(self):
