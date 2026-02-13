@@ -8,6 +8,25 @@ Inherits from BaseWindow for consistent functionality across the application.
 import sys
 import os
 from pathlib import Path
+"""
+Path resolution guard
+
+Ensure this specific worktree is always preferred for imports, even if a parent
+checkout or installed package is also present on sys.path. This prevents Python
+from resolving modules like viewer.workbench.docks.roi_calc from a different
+copy outside this worktree.
+"""
+try:
+    # workbench.py lives at <project_root>/viewer/workbench/workbench.py
+    # parents[2] => <project_root> when file path is .../<project_root>/viewer/workbench/workbench.py
+    _project_root = Path(__file__).resolve().parents[2]
+    # Put this worktree's project root at the front of sys.path
+    sys.path.insert(0, str(_project_root))
+    # Expose project_root for other code (e.g., excepthook below)
+    project_root = _project_root
+except Exception:
+    # Fallback: current working directory
+    project_root = Path.cwd()
 from PyQt5.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem, QFileDialog, QMenu, QAction, QVBoxLayout, QDockWidget, QListWidget, QListWidgetItem, QInputDialog, QTableWidget, QTableWidgetItem, QPushButton, QLabel, QWidget
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot, QThread, QObject, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QCursor
@@ -18,11 +37,6 @@ import numpy as np
 import time
 import pyqtgraph as pg
 from viewer.workbench.workspace.workspace_3d import Workspace3D
-
-
-# Add the project root to the Python path
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
 
 from viewer.base_window import BaseWindow
 from utils.hdf5_loader import HDF5Loader
@@ -36,6 +50,7 @@ from viewer.workbench.docks.data_structure import DataStructureDock
 from viewer.workbench.docks.info_2d_dock import Info2DDock
 from viewer.workbench.docks.info_3d_dock import Info3DDock
 from viewer.workbench.docks.slice_plane import SlicePlaneDock
+from viewer.workbench.docks.roi_calc import ROICalcDock
 #from viewer.workbench.docks.dash_ai import DashAI
 
 
@@ -63,7 +78,9 @@ class WorkbenchWindow(BaseWindow):
         self.info_2d_dock = Info2DDock(main_window=self, title="2D Info", segment_name="2d", dock_area=Qt.RightDockWidgetArea)
         # info dock (3D)
         self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea)
-        # roi 
+        # ROI Calculator dock (UI-only for now)
+        # ROICalcDock manages its own title and segment via BaseDock
+        self.roi_calc_dock = ROICalcDock(main_window=self, dock_area=Qt.RightDockWidgetArea)
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
@@ -99,6 +116,14 @@ class WorkbenchWindow(BaseWindow):
 
         # ROI manager to centralize ROI logic
         self.roi_manager = ROIManager(self)
+        # Minimal wiring for ROICalcDock when ROIManager is created after the dock:
+        # subscribe ROICalcDock to ROIManager events and populate its A/B combos.
+        try:
+            if hasattr(self, 'roi_calc_dock') and self.roi_calc_dock is not None:
+                self.roi_manager.add_listener(self.roi_calc_dock._on_roi_manager_event)
+                self.roi_calc_dock._refresh_memory_rois()
+        except Exception:
+            pass
         # Track secondary dock windows (modeless)
         self._dock_windows = []
 
@@ -251,7 +276,7 @@ class WorkbenchWindow(BaseWindow):
             sub = frame_data[y0:y1, x0:x1]
             # Create and show the 1D plot dialog (modeless)
             try:
-                from viewer.workbench.roi_plot_dialog import ROIPlotDialog
+                from viewer.workbench.rois.roi_plot_dialog import ROIPlotDialog
             except Exception:
                 ROIPlotDialog = None
             if ROIPlotDialog is None:
@@ -321,7 +346,7 @@ class WorkbenchWindow(BaseWindow):
                 return
             # Import the ROIMathDock
             try:
-                from viewer.workbench.roi_math_dock import ROIMathDock
+                from viewer.workbench.rois.roi_math_dock import ROIMathDock
             except Exception:
                 ROIMathDock = None
             if ROIMathDock is None:
@@ -369,7 +394,7 @@ class WorkbenchWindow(BaseWindow):
             sub = frame_data[y0:y1, x0:x1]
             # Create and add the dock widget
             try:
-                from viewer.workbench.roi_plot_dock import ROIPlotDock
+                from viewer.workbench.rois.roi_plot_dock import ROIPlotDock
             except Exception:
                 ROIPlotDock = None
             if ROIPlotDock is None:
@@ -2174,7 +2199,7 @@ class WorkbenchWindow(BaseWindow):
                 return
             # Create or reuse HKL 3D Plot Dock
             try:
-                from viewer.workbench.hkl_3d_plot_dock import HKL3DPlotDock
+                from viewer.workbench.rois.hkl_3d_plot_dock import HKL3DPlotDock
             except Exception:
                 HKL3DPlotDock = None
             if HKL3DPlotDock is None:

@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Workbench Documentation</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 16px; line-height: 1.5; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 24px; line-height: 1.6; font-size: 18px; }
     h1, h2, h3 { color: #2c3e50; }
-    .subtitle { color: #555; margin-bottom: 12px; }
+    h1 { font-size: 34px; margin-top: 20px; }
+    h2 { font-size: 28px; margin-top: 18px; }
+    h3 { font-size: 22px; margin-top: 16px; }
+    .subtitle { color: #555; margin-bottom: 12px; font-size: 1.1em; }
     code { background: #f5f5f5; padding: 2px 4px; border-radius: 4px; }
-    pre { background: #f8f9fa; padding: 8px; border-radius: 4px; overflow: auto; }
-    ul { margin: 8px 0 8px 20px; }
-    .note { font-size: 12px; color: #777; margin-top: 16px; }
+    pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow: auto; }
+    ul { margin: 10px 0 10px 24px; }
+    .note { font-size: 14px; color: #777; margin-top: 16px; }
   </style>
 </head>
 <body>
@@ -25,6 +28,7 @@
     <li>Load single HDF5 files or entire folders</li>
     <li>Visualize datasets in 2D and 3D (when PyVista is available)</li>
     <li>ROI creation and statistics</li>
+    <li>ROI Calculator (A − B), ROI Plot, and ROI Math tools</li>
     <li>Playback of 3D stacks with FPS control</li>
   </ul>
 
@@ -55,6 +59,69 @@ viewer/
     </p>
 
     <p>Player</p>
+  </section>
+  <section id="rois">
+    <h1>Regions of Interest (ROIs)</h1>
+    <h3>ROI Basics</h3>
+    <ul>
+      <li>Draw ROIs using the Draw ROI action in the 2D viewer. Drag to move; drag handles to resize. A rotate handle allows rotation about the center.</li>
+      <li>ROI statistics (sum, min, max, mean, std, count, x, y, w, h) appear in the ROI dock. Right-click an ROI for actions such as Show Stats, Rename, Set Active, Open ROI Plot, Delete, and Save ROI.</li>
+      <li>Use the checkbox in the ROI stats table to show/hide the ROI name label over the image.</li>
+    </ul>
+
+    <h3>ROI Sources</h3>
+    <ul>
+      <li>Memory: ROIs drawn in the current session and associated with the currently viewed dataset.</li>
+      <li>File: ROIs loaded from HDF5 metadata. The ROI Calculator UI shows options to select from file and to import ROIs; these file-based features are placeholders and not wired yet. Current calculations use in-memory ROIs only.</li>
+    </ul>
+
+    <h3>ROI Calculator Operations</h3>
+    <ul>
+      <li><strong>Average Series: A − B</strong>: Produces a 2D mean-difference image: mean(A) − mean(B) over frames. Also computes and plots a per-frame series diff = mean(A<sub>frame</sub>) − mean(B<sub>frame</sub>). On a single-image dataset, this produces a single value.</li>
+      <li><strong>Pixel-wise: A − B</strong>: Produces a 2D image or a 3D stack where each frame is A − B, aligned frame-by-frame.</li>
+      <li><strong>Custom Expression</strong>: UI placeholder; currently disabled.</li>
+    </ul>
+
+    <h3>Matching & Alignment</h3>
+    <ul>
+      <li><strong>Strict Match on</strong>: A and B must have identical shapes (including frame count). If shapes differ, computation is aborted with a clear message.</li>
+      <li><strong>Strict Match off + Auto-Intersect on</strong>: A and B are truncated/cropped to the common overlapping region: T = min(frames), H = min(height), W = min(width). Notes about cropping/truncation appear in the status bar.</li>
+      <li><strong>Strict Match off + Auto-Intersect off</strong>: Shapes must still match; otherwise, computation is aborted.</li>
+    </ul>
+
+    <h3>Time Axis and Include ROI Frames</h3>
+    <p>These controls are present for future functionality and are not currently applied to computations.</p>
+
+    <h3>Results</h3>
+    <ul>
+      <li><strong>Series tab</strong>: Plots per-frame mean(A) − mean(B) and shows a metrics table: frames, ROI pixel count, mean(A), mean(B), mean/min/max/std of the diff. For single-image data, the plot shows a single point.</li>
+      <li><strong>Image tab</strong>: Shows the computed image/stack result depending on the selected operation (Average Series image or Pixel-wise stack).</li>
+      <li><strong>Send to 2D Workspace</strong>: Sends the current result image/stack to the main 2D workspace for further analysis.</li>
+      <li><strong>Save As HDF5</strong>: Saves the result as <code>/entry/data/result</code> in the chosen .h5/.hdf5 file. Dataset attributes include: <code>operation</code>, <code>roiA_name</code>, <code>roiB_name</code>, <code>strict</code>, <code>auto_intersect</code>, and <code>notes</code> (if any).</li>
+    </ul>
+
+    <h3>ROI Plot and ROI Math</h3>
+    <ul>
+      <li><strong>ROI Plot</strong> (dock/window): Flattens the ROI sub-image to a 1D vector and plots Index vs Value. Supports adding a docked view or a modeless window.</li>
+      <li><strong>ROI Math</strong> dock: Define expressions over the flattened ROI data (<code>x</code>: indices, <code>y</code>: ROI values, <code>np</code>: numpy). Multiple expressions render as separate curves.</li>
+    </ul>
+
+    <h3>Saving ROIs to HDF5</h3>
+    <p>ROIs can be saved under <code>/entry/data/rois/&lt;name&gt;</code> with attributes <code>x</code>, <code>y</code>, <code>w</code>, <code>h</code>, and <code>source_path</code>. The dataset contains either a 2D ROI image or a 3D stack of ROI frames when the source is a time series.</p>
+
+    <h3>Technical details (advanced)</h3>
+    <ul>
+      <li><code>extract_roi_stack(main_window, roi)</code> (utils/roi_ops.py): For 3D data, returns a stack with shape (T, H, W). For a single 2D frame, returns (H, W). Uses transform-aware extraction via <code>roi.getArrayRegion(frame, image_item)</code> when available, falling back to integer pixel slicing via <code>roi.pos()</code>/<code>roi.size()</code>. If an extraction yields an empty area, falls back to zeros of the current ROI box size for consistency. Across frames, trims to the smallest extracted height/width to ensure a stackable array. Returns <code>np.float32</code> arrays.</li>
+      <li><code>align_stacks(A, B, strict=True, auto_intersect=False)</code> (utils/roi_ops.py): Normalizes inputs so 2D becomes (1, H, W). With <code>strict=True</code>, shapes must match exactly. With <code>auto_intersect</code>, crops/truncates both A and B to their common (T, H, W) and records notes. Otherwise requires shapes to match. Returns (A_aligned, B_aligned, info) where <code>info.ok</code> indicates success and <code>info.notes</code> lists alignment actions.</li>
+      <li><code>per_frame_mean(stack)</code> (utils/roi_ops.py): Returns a 1D <code>np.float32</code> array of per-frame means (length T). For a single 2D image, returns length 1.</li>
+    </ul>
+
+    <h3>Tips & Notes</h3>
+    <ul>
+      <li>For each frame, the value in the Average Series plot equals the average of the pixel-wise A − B within that frame.</li>
+      <li>If either ROI is partially outside the image, empty regions are filled with zeros for the purposes of series computation.</li>
+      <li>File-based ROI selection and the ROI Calculator "Custom Expression" operation are planned features and currently disabled.</li>
+    </ul>
   </section>
   <section>
     <h1>3D Viewer</h1>

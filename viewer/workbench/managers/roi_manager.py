@@ -3,7 +3,7 @@ ROI Manager for Workbench
 Centralizes ROI lifecycle, docks, stats computation, and interactions to shorten WorkbenchWindow.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Callable, Set
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import (
@@ -106,6 +106,35 @@ class ROIManager:
         self.roi_label_by_id = {}
         self.show_names_checkbox = None
         self.hidden_roi_ids = set()
+        # Simple listener callbacks for external widgets (e.g., ROICalcDock)
+        # Each listener is called as cb(event: str, roi: Optional[pg.ROI])
+        self._listeners: Set[Callable[[str, Optional[pg.ROI]], None]] = set()
+        # Track ROI source (file/dataset) for naming and scoping
+        # roi_source_by_id[roi_id] = { 'file_path': str|None, 'dataset_path': str|None }
+        self.roi_source_by_id = {}
+        # Guard to suppress itemChanged recursion when programmatically updating table cells
+        self._suppress_table_item_changed = False
+
+    # ----- External listeners -----
+    def add_listener(self, callback: Callable[[str, Optional[pg.ROI]], None]) -> None:
+        try:
+            if callable(callback):
+                self._listeners.add(callback)
+        except Exception:
+            pass
+
+    def remove_listener(self, callback: Callable[[str, Optional[pg.ROI]], None]) -> None:
+        try:
+            self._listeners.discard(callback)
+        except Exception:
+            pass
+
+    def _notify_listeners(self, event: str, roi: Optional[pg.ROI] = None) -> None:
+        for cb in list(self._listeners):
+            try:
+                cb(str(event), roi)
+            except Exception:
+                continue
 
     # ----- Setup -----
     def setup_docks(self) -> None:
@@ -200,6 +229,16 @@ class ROIManager:
                 pass
             # current_roi for compatibility
             self.current_roi = roi
+            # Record source context for this in-memory ROI
+            try:
+                src_file = getattr(self.main, 'current_file_path', None)
+                src_dset = getattr(self.main, 'selected_dataset_path', None)
+                self.roi_source_by_id[id(roi)] = {
+                    'file_path': src_file if isinstance(src_file, str) else None,
+                    'dataset_path': src_dset if isinstance(src_dset, str) else None,
+                }
+            except Exception:
+                pass
             try:
                 roi.sigRegionChanged.connect(lambda r=roi: (self.show_roi_stats_for_roi(r), self.update_roi_item(r), self.refresh_label_for_roi(r)))
                 # Also update stats when drag/resize finishes (some pyqtgraph versions emit this)
@@ -215,6 +254,11 @@ class ROIManager:
                 pass
 
             self.main.update_status("ROI added - drag to position and resize as needed")
+            # Notify listeners a new ROI was added
+            try:
+                self._notify_listeners('added', roi)
+            except Exception:
+                pass
         except Exception as e:
             self.main.update_status(f"Error drawing ROI: {e}", level='error')
 
@@ -255,6 +299,11 @@ class ROIManager:
                 except Exception:
                     pass
                 self.main.update_status(f"Renamed ROI to '{new_name}'")
+                # Notify listeners about rename
+                try:
+                    self._notify_listeners('renamed', roi)
+                except Exception:
+                    pass
         except Exception as e:
             self.main.update_status(f"Error renaming ROI: {e}", level='error')
 
@@ -306,6 +355,16 @@ class ROIManager:
             except Exception:
                 pass
             self.main.update_status("ROI deleted")
+            # Notify listeners about deletion
+            try:
+                self._notify_listeners('deleted', roi)
+            except Exception:
+                pass
+            # Drop source mapping
+            try:
+                self.roi_source_by_id.pop(id(roi), None)
+            except Exception:
+                pass
         except Exception as e:
             self.main.update_status(f"Error deleting ROI: {e}", level='error')
 
@@ -479,6 +538,14 @@ class ROIManager:
                         self.roi_names[id(roi)] = str(name)
                     except Exception:
                         pass
+                    # Record source context for this file-backed ROI
+                    try:
+                        self.roi_source_by_id[id(roi)] = {
+                            'file_path': file_path,
+                            'dataset_path': dataset_path,
+                        }
+                    except Exception:
+                        pass
                     # Wire signals and populate stats
                     try:
                         roi.sigRegionChanged.connect(lambda r=roi: (self.show_roi_stats_for_roi(r), self.update_roi_item(r), self.refresh_label_for_roi(r)))
@@ -487,8 +554,21 @@ class ROIManager:
                         self.show_roi_stats_for_roi(roi)
                     except Exception:
                         pass
+                # Notify listeners each time an ROI is rendered from file metadata
+                try:
+                    self._notify_listeners('added', roi)
+                except Exception:
+                    pass
         except Exception:
             pass
+
+    # ----- Source info API -----
+    def get_roi_source(self, roi) -> dict:
+        """Return {'file_path': str|None, 'dataset_path': str|None} for a given ROI."""
+        try:
+            return dict(self.roi_source_by_id.get(id(roi), {}))
+        except Exception:
+            return {'file_path': None, 'dataset_path': None}
 
     # ----- ROI stats -----
     def get_current_frame_data(self):
@@ -741,6 +821,9 @@ class ROIManager:
     def on_roi_stats_item_changed(self, item):
         """Respond to selection checkbox toggles and name edits in the ROI stats table."""
         try:
+            # Avoid recursion when we programmatically update cells
+            if getattr(self, '_suppress_table_item_changed', False):
+                return
             if item is None:
                 return
             row = item.row()
@@ -770,6 +853,80 @@ class ROIManager:
                             self.update_roi_item(roi)
                         except Exception:
                             pass
+                except Exception:
+                    pass
+            elif col in (9, 10, 11, 12):
+                # x, y, w, h edits: apply to the ROI, clamp to image bounds, and refresh stats/label
+                try:
+                    frame = self.get_current_frame_data()
+                    if frame is None or frame.ndim != 2:
+                        return
+                    height, width = int(frame.shape[0]), int(frame.shape[1])
+                    # Current ROI box
+                    pos = roi.pos(); size = roi.size()
+                    cur_x = max(0, int(pos.x()))
+                    cur_y = max(0, int(pos.y()))
+                    cur_w = max(1, int(size.x()))
+                    cur_h = max(1, int(size.y()))
+                    # Parse new value
+                    try:
+                        new_val = int(item.text())
+                    except Exception:
+                        new_val = None
+                    if new_val is None:
+                        return
+                    new_x, new_y, new_w, new_h = cur_x, cur_y, cur_w, cur_h
+                    if col == 9:  # x
+                        new_x = max(0, min(int(new_val), max(0, width - 1)))
+                        # ensure width fits
+                        if new_x + new_w > width:
+                            new_w = max(1, width - new_x)
+                    elif col == 10:  # y
+                        new_y = max(0, min(int(new_val), max(0, height - 1)))
+                        if new_y + new_h > height:
+                            new_h = max(1, height - new_y)
+                    elif col == 11:  # w
+                        new_w = max(1, int(new_val))
+                        if new_x + new_w > width:
+                            new_w = max(1, width - new_x)
+                    elif col == 12:  # h
+                        new_h = max(1, int(new_val))
+                        if new_y + new_h > height:
+                            new_h = max(1, height - new_y)
+                    # Apply to ROI
+                    try:
+                        roi.setPos((float(new_x), float(new_y)))
+                    except Exception:
+                        pass
+                    try:
+                        roi.setSize((float(new_w), float(new_h)))
+                    except Exception:
+                        pass
+                    # Recompute and refresh stats row items without retriggering
+                    stats = self.compute_roi_stats(frame, roi)
+                    if stats:
+                        prev_guard = self._suppress_table_item_changed
+                        self._suppress_table_item_changed = True
+                        try:
+                            # Update editable xywh and numeric cells
+                            self.main.roi_stats_table.setItem(row, 3, QTableWidgetItem(f"{stats['sum']:.3f}"))
+                            self.main.roi_stats_table.setItem(row, 4, QTableWidgetItem(f"{stats['min']:.3f}"))
+                            self.main.roi_stats_table.setItem(row, 5, QTableWidgetItem(f"{stats['max']:.3f}"))
+                            self.main.roi_stats_table.setItem(row, 6, QTableWidgetItem(f"{stats['mean']:.3f}"))
+                            self.main.roi_stats_table.setItem(row, 7, QTableWidgetItem(f"{stats['std']:.3f}"))
+                            self.main.roi_stats_table.setItem(row, 8, QTableWidgetItem(str(stats['count'])))
+                            self.main.roi_stats_table.setItem(row, 9, QTableWidgetItem(str(stats['x'])))
+                            self.main.roi_stats_table.setItem(row, 10, QTableWidgetItem(str(stats['y'])))
+                            self.main.roi_stats_table.setItem(row, 11, QTableWidgetItem(str(stats['w'])))
+                            self.main.roi_stats_table.setItem(row, 12, QTableWidgetItem(str(stats['h'])))
+                        except Exception:
+                            pass
+                        self._suppress_table_item_changed = prev_guard
+                    # Refresh overlay label position
+                    try:
+                        self.refresh_label_for_roi(roi)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
         except Exception:
@@ -901,6 +1058,9 @@ class ROIManager:
                 return self.stats_row_by_roi_id[id(roi)]
             if not hasattr(self.main, 'roi_stats_table') or self.main.roi_stats_table is None:
                 return None
+            # Suppress recursive itemChanged while inserting a new row and items
+            prev_guard = self._suppress_table_item_changed
+            self._suppress_table_item_changed = True
             row = self.main.roi_stats_table.rowCount()
             self.main.roi_stats_table.insertRow(row)
             self.stats_row_by_roi_id[id(roi)] = row
@@ -973,6 +1133,8 @@ class ROIManager:
             # set name cell (column 2)
             name = self.get_roi_name(roi)
             self.main.roi_stats_table.setItem(row, 2, QTableWidgetItem(name))
+            # Restore guard
+            self._suppress_table_item_changed = prev_guard
             return row
         except Exception:
             return None
@@ -982,8 +1144,9 @@ class ROIManager:
             row = self.ensure_stats_row_for_roi(roi)
             if row is None:
                 return
-            # debug: log computed stats
-
+            # Suppress itemChanged while we programmatically update cells
+            prev_guard = self._suppress_table_item_changed
+            self._suppress_table_item_changed = True
             # keep name cell in sync (column 2)
             self.main.roi_stats_table.setItem(row, 2, QTableWidgetItem(self.get_roi_name(roi)))
             # fill numeric cells with xywh at the end starting column 3
@@ -993,9 +1156,12 @@ class ROIManager:
             self.main.roi_stats_table.setItem(row, 6, QTableWidgetItem(f"{stats['mean']:.3f}"))
             self.main.roi_stats_table.setItem(row, 7, QTableWidgetItem(f"{stats['std']:.3f}"))
             self.main.roi_stats_table.setItem(row, 8, QTableWidgetItem(str(stats['count'])))
+            # Make xywh editable by default
             self.main.roi_stats_table.setItem(row, 9, QTableWidgetItem(str(stats['x'])))
             self.main.roi_stats_table.setItem(row, 10, QTableWidgetItem(str(stats['y'])))
             self.main.roi_stats_table.setItem(row, 11, QTableWidgetItem(str(stats['w'])))
             self.main.roi_stats_table.setItem(row, 12, QTableWidgetItem(str(stats['h'])))
+            # Restore guard
+            self._suppress_table_item_changed = prev_guard
         except Exception:
             pass
