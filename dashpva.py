@@ -56,7 +56,8 @@ def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help
 def run():
     """Open DashPVA launcher menu with process tracking and indicators."""
     click.echo('Opening DashPVA Launcher')
-    subprocess.run([sys.executable, 'viewer/launcher.py'])
+    # Use module entrypoint for reliable relative imports and the registry-based launcher
+    subprocess.run([sys.executable, '-m', 'viewer.launcher.launcher'])
 
 @cli.command()
 def hkl3d():

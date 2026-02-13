@@ -893,9 +893,6 @@
           </layout>
          </widget>
         </item>
-          </layout>
-         </widget>
-        </item>
         <!-- Removed tabsControls (Slice/Camera tabs) -->
         <item>
          <layout class="QHBoxLayout" name="hLayoutSettings">

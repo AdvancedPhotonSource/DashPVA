@@ -602,7 +602,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "trame", specifier = ">=3.12.0" },
     { name = "uncertainties", specifier = ">=3.2.0" },
-    { name = "xrayutilities", specifier = ">=1.7.0" },
+    { name = "xrayutilities", specifier = "==1.7.10" },
 ]
 
 [[package]]
@@ -3269,7 +3269,7 @@ wheels = [
 
 [[package]]
 name = "xrayutilities"
-version = "1.7.11"
+version = "1.7.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
@@ -3277,11 +3277,11 @@ dependencies = [
     { name = "numpy" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ea/28/6e0c248da04ed940ad112007bdb8f6e200a9b3889f11971adbc49bdf6de3/xrayutilities-1.7.11.tar.gz", hash = "sha256:d1d4604bab86696b7535176d0d9e7b7ab457fd429b1fed59b7dc13043d1cb1f2", size = 9124920, upload-time = "2025-11-11T16:45:57.091Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/67/3031dc489e46595ad4cec544509c80b62f390264a830e0e366666ecf4119/xrayutilities-1.7.10.tar.gz", hash = "sha256:252320f188a0b9e76ef2a09cfb3c7abb8b9e26378f746cc3a04e15ce5202e949", size = 9124688, upload-time = "2025-01-17T11:41:03.959Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/06/05c0feb51112aea9988f5deb491ac4b3a24ed4534ad354a3c00efb1ba66c/xrayutilities-1.7.11-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:6216bdafe6bc051c030eb75695fc4caa67dd58161f83e6aaebfded27a2e8c251", size = 8431055, upload-time = "2025-11-11T16:45:31.405Z" },
-    { url = "https://files.pythonhosted.org/packages/f6/4c/cf3fad034f48934f1c06b9f09c7933f8bf9e0f5c4140ad5351905b3be270/xrayutilities-1.7.11-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:803971f6ba50dcb222cb0f5b869f2aacc10151c43d720ff645a8403ca08f60d0", size = 8556190, upload-time = "2025-11-11T16:45:33.346Z" },
-    { url = "https://files.pythonhosted.org/packages/7b/a2/b9cf10014be919ee8facc1db4cd802b935e04476671ce46aad3445d86cac/xrayutilities-1.7.11-cp311-cp311-win_amd64.whl", hash = "sha256:55fd9795f1b4a6d805e24fccf239b9aae4f91c9f8d73cd8e00ca2c707c2927d1", size = 8458491, upload-time = "2025-11-11T16:45:35.624Z" },
+    { url = "https://files.pythonhosted.org/packages/01/0c/1a32972337d7e7ad2c30125d8c6f876a7a9f6075d1fda64e9715cc1507cf/xrayutilities-1.7.10-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:34150000272a17742768b01ffec59602c4fc56673ef27badd22e2f533c733b3f", size = 8416454, upload-time = "2025-01-17T11:40:13.565Z" },
+    { url = "https://files.pythonhosted.org/packages/68/3c/46dcca3504ea806cf8f2b10d1e1a71911ab61f7fa8448e7bcc904abe541b/xrayutilities-1.7.10-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f7055a760ae5687ab506d9b1dfb29295159fa1f07706141e03af70337444ca76", size = 8579092, upload-time = "2025-01-17T11:40:18.415Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/31/941578ac01a51771417835ebb527fc811d2aa7d3efe236ee1d336114f7bf/xrayutilities-1.7.10-cp311-cp311-win_amd64.whl", hash = "sha256:57a401ac429977aebf73ec7a621e84a1e55d18a433dc9ee080530e62f1a7a55d", size = 8413713, upload-time = "2025-01-17T11:40:24.366Z" },
 ]
 
 [[package]]

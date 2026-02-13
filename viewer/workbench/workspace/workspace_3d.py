@@ -30,7 +30,7 @@ class Workspace3D(BaseTab):
     def __init__(self, parent=None, main_window=None, title="3D View"):
         pv.set_plot_theme('dark')
         try: 
-            super().__init__(ui_file='gui/workbench/tabs/tab_3d.ui', parent=parent, main_window=main_window, title=title)
+            super().__init__(ui_file='gui/workbench/workspace/workspace_3d.ui', parent=parent, main_window=main_window, title=title)
             self.title = title
             self.main_window = main_window 
             self.build()
