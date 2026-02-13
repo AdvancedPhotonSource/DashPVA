@@ -17,6 +17,11 @@ from roi_stats_dialog import RoiStatsDialog
 from pv_setup_dialog import PVSetupDialog
 from analysis_window import AnalysisWindow 
 
+# Print VIT stitch environment settings (informational only — no overrides)
+print(f"[DashPVA startup] VIT_STITCH_NPZ_PATH       = {os.environ.get('VIT_STITCH_NPZ_PATH', '(not set)')}")
+print(f"[DashPVA startup] VIT_STITCH_CSV_PATH       = {os.environ.get('VIT_STITCH_CSV_PATH', '(not set)')}")
+print(f"[DashPVA startup] VIT_STITCH_PIXEL_SIZE     = {os.environ.get('VIT_STITCH_PIXEL_SIZE', '(not set)')}")
+print(f"[DashPVA startup] VIT_STITCH_PATCH_EDGE_CROP= {os.environ.get('VIT_STITCH_PATCH_EDGE_CROP', '(not set)')}")
 
 max_cache_size = 2 #TODO: Put this in the config file 
 rot_gen = rotation_cycle(1,5)         
@@ -156,6 +161,27 @@ class ImageWindow(QMainWindow):
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
+
+        # VIT 5-panel mode: add 4 extra image views only if channel is vit:1:input_phase
+        self._is_vit_stitch = (input_channel == 'vit:1:input_phase')
+        self.image_view_2 = None
+        self.image_view_3 = None
+        self.image_view_4 = None
+        self.image_view_5 = None
+        if self._is_vit_stitch:
+            vit_cmap = pg.colormap.get('viridis')
+            self.image_view_2 = pg.ImageView(view=pg.PlotItem())
+            self.image_view_3 = pg.ImageView(view=pg.PlotItem())
+            self.image_view_4 = pg.ImageView(view=pg.PlotItem())
+            self.image_view_5 = pg.ImageView(view=pg.PlotItem())
+            for iv in [self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5]:
+                iv.setColorMap(vit_cmap)
+            # Layout: row 0 = panels 2,3,4 across cols 0,1,2; row 1 = panel 1 (main) at col 1, panel 5 at col 2
+            self.viewer_layout.addWidget(self.image_view_2, 0, 0)
+            self.viewer_layout.addWidget(self.image_view_3, 0, 1)
+            self.viewer_layout.addWidget(self.image_view_4, 0, 2)
+            self.viewer_layout.addWidget(self.image_view_5, 1, 2)
+            print("[DashPVA] VIT 5-panel layout initialized.")
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -704,6 +730,16 @@ class ImageWindow(QMainWindow):
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
+
+        # VIT 5-panel update (only if vit mode and panels exist)
+        if self._is_vit_stitch and self.reader is not None:
+            panels = getattr(self.reader, 'vit_panels', None)
+            if panels and len(panels) >= 5:
+                panel_views = [self.image_view, self.image_view_2, self.image_view_3,
+                               self.image_view_4, self.image_view_5]
+                for i, pv in enumerate(panel_views):
+                    if pv is not None and panels[i] is not None:
+                        pv.setImage(panels[i], autoRange=False, autoLevels=True, autoHistogramRange=False)
     
     def update_min_max_setting(self) -> None:
         """
@@ -721,6 +757,10 @@ class ImageWindow(QMainWindow):
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
         del self.stats_dialog # otherwise dialogs stay in memory
+        # Clean up VIT panels
+        for iv in [self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5]:
+            if iv is not None:
+                iv.close()
         super(ImageWindow,self).closeEvent(event)
 
 

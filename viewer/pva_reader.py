@@ -5,6 +5,17 @@ import bitshuffle
 import blosc2 as bls
 import lz4.block
 from epics import camonitor, caget
+import threading
+import time
+from collections import deque
+
+try:
+    from . import vit_stitch as _vit_stitch
+except ImportError:
+    try:
+        import vit_stitch as _vit_stitch
+    except ImportError:
+        _vit_stitch = None
 
 class PVAReader:
     def __init__(self, input_channel='s6lambda1:Pva1:Image', provider=pva.PVA, config_filepath: str = 'pv_configs/metadata_pvs.toml'):
@@ -53,6 +64,7 @@ class PVAReader:
         self.pva_object = None
         self.image = None
         self.shape = (0,0)
+        self.vit_panels = None
         self.pixel_ordering = 'C'
         self.image_is_transposed = False
         self.attributes = []
@@ -72,6 +84,24 @@ class PVAReader:
         self.config = {}
         self.rois = {}
         self.stats = {}
+
+        # VIT stitch mode (only for vit:1:input_phase)
+        self._vit_mode = (
+            self.input_channel == 'vit:1:input_phase' and _vit_stitch is not None
+        )
+        self._vit_monitoring = False
+        if self._vit_mode:
+            print("[PVAReader] Initializing in VIT STITCH mode")
+            self._vit_frame_queue = deque(maxlen=1000)
+            self._vit_last_processed_id = None
+            self._vit_batch_size = 100
+            self._vit_thread = None
+            self._vit_thread_running = False
+        else:
+            if self.input_channel == 'vit:1:input_phase' and _vit_stitch is None:
+                print("[PVAReader] vit:1:input_phase requested but vit_stitch not available.")
+            else:
+                print(f"[PVAReader] Initializing in STANDARD mode for {self.input_channel}")
 
         if self.config_filepath != '':
             with open(self.config_filepath, 'r') as toml_file:
@@ -226,12 +256,71 @@ class PVAReader:
             print(f"Failed to process image: {e}")
             self.frames_missed += 1
             
+    def _vit_monitor_callback(self, response) -> None:
+        """PVA callback for VIT mode: enqueue frames for background stitching."""
+        try:
+            self.frames_received += 1
+            self.pva_object = response
+            raw_data = response['value'][0]['floatValue']
+            try:
+                unique_id = int(response['uniqueId'])
+            except (KeyError, TypeError, IndexError):
+                unique_id = 0
+            stream = np.asarray(raw_data, dtype=np.float32).reshape(512, 256).copy()
+            if len(self._vit_frame_queue) >= self._vit_frame_queue.maxlen:
+                self.frames_missed += 1
+            self._vit_frame_queue.append((stream, unique_id))
+            self.data_type = 'floatValue'
+            self.display_dtype = 'floatValue'
+        except Exception as e:
+            print(f"[PVAReader] vit monitor callback error: {e}")
+            self.frames_missed += 1
+
+    def _drain_loop(self) -> None:
+        """Background thread: drain queue and run vectorized stitching."""
+        while self._vit_thread_running:
+            if not self._vit_frame_queue:
+                time.sleep(0.002)
+                continue
+            q = self._vit_frame_queue
+            batch = []
+            try:
+                for _ in range(self._vit_batch_size):
+                    batch.append(q.popleft())
+            except IndexError:
+                pass
+            if not batch:
+                continue
+            if _vit_stitch:
+                stitcher = _vit_stitch.get_stitcher()
+                for _, unique_id in batch:
+                    last_id = getattr(self, "_vit_last_processed_id", None)
+                    if last_id is not None and unique_id > last_id + 1:
+                        self.frames_missed += unique_id - last_id - 1
+                    self._vit_last_processed_id = unique_id
+                composite, panels = stitcher.process_frames_batch(batch)
+                if composite is not None:
+                    self.image = composite
+                    self.vit_panels = list(panels) if panels else None
+                    self.shape = (panels[0].shape if panels else composite.shape)
+
     def start_channel_monitor(self) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
         """
-        self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
-        self.channel.startMonitor()
+        if self._vit_mode:
+            request = 'record[queueSize=100]field(uniqueId, value)'
+            self.channel.monitor(self._vit_monitor_callback, request)
+            self._vit_monitoring = True
+            self._vit_frame_queue.clear()
+            self._vit_last_processed_id = None
+            self._vit_thread_running = True
+            self._vit_thread = threading.Thread(target=self._drain_loop, daemon=True)
+            self._vit_thread.start()
+            print("[PVAReader] vit:1:input_phase monitoring started (threaded drain).")
+        else:
+            self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
+            self.channel.startMonitor()
 
     def start_roi_backup_monitor(self) -> None:
         try:
@@ -251,8 +340,16 @@ class PVAReader:
         """
         Stops all monitoring and callback functions.
         """
-        self.channel.unsubscribe('pva callback success')
-        self.channel.stopMonitor()
+        if self._vit_mode:
+            self._vit_thread_running = False
+            if self._vit_thread and self._vit_thread.is_alive():
+                self._vit_thread.join(timeout=1.0)
+            self._vit_frame_queue.clear()
+            self.channel.stopMonitor()
+            self._vit_monitoring = False
+        else:
+            self.channel.unsubscribe('pva callback success')
+            self.channel.stopMonitor()
 
     def get_frames_missed(self) -> int:
         """
