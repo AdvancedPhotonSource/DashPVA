@@ -151,16 +151,15 @@ class ImageWindow(QMainWindow):
         # Adding widgets manually to have better control over them
         plot = pg.PlotItem()        
         self.image_view = pg.ImageView(view=plot)
-        self.viewer_layout.addWidget(self.image_view,1,1)
         self.image_view.view.getAxis('left').setLabel(text='Row [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='Columns [pixels]')
         self.image_view.setColorMap(pg.colormap.get('viridis'))
+
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
-        self.viewer_layout.addWidget(self.horizontal_avg_plot, 1,0)
 
         # VIT 5-panel mode: add 4 extra image views only if channel is vit:1:input_phase
         self._is_vit_stitch = (input_channel == 'vit:1:input_phase')
@@ -168,20 +167,80 @@ class ImageWindow(QMainWindow):
         self.image_view_3 = None
         self.image_view_4 = None
         self.image_view_5 = None
+        self.log_image_1 = None  # Log (diffraction only)
         if self._is_vit_stitch:
-            vit_cmap = pg.colormap.get('viridis')
-            self.image_view_2 = pg.ImageView(view=pg.PlotItem())
-            self.image_view_3 = pg.ImageView(view=pg.PlotItem())
-            self.image_view_4 = pg.ImageView(view=pg.PlotItem())
-            self.image_view_5 = pg.ImageView(view=pg.PlotItem())
-            for iv in [self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5]:
-                iv.setColorMap(vit_cmap)
-            # Layout: row 0 = panels 2,3,4 across cols 0,1,2; row 1 = panel 1 (main) at col 1, panel 5 at col 2
-            self.viewer_layout.addWidget(self.image_view_2, 0, 0)
-            self.viewer_layout.addWidget(self.image_view_3, 0, 1)
-            self.viewer_layout.addWidget(self.image_view_4, 0, 2)
-            self.viewer_layout.addWidget(self.image_view_5, 1, 2)
+            # Grid: Transmission (0,0,3,3), Diffraction (0,3), Beam (1,3), Prediction (2,3), Stitched (0,4,3,3)
+            self.viewer_layout.addWidget(self.image_view, 0, 0, 3, 3)  # Transmission
+            plot2 = pg.PlotItem()
+            self.image_view_2 = pg.ImageView(view=plot2)
+            self.image_view_2.view.getAxis('left').setLabel(text='SizeY [pixels]')
+            self.image_view_2.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+            try:
+                self.image_view_2.getView().getViewBox().invertY(True)
+            except Exception:
+                pass
+            self.viewer_layout.addWidget(self.image_view_2, 0, 3, 1, 1)  # Diffraction
+            plot3 = pg.PlotItem()
+            self.image_view_3 = pg.ImageView(view=plot3)
+            self.image_view_3.view.getAxis('left').setLabel(text='SizeY [pixels]')
+            self.image_view_3.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+            try:
+                self.image_view_3.getView().getViewBox().invertY(True)
+            except Exception:
+                pass
+            self.viewer_layout.addWidget(self.image_view_3, 1, 3, 1, 1)  # Beam position
+            plot4 = pg.PlotItem()
+            self.image_view_4 = pg.ImageView(view=plot4)
+            self.image_view_4.view.getAxis('left').setLabel(text='SizeY [pixels]')
+            self.image_view_4.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+            try:
+                self.image_view_4.getView().getViewBox().invertY(True)
+            except Exception:
+                pass
+            self.viewer_layout.addWidget(self.image_view_4, 2, 3, 1, 1)  # NN prediction
+            plot5 = pg.PlotItem()
+            self.image_view_5 = pg.ImageView(view=plot5)
+            self.image_view_5.view.getAxis('left').setLabel(text='SizeY [pixels]')
+            self.image_view_5.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+            try:
+                self.image_view_5.getView().getViewBox().invertY(True)
+            except Exception:
+                pass
+            self.viewer_layout.addWidget(self.image_view_5, 0, 4, 3, 3)  # NN Stitched
+            self.viewer_layout.setRowStretch(0, 1)
+            self.viewer_layout.setRowStretch(1, 1)
+            self.viewer_layout.setRowStretch(2, 1)
+            self.viewer_layout.setColumnStretch(0, 3)
+            self.viewer_layout.setColumnStretch(3, 1)
+            self.viewer_layout.setColumnStretch(4, 3)
+        else:
+            self.viewer_layout.addWidget(self.image_view, 1, 1)
+        self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
+        self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
+        if self._is_vit_stitch:
+            # Magma colormap for all five ImageViews
+            self._vit_colormap = None
+            try:
+                self._vit_colormap = pg.colormap.get('magma')
+            except Exception:
+                try:
+                    self._vit_colormap = pg.colormap.get('magma', source='colorcet')
+                except Exception:
+                    pass
+            _vit_views = (self.image_view, self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5)
+            if self._vit_colormap is not None:
+                for view in _vit_views:
+                    if view is not None and hasattr(view, 'setColorMap'):
+                        view.setColorMap(self._vit_colormap)
+            # Scale bar on NN Stitched panel
+            self._vit_scale_bar_line = None
+            self._vit_scale_bar_text = None
+            self._vit_scale_bar_added = False
+            self._vit_last_autoscale_log_state = None
             print("[DashPVA] VIT 5-panel layout initialized.")
+        # Horizontal avg 1D plot (hidden when vit:1:input_phase)
+        if not self._is_vit_stitch:
+            self.viewer_layout.addWidget(self.horizontal_avg_plot, 1, 0)
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -733,35 +792,176 @@ class ImageWindow(QMainWindow):
 
         # VIT 5-panel update (only if vit mode and panels exist)
         if self._is_vit_stitch and self.reader is not None:
-            panels = getattr(self.reader, 'vit_panels', None)
-            if panels and len(panels) >= 5:
-                panel_views = [self.image_view, self.image_view_2, self.image_view_3,
-                               self.image_view_4, self.image_view_5]
-                for i, pv in enumerate(panel_views):
-                    if pv is not None and panels[i] is not None:
-                        pv.setImage(panels[i], autoRange=False, autoLevels=True, autoHistogramRange=False)
+            vit_panels = getattr(self.reader, 'vit_panels', None)
+            if vit_panels is not None and len(vit_panels) == 5 and self.image_view_2 is not None:
+                # 5 panels: [transmission, diffraction, beam_position, nn_prediction, nn_stitched]
+                panels = [np.asarray(p, dtype=np.float32).copy() for p in vit_panels]
+                panels[1] = np.maximum(panels[1], 0.0)  # diffraction >= 0
+                log_diffraction = self.log_image.isChecked()
+                views = [self.image_view, self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5]
+                for i, p in enumerate(panels):
+                    if i == 1:
+                        p = np.transpose(p)
+                    if i in (0, 2, 4):
+                        p = np.transpose(p)
+                    p = np.transpose(p) if self.image_is_transposed else p
+                    p = np.rot90(p, k=self.rot_num)
+                    if i == 4:
+                        p = p[:, ::-1].copy()
+                    if i == 1 and log_diffraction:
+                        p = np.maximum(p, 0)
+                        p = np.log10(p + 1e-10)
+                        p = np.maximum(p, 0.0)
+                    panels[i] = p
+                self._add_vit_scale_bar(panels[4].shape[0], panels[4].shape[1], view=self.image_view_5)
+                last = getattr(self, '_vit_last_autoscale_log_state', None)
+                run_for_panel = [True] * 5
+                if last is not None and last != log_diffraction:
+                    run_for_panel[1] = True
+                if last is None or last != log_diffraction:
+                    self._apply_autoscale_vit(panels, views, run_for_panel=run_for_panel)
+                    self._vit_last_autoscale_log_state = log_diffraction
+                for i, p in enumerate(panels):
+                    view = views[i]
+                    pmin, pmax = float(np.min(p)), float(np.max(p))
+                    levels = self._get_vit_view_levels(view)
+                    if levels is not None and len(levels) == 2 and levels[1] > levels[0]:
+                        view.setImage(p, autoRange=False, autoLevels=False, levels=levels, autoHistogramRange=False)
+                    elif pmin == pmax:
+                        levels = (pmin, pmin + 1.0) if np.isfinite(pmin) else (0.0, 1.0)
+                        view.setImage(p, autoRange=False, autoLevels=False, levels=levels, autoHistogramRange=False)
+                    else:
+                        view.setImage(p, autoRange=False, autoLevels=False, levels=(pmin, pmax), autoHistogramRange=False)
+                for i, v in enumerate(views):
+                    try:
+                        ar = panels[i].shape[1] / float(max(panels[i].shape[0], 1))
+                        v.view.setAspectLocked(lock=True, ratio=ar)
+                    except Exception:
+                        pass
+                self._apply_vit_colormap()
+                self.image = panels[1]
+                mn, mx = np.min(panels[1]), np.max(panels[1])
+                self.min_px_val.setText(f"{mn:.2f}")
+                self.max_px_val.setText(f"{mx:.2f}")
+                return
     
+    def _get_vit_view_levels(self, view) -> tuple:
+        """Get current min/max levels from an ImageView to preserve user-set scale."""
+        if view is None:
+            return None
+        try:
+            if getattr(view, 'ui', None) is not None and hasattr(view.ui, 'histogram'):
+                return view.ui.histogram.getLevels()
+            if hasattr(view, 'imageItem') and view.imageItem is not None:
+                lev = getattr(view.imageItem, 'levels', None)
+                if lev is not None and len(lev) == 2:
+                    return tuple(lev)
+        except Exception:
+            pass
+        return None
+
+    def _apply_vit_colormap(self) -> None:
+        """Re-apply magma colormap to all five ImageViews after setImage."""
+        if not getattr(self, '_vit_colormap', None):
+            return
+        for view in (self.image_view, self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5):
+            if view is None:
+                continue
+            try:
+                if hasattr(view, 'setColorMap'):
+                    view.setColorMap(self._vit_colormap)
+            except Exception:
+                pass
+
+    def _add_vit_scale_bar(self, height: int, width: int, view=None) -> None:
+        """Add a length scale bar (µm) on NN Stitched panel (image_view_5), bottom-left."""
+        if getattr(self, '_vit_scale_bar_added', False):
+            return
+        target = view if view is not None else self.image_view_5
+        if target is None:
+            return
+        try:
+            pixel_size_m = float(os.environ.get('VIT_STITCH_PIXEL_SIZE', '6.89e-9'))
+            bar_nm = 1000.0  # 1 µm
+            bar_px = (bar_nm * 1e-9) / pixel_size_m
+            if bar_px > 0.45 * width:
+                bar_nm = 500.0
+                bar_px = (bar_nm * 1e-9) / pixel_size_m
+            if bar_px < 20:
+                bar_nm = 1000.0
+                bar_px = (bar_nm * 1e-9) / pixel_size_m
+            margin = 20
+            y_bar = height - 1 - margin
+            x0, x1 = margin, margin + int(bar_px)
+            color = '#00ffff'
+            pen = pg.mkPen(color, width=2)
+            self._vit_scale_bar_line = pg.PlotDataItem(x=[x0, x1], y=[y_bar, y_bar], pen=pen)
+            self._vit_scale_bar_line.setZValue(100)
+            target.view.addItem(self._vit_scale_bar_line)
+            bar_label = '1 µm' if bar_nm >= 1000 else f'{bar_nm:.0f} nm'
+            self._vit_scale_bar_text = pg.TextItem(text=bar_label, color=color, anchor=(0, 1))
+            self._vit_scale_bar_text.setZValue(100)
+            self._vit_scale_bar_text.setPos(x0, y_bar - 4)
+            target.view.addItem(self._vit_scale_bar_text)
+            self._vit_scale_bar_added = True
+        except Exception:
+            self._vit_scale_bar_added = True  # avoid retry
+
+    def _percentile_levels(self, intensities: np.ndarray, p_lo: float = 5.0, p_hi: float = 95.0) -> tuple:
+        """Compute percentile range from the intensity population."""
+        intensities = np.asarray(intensities).flatten()
+        intensities = intensities[np.isfinite(intensities)]
+        if len(intensities) == 0:
+            return (0.0, 1.0)
+        data_min = float(np.min(intensities))
+        data_max = float(np.max(intensities))
+        if data_min < -9.0:
+            population = intensities[intensities > -9.0]
+            if len(population) >= 100:
+                intensities = population
+        lo = float(np.percentile(intensities, p_lo))
+        hi = float(np.percentile(intensities, p_hi))
+        if data_min < lo:
+            lo = data_min
+        if hi < data_max:
+            hi = data_max
+        if lo >= hi:
+            hi = lo + 1.0
+        return (lo, hi)
+
+    def _apply_autoscale_vit(self, panels: list, views: list, run_for_panel: list = None) -> None:
+        """Sets 5th/95th percentile levels for VIT panels."""
+        if run_for_panel is None:
+            run_for_panel = [True] * len(panels)
+        for i, p in enumerate(panels):
+            if i >= len(run_for_panel) or i >= len(views) or not run_for_panel[i]:
+                continue
+            intensities = p.flatten()
+            intensities = intensities[np.isfinite(intensities)]
+            if len(intensities) == 0:
+                continue
+            lo, hi = self._percentile_levels(intensities)
+            views[i].setLevels(lo, hi)
+
     def update_min_max_setting(self) -> None:
         """
         Updates the min/max pixel levels in the Image Viewer based on UI settings.
+        For vit 5-panel mode the min/max spinboxes affect only the diffraction panel.
         """
-        min = self.min_setting_val.value()
-        max = self.max_setting_val.value()
-        self.image_view.setLevels(min, max)
+        min_ = self.min_setting_val.value()
+        max_ = self.max_setting_val.value()
+        if self._is_vit_stitch and self.image_view_2 is not None:
+            self.image_view_2.setLevels(min_, max_)
+        else:
+            self.image_view.setLevels(min_, max_)
     
     def closeEvent(self, event):
         """
         Custom close event to clean up resources, including stat dialogs.
-
-        Args:
-            event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        self.stop_live_view_clicked()
         del self.stats_dialog # otherwise dialogs stay in memory
-        # Clean up VIT panels
-        for iv in [self.image_view_2, self.image_view_3, self.image_view_4, self.image_view_5]:
-            if iv is not None:
-                iv.close()
-        super(ImageWindow,self).closeEvent(event)
+        super(ImageWindow, self).closeEvent(event)
 
 
 if __name__ == '__main__':
