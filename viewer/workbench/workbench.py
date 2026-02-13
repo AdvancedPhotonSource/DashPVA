@@ -617,6 +617,21 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error setting up 2D workspace: {e}")
             # Fallback to keeping the placeholder if setup fails
 
+    # === File type helpers ===
+    def _is_hdf5_path(self, file_path: str) -> bool:
+        try:
+            ext = str(Path(file_path).suffix or "").lower()
+            return ext in (".h5", ".hdf5")
+        except Exception:
+            return False
+
+    def _is_image_path(self, file_path: str) -> bool:
+        try:
+            ext = str(Path(file_path).suffix or "").lower()
+            return ext in (".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp")
+        except Exception:
+            return False
+
     def setup_2d_plot_viewer(self):
         """Set up the 2D plot viewer with PyQtGraph PlotItem and ImageView."""
         try:
@@ -658,6 +673,189 @@ class WorkbenchWindow(BaseWindow):
 
         except Exception as e:
             self.update_status(f"Error setting up 2D plot viewer: {e}")
+
+    # === File loading override ===
+    def load_file_content(self, file_path: str):
+        """Load content for the selected file.
+
+        Supports HDF5 files (adds to tree) and common image formats (loads directly into 2D view).
+        """
+        try:
+            if not isinstance(file_path, str) or not os.path.exists(file_path):
+                QMessageBox.critical(self, "Open File", "Selected file does not exist.")
+                return
+
+            # Store current path
+            self.current_file_path = file_path
+
+            # Clear previous visualizations
+            try:
+                self.clear_2d_plot()
+            except Exception:
+                pass
+            try:
+                self.clear_3d_plot()
+            except Exception:
+                pass
+            self.selected_dataset_path = None
+
+            # Branch by file type
+            if self._is_hdf5_path(file_path):
+                # Add HDF5 to tree and show default info
+                try:
+                    self.load_single_h5_file(file_path)
+                except Exception as e:
+                    QMessageBox.critical(self, "Open HDF5", f"Failed to load HDF5 file: {e}")
+                    self.update_status("Failed to load file", level='error')
+                    return
+
+                if hasattr(self, 'file_status_label'):
+                    self.file_status_label.setText(f"HDF5 file loaded: {os.path.basename(file_path)}")
+                if hasattr(self, 'dataset_info_text'):
+                    self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
+
+                # Update file info panel
+                self.update_file_info_display(file_path)
+                self.update_status("HDF5 File Loaded Successfully")
+                return
+
+            if self._is_image_path(file_path):
+                data = self._load_image_file(file_path)
+                if data is None or int(getattr(data, 'size', 0)) == 0:
+                    QMessageBox.warning(self, "Open Image", "Failed to load image data from file.")
+                    self.update_status("Failed to load image", level='error')
+                    return
+                # Add image to tree for visibility in data structure
+                try:
+                    self.add_single_image_file(file_path, data)
+                except Exception:
+                    # Non-fatal if tree add fails
+                    pass
+                # Display the image or stack in 2D viewer
+                self.display_2d_data(data)
+                if hasattr(self, 'tabWidget_analysis'):
+                    try:
+                        self.tabWidget_analysis.setCurrentIndex(0)
+                    except Exception:
+                        pass
+                # Basic info text
+                if hasattr(self, 'dataset_info_text'):
+                    try:
+                        shp = tuple(map(int, getattr(data, 'shape', ())))
+                        info = [f"Image file: {os.path.basename(file_path)}",
+                                f"Shape: {shp}",
+                                f"Data Type: {getattr(data, 'dtype', '')}",
+                                f"Size: {int(getattr(data, 'size', 0)):,} elements"]
+                        self.dataset_info_text.setPlainText("\n".join(info))
+                    except Exception:
+                        pass
+                if hasattr(self, 'file_status_label'):
+                    self.file_status_label.setText(f"Image loaded: {os.path.basename(file_path)}")
+                # Update generic file info without forcing HDF5 read
+                self.update_file_info_display(file_path)
+                self.update_status("Image loaded successfully")
+                return
+
+            # Unsupported type: just show generic info
+            self.update_file_info_display(file_path)
+            QMessageBox.information(self, "Open File", "Unsupported file type for visualization.")
+            self.update_status("Unsupported file type", level='warning')
+        except Exception as e:
+            QMessageBox.critical(self, "Open File", f"Failed to open file: {e}")
+            self.update_status(f"Failed to open file: {e}", level='error')
+
+    def _load_image_file(self, file_path: str):
+        """Load an image file (.tif/.tiff/.png/.jpg/.jpeg/.bmp) into a numpy array.
+
+        For multi-page TIFF, returns a 3D array (frames, H, W) if applicable.
+        Color images (H, W, C) are converted to grayscale for 2D visualization.
+        """
+        try:
+            ext = str(Path(file_path).suffix or "").lower()
+            data = None
+            # Prefer tifffile for TIFF
+            if ext in (".tif", ".tiff"):
+                try:
+                    import tifffile as tiff
+                    data = tiff.imread(file_path)
+                except Exception:
+                    data = None
+            # Fallbacks for other formats
+            if data is None:
+                try:
+                    from PIL import Image
+                    img = Image.open(file_path)
+                    # If RGB(A), convert to grayscale
+                    if hasattr(img, 'mode') and img.mode in ("RGB", "RGBA", "P", "CMYK"):
+                        try:
+                            img = img.convert("L")
+                        except Exception:
+                            pass
+                    data = np.asarray(img)
+                except Exception:
+                    data = None
+            if data is None:
+                try:
+                    import imageio.v2 as iio
+                    data = iio.imread(file_path)
+                except Exception:
+                    data = None
+
+            if data is None:
+                return None
+
+            arr = np.asarray(data)
+            # If color image HxWxC, convert to luminance
+            if arr.ndim == 3 and arr.shape[-1] in (3, 4):
+                try:
+                    # Use ITU-R BT.709 luma coefficients
+                    rgb = arr[..., :3].astype(np.float32)
+                    arr = 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
+                except Exception:
+                    # Fallback to single channel
+                    arr = arr[..., 0]
+            # Ensure float32 for visualization consistency
+            try:
+                arr = np.asarray(arr, dtype=np.float32)
+            except Exception:
+                pass
+            # If single frame TIFF returned as (H,W), fine; if multi-page (N,H,W), fine.
+            return arr
+        except Exception as e:
+            self.update_status(f"Error loading image file: {e}", level='error')
+            return None
+
+    def add_single_image_file(self, file_path: str, data=None):
+        """Add a single image file as a root item in the data structure tree.
+
+        Optionally provide loaded data to annotate shape.
+        """
+        try:
+            if not hasattr(self, 'tree_data') or self.tree_data is None:
+                return
+            # Create root item
+            name = os.path.basename(file_path)
+            root_item = QTreeWidgetItem([name])
+            root_item.setData(0, Qt.UserRole + 1, file_path)  # Store path
+            root_item.setData(0, Qt.UserRole + 2, "file_root")
+            # Mark as renderable by setting a child node with a label
+            try:
+                shape_str = ""
+                if data is not None and hasattr(data, 'shape'):
+                    shp = tuple(map(int, data.shape))
+                    shape_str = f" (Shape: {shp})"
+                child = QTreeWidgetItem([f"image{shape_str}"])
+                # Store a synthetic path so double-click can detect image load
+                child.setData(0, 32, "__image__")
+                child.setData(0, Qt.UserRole + 3, True)  # renderable hint
+                root_item.addChild(child)
+            except Exception:
+                pass
+            # Insert at top
+            self.tree_data.insertTopLevelItem(0, root_item)
+            root_item.setExpanded(False)
+        except Exception:
+            pass
 
     # === Controls: 2D ===
     def setup_controls_2d(self):
@@ -887,12 +1085,19 @@ class WorkbenchWindow(BaseWindow):
     # === Supers: BaseWindow overrides ===
     def get_file_filters(self):
         """
-        Get file filters for HDF5 files.
+        Get file filters for Workbench open/save dialogs.
 
         Returns:
             str: File filter string for QFileDialog
         """
-        return "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+        # Allow both HDF5 and common image formats in the file browser
+        # so users can select .tif/.tiff and other images directly.
+        return (
+            "Data Files (*.h5 *.hdf5 *.tif *.tiff *.png *.jpg *.jpeg *.bmp);;"
+            "HDF5 Files (*.h5 *.hdf5);;"
+            "Image Files (*.tif *.tiff *.png *.jpg *.jpeg *.bmp);;"
+            "All Files (*)"
+        )
 
     # def load_file_content(self, file_path):
     #     """
@@ -1007,29 +1212,35 @@ class WorkbenchWindow(BaseWindow):
                         self.update_status(f"Folder already loaded: {folder_name}")
                         return
 
-            # Find all HDF5 files in the folder
+            # Find all HDF5 and common image files in the folder
             h5_patterns = ['*.h5', '*.hdf5', '*.H5', '*.HDF5']
+            img_patterns = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.bmp',
+                            '*.TIF', '*.TIFF', '*.PNG', '*.JPG', '*.JPEG', '*.BMP']
             h5_files = []
+            img_files = []
             for pattern in h5_patterns:
                 h5_files.extend(glob.glob(os.path.join(folder_path, pattern)))
+            for pattern in img_patterns:
+                img_files.extend(glob.glob(os.path.join(folder_path, pattern)))
 
-            if not h5_files:
-                QMessageBox.information(self, "No Files", "No HDF5 files found in the selected folder.")
-                self.update_status("No HDF5 files found")
+            if not h5_files and not img_files:
+                QMessageBox.information(self, "No Files", "No supported files found in the selected folder.")
+                self.update_status("No supported files found")
                 return
 
             # Sort files for consistent ordering
-            h5_files.sort()
+            h5_files.sort(); img_files.sort()
 
             # Create folder section header at the top
-            folder_section_item = QTreeWidgetItem([f"📁 {folder_name} ({len(h5_files)} files)"])
+            total_files = len(h5_files) + len(img_files)
+            folder_section_item = QTreeWidgetItem([f"📁 {folder_name} ({total_files} files)"])
             folder_section_item.setData(0, Qt.UserRole + 1, folder_path)  # Store folder path
             folder_section_item.setData(0, Qt.UserRole + 2, "folder_section")  # Mark as folder section
 
             # Insert at the top (index 0)
             self.tree_data.insertTopLevelItem(0, folder_section_item)
 
-            # Load each HDF5 file under the folder section
+            # Load each supported file under the folder section
             loaded_count = 0
             for file_path in h5_files:
                 try:
@@ -1037,6 +1248,13 @@ class WorkbenchWindow(BaseWindow):
                     loaded_count += 1
                 except Exception as e:
                     self.update_status(f"Failed to load {file_path}: {e}")
+                    continue
+            for file_path in img_files:
+                try:
+                    self.add_image_file_under_section(file_path, folder_section_item)
+                    loaded_count += 1
+                except Exception as e:
+                    self.update_status(f"Failed to add image {file_path}: {e}")
                     continue
 
             # Expand the folder section to show the files
@@ -1054,7 +1272,7 @@ class WorkbenchWindow(BaseWindow):
             if hasattr(self, 'dataset_info_text'):
                 self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
 
-            self.update_status(f"Loaded {loaded_count} HDF5 files from folder: {folder_name}")
+            self.update_status(f"Loaded {loaded_count} files from folder: {folder_name}")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load folder: {str(e)}")
@@ -1134,6 +1352,34 @@ class WorkbenchWindow(BaseWindow):
 
             # Keep the root item collapsed by default
             root_item.setExpanded(False)
+
+    def add_image_file_under_section(self, file_path, parent_section):
+        """Add a single image file under a folder section in the data structure tree."""
+        try:
+            name = os.path.basename(file_path)
+            root_item = QTreeWidgetItem([name])
+            root_item.setData(0, Qt.UserRole + 1, file_path)
+            root_item.setData(0, Qt.UserRole + 2, "file_root")
+            # Optional child with basic info
+            try:
+                data = self._load_image_file(file_path)
+            except Exception:
+                data = None
+            try:
+                shape_str = ""
+                if data is not None and hasattr(data, 'shape'):
+                    shp = tuple(map(int, data.shape))
+                    shape_str = f" (Shape: {shp})"
+                child = QTreeWidgetItem([f"image{shape_str}"])
+                child.setData(0, 32, "__image__")
+                child.setData(0, Qt.UserRole + 3, True)
+                root_item.addChild(child)
+            except Exception:
+                pass
+            parent_section.addChild(root_item)
+            root_item.setExpanded(False)
+        except Exception:
+            pass
 
     def is_dataset_renderable(self, dset):
         """Return True if dataset is numeric and can be rendered (2D/3D, or 1D perfect square)."""
@@ -2558,33 +2804,66 @@ class WorkbenchWindow(BaseWindow):
                 self.update_status(f"Error in double-click load: {e}")
                 print(f"[DEBUG] Exception in double-click load: {e}")
         else:
-            # If this is a file root, auto-select and visualize the default 2D dataset
+            # If this is a file root, branch by file type
             if item_type == "file_root":
-                print("[DEBUG] Double-clicked file root; attempting to load default dataset '/entry/data/data'")
                 # Ensure current_file_path points to this file
                 self._ensure_current_file_from_item(item)
-                # Set the default dataset path
-                self.selected_dataset_path = '/entry/data/data'
-                # Verify the dataset exists; if not, show message
-                try:
-                    with h5py.File(self.current_file_path, 'r') as h5f:
-                        exists = self.selected_dataset_path in h5f
-                    print(f"[DEBUG] Default dataset exists? {exists}")
-                    if not exists:
-                        self.update_status("Default dataset '/entry/data/data' not found in file")
+                fp = getattr(self, 'current_file_path', None)
+                if fp and self._is_hdf5_path(fp):
+                    print("[DEBUG] Double-clicked HDF5 file root; attempting to load default dataset '/entry/data/data'")
+                    # Set the default dataset path
+                    self.selected_dataset_path = '/entry/data/data'
+                    # Verify the dataset exists; if not, show message
+                    try:
+                        with h5py.File(fp, 'r') as h5f:
+                            exists = self.selected_dataset_path in h5f
+                        print(f"[DEBUG] Default dataset exists? {exists}")
+                        if not exists:
+                            self.update_status("Default dataset '/entry/data/data' not found in file")
+                            return
+                    except Exception as e:
+                        self.update_status(f"Error verifying default dataset: {e}")
                         return
-                except Exception as e:
-                    self.update_status(f"Error verifying default dataset: {e}")
-                    return
-                # Visualize using existing logic (will use HDF5Loader for image data)
-                try:
-                    self.visualize_selected_dataset()
-                    print("[DEBUG] Default dataset visualization completed")
-                except Exception as e:
-                    self.update_status(f"Error loading default dataset: {e}")
+                    # Visualize using existing logic (will use HDF5Loader for image data)
+                    try:
+                        self.visualize_selected_dataset()
+                        print("[DEBUG] Default dataset visualization completed")
+                    except Exception as e:
+                        self.update_status(f"Error loading default dataset: {e}")
+                elif fp and self._is_image_path(fp):
+                    print("[DEBUG] Double-clicked image file root; loading image")
+                    data = self._load_image_file(fp)
+                    if data is None or int(getattr(data, 'size', 0)) == 0:
+                        self.update_status("Failed to load image", level='error')
+                        return
+                    self.display_2d_data(data)
+                    if hasattr(self, 'tabWidget_analysis'):
+                        try:
+                            self.tabWidget_analysis.setCurrentIndex(0)
+                        except Exception:
+                            pass
+                    # Update info text
+                    try:
+                        if hasattr(self, 'dataset_info_text'):
+                            shp = tuple(map(int, getattr(data, 'shape', ())))
+                            info = [f"Image file: {os.path.basename(fp)}",
+                                    f"Shape: {shp}",
+                                    f"Data Type: {getattr(data, 'dtype', '')}"]
+                            self.dataset_info_text.setPlainText("\n".join(info))
+                        if hasattr(self, 'file_status_label'):
+                            self.file_status_label.setText(f"Image loaded: {os.path.basename(fp)}")
+                    except Exception:
+                        pass
+                else:
+                    # Unknown type: toggle expand/collapse
+                    print("[DEBUG] Double-clicked unknown file root. Toggling expand/collapse.")
+                    if item.isExpanded():
+                        item.setExpanded(False)
+                    else:
+                        item.setExpanded(True)
             else:
-                # Non-dataset/group: toggle expand/collapse
-                print("[DEBUG] Double-clicked a non-dataset (root/group). Toggling expand/collapse.")
+                # Non-file root (group or child): toggle expand/collapse
+                print("[DEBUG] Double-clicked a non-dataset (root/group/child). Toggling expand/collapse.")
                 if item.isExpanded():
                     item.setExpanded(False)
                 else:
@@ -3086,33 +3365,60 @@ class WorkbenchWindow(BaseWindow):
             info_lines.append(f"Size: {size_str}")
             info_lines.append(f"Modified: {mod_time}")
 
+            # Show type-specific info
             try:
-                with h5py.File(file_path, 'r') as h5file:
-                    # Count groups and datasets
-                    def count_items(group, counts):
-                        for key in group.keys():
-                            item = group[key]
-                            if isinstance(item, h5py.Group):
-                                counts['groups'] += 1
-                                count_items(item, counts)
-                            elif isinstance(item, h5py.Dataset):
-                                counts['datasets'] += 1
+                if self._is_hdf5_path(file_path):
+                    with h5py.File(file_path, 'r') as h5file:
+                        # Count groups and datasets
+                        def count_items(group, counts):
+                            for key in group.keys():
+                                item = group[key]
+                                if isinstance(item, h5py.Group):
+                                    counts['groups'] += 1
+                                    count_items(item, counts)
+                                elif isinstance(item, h5py.Dataset):
+                                    counts['datasets'] += 1
 
-                    counts = {'groups': 0, 'datasets': 0}
-                    count_items(h5file, counts)
+                        counts = {'groups': 0, 'datasets': 0}
+                        count_items(h5file, counts)
 
-                    info_lines.append("")
-                    info_lines.append("HDF5 Structure:")
-                    info_lines.append(f"Groups: {counts['groups']}")
-                    info_lines.append(f"Datasets: {counts['datasets']}")
+                        info_lines.append("")
+                        info_lines.append("HDF5 Structure:")
+                        info_lines.append(f"Groups: {counts['groups']}")
+                        info_lines.append(f"Datasets: {counts['datasets']}")
 
-                    # Get HDF5 attributes if any
-                    if h5file.attrs:
-                        info_lines.append(f"File Attributes: {len(h5file.attrs)}")
-
-            except Exception as e:
-                info_lines.append("")
-                info_lines.append(f"HDF5 Error: {str(e)}")
+                        # Get HDF5 attributes if any
+                        if h5file.attrs:
+                            info_lines.append(f"File Attributes: {len(h5file.attrs)}")
+                elif self._is_image_path(file_path):
+                    # Try to read image dimensions without forcing display
+                    try:
+                        import tifffile as tiff
+                        data = tiff.imread(file_path)
+                    except Exception:
+                        data = None
+                    if data is None:
+                        try:
+                            from PIL import Image
+                            img = Image.open(file_path)
+                            data = np.asarray(img)
+                        except Exception:
+                            data = None
+                    if data is None:
+                        try:
+                            import imageio.v2 as iio
+                            data = iio.imread(file_path)
+                        except Exception:
+                            data = None
+                    if data is not None:
+                        arr = np.asarray(data)
+                        shp = tuple(map(int, getattr(arr, 'shape', ())))
+                        info_lines.append("")
+                        info_lines.append("Image Info:")
+                        info_lines.append(f"Shape: {shp}")
+                        info_lines.append(f"Data Type: {getattr(arr, 'dtype', '')}")
+            except Exception:
+                pass
 
             # Add additional info if provided
             if additional_info:
