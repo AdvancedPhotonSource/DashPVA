@@ -11,11 +11,11 @@ from pathlib import Path
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QAction, QMenuBar, QLabel
 from PyQt5.QtCore import pyqtSignal, Qt, QTimer
 from PyQt5 import uic
-from database import DatabaseInterface
+#from database import DatabaseInterface
 from viewer.documentation.dialog import DocumentationDialog
 import time, subprocess, shutil
 
-di = DatabaseInterface()
+#di = DatabaseInterface()
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

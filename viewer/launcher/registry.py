@@ -55,4 +55,12 @@ VIEWS = [
         'running_text': 'Metadata Converter — Running…',
         'tooltip': 'Open the Metadata Converter tool'
     },
+    {
+        'key': 'file_convert',
+        'label': 'File Convert',
+        'section': 'Tools',
+        'cmd': [sys.executable, 'viewer/tools/file_convert.py'],
+        'running_text': 'File Convert — Running…',
+        'tooltip': 'Convert folder(s) to HDF5 in standard structure'
+    },
 ]

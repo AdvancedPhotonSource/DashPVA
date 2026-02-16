@@ -8,6 +8,19 @@ Inherits from BaseWindow for consistent functionality across the application.
 import sys
 import os
 from pathlib import Path
+
+try:
+    # workbench.py lives at <project_root>/viewer/workbench/workbench.py
+    # parents[2] => <project_root> when file path is .../<project_root>/viewer/workbench/workbench.py
+    _project_root = Path(__file__).resolve().parents[2]
+    # Put this worktree's project root at the front of sys.path
+    sys.path.insert(0, str(_project_root))
+    # Expose project_root for other code (e.g., excepthook below)
+    project_root = _project_root
+except Exception:
+    # Fallback: current working directory
+    project_root = Path.cwd()
+
 from PyQt5.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem, QFileDialog, QMenu, QAction, QVBoxLayout, QDockWidget, QListWidget, QListWidgetItem, QInputDialog, QTableWidget, QTableWidgetItem, QPushButton, QLabel, QWidget
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot, QThread, QObject, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QCursor
@@ -21,8 +34,8 @@ from viewer.workbench.workspace.workspace_3d import Workspace3D
 
 
 # Add the project root to the Python path
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
+# project_root = Path(__file__).resolve().parents[2]
+# sys.path.insert(0, str(project_root))
 
 from viewer.base_window import BaseWindow
 from utils.hdf5_loader import HDF5Loader
@@ -31,12 +44,15 @@ from utils.hdf5_loader import HDF5Loader
 from viewer.controls.controls_1d import Controls1D
 from viewer.controls.controls_2d import Controls2D
 from viewer.workbench.managers.roi_manager import ROIManager
+
+# Docks
 from viewer.workbench.dock_window import DockWindow
 from viewer.workbench.docks.data_structure import DataStructureDock
 from viewer.workbench.docks.info_2d_dock import Info2DDock
 from viewer.workbench.docks.info_3d_dock import Info3DDock
 from viewer.workbench.docks.slice_plane import SlicePlaneDock
 #from viewer.workbench.docks.dash_ai import DashAI
+from viewer.workbench.docks.dock_win import DockWinDock
 
 
 class WorkbenchWindow(BaseWindow):
@@ -63,6 +79,11 @@ class WorkbenchWindow(BaseWindow):
         self.info_2d_dock = Info2DDock(main_window=self, title="2D Info", segment_name="2d", dock_area=Qt.RightDockWidgetArea)
         # info dock (3D)
         self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea)
+        # Add Window control dock (right side under 'other')
+        try:
+            self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
+        except Exception:
+            self.add_window_dock = None
         # roi 
 
         # Alias Workbench's tree to the dock's tree widget
@@ -219,14 +240,18 @@ class WorkbenchWindow(BaseWindow):
             action_plot = QAction("Open ROI Plot", self)
             action_plot.triggered.connect(lambda: self.open_roi_plot_dock(roi))
             menu.addAction(action_plot)
-            # Also provide windowed ROI plot with ROI Math panel
-            action_plot_window = QAction("Open ROI Plot (Window)", self)
-            action_plot_window.triggered.connect(lambda: self.open_roi_plot(roi))
-            menu.addAction(action_plot_window)
+            # Open ROI Plot dock in DockWindow
+            action_plot_dock_window = QAction("Open ROI Plot Dock (Window)", self)
+            action_plot_dock_window.triggered.connect(lambda: self.open_roi_plot_dock_in_window(roi))
+            menu.addAction(action_plot_dock_window)
             # Also provide ROI Math dock
             action_math_dock = QAction("Open ROI Math Dock", self)
             action_math_dock.triggered.connect(lambda: self.open_roi_math_dock(roi))
             menu.addAction(action_math_dock)
+            # Open ROI Math dock in DockWindow
+            action_math_dock_window = QAction("Open ROI Math Dock (Window)", self)
+            action_math_dock_window.triggered.connect(lambda: self.open_roi_math_dock_in_window(roi))
+            menu.addAction(action_math_dock_window)
             # Potential future actions can be added here
             menu.exec_(self.roi_list.mapToGlobal(position))
         except Exception as e:
@@ -400,22 +425,187 @@ class WorkbenchWindow(BaseWindow):
     def create_dock_window_and_show(self):
         """Create a new modeless empty window to host dockables later."""
         try:
+            # Enforce a cap of 2 additional windows
+            try:
+                if len(self._dock_windows) >= 2:
+                    QMessageBox.information(self, "Add Window", "Maximum of 2 additional windows is reached.")
+                    return
+            except Exception:
+                # If something goes wrong reading the count, continue to attempt creation
+                pass
+
             win = DockWindow(self, title="Dock Window", width=1000, height=700)
             # Keep reference to prevent garbage collection while open
             self._dock_windows.append(win)
+
+            # Wire destroyed hook: remove from list and notify dock to refresh count/labels
             try:
-                win.destroyed.connect(lambda _: self._dock_windows.remove(win) if win in self._dock_windows else None)
+                def _on_win_destroyed(_obj=None):
+                    try:
+                        if win in self._dock_windows:
+                            self._dock_windows.remove(win)
+                    except Exception:
+                        pass
+                    # Notify dock about count change
+                    try:
+                        self._notify_add_window_count_changed()
+                    except Exception:
+                        pass
+                win.destroyed.connect(_on_win_destroyed)
             except Exception:
                 pass
+
+            # Show modeless and bring to foreground
             win.show()
-            # Do not disable main window; ensure modeless behavior
             try:
                 win.raise_()
                 win.activateWindow()
             except Exception:
                 pass
+
+            # Notify dock after creation
+            try:
+                self._notify_add_window_count_changed()
+            except Exception:
+                pass
         except Exception as e:
             self.update_status(f"Error creating Dock Window: {e}")
+
+    # --- DockWindow helpers (no BaseDock/global menu changes) ---
+    def get_first_dock_window(self):
+        """Return the first available DockWindow if one exists, else None."""
+        try:
+            wins = getattr(self, "_dock_windows", None)
+            if isinstance(wins, (list, tuple)) and len(wins) > 0:
+                # Prefer a visible/valid window
+                for w in wins:
+                    try:
+                        if w is not None and not w.isHidden():
+                            return w
+                    except Exception:
+                        # Fallback: return the first non-None even if we cannot query visibility
+                        if w is not None:
+                            return w
+                # If all hidden or checks failed, return the most recent one
+                return wins[-1]
+        except Exception:
+            pass
+        return None
+
+    def get_or_create_dock_window(self):
+        """Return an existing DockWindow or create one using create_dock_window_and_show()."""
+        try:
+            win = self.get_first_dock_window()
+            if win is not None:
+                try:
+                    # Bring to front if possible
+                    if hasattr(win, "show_and_focus"):
+                        win.show_and_focus()
+                    else:
+                        win.show()
+                        win.raise_()
+                        win.activateWindow()
+                except Exception:
+                    pass
+                return win
+            # None found -> create one on demand
+            self.create_dock_window_and_show()
+            try:
+                wins = getattr(self, "_dock_windows", None)
+                if isinstance(wins, (list, tuple)) and len(wins) > 0:
+                    return wins[-1]
+            except Exception:
+                pass
+            return None
+        except Exception:
+            return None
+
+    def _notify_add_window_count_changed(self):
+        """Notify the Add Window dock (if present) that the window count changed."""
+        try:
+            if hasattr(self, 'add_window_dock') and self.add_window_dock is not None:
+                try:
+                    self.add_window_dock.refresh_counts()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # --- ROI docks in separate DockWindow ---
+    def open_roi_plot_dock_in_window(self, roi):
+        """Open the ROI Plot dock inside a DockWindow (creates one on demand)."""
+        try:
+            if roi is None:
+                QMessageBox.information(self, "ROI Plot", "No ROI selected.")
+                return
+            win = self.get_or_create_dock_window()
+            if win is None:
+                QMessageBox.information(self, "ROI Plot", "Could not open or create a Dock Window.")
+                return
+            try:
+                from viewer.workbench.roi_plot_dock import ROIPlotDock
+            except Exception:
+                ROIPlotDock = None
+            if ROIPlotDock is None:
+                QMessageBox.warning(self, "ROI Plot", "ROIPlotDock not available.")
+                return
+            dock_title = f"ROI: {self.get_roi_name(roi)}"
+            dock = ROIPlotDock(win, dock_title, self, roi)
+            try:
+                win.addDockWidget(Qt.RightDockWidgetArea, dock)
+            except Exception:
+                # Best effort: show without docking if addDockWidget fails
+                pass
+            dock.show()
+            # Track alive docks for title/refresh updates
+            try:
+                if not hasattr(self, '_roi_plot_dock_widgets') or self._roi_plot_dock_widgets is None:
+                    self._roi_plot_dock_widgets = []
+                self._roi_plot_dock_widgets.append(dock)
+                if not hasattr(self, 'roi_plot_docks_by_roi_id') or self.roi_plot_docks_by_roi_id is None:
+                    self.roi_plot_docks_by_roi_id = {}
+                self.roi_plot_docks_by_roi_id.setdefault(id(roi), []).append(dock)
+            except Exception:
+                pass
+        except Exception as e:
+            self.update_status(f"Error opening ROI Plot dock in window: {e}")
+
+    def open_roi_math_dock_in_window(self, roi):
+        """Open the ROI Math dock inside a DockWindow (creates one on demand)."""
+        try:
+            if roi is None:
+                QMessageBox.information(self, "ROI Math", "No ROI selected.")
+                return
+            win = self.get_or_create_dock_window()
+            if win is None:
+                QMessageBox.information(self, "ROI Math", "Could not open or create a Dock Window.")
+                return
+            try:
+                from viewer.workbench.roi_math_dock import ROIMathDock
+            except Exception:
+                ROIMathDock = None
+            if ROIMathDock is None:
+                QMessageBox.warning(self, "ROI Math", "ROIMathDock not available.")
+                return
+            dock_title = f"ROI Math: {self.get_roi_name(roi)}"
+            dock = ROIMathDock(win, dock_title, self, roi)
+            try:
+                win.addDockWidget(Qt.RightDockWidgetArea, dock)
+            except Exception:
+                pass
+            dock.show()
+            # Track alive docks
+            try:
+                if not hasattr(self, '_roi_math_dock_widgets') or self._roi_math_dock_widgets is None:
+                    self._roi_math_dock_widgets = []
+                self._roi_math_dock_widgets.append(dock)
+                if not hasattr(self, 'roi_math_docks_by_roi_id') or self.roi_math_docks_by_roi_id is None:
+                    self.roi_math_docks_by_roi_id = {}
+                self.roi_math_docks_by_roi_id.setdefault(id(roi), []).append(dock)
+            except Exception:
+                pass
+        except Exception as e:
+            self.update_status(f"Error opening ROI Math dock in window: {e}")
 
     def setup_roi_stats_dock(self):
         try:
@@ -2922,6 +3112,14 @@ class WorkbenchWindow(BaseWindow):
 
             menu.addSeparator()
 
+            # New: play images in this folder as a stacked sequence
+            play_stack_action = QAction("Play images as stack", self)
+            play_stack_action.setToolTip("Load all images in this folder as a frame stack and enable playback")
+            play_stack_action.triggered.connect(lambda: self._play_folder_section_stack(item))
+            menu.addAction(play_stack_action)
+
+            menu.addSeparator()
+
             # Add option to collapse/expand all files in folder
             collapse_all_files_action = QAction("Collapse All Files", self)
             collapse_all_files_action.triggered.connect(lambda: self.collapse_all_files_in_folder(item))
@@ -2939,6 +3137,104 @@ class WorkbenchWindow(BaseWindow):
 
             # Show menu at the requested position
             menu.exec_(self.tree_data.mapToGlobal(position))
+
+    def _play_folder_section_stack(self, item):
+        """Stack all supported images within the folder section and play them in the 2D viewer.
+
+        Supported formats: .tif, .tiff, .png, .jpg, .jpeg, .bmp
+        Search is non-recursive (immediate files only) for the first iteration.
+        """
+        try:
+            # Resolve folder path and name
+            folder_path = item.data(0, Qt.UserRole + 1)
+            if not folder_path or not os.path.isdir(folder_path):
+                QMessageBox.information(self, "Play Images", "Selected folder path is invalid.")
+                return
+            folder_name = os.path.basename(folder_path)
+
+            # Import on demand to avoid unnecessary startup overhead
+            try:
+                from viewer.tools.file_convert import list_images, stack_images
+            except Exception:
+                QMessageBox.critical(self, "Play Images", "Required image utilities are unavailable.")
+                return
+
+            # Collect image files (non-recursive, lowercase patterns)
+            patterns = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.bmp']
+            files = list_images(Path(folder_path), patterns, recursive=False)
+            if not files:
+                QMessageBox.information(self, "No Images", "No supported images found in the selected folder.")
+                try:
+                    self.update_status("No images found in folder", level='warning')
+                except Exception:
+                    pass
+                return
+
+            # Stack images; skip size mismatches internally
+            vol, shape_hw, used = stack_images(files, log=lambda msg: self.update_status(str(msg)))
+            if vol.size == 0:
+                QMessageBox.information(self, "No Usable Images", "No images with a consistent shape could be loaded.")
+                try:
+                    self.update_status("No usable images (size mismatches)", level='warning')
+                except Exception:
+                    pass
+                return
+
+            # Safety: warn if very large memory footprint (>1 GB); proceed (no cancel) for initial iteration
+            try:
+                if getattr(vol, 'nbytes', 0) > 1_000_000_000:
+                    sz_gb = vol.nbytes / (1024 * 1024 * 1024)
+                    QMessageBox.warning(self, "Large Stack", f"Stack size is large: {sz_gb:.2f} GB. Playback may impact performance.")
+                    self.update_status("Warning: Large stack loaded into memory")
+            except Exception:
+                pass
+
+            # Display data in 2D viewer; enables frame controls and shows "Frame 0 of N"
+            self.display_2d_data(vol)
+            try:
+                if hasattr(self, 'tabWidget_analysis') and self.tabWidget_analysis is not None:
+                    self.tabWidget_analysis.setCurrentIndex(0)
+            except Exception:
+                pass
+
+            # Update UI labels
+            try:
+                if hasattr(self, 'file_status_label') and self.file_status_label is not None:
+                    self.file_status_label.setText(f"Playing folder: {folder_name} ({int(vol.shape[0])} frames)")
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'dataset_info_text') and self.dataset_info_text is not None:
+                    h, w = (int(shape_hw[0]), int(shape_hw[1])) if isinstance(shape_hw, tuple) and len(shape_hw) == 2 else (int(vol.shape[1]), int(vol.shape[2]))
+                    info_lines = [
+                        f"Folder path: {folder_path}",
+                        f"Frame count: {int(vol.shape[0])}",
+                        f"Frame shape (H,W): ({h}, {w})",
+                        f"Dtype: {vol.dtype}",
+                        f"Total elements: {int(vol.size):,}",
+                    ]
+                    self.dataset_info_text.setPlainText("\n".join(info_lines))
+            except Exception:
+                pass
+
+            # Auto-start playback when multiple frames are available (default behavior)
+            try:
+                if int(vol.shape[0]) > 1:
+                    self.start_playback()
+            except Exception:
+                pass
+
+            # Status update
+            try:
+                self.update_status(f"Playing stack from folder: {folder_name} ({int(vol.shape[0])} frames)")
+            except Exception:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Play Images", f"Failed to stack images from folder: {e}")
+            try:
+                self.update_status(f"Error stacking images: {e}", level='error')
+            except Exception:
+                pass
 
     def remove_file(self, item):
         """
