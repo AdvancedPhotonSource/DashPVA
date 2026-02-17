@@ -1,7 +1,7 @@
 """
-LiveStitch-style patching/stitching for vit:1:input_phase.
+LiveStitch-style patching/stitching for vit:1:CSSI.
 Produces five panels: transmission, diffraction, beam position, NN prediction, NN stitched.
-Used by PVAReader when subscribing to vit:1:input_phase.
+Used by PVAReader when subscribing to vit:1:CSSI.
 Works with or without PyTorch (numpy fallback when torch unavailable).
 """
 from math import pi
@@ -255,7 +255,7 @@ def _find_npz_path(env_path: str = "", explicit_path: str = None) -> str:
 
 class VitStitcher:
     """
-    Stateful stitcher for vit:1:input_phase stream.
+    Stateful stitcher for vit:1:CSSI stream.
     Expects stream shape (512, 256): diff = stream[:256,:], data = stream[256:,:].
     Positions: from CSV (default) if VIT_STITCH_POSITIONS_CSV or default path exists, else npz, else HDF5.
     Returns five panels: transmission, diffraction, beam_position, nn_prediction, nn_stitched.
@@ -680,7 +680,7 @@ class VitStitcher:
         data_max = float(np.max(data))
         if data_max == 0 and not getattr(self, "_zero_data_warned", False):
             self._zero_data_warned = True
-            print("[VitStitcher] WARNING: Input patch data is all zero. Stitching panels will be black (check shutter / vit:1:input_phase).")
+            print("[VitStitcher] WARNING: Input patch data is all zero. Stitching panels will be black (check shutter / vit:1:CSSI).")
 
         if not self._ready:
             transmission = np.zeros((2, 2), dtype=np.float32)

@@ -85,9 +85,9 @@ class PVAReader:
         self.rois = {}
         self.stats = {}
 
-        # VIT stitch mode (only for vit:1:input_phase)
+        # VIT stitch mode (only for vit:1:CSSI)
         self._vit_mode = (
-            self.input_channel == 'vit:1:input_phase' and _vit_stitch is not None
+            self.input_channel == 'vit:1:CSSI' and _vit_stitch is not None
         )
         self._vit_monitoring = False
         if self._vit_mode:
@@ -98,8 +98,8 @@ class PVAReader:
             self._vit_thread = None
             self._vit_thread_running = False
         else:
-            if self.input_channel == 'vit:1:input_phase' and _vit_stitch is None:
-                print("[PVAReader] vit:1:input_phase requested but vit_stitch not available.")
+            if self.input_channel == 'vit:1:CSSI' and _vit_stitch is None:
+                print("[PVAReader] vit:1:CSSI requested but vit_stitch not available.")
             else:
                 print(f"[PVAReader] Initializing in STANDARD mode for {self.input_channel}")
 
@@ -317,7 +317,7 @@ class PVAReader:
             self._vit_thread_running = True
             self._vit_thread = threading.Thread(target=self._drain_loop, daemon=True)
             self._vit_thread.start()
-            print("[PVAReader] vit:1:input_phase monitoring started (threaded drain).")
+            print("[PVAReader] vit:1:CSSI monitoring started (threaded drain).")
         else:
             self.channel.subscribe('pva callback success', self.pva_callbackSuccess)
             self.channel.startMonitor()

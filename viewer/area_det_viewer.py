@@ -161,8 +161,8 @@ class ImageWindow(QMainWindow):
         self.horizontal_avg_plot.setMaximumWidth(175)
         self.horizontal_avg_plot.setYLink(self.image_view.getView())
 
-        # VIT 5-panel mode: add 4 extra image views only if channel is vit:1:input_phase
-        self._is_vit_stitch = (input_channel == 'vit:1:input_phase')
+        # VIT 5-panel mode: add 4 extra image views only if channel is vit:1:CSSI
+        self._is_vit_stitch = (input_channel == 'vit:1:CSSI')
         self.image_view_2 = None
         self.image_view_3 = None
         self.image_view_4 = None
@@ -238,7 +238,7 @@ class ImageWindow(QMainWindow):
             self._vit_scale_bar_added = False
             self._vit_last_autoscale_log_state = None
             print("[DashPVA] VIT 5-panel layout initialized.")
-        # Horizontal avg 1D plot (hidden when vit:1:input_phase)
+        # Horizontal avg 1D plot (hidden when vit:1:CSSI)
         if not self._is_vit_stitch:
             self.viewer_layout.addWidget(self.horizontal_avg_plot, 1, 0)
 
