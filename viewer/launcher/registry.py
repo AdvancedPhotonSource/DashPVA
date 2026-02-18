@@ -5,6 +5,15 @@ import sys
 # Sections are rendered in the order they first appear in this list.
 # To add a new view, append another dict with the same keys.
 VIEWS = [
+    # setup
+    {
+        'key':'setup',
+        'label': 'Setup',
+        'section': 'Setup',
+        'cmd': [sys.executable, 'dashpva.py', 'setup'],
+        'running_text': 'Setup — Running…',
+        'tooltip': 'Open Setup (CLI: dashpva.py setup)'
+    },
     # streaming
     {
         'key': 'area_det',
