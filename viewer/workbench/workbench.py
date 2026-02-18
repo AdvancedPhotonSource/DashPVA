@@ -3857,6 +3857,12 @@ class WorkbenchWindow(BaseWindow):
             # Update overlay text
             self.update_overlay_text(width, height, f"Frame {frame_index} of {num_frames}")
 
+            # Update per-frame Vmin/Vmax controls and data-domain hint labels
+            try:
+                self._update_vmin_vmax_for_frame(frame_data)
+            except Exception:
+                pass
+
             # Update hover tooltip/crosshair at last position during playback
             try:
                 xy = getattr(self, '_last_hover_xy', None)
@@ -3890,6 +3896,80 @@ class WorkbenchWindow(BaseWindow):
 
         except Exception as e:
             self.update_status(f"Error changing frame: {e}")
+
+    def _update_vmin_vmax_for_frame(self, frame_data):
+        """Update Vmin/Vmax spinbox ranges (and values when not in manual override) per current frame.
+
+        Also refreshes the data-domain hint labels (Vmin(...): / Vmax(...):) to reflect this frame's extrema.
+        Respects log scale ranges and _manual_levels_override.
+        """
+        try:
+            if frame_data is None:
+                return
+            # Compute integer-friendly extrema for the current frame
+            try:
+                min_val = int(np.min(frame_data))
+                max_val = int(np.max(frame_data))
+            except Exception:
+                return
+
+            manual_override = bool(getattr(self, '_manual_levels_override', False))
+
+            # Use log-scale friendly ranges when enabled
+            log_enabled = hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked()
+            if log_enabled:
+                try:
+                    pos = frame_data[frame_data > 0]
+                    min_pos = int(np.min(pos)) if pos.size > 0 else 1
+                except Exception:
+                    min_pos = 1
+                vmin_floor = max(1, min_pos)
+                vmax_cap = max_val
+
+                # Update ranges and values guarded
+                try:
+                    self._suppress_spinbox_handlers = True
+                    if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                        self.sbVmin.setRange(1, vmax_cap)
+                        if not manual_override:
+                            self.sbVmin.setValue(vmin_floor)
+                    if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                        upper = max(vmax_cap * 2, int(getattr(self, '_manual_vmax', vmax_cap) or vmax_cap))
+                        self.sbVmax.setRange(vmin_floor + 1, upper)
+                        if not manual_override:
+                            self.sbVmax.setValue(vmax_cap)
+                finally:
+                    try:
+                        self._suppress_spinbox_handlers = False
+                    except Exception:
+                        pass
+            else:
+                # Linear scale: full data range
+                try:
+                    self._suppress_spinbox_handlers = True
+                    if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                        lower = min(min_val, int(getattr(self, '_manual_vmin', min_val) or min_val))
+                        self.sbVmin.setRange(lower, max_val)
+                        if not manual_override:
+                            self.sbVmin.setValue(min_val)
+                    if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                        upper = max(max_val * 2, int(getattr(self, '_manual_vmax', max_val) or max_val))
+                        self.sbVmax.setRange(min_val + 1, upper)
+                        if not manual_override:
+                            self.sbVmax.setValue(max_val)
+                finally:
+                    try:
+                        self._suppress_spinbox_handlers = False
+                    except Exception:
+                        pass
+
+            # Keep the hint labels in sync with current frame (data-domain)
+            try:
+                self._update_vmin_vmax_hints()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def start_playback(self):
         """Start frame playback if a 3D stack is loaded and controls are enabled."""
