@@ -73,6 +73,7 @@ dependencies:
   - harfbuzz=10.4.0=h76408a6_0
   - hdf4=4.2.15=h2a13503_7
   - hdf5=1.14.4=nompi_h2d575fe_105
+  - hdf5plugin=5.0.0=py311hcc3c85e_2
   - hpack=4.1.0=pyhd8ed1ab_0
   - hyperframe=6.1.0=pyhd8ed1ab_0
   - icu=75.1=he02047a_0
