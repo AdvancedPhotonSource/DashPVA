@@ -4,13 +4,22 @@ Encapsulates signal connections for 2D-specific UI elements.
 """
 
 from typing import Optional
-from PyQt5.QtWidgets import QLabel, QHBoxLayout
+from PyQt5.QtWidgets import (
+    QLabel,
+    QHBoxLayout,
+    QVBoxLayout,
+    QGridLayout,
+    QFormLayout,
+    QWidget,
+    QLayout,
+)
 
 
 class Controls2D:
     def __init__(self, main_window):
         self.main = main_window
         self._roi_stats_label_added = False
+        self._vmin_vmax_hints_inserted = False
 
     def setup(self) -> None:
         """Wire up 2D controls to main window handlers."""
@@ -38,6 +47,73 @@ class Controls2D:
                 self.main.sbVmin.valueChanged.connect(self.main.on_vmin_changed)
             if hasattr(self.main, 'sbVmax'):
                 self.main.sbVmax.valueChanged.connect(self.main.on_vmax_changed)
+
+            # Create two hint labels for Vmin/Vmax (data-domain). Create once on main.
+            try:
+                if not hasattr(self.main, 'lblVminHint') or self.main.lblVminHint is None:
+                    self.main.lblVminHint = QLabel("Vmin(...):")
+                    self.main.lblVminHint.setStyleSheet("color: #6c757d; font-size: 10px; padding-right: 6px;")
+                if not hasattr(self.main, 'lblVmaxHint') or self.main.lblVmaxHint is None:
+                    self.main.lblVmaxHint = QLabel("Vmax(...):")
+                    self.main.lblVmaxHint.setStyleSheet("color: #6c757d; font-size: 10px; padding-right: 6px;")
+            except Exception:
+                # If creation fails, continue without hints
+                pass
+
+            # Attempt to place hints immediately before sbVmin/sbVmax using runtime layout introspection
+            try:
+                placed_vmin = False
+                placed_vmax = False
+                if (hasattr(self.main, 'lblVminHint') and hasattr(self.main, 'sbVmin') and
+                        self.main.lblVminHint is not None and self.main.sbVmin is not None and
+                        not self._vmin_vmax_hints_inserted):
+                    placed_vmin = self._insert_label_before_widget(self.main.lblVminHint, self.main.sbVmin)
+                if (hasattr(self.main, 'lblVmaxHint') and hasattr(self.main, 'sbVmax') and
+                        self.main.lblVmaxHint is not None and self.main.sbVmax is not None and
+                        not self._vmin_vmax_hints_inserted):
+                    placed_vmax = self._insert_label_before_widget(self.main.lblVmaxHint, self.main.sbVmax)
+
+                # Fallback: if precise placement fails for one or both, add only the missing ones into layout_2d_controls_main
+                if not (placed_vmin and placed_vmax):
+                    try:
+                        if hasattr(self.main, 'layout_2d_controls_main') and self.main.layout_2d_controls_main is not None:
+                            hbox_hints = QHBoxLayout()
+                            try:
+                                hbox_hints.setContentsMargins(0, 0, 0, 0)
+                                hbox_hints.setSpacing(4)
+                            except Exception:
+                                pass
+                            # Add only widgets that are not already parented/placed
+                            if not placed_vmin and hasattr(self.main, 'lblVminHint') and self.main.lblVminHint is not None:
+                                try:
+                                    if self.main.lblVminHint.parentWidget() is None:
+                                        hbox_hints.addWidget(self.main.lblVminHint)
+                                except Exception:
+                                    pass
+                            if not placed_vmax and hasattr(self.main, 'lblVmaxHint') and self.main.lblVmaxHint is not None:
+                                try:
+                                    if self.main.lblVmaxHint.parentWidget() is None:
+                                        hbox_hints.addWidget(self.main.lblVmaxHint)
+                                except Exception:
+                                    pass
+                            # Only add layout if we actually added any widgets
+                            if hbox_hints.count() > 0:
+                                self.main.layout_2d_controls_main.addLayout(hbox_hints)
+                            # Mark as inserted if both are now parented somewhere
+                            try:
+                                vmin_ok = hasattr(self.main, 'lblVminHint') and self.main.lblVminHint is not None and self.main.lblVminHint.parentWidget() is not None
+                                vmax_ok = hasattr(self.main, 'lblVmaxHint') and self.main.lblVmaxHint is not None and self.main.lblVmaxHint.parentWidget() is not None
+                                self._vmin_vmax_hints_inserted = bool(vmin_ok and vmax_ok)
+                            except Exception:
+                                self._vmin_vmax_hints_inserted = self._vmin_vmax_hints_inserted or (placed_vmin and placed_vmax)
+                    except Exception:
+                        # As a last resort, do nothing; hints remain unattached
+                        pass
+                else:
+                    self._vmin_vmax_hints_inserted = True
+            except Exception:
+                # Guard UI quirks
+                pass
 
             # ROI drawing
             if hasattr(self.main, 'btnDrawROI'):
@@ -116,3 +192,74 @@ class Controls2D:
                 self.main.update_status(f"Error setting up 2D connections: {e}")
             except Exception:
                 pass
+
+    def _insert_label_before_widget(self, label: QLabel, widget: QWidget) -> bool:
+        """Safely place a label immediately before a target widget within its parent layout.
+
+        Supports QHBoxLayout/QVBoxLayout by iterating items to find index and insert.
+        Supports QGridLayout via indexOf/widget position; tries (row, col-1) if empty.
+        Supports QFormLayout via getWidgetPosition; uses LabelRole when available.
+        Returns True on successful insertion; False otherwise.
+        """
+        try:
+            if label is None or widget is None:
+                return False
+            parent = widget.parentWidget()
+            if parent is None:
+                return False
+            layout = parent.layout() if hasattr(parent, 'layout') else None
+            if layout is None:
+                return False
+
+            # Linear layouts: insert before the found index
+            try:
+                if isinstance(layout, (QHBoxLayout, QVBoxLayout)):
+                    for i in range(layout.count()):
+                        it = layout.itemAt(i)
+                        w = it.widget() if it is not None else None
+                        if w is widget:
+                            layout.insertWidget(i, label)
+                            return True
+                    return False
+            except Exception:
+                pass
+
+            # Grid layout: attempt to place label in previous column if free
+            try:
+                if isinstance(layout, QGridLayout):
+                    idx = layout.indexOf(widget)
+                    if idx >= 0:
+                        row, col, rowSpan, colSpan = layout.getItemPosition(idx)
+                        if col > 0:
+                            existing = layout.itemAtPosition(row, col - 1)
+                            if existing is None:
+                                layout.addWidget(label, row, col - 1)
+                                return True
+                    # Fallback not supported without restructuring; return False
+                    return False
+            except Exception:
+                pass
+
+            # Form layout: put label in LabelRole if available
+            try:
+                if isinstance(layout, QFormLayout):
+                    pos = layout.getWidgetPosition(widget)
+                    if pos is not None:
+                        row, role = pos
+                        # Only insert if label slot is empty
+                        try:
+                            existing = layout.itemAt(row, QFormLayout.LabelRole)
+                            has_existing = existing is not None and existing.widget() is not None
+                        except Exception:
+                            has_existing = True
+                        if not has_existing:
+                            layout.setWidget(row, QFormLayout.LabelRole, label)
+                            return True
+                    return False
+            except Exception:
+                pass
+
+            # Unsupported layout type
+            return False
+        except Exception:
+            return False
