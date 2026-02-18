@@ -256,7 +256,9 @@ class HDF5Loader:
                 - num_images (int): Number of images
                 - shape (Tuple[int, int]): Image dimensions (height, width)
         """
-        pass
+        raise NotImplementedError(
+            "load_h5_to_2d is not implemented. Use load_h5_images_2d for image stacks or load_h5_to_3d for HKL coordinates."
+        )
     
     def load_h5_images_2d(self, file_path: str) -> Tuple[np.ndarray, int, Tuple[int, int]]:
         """
@@ -271,7 +273,9 @@ class HDF5Loader:
                 - num_images (int): Number of images
                 - shape (Tuple[int, int]): Image dimensions (height, width)
         """
-        pass
+        raise NotImplementedError(
+            "load_h5_images_2d is not implemented. Use load_h5_volume_3d for standardized volume/slice loading or read '/entry/data/data' directly."
+        )
     
     # ================ 3D LOADING METHODS ======================= #
     def load_h5_to_3d(self, file_path: str) -> Tuple[np.ndarray, np.ndarray, int, Tuple[int, int]]:
@@ -838,7 +842,9 @@ class HDF5Loader:
         Returns:
             bool: True if save successful
         """
-        pass
+        raise NotImplementedError(
+            "save_images_to_h5 is not implemented. Use save_vol_to_h5 for volume/slice saving or implement image-stack saving."
+        )
     
     def save_vol_to_h5(self, file_path: str, volume: np.ndarray, 
                          metadata: Optional[dict] = None) -> bool:
@@ -1425,7 +1431,9 @@ class HDF5Loader:
                 - points_3d (np.ndarray): 3D points (N, 3)
                 - intensities (np.ndarray): Intensity values
         """
-        pass
+        raise NotImplementedError(
+            "convert_2d_to_3d is not implemented. Provide z_values or use a 3D reconstruction workflow."
+        )
     
     def extract_slice_from_3d(self, points_3d: np.ndarray, intensities: np.ndarray, 
                              slice_axis: str = 'z', slice_value: float = 0.0, 
@@ -1445,7 +1453,9 @@ class HDF5Loader:
                 - points_2d (np.ndarray): 2D points from slice
                 - intensities_2d (np.ndarray): Corresponding intensities
         """
-        pass
+        raise NotImplementedError(
+            "extract_slice_from_3d is not implemented. Use extract_slice (points→image) or a dedicated slicer."
+        )
     
     def get_last_error(self) -> str:
         """Return the last recorded error message."""
