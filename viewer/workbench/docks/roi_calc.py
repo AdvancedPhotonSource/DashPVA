@@ -677,7 +677,30 @@ class ROICalcDock(BaseDock):
             pass
 
     def _refresh_memory_rois(self):
-        """Populate the A/B combo boxes with in-memory ROIs using <filename>ROI{n} naming."""
+        """Populate the A/B combo boxes with in-memory ROIs.
+
+        Display format for each entry is:
+            "<filename without extension> | <roi_name>"
+
+        Where:
+        - File path is taken from rm.get_roi_source(r).get('file_path') if available,
+          otherwise from main_window.current_file_path. If no path is available,
+          the basename defaults to 'Untitled'.
+        - The filename is reduced to its basename and last extension is removed
+          (e.g., 'sample.v2.h5' -> 'sample.v2'). If removing the extension yields
+          an empty string, the original basename is used instead.
+        - roi_name comes from ROIManager.get_roi_name(r), preserving user-renamed
+          and dataset-based names.
+
+        Notes:
+        - The previous per-file counters and conditional dataset-name swapping
+          have been removed. We always display the ROIManager-provided name after
+          the pipe.
+        - Examples:
+            'sample.v2.h5' + 'ROI 1' -> 'sample.v2 | ROI 1'
+            'myfile'       + 'ROI 2' -> 'myfile | ROI 2'
+            missing path   + 'ROI 1' -> 'Untitled | ROI 1'
+        """
         try:
             rm = getattr(self.main_window, 'roi_manager', None)
             if rm is None:
@@ -687,8 +710,6 @@ class ROICalcDock(BaseDock):
             self._roi_by_id = {}
             self.cboAName.clear()
             self.cboBName.clear()
-            # Compute per-file counters for memory-style numbering
-            counters = {}
             for r in rois:
                 try:
                     src = rm.get_roi_source(r) if hasattr(rm, 'get_roi_source') else {}
@@ -696,18 +717,22 @@ class ROICalcDock(BaseDock):
                     src = {}
                 fp = src.get('file_path') or getattr(self.main_window, 'current_file_path', None)
                 base = os.path.basename(fp) if isinstance(fp, str) and fp else 'Untitled'
-                # Determine display name: use dataset/file-backed name if not default 'ROI n'
+                # Remove only the last extension; if that yields empty, fallback to basename
+                try:
+                    base_no_ext = os.path.splitext(base)[0]
+                except Exception:
+                    base_no_ext = base
+                if not isinstance(base_no_ext, str) or base_no_ext.strip() == '':
+                    base_no_ext = base
+                # Get ROI display name from ROI manager (preserve user/dataset names)
                 try:
                     roi_name = rm.get_roi_name(r) if hasattr(rm, 'get_roi_name') else None
                 except Exception:
                     roi_name = None
-                use_dataset_name = isinstance(roi_name, str) and roi_name and not roi_name.strip().upper().startswith('ROI ')
-                if use_dataset_name:
-                    disp_name = roi_name
-                else:
-                    # Memory-only style naming per file
-                    counters[base] = counters.get(base, 0) + 1
-                    disp_name = f"{base}ROI{counters[base]}"
+                if not isinstance(roi_name, str) or roi_name.strip() == '':
+                    roi_name = 'ROI'
+                # Final display name per spec: "<basename_no_ext> | <roi_name>"
+                disp_name = f"{base_no_ext} | {roi_name}"
                 # Add entries
                 rid = id(r)
                 self._roi_by_id[rid] = r

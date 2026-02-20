@@ -3,9 +3,21 @@
 This file tracks the latest changes, features, and improvements in DashPVA.
 
 ---
+## Latest Changes (February 2026)
+### Added
+  - ROI calculated for math between specific ROI's
+    - Can then be exported to an h5 file
+    - Creates an image or a plot of the calculated ROI's
+  - Workbench supports all image file formats (.jpeg, .png, .bmp, .tif, .tiff)
+  - Conda supports hdf5plugin
+
+### Change
+  - All placeholder variables raise NotImplementedError
 
 ## Latest Changes (January 2026)
 - Workbench now supports loading compressed datasets for smoother analysis and smaller storage footprints. For legacy files, a converter will be provided to update the file structure so compression loads seamlessly.
+
+- Added data file tree to view files from folder from atree or a singular file
 
 # Latest Changes (December 2025)
 Merry Christmas

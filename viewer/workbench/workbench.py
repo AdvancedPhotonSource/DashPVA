@@ -8,14 +8,7 @@ Inherits from BaseWindow for consistent functionality across the application.
 import sys
 import os
 from pathlib import Path
-"""
-Path resolution guard
 
-Ensure this specific worktree is always preferred for imports, even if a parent
-checkout or installed package is also present on sys.path. This prevents Python
-from resolving modules like viewer.workbench.docks.roi_calc from a different
-copy outside this worktree.
-"""
 try:
     # workbench.py lives at <project_root>/viewer/workbench/workbench.py
     # parents[2] => <project_root> when file path is .../<project_root>/viewer/workbench/workbench.py
@@ -27,6 +20,7 @@ try:
 except Exception:
     # Fallback: current working directory
     project_root = Path.cwd()
+
 from PyQt5.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem, QFileDialog, QMenu, QAction, QVBoxLayout, QDockWidget, QListWidget, QListWidgetItem, QInputDialog, QTableWidget, QTableWidgetItem, QPushButton, QLabel, QWidget
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot, QThread, QObject, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QCursor
@@ -38,6 +32,11 @@ import time
 import pyqtgraph as pg
 from viewer.workbench.workspace.workspace_3d import Workspace3D
 
+
+# Add the project root to the Python path
+# project_root = Path(__file__).resolve().parents[2]
+# sys.path.insert(0, str(project_root))
+
 from viewer.base_window import BaseWindow
 from utils.hdf5_loader import HDF5Loader
 
@@ -45,6 +44,8 @@ from utils.hdf5_loader import HDF5Loader
 from viewer.controls.controls_1d import Controls1D
 from viewer.controls.controls_2d import Controls2D
 from viewer.workbench.managers.roi_manager import ROIManager
+
+# Docks
 from viewer.workbench.dock_window import DockWindow
 from viewer.workbench.docks.data_structure import DataStructureDock
 from viewer.workbench.docks.info_2d_dock import Info2DDock
@@ -52,6 +53,7 @@ from viewer.workbench.docks.info_3d_dock import Info3DDock
 from viewer.workbench.docks.slice_plane import SlicePlaneDock
 from viewer.workbench.docks.roi_calc import ROICalcDock
 #from viewer.workbench.docks.dash_ai import DashAI
+from viewer.workbench.docks.dock_win import DockWinDock
 
 
 class WorkbenchWindow(BaseWindow):
@@ -78,9 +80,12 @@ class WorkbenchWindow(BaseWindow):
         self.info_2d_dock = Info2DDock(main_window=self, title="2D Info", segment_name="2d", dock_area=Qt.RightDockWidgetArea)
         # info dock (3D)
         self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea)
-        # ROI Calculator dock (UI-only for now)
-        # ROICalcDock manages its own title and segment via BaseDock
-        self.roi_calc_dock = ROICalcDock(main_window=self, dock_area=Qt.RightDockWidgetArea)
+        # Add Window control dock (right side under 'other')
+        try:
+            self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
+        except Exception:
+            self.add_window_dock = None
+        # roi 
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
@@ -244,14 +249,18 @@ class WorkbenchWindow(BaseWindow):
             action_plot = QAction("Open ROI Plot", self)
             action_plot.triggered.connect(lambda: self.open_roi_plot_dock(roi))
             menu.addAction(action_plot)
-            # Also provide windowed ROI plot with ROI Math panel
-            action_plot_window = QAction("Open ROI Plot (Window)", self)
-            action_plot_window.triggered.connect(lambda: self.open_roi_plot(roi))
-            menu.addAction(action_plot_window)
+            # Open ROI Plot dock in DockWindow
+            action_plot_dock_window = QAction("Open ROI Plot Dock (Window)", self)
+            action_plot_dock_window.triggered.connect(lambda: self.open_roi_plot_dock_in_window(roi))
+            menu.addAction(action_plot_dock_window)
             # Also provide ROI Math dock
             action_math_dock = QAction("Open ROI Math Dock", self)
             action_math_dock.triggered.connect(lambda: self.open_roi_math_dock(roi))
             menu.addAction(action_math_dock)
+            # Open ROI Math dock in DockWindow
+            action_math_dock_window = QAction("Open ROI Math Dock (Window)", self)
+            action_math_dock_window.triggered.connect(lambda: self.open_roi_math_dock_in_window(roi))
+            menu.addAction(action_math_dock_window)
             # Potential future actions can be added here
             menu.exec_(self.roi_list.mapToGlobal(position))
         except Exception as e:
@@ -425,22 +434,187 @@ class WorkbenchWindow(BaseWindow):
     def create_dock_window_and_show(self):
         """Create a new modeless empty window to host dockables later."""
         try:
+            # Enforce a cap of 2 additional windows
+            try:
+                if len(self._dock_windows) >= 2:
+                    QMessageBox.information(self, "Add Window", "Maximum of 2 additional windows is reached.")
+                    return
+            except Exception:
+                # If something goes wrong reading the count, continue to attempt creation
+                pass
+
             win = DockWindow(self, title="Dock Window", width=1000, height=700)
             # Keep reference to prevent garbage collection while open
             self._dock_windows.append(win)
+
+            # Wire destroyed hook: remove from list and notify dock to refresh count/labels
             try:
-                win.destroyed.connect(lambda _: self._dock_windows.remove(win) if win in self._dock_windows else None)
+                def _on_win_destroyed(_obj=None):
+                    try:
+                        if win in self._dock_windows:
+                            self._dock_windows.remove(win)
+                    except Exception:
+                        pass
+                    # Notify dock about count change
+                    try:
+                        self._notify_add_window_count_changed()
+                    except Exception:
+                        pass
+                win.destroyed.connect(_on_win_destroyed)
             except Exception:
                 pass
+
+            # Show modeless and bring to foreground
             win.show()
-            # Do not disable main window; ensure modeless behavior
             try:
                 win.raise_()
                 win.activateWindow()
             except Exception:
                 pass
+
+            # Notify dock after creation
+            try:
+                self._notify_add_window_count_changed()
+            except Exception:
+                pass
         except Exception as e:
             self.update_status(f"Error creating Dock Window: {e}")
+
+    # --- DockWindow helpers (no BaseDock/global menu changes) ---
+    def get_first_dock_window(self):
+        """Return the first available DockWindow if one exists, else None."""
+        try:
+            wins = getattr(self, "_dock_windows", None)
+            if isinstance(wins, (list, tuple)) and len(wins) > 0:
+                # Prefer a visible/valid window
+                for w in wins:
+                    try:
+                        if w is not None and not w.isHidden():
+                            return w
+                    except Exception:
+                        # Fallback: return the first non-None even if we cannot query visibility
+                        if w is not None:
+                            return w
+                # If all hidden or checks failed, return the most recent one
+                return wins[-1]
+        except Exception:
+            pass
+        return None
+
+    def get_or_create_dock_window(self):
+        """Return an existing DockWindow or create one using create_dock_window_and_show()."""
+        try:
+            win = self.get_first_dock_window()
+            if win is not None:
+                try:
+                    # Bring to front if possible
+                    if hasattr(win, "show_and_focus"):
+                        win.show_and_focus()
+                    else:
+                        win.show()
+                        win.raise_()
+                        win.activateWindow()
+                except Exception:
+                    pass
+                return win
+            # None found -> create one on demand
+            self.create_dock_window_and_show()
+            try:
+                wins = getattr(self, "_dock_windows", None)
+                if isinstance(wins, (list, tuple)) and len(wins) > 0:
+                    return wins[-1]
+            except Exception:
+                pass
+            return None
+        except Exception:
+            return None
+
+    def _notify_add_window_count_changed(self):
+        """Notify the Add Window dock (if present) that the window count changed."""
+        try:
+            if hasattr(self, 'add_window_dock') and self.add_window_dock is not None:
+                try:
+                    self.add_window_dock.refresh_counts()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # --- ROI docks in separate DockWindow ---
+    def open_roi_plot_dock_in_window(self, roi):
+        """Open the ROI Plot dock inside a DockWindow (creates one on demand)."""
+        try:
+            if roi is None:
+                QMessageBox.information(self, "ROI Plot", "No ROI selected.")
+                return
+            win = self.get_or_create_dock_window()
+            if win is None:
+                QMessageBox.information(self, "ROI Plot", "Could not open or create a Dock Window.")
+                return
+            try:
+                from viewer.workbench.roi_plot_dock import ROIPlotDock
+            except Exception:
+                ROIPlotDock = None
+            if ROIPlotDock is None:
+                QMessageBox.warning(self, "ROI Plot", "ROIPlotDock not available.")
+                return
+            dock_title = f"ROI: {self.get_roi_name(roi)}"
+            dock = ROIPlotDock(win, dock_title, self, roi)
+            try:
+                win.addDockWidget(Qt.RightDockWidgetArea, dock)
+            except Exception:
+                # Best effort: show without docking if addDockWidget fails
+                pass
+            dock.show()
+            # Track alive docks for title/refresh updates
+            try:
+                if not hasattr(self, '_roi_plot_dock_widgets') or self._roi_plot_dock_widgets is None:
+                    self._roi_plot_dock_widgets = []
+                self._roi_plot_dock_widgets.append(dock)
+                if not hasattr(self, 'roi_plot_docks_by_roi_id') or self.roi_plot_docks_by_roi_id is None:
+                    self.roi_plot_docks_by_roi_id = {}
+                self.roi_plot_docks_by_roi_id.setdefault(id(roi), []).append(dock)
+            except Exception:
+                pass
+        except Exception as e:
+            self.update_status(f"Error opening ROI Plot dock in window: {e}")
+
+    def open_roi_math_dock_in_window(self, roi):
+        """Open the ROI Math dock inside a DockWindow (creates one on demand)."""
+        try:
+            if roi is None:
+                QMessageBox.information(self, "ROI Math", "No ROI selected.")
+                return
+            win = self.get_or_create_dock_window()
+            if win is None:
+                QMessageBox.information(self, "ROI Math", "Could not open or create a Dock Window.")
+                return
+            try:
+                from viewer.workbench.roi_math_dock import ROIMathDock
+            except Exception:
+                ROIMathDock = None
+            if ROIMathDock is None:
+                QMessageBox.warning(self, "ROI Math", "ROIMathDock not available.")
+                return
+            dock_title = f"ROI Math: {self.get_roi_name(roi)}"
+            dock = ROIMathDock(win, dock_title, self, roi)
+            try:
+                win.addDockWidget(Qt.RightDockWidgetArea, dock)
+            except Exception:
+                pass
+            dock.show()
+            # Track alive docks
+            try:
+                if not hasattr(self, '_roi_math_dock_widgets') or self._roi_math_dock_widgets is None:
+                    self._roi_math_dock_widgets = []
+                self._roi_math_dock_widgets.append(dock)
+                if not hasattr(self, 'roi_math_docks_by_roi_id') or self.roi_math_docks_by_roi_id is None:
+                    self.roi_math_docks_by_roi_id = {}
+                self.roi_math_docks_by_roi_id.setdefault(id(roi), []).append(dock)
+            except Exception:
+                pass
+        except Exception as e:
+            self.update_status(f"Error opening ROI Math dock in window: {e}")
 
     def setup_roi_stats_dock(self):
         try:
@@ -638,6 +812,12 @@ class WorkbenchWindow(BaseWindow):
             # Setup 2D controls connections (delegated)
             self.controls_2d.setup()
 
+            # Initialize Vmin/Vmax hints to placeholders when no data is present
+            try:
+                self._update_vmin_vmax_hints()
+            except Exception:
+                pass
+
         except Exception as e:
             self.update_status(f"Error setting up 2D workspace: {e}")
             # Fallback to keeping the placeholder if setup fails
@@ -663,6 +843,21 @@ class WorkbenchWindow(BaseWindow):
             # Create the plot item and image view similar to HKL slice 2D viewer
             self.plot_item = pg.PlotItem()
             self.image_view = pg.ImageView(view=self.plot_item)
+
+            # Manual levels override state for histogram-driven levels
+            try:
+                self._manual_levels_override = False
+                self._manual_vmin = None
+                self._manual_vmax = None
+                # Cache display-domain (ImageItem) levels to preserve precision in log scale
+                self._manual_vmin_display = None
+                self._manual_vmax_display = None
+                # Guards to avoid feedback loops between histogram and spinboxes
+                self._suppress_spinbox_update = False
+                self._suppress_spinbox_handlers = False
+                self._suppress_histogram_update = False
+            except Exception:
+                pass
 
             # Set axis labels
             self.plot_item.setLabel('bottom', 'Columns [pixels]')
@@ -693,6 +888,29 @@ class WorkbenchWindow(BaseWindow):
                 if hasattr(self, 'image_view') and self.image_view is not None:
                     # Restore default context menu (do not override with custom)
                     self.image_view.setContextMenuPolicy(Qt.DefaultContextMenu)
+            except Exception:
+                pass
+
+            # Wire histogram-level signals so dragging the sidebar becomes authoritative in manual mode
+            try:
+                self._wire_histogram_levels_signals()
+                self._debug_histogram_types(prefix="[DEBUG] initial wiring")
+            except Exception:
+                pass
+
+            # Start a lightweight poller to detect histogram level changes on versions that don't emit signals
+            try:
+                if not hasattr(self, '_histogram_poll_timer') or self._histogram_poll_timer is None:
+                    self._histogram_poll_timer = QTimer(self)
+                    self._histogram_poll_timer.setInterval(100)  # 10 Hz polling
+                    self._histogram_poll_timer.timeout.connect(self._poll_histogram_levels)
+                    self._last_hist_levels = None
+                    self._histogram_poll_timer.start()
+                    try:
+                        print("[DEBUG] Histogram polling timer started (10 Hz)")
+                        self.update_status("Histogram polling enabled (10 Hz)")
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -1816,6 +2034,12 @@ class WorkbenchWindow(BaseWindow):
                 except Exception:
                     pass
 
+                # Update Vmin/Vmax hint labels to placeholders when plot is cleared
+                try:
+                    self._update_vmin_vmax_hints()
+                except Exception:
+                    pass
+
                 # Update above-image info label with placeholder dimensions
                 if hasattr(self, 'image_info_label'):
                     try:
@@ -1862,6 +2086,24 @@ class WorkbenchWindow(BaseWindow):
         try:
             text = f"Image Dimensions: {width}x{height} pixels"
             info = frame_info or ""
+            # Append current data-domain Vmin/Vmax so they are visible in the 2D space
+            try:
+                frame = self.get_current_frame_data()
+            except Exception:
+                frame = None
+            try:
+                vmin_txt = "Vmin(...):"; vmax_txt = "Vmax(...):"
+                if frame is not None:
+                    arr = np.asarray(frame)
+                    finite = arr[np.isfinite(arr)]
+                    if finite.size > 0:
+                        dmin = int(np.min(finite))
+                        dmax = int(np.max(finite))
+                        vmin_txt = f"Vmin({dmin}):"; vmax_txt = f"Vmax({dmax}):"
+                vv = f"{vmin_txt} {vmax_txt}"
+                info = f"{info} | {vv}" if info else vv
+            except Exception:
+                pass
             # Try to append motor position for current frame if 3D data
             try:
                 if hasattr(self, 'current_2d_data') and self.current_2d_data is not None and self.current_2d_data.ndim == 3:
@@ -1896,12 +2138,532 @@ class WorkbenchWindow(BaseWindow):
         except Exception as e:
             self.update_status(f"Error updating image info label: {e}")
 
+    # === Display transform and levels helpers ===
+    def _get_histogram_widget(self):
+        try:
+            if hasattr(self, 'image_view') and self.image_view is not None:
+                if hasattr(self.image_view, 'getHistogramWidget'):
+                    return self.image_view.getHistogramWidget()
+                # Fallback for ImageView internals
+                ui = getattr(self.image_view, 'ui', None)
+                if ui is not None and hasattr(ui, 'histogram'):
+                    return ui.histogram
+        except Exception:
+            pass
+        return None
+
+    def _wire_histogram_levels_signals(self):
+        """Connect HistogramLUTWidget signals so that user drags update the manual vmin/vmax.
+
+        Preferred: hist.sigLevelChange; Fallback: hist.region.sigRegionChanged / sigRegionChangeFinished.
+        """
+        try:
+            hist = self._get_histogram_widget()
+            if hist is None:
+                try:
+                    self.update_status("Histogram widget not found; levels sync disabled")
+                except Exception:
+                    pass
+                return
+
+            connected = False
+            # Prefer dedicated level-change signal on the item
+            try:
+                item = getattr(hist, 'item', None)
+                if item is not None:
+                    if hasattr(item, 'sigLevelsChanged'):
+                        item.sigLevelsChanged.connect(self._on_histogram_levels_changed)
+                        connected = True
+                    elif hasattr(item, 'sigLevelChange'):
+                        item.sigLevelChange.connect(self._on_histogram_levels_changed)
+                        connected = True
+                    # Also listen to region signals attached to the item (some versions)
+                    try:
+                        iregion = getattr(item, 'region', None)
+                        if iregion is not None:
+                            if hasattr(iregion, 'sigRegionChanged'):
+                                iregion.sigRegionChanged.connect(lambda _=None: self._on_histogram_levels_changed())
+                                connected = True
+                            if hasattr(iregion, 'sigRegionChangeFinished'):
+                                iregion.sigRegionChangeFinished.connect(lambda _=None: self._on_histogram_levels_changed())
+                                connected = True
+                    except Exception:
+                        pass
+            except Exception:
+                item = None
+
+            # Some versions may emit on the widget directly
+            try:
+                if not connected and hasattr(hist, 'sigLevelsChanged'):
+                    hist.sigLevelsChanged.connect(self._on_histogram_levels_changed)
+                    connected = True
+                if not connected and hasattr(hist, 'sigLevelChange'):
+                    hist.sigLevelChange.connect(self._on_histogram_levels_changed)
+                    connected = True
+            except Exception:
+                pass
+
+            # Fallback: listen to the draggable region signals on the widget
+            try:
+                if not connected:
+                    region = getattr(hist, 'region', None)
+                    if region is not None:
+                        if hasattr(region, 'sigRegionChanged'):
+                            region.sigRegionChanged.connect(lambda _=None: self._on_histogram_levels_changed())
+                            connected = True
+                        if hasattr(region, 'sigRegionChangeFinished'):
+                            region.sigRegionChangeFinished.connect(lambda _=None: self._on_histogram_levels_changed())
+                            connected = True
+            except Exception:
+                pass
+
+            # Log connection status and types to aid runtime diagnosis
+            try:
+                if connected:
+                    msg = "Histogram signals wired: "
+                    srcs = []
+                    try:
+                        if item is not None:
+                            srcs.append(f"item={type(item).__name__}")
+                    except Exception:
+                        pass
+                    try:
+                        srcs.append(f"widget={type(hist).__name__}")
+                    except Exception:
+                        pass
+                    self.update_status(msg + ", ".join(srcs))
+                else:
+                    itype = type(getattr(hist, 'item', None)).__name__ if hasattr(hist, 'item') else 'None'
+                    wtype = type(hist).__name__
+                    self.update_status(f"Could not wire histogram signals; widget={wtype}, item={itype}")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_histogram_levels_changed(self):
+        """Handle histogram level drag: make histogram authoritative and update spinboxes.
+
+        Reads histogram's current display-domain levels, converts to data domain if log scale,
+        sets manual override, updates sbVmin/sbVmax (guarded), and refreshes image.
+        """
+        try:
+            # Avoid feedback loop if we are programmatically syncing histogram
+            if bool(getattr(self, '_suppress_histogram_update', False)):
+                return
+            if not hasattr(self, 'image_view') or self.image_view is None:
+                return
+            hist = self._get_histogram_widget()
+            if hist is None:
+                return
+            # Get current histogram levels in display (ImageItem) domain
+            vmin_d = vmax_d = None
+            try:
+                # Try widget first
+                if hasattr(hist, 'getLevels'):
+                    vmin_d, vmax_d = hist.getLevels()
+                else:
+                    raise AttributeError
+            except Exception:
+                # Try item
+                try:
+                    item = getattr(hist, 'item', None)
+                    if item is not None and hasattr(item, 'getLevels'):
+                        vmin_d, vmax_d = item.getLevels()
+                except Exception:
+                    # Fallback: read region positions
+                    try:
+                        region = getattr(hist, 'region', None)
+                        if region is None:
+                            region = getattr(getattr(hist, 'item', None), 'region', None)
+                        if region is not None and hasattr(region, 'getRegion'):
+                            vmin_d, vmax_d = region.getRegion()
+                    except Exception:
+                        vmin_d = vmax_d = None
+            if vmin_d is None or vmax_d is None:
+                return
+            # Cache last polled levels to avoid redundant updates
+            try:
+                self._last_hist_levels = (float(vmin_d), float(vmax_d))
+            except Exception:
+                pass
+            # Convert to data domain if log scale is enabled
+            try:
+                if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                    vmin_data = float(np.expm1(max(0.0, float(vmin_d))))
+                    vmax_data = float(np.expm1(max(0.0, float(vmax_d))))
+                else:
+                    vmin_data = float(vmin_d)
+                    vmax_data = float(vmax_d)
+            except Exception:
+                vmin_data = vmin_d
+                vmax_data = vmax_d
+            if not (np.isfinite(vmin_data) and np.isfinite(vmax_data)):
+                return
+            if vmax_data <= vmin_data:
+                # Enforce ordering; small epsilon to avoid equality
+                vmax_data = vmin_data + 1e-6
+
+            # Set manual override and cache
+            try:
+                self._manual_levels_override = True
+                self._manual_vmin = float(vmin_data)
+                self._manual_vmax = float(vmax_data)
+                # Cache display-domain levels to reuse exactly during refresh in log scale
+                self._manual_vmin_display = float(vmin_d)
+                self._manual_vmax_display = float(vmax_d)
+            except Exception:
+                pass
+
+            # Update spinboxes to reflect histogram-driven levels without triggering handlers
+            try:
+                self._suppress_spinbox_update = True
+                self._suppress_spinbox_handlers = True
+                if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                    # Keep ranges wide enough to include manual values to avoid clamping
+                    try:
+                        current_data = self.get_current_frame_data()
+                        if current_data is not None:
+                            dmin = int(np.min(current_data))
+                            dmax = int(np.max(current_data))
+                        else:
+                            dmin = 0; dmax = 1
+                        lower = min(dmin, int(self._manual_vmin))
+                        upper = max(int(dmax * 2), int(self._manual_vmax))
+                        self.sbVmin.setRange(lower, upper)
+                    except Exception:
+                        pass
+                    self.sbVmin.setValue(self._manual_vmin)
+                if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                    try:
+                        current_data = self.get_current_frame_data()
+                        if current_data is not None:
+                            dmin = int(np.min(current_data))
+                            dmax = int(np.max(current_data))
+                        else:
+                            dmin = 0; dmax = 1
+                        lower = min(dmin + 1, int(self._manual_vmin) + 1)
+                        upper = max(int(dmax * 2), int(self._manual_vmax))
+                        self.sbVmax.setRange(lower, upper)
+                    except Exception:
+                        pass
+                    self.sbVmax.setValue(self._manual_vmax)
+                # Also reflect histogram-driven values into the hint labels near the controls
+                try:
+                    if hasattr(self, 'lblVminHint') and self.lblVminHint is not None:
+                        self.lblVminHint.setText(f"Vmin({int(self._manual_vmin)}):")
+                    if hasattr(self, 'lblVmaxHint') and self.lblVmaxHint is not None:
+                        self.lblVmaxHint.setText(f"Vmax({int(self._manual_vmax)}):")
+                except Exception:
+                    pass
+            finally:
+                try:
+                    self._suppress_spinbox_update = False
+                    self._suppress_spinbox_handlers = False
+                except Exception:
+                    pass
+
+            # Refresh current frame to apply manual levels persistently
+            try:
+                self._refresh_current_frame_image()
+            except Exception:
+                pass
+
+            # Debug/logging to help verify runtime behavior
+            try:
+                self.update_status(f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _poll_histogram_levels(self):
+        """Fallback polling for histogram levels to ensure UI sync when signals are not emitted.
+
+        Checks at ~10 Hz during manual levels mode. If levels change compared to the last seen,
+        triggers _on_histogram_levels_changed()."""
+        try:
+            # Skip when auto levels are on or when we are programmatically updating histogram
+            if bool(getattr(self, '_suppress_histogram_update', False)):
+                return
+            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
+            if auto_levels:
+                return
+            hist = self._get_histogram_widget()
+            if hist is None:
+                return
+            vmin_d = vmax_d = None
+            try:
+                if hasattr(hist, 'getLevels'):
+                    vmin_d, vmax_d = hist.getLevels()
+                else:
+                    item = getattr(hist, 'item', None)
+                    if item is not None and hasattr(item, 'getLevels'):
+                        vmin_d, vmax_d = item.getLevels()
+            except Exception:
+                # Last fallback to region
+                try:
+                    region = getattr(hist, 'region', None)
+                    if region is None:
+                        region = getattr(getattr(hist, 'item', None), 'region', None)
+                    if region is not None and hasattr(region, 'getRegion'):
+                        vmin_d, vmax_d = region.getRegion()
+                except Exception:
+                    vmin_d = vmax_d = None
+            if vmin_d is None or vmax_d is None:
+                return
+            try:
+                cur = (float(vmin_d), float(vmax_d))
+            except Exception:
+                cur = (vmin_d, vmax_d)
+            prev = getattr(self, '_last_hist_levels', None)
+            changed = False
+            try:
+                if prev is None:
+                    changed = True
+                else:
+                    changed = (abs(cur[0] - prev[0]) > 1e-9) or (abs(cur[1] - prev[1]) > 1e-9)
+            except Exception:
+                changed = True
+            if changed:
+                self._last_hist_levels = cur
+                # Delegate to the authoritative handler
+                self._on_histogram_levels_changed()
+        except Exception:
+            pass
+
+    def _apply_display_transform(self, frame: np.ndarray) -> np.ndarray:
+        """Return frame transformed for display (log1p if log scale is enabled)."""
+        try:
+            arr = np.asarray(frame, dtype=np.float32)
+            log_enabled = hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked()
+            if log_enabled:
+                # log1p on non-negative domain for stable display
+                return np.log1p(np.maximum(arr, 0))
+            return arr
+        except Exception:
+            # Fallback to input frame
+            return frame
+
+    def _apply_levels_for_current_mode(self, display_data: np.ndarray):
+        """Apply levels to image and sync HistogramLUT widget based on auto/manual and display domain.
+
+        - Auto Levels ON: keep auto levels; sync histogram range to display_data min/max
+        - Auto Levels OFF: map vmin/vmax from controls into display domain and set both ImageItem and Histogram
+        """
+        try:
+            if not hasattr(self, 'image_view') or self.image_view is None:
+                return
+            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
+            hist = self._get_histogram_widget()
+
+            if auto_levels:
+                # Sync histogram range with displayed domain for consistent sidebar
+                try:
+                    finite_vals = display_data[np.isfinite(display_data)] if isinstance(display_data, np.ndarray) else None
+                    if finite_vals is not None and finite_vals.size > 0:
+                        dmin = float(np.min(finite_vals))
+                        dmax = float(np.max(finite_vals))
+                    else:
+                        dmin = float(np.nanmin(display_data))
+                        dmax = float(np.nanmax(display_data))
+                    if hist is not None and np.isfinite(dmin) and np.isfinite(dmax) and dmax > dmin:
+                        # Update histogram range and levels to reflect the new dataset/frame
+                        hist.setHistogramRange(dmin, dmax)
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(dmin, dmax)
+                        finally:
+                            self._suppress_histogram_update = False
+                except Exception:
+                    pass
+                return
+
+            # Manual levels: compute display-domain levels from caches if available (preserve precision and avoid spinbox rounding)
+            vmin_d = vmax_d = None
+            try:
+                if bool(getattr(self, '_manual_levels_override', False)):
+                    d0 = getattr(self, '_manual_vmin_display', None)
+                    d1 = getattr(self, '_manual_vmax_display', None)
+                    if d0 is not None and d1 is not None:
+                        vmin_d = float(d0)
+                        vmax_d = float(d1)
+            except Exception:
+                vmin_d = vmax_d = None
+            if vmin_d is None or vmax_d is None:
+                # Fall back to spinbox -> display mapping
+                vmin = None; vmax = None
+                try:
+                    vmin = float(self.sbVmin.value()) if hasattr(self, 'sbVmin') else None
+                    vmax = float(self.sbVmax.value()) if hasattr(self, 'sbVmax') else None
+                except Exception:
+                    vmin = vmax = None
+                if vmin is None or vmax is None or vmax <= vmin:
+                    return
+
+                try:
+                    if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                        vmin_d = float(np.log1p(max(0.0, vmin)))
+                        vmax_d = float(np.log1p(max(0.0, vmax)))
+                    else:
+                        vmin_d = float(vmin)
+                        vmax_d = float(vmax)
+                except Exception:
+                    vmin_d = vmin; vmax_d = vmax
+
+            # Apply to image item
+            try:
+                self.image_view.setLevels(min=vmin_d, max=vmax_d)
+            except Exception:
+                pass
+
+            # Sync histogram widget levels for visual alignment
+            try:
+                if hist is not None:
+                    # Guard to avoid triggering histogram-level signal feedback
+                    try:
+                        self._suppress_histogram_update = True
+                        hist.setLevels(vmin_d, vmax_d)
+                    finally:
+                        self._suppress_histogram_update = False
+                    # Keep spinboxes in sync with the histogram levels even when set programmatically
+                    try:
+                        # Map display-domain -> data-domain for spinboxes
+                        if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                            vmin_data = float(np.expm1(max(0.0, float(vmin_d))))
+                            vmax_data = float(np.expm1(max(0.0, float(vmax_d))))
+                        else:
+                            vmin_data = float(vmin_d)
+                            vmax_data = float(vmax_d)
+                        # Update without firing handlers
+                        self._suppress_spinbox_handlers = True
+                        if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                            try:
+                                self.sbVmin.setValue(vmin_data)
+                            except Exception:
+                                pass
+                        if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                            try:
+                                self.sbVmax.setValue(vmax_data)
+                            except Exception:
+                                pass
+                        # Also reflect into the hint labels near the spinboxes
+                        try:
+                            if hasattr(self, 'lblVminHint') and self.lblVminHint is not None:
+                                self.lblVminHint.setText(f"Vmin({int(vmin_data)}):")
+                            if hasattr(self, 'lblVmaxHint') and self.lblVmaxHint is not None:
+                                self.lblVmaxHint.setText(f"Vmax({int(vmax_data)}):")
+                        except Exception:
+                            pass
+                    finally:
+                        try:
+                            self._suppress_spinbox_handlers = False
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _refresh_current_frame_image(self, frame_data: np.ndarray = None):
+        """Centralized refresh for current frame image: transform, setImage, and sync levels/histogram.
+
+        Args:
+            frame_data: Optional pre-sliced frame. If None, uses get_current_frame_data().
+        """
+        try:
+            if not hasattr(self, 'image_view') or self.image_view is None:
+                return
+            # Resolve frame
+            try:
+                frame = frame_data if frame_data is not None else self.get_current_frame_data()
+            except Exception:
+                frame = frame_data
+            if frame is None:
+                return
+            # Transform to display domain
+            display_data = self._apply_display_transform(frame)
+
+            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
+            # Auto-range behavior: only force on first display when requested
+            auto_range = bool(getattr(self, '_force_auto_range_next', False))
+
+            # Compute explicit levels for manual mode and pass into setImage to prevent auto-scaling during playback
+            levels_arg = None
+            if not auto_levels:
+                # Prefer display-domain manual caches when manual override is active (both linear and log)
+                try:
+                    use_cached_display = bool(getattr(self, '_manual_levels_override', False))
+                except Exception:
+                    use_cached_display = False
+                if use_cached_display:
+                    d0 = getattr(self, '_manual_vmin_display', None)
+                    d1 = getattr(self, '_manual_vmax_display', None)
+                    if d0 is not None and d1 is not None and np.isfinite(d0) and np.isfinite(d1) and d1 > d0:
+                        levels_arg = (float(d0), float(d1))
+                if levels_arg is None:
+                    # Fallback to spinbox mapping
+                    try:
+                        vmin = float(self.sbVmin.value()) if hasattr(self, 'sbVmin') else None
+                        vmax = float(self.sbVmax.value()) if hasattr(self, 'sbVmax') else None
+                    except Exception:
+                        vmin = vmax = None
+                    if vmin is not None and vmax is not None and vmax > vmin:
+                        try:
+                            if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                                vmin_d = float(np.log1p(max(0.0, vmin)))
+                                vmax_d = float(np.log1p(max(0.0, vmax)))
+                            else:
+                                vmin_d = float(vmin)
+                                vmax_d = float(vmax)
+                            if np.isfinite(vmin_d) and np.isfinite(vmax_d) and vmax_d > vmin_d:
+                                levels_arg = (vmin_d, vmax_d)
+                        except Exception:
+                            levels_arg = None
+
+            try:
+                if levels_arg is not None:
+                    self.image_view.setImage(
+                        display_data,
+                        autoLevels=False,
+                        autoRange=auto_range,
+                        autoHistogramRange=False,
+                        levels=levels_arg
+                    )
+                else:
+                    self.image_view.setImage(
+                        display_data,
+                        autoLevels=auto_levels,
+                        autoRange=auto_range,
+                        autoHistogramRange=auto_levels
+                    )
+            finally:
+                try:
+                    self._force_auto_range_next = False
+                except Exception:
+                    pass
+
+            # Apply/Sync levels and histogram bar based on current mode
+            self._apply_levels_for_current_mode(display_data)
+        except Exception:
+            pass
+
     def display_2d_data(self, data):
         """Display 2D or 3D numeric data in the PyQtGraph ImageView."""
         try:
             if not hasattr(self, 'image_view'):
                 print("Warning: ImageView not initialized")
                 return
+
+            # New dataset: clear manual override so initial seeding from data makes sense
+            try:
+                self._manual_levels_override = False
+                self._manual_vmin = None
+                self._manual_vmax = None
+                self._manual_vmin_display = None
+                self._manual_vmax_display = None
+            except Exception:
+                pass
 
             # Store the original data for frame navigation
             self.current_2d_data = data
@@ -1942,17 +2704,23 @@ class WorkbenchWindow(BaseWindow):
                 print(f"Unsupported data dimensions: {data.ndim}")
                 return
 
-            # Set the image data
-            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
-            self.image_view.setImage(
-                image_data,
-                autoLevels=auto_levels,
-                autoRange=True,
-                autoHistogramRange=auto_levels
-            )
+            # Set the image data through centralized refresh pipeline
+            # Force auto range on first display of new data
+            try:
+                self._force_auto_range_next = True
+            except Exception:
+                pass
+            self._refresh_current_frame_image(image_data)
             # Ensure hover overlays exist after any prior clear
             try:
                 self._setup_2d_hover()
+            except Exception:
+                pass
+
+            # Re-wire histogram after first image is set to ensure item/region exist
+            try:
+                self._wire_histogram_levels_signals()
+                self._debug_histogram_types(prefix="[DEBUG] post-image wiring")
             except Exception:
                 pass
 
@@ -1973,7 +2741,7 @@ class WorkbenchWindow(BaseWindow):
             # Update speckle analysis controls programmatically
             self.update_speckle_controls_for_data(data)
 
-            # Update vmin/vmax controls based on data
+            # Update vmin/vmax controls based on data (ranges only if user override is active)
             self.update_vmin_vmax_controls_for_data(image_data)
 
             # Refresh ROI stats for current frame/data
@@ -2596,6 +3364,15 @@ class WorkbenchWindow(BaseWindow):
                 if enabled:
                     # Enable auto levels
                     self.image_view.autoLevels()
+                    # Clear manual override when switching to Auto
+                    try:
+                        self._manual_levels_override = False
+                        self._manual_vmin = None
+                        self._manual_vmax = None
+                        self._manual_vmin_display = None
+                        self._manual_vmax_display = None
+                    except Exception:
+                        pass
                 # If disabled, keep current levels
         except Exception as e:
             self.update_status(f"Error toggling auto levels: {e}")
@@ -2947,6 +3724,14 @@ class WorkbenchWindow(BaseWindow):
 
             menu.addSeparator()
 
+            # New: play images in this folder as a stacked sequence
+            play_stack_action = QAction("Play images as stack", self)
+            play_stack_action.setToolTip("Load all images in this folder as a frame stack and enable playback")
+            play_stack_action.triggered.connect(lambda: self._play_folder_section_stack(item))
+            menu.addAction(play_stack_action)
+
+            menu.addSeparator()
+
             # Add option to collapse/expand all files in folder
             collapse_all_files_action = QAction("Collapse All Files", self)
             collapse_all_files_action.triggered.connect(lambda: self.collapse_all_files_in_folder(item))
@@ -2964,6 +3749,104 @@ class WorkbenchWindow(BaseWindow):
 
             # Show menu at the requested position
             menu.exec_(self.tree_data.mapToGlobal(position))
+
+    def _play_folder_section_stack(self, item):
+        """Stack all supported images within the folder section and play them in the 2D viewer.
+
+        Supported formats: .tif, .tiff, .png, .jpg, .jpeg, .bmp
+        Search is non-recursive (immediate files only) for the first iteration.
+        """
+        try:
+            # Resolve folder path and name
+            folder_path = item.data(0, Qt.UserRole + 1)
+            if not folder_path or not os.path.isdir(folder_path):
+                QMessageBox.information(self, "Play Images", "Selected folder path is invalid.")
+                return
+            folder_name = os.path.basename(folder_path)
+
+            # Import on demand to avoid unnecessary startup overhead
+            try:
+                from viewer.tools.file_convert import list_images, stack_images
+            except Exception:
+                QMessageBox.critical(self, "Play Images", "Required image utilities are unavailable.")
+                return
+
+            # Collect image files (non-recursive, lowercase patterns)
+            patterns = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.bmp']
+            files = list_images(Path(folder_path), patterns, recursive=False)
+            if not files:
+                QMessageBox.information(self, "No Images", "No supported images found in the selected folder.")
+                try:
+                    self.update_status("No images found in folder", level='warning')
+                except Exception:
+                    pass
+                return
+
+            # Stack images; skip size mismatches internally
+            vol, shape_hw, used = stack_images(files, log=lambda msg: self.update_status(str(msg)))
+            if vol.size == 0:
+                QMessageBox.information(self, "No Usable Images", "No images with a consistent shape could be loaded.")
+                try:
+                    self.update_status("No usable images (size mismatches)", level='warning')
+                except Exception:
+                    pass
+                return
+
+            # Safety: warn if very large memory footprint (>1 GB); proceed (no cancel) for initial iteration
+            try:
+                if getattr(vol, 'nbytes', 0) > 1_000_000_000:
+                    sz_gb = vol.nbytes / (1024 * 1024 * 1024)
+                    QMessageBox.warning(self, "Large Stack", f"Stack size is large: {sz_gb:.2f} GB. Playback may impact performance.")
+                    self.update_status("Warning: Large stack loaded into memory")
+            except Exception:
+                pass
+
+            # Display data in 2D viewer; enables frame controls and shows "Frame 0 of N"
+            self.display_2d_data(vol)
+            try:
+                if hasattr(self, 'tabWidget_analysis') and self.tabWidget_analysis is not None:
+                    self.tabWidget_analysis.setCurrentIndex(0)
+            except Exception:
+                pass
+
+            # Update UI labels
+            try:
+                if hasattr(self, 'file_status_label') and self.file_status_label is not None:
+                    self.file_status_label.setText(f"Playing folder: {folder_name} ({int(vol.shape[0])} frames)")
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'dataset_info_text') and self.dataset_info_text is not None:
+                    h, w = (int(shape_hw[0]), int(shape_hw[1])) if isinstance(shape_hw, tuple) and len(shape_hw) == 2 else (int(vol.shape[1]), int(vol.shape[2]))
+                    info_lines = [
+                        f"Folder path: {folder_path}",
+                        f"Frame count: {int(vol.shape[0])}",
+                        f"Frame shape (H,W): ({h}, {w})",
+                        f"Dtype: {vol.dtype}",
+                        f"Total elements: {int(vol.size):,}",
+                    ]
+                    self.dataset_info_text.setPlainText("\n".join(info_lines))
+            except Exception:
+                pass
+
+            # Auto-start playback when multiple frames are available (default behavior)
+            try:
+                if int(vol.shape[0]) > 1:
+                    self.start_playback()
+            except Exception:
+                pass
+
+            # Status update
+            try:
+                self.update_status(f"Playing stack from folder: {folder_name} ({int(vol.shape[0])} frames)")
+            except Exception:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Play Images", f"Failed to stack images from folder: {e}")
+            try:
+                self.update_status(f"Error stacking images: {e}", level='error')
+            except Exception:
+                pass
 
     def remove_file(self, item):
         """
@@ -3172,14 +4055,8 @@ class WorkbenchWindow(BaseWindow):
 
             frame_data = np.asarray(self.current_2d_data[frame_index], dtype=np.float32)
 
-            # Update the image view with the new frame
-            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
-            self.image_view.setImage(
-                frame_data,
-                autoLevels=auto_levels,
-                autoRange=False,  # Don't auto-range when changing frames
-                autoHistogramRange=auto_levels
-            )
+            # Update the image view with the new frame via centralized pipeline
+            self._refresh_current_frame_image(frame_data)
 
             # Update frame info label and button states
             num_frames = self.current_2d_data.shape[0]
@@ -3189,6 +4066,12 @@ class WorkbenchWindow(BaseWindow):
                 self.frame_info_label.setText(f"Image Dimensions: {width}x{height} pixels (frame {frame_index} of {num_frames})")
             # Update overlay text
             self.update_overlay_text(width, height, f"Frame {frame_index} of {num_frames}")
+
+            # Update per-frame Vmin/Vmax controls and data-domain hint labels
+            try:
+                self._update_vmin_vmax_for_frame(frame_data)
+            except Exception:
+                pass
 
             # Update hover tooltip/crosshair at last position during playback
             try:
@@ -3223,6 +4106,80 @@ class WorkbenchWindow(BaseWindow):
 
         except Exception as e:
             self.update_status(f"Error changing frame: {e}")
+
+    def _update_vmin_vmax_for_frame(self, frame_data):
+        """Update Vmin/Vmax spinbox ranges (and values when not in manual override) per current frame.
+
+        Also refreshes the data-domain hint labels (Vmin(...): / Vmax(...):) to reflect this frame's extrema.
+        Respects log scale ranges and _manual_levels_override.
+        """
+        try:
+            if frame_data is None:
+                return
+            # Compute integer-friendly extrema for the current frame
+            try:
+                min_val = int(np.min(frame_data))
+                max_val = int(np.max(frame_data))
+            except Exception:
+                return
+
+            manual_override = bool(getattr(self, '_manual_levels_override', False))
+
+            # Use log-scale friendly ranges when enabled
+            log_enabled = hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked()
+            if log_enabled:
+                try:
+                    pos = frame_data[frame_data > 0]
+                    min_pos = int(np.min(pos)) if pos.size > 0 else 1
+                except Exception:
+                    min_pos = 1
+                vmin_floor = max(1, min_pos)
+                vmax_cap = max_val
+
+                # Update ranges and values guarded
+                try:
+                    self._suppress_spinbox_handlers = True
+                    if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                        self.sbVmin.setRange(1, vmax_cap)
+                        if not manual_override:
+                            self.sbVmin.setValue(vmin_floor)
+                    if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                        upper = max(vmax_cap * 2, int(getattr(self, '_manual_vmax', vmax_cap) or vmax_cap))
+                        self.sbVmax.setRange(vmin_floor + 1, upper)
+                        if not manual_override:
+                            self.sbVmax.setValue(vmax_cap)
+                finally:
+                    try:
+                        self._suppress_spinbox_handlers = False
+                    except Exception:
+                        pass
+            else:
+                # Linear scale: full data range
+                try:
+                    self._suppress_spinbox_handlers = True
+                    if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                        lower = min(min_val, int(getattr(self, '_manual_vmin', min_val) or min_val))
+                        self.sbVmin.setRange(lower, max_val)
+                        if not manual_override:
+                            self.sbVmin.setValue(min_val)
+                    if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                        upper = max(max_val * 2, int(getattr(self, '_manual_vmax', max_val) or max_val))
+                        self.sbVmax.setRange(min_val + 1, upper)
+                        if not manual_override:
+                            self.sbVmax.setValue(max_val)
+                finally:
+                    try:
+                        self._suppress_spinbox_handlers = False
+                    except Exception:
+                        pass
+
+            # Keep the hint labels in sync with current frame (data-domain)
+            try:
+                self._update_vmin_vmax_hints()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def start_playback(self):
         """Start frame playback if a 3D stack is loaded and controls are enabled."""
@@ -3537,41 +4494,8 @@ class WorkbenchWindow(BaseWindow):
         """Handle log scale checkbox toggle."""
         try:
             if hasattr(self, 'image_view') and hasattr(self, 'current_2d_data') and self.current_2d_data is not None:
-                # Get current frame index
-                current_frame = 0
-                if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
-                    current_frame = self.frame_spinbox.value()
-
-                # Get the current frame data
-                if self.current_2d_data.ndim == 3:
-                    frame_data = self.current_2d_data[current_frame]
-                else:
-                    frame_data = self.current_2d_data
-
-                # Apply or remove log scale
-                if checked:
-                    # Apply log scale (log1p to handle zeros)
-                    display_data = np.log1p(np.maximum(frame_data, 0))
-                else:
-                    # Use original data
-                    display_data = frame_data
-
-                # Update the image view
-                auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
-                self.image_view.setImage(
-                    display_data,
-                    autoLevels=auto_levels,
-                    autoRange=False,
-                    autoHistogramRange=auto_levels
-                )
-
-                # Apply current colormap
-                if hasattr(self, 'cbColorMapSelect_2d'):
-                    current_colormap = self.cbColorMapSelect_2d.currentText()
-                    self.apply_colormap(current_colormap)
-
-                # Update vmin/vmax controls for log scale
-                self.update_vmin_vmax_for_log_scale(frame_data, checked)
+                # Centralized refresh applies transform and synchronizes histogram/levels
+                self._refresh_current_frame_image()
 
                 # Refresh ROI stats to reflect displayed image
                 try:
@@ -3580,6 +4504,11 @@ class WorkbenchWindow(BaseWindow):
                     pass
 
                 self.update_status(f"Log scale {'enabled' if checked else 'disabled'}")
+                # Data-domain hint labels are informational; update them (values remain data-domain)
+                try:
+                    self._update_vmin_vmax_hints()
+                except Exception:
+                    pass
             else:
                 print("No image data available for log scale")
         except Exception as e:
@@ -3593,31 +4522,42 @@ class WorkbenchWindow(BaseWindow):
                 min_val = max(1, int(np.min(data[data > 0]))) if np.any(data > 0) else 1
                 max_val = int(np.max(data))
 
+                # Respect manual override: update ranges only, keep values
                 if hasattr(self, 'sbVmin'):
                     self.sbVmin.setRange(1, max_val)
-                    self.sbVmin.setValue(min_val)
+                    if not bool(getattr(self, '_manual_levels_override', False)):
+                        self.sbVmin.setValue(min_val)
 
                 if hasattr(self, 'sbVmax'):
-                    self.sbVmax.setRange(min_val + 1, max_val * 2)
-                    self.sbVmax.setValue(max_val)
+                    upper = max(max_val * 2, int(getattr(self, '_manual_vmax', max_val)))
+                    self.sbVmax.setRange(min_val + 1, upper)
+                    if not bool(getattr(self, '_manual_levels_override', False)):
+                        self.sbVmax.setValue(max_val)
             else:
                 # For linear scale, use full data range
                 min_val = int(np.min(data))
                 max_val = int(np.max(data))
 
                 if hasattr(self, 'sbVmin'):
-                    self.sbVmin.setRange(min_val, max_val)
-                    self.sbVmin.setValue(min_val)
+                    lower = min(min_val, int(getattr(self, '_manual_vmin', min_val)))
+                    self.sbVmin.setRange(lower, max_val)
+                    if not bool(getattr(self, '_manual_levels_override', False)):
+                        self.sbVmin.setValue(min_val)
 
                 if hasattr(self, 'sbVmax'):
-                    self.sbVmax.setRange(min_val + 1, max_val * 2)
-                    self.sbVmax.setValue(max_val)
+                    upper = max(max_val * 2, int(getattr(self, '_manual_vmax', max_val)))
+                    self.sbVmax.setRange(min_val + 1, upper)
+                    if not bool(getattr(self, '_manual_levels_override', False)):
+                        self.sbVmax.setValue(max_val)
         except Exception as e:
             self.update_status(f"Error updating vmin/vmax controls: {e}")
 
     def on_vmin_changed(self, value):
         """Handle vmin spinbox value change."""
         try:
+            # Skip handler during programmatic updates from histogram
+            if bool(getattr(self, '_suppress_spinbox_handlers', False)):
+                return
             if hasattr(self, 'image_view') and hasattr(self, 'current_2d_data') and self.current_2d_data is not None:
                 # Get current vmax
                 vmax = self.sbVmax.value() if hasattr(self, 'sbVmax') else 100
@@ -3636,6 +4576,31 @@ class WorkbenchWindow(BaseWindow):
 
                 # Update image levels
                 self.image_view.setLevels(min=vmin_display, max=vmax_display)
+                # Also sync the histogram widget to reflect the user-entered spinbox levels
+                try:
+                    hist = self._get_histogram_widget()
+                    if hist is not None:
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(vmin_display, vmax_display)
+                        finally:
+                            self._suppress_histogram_update = False
+                except Exception:
+                    pass
+                # Mark manual override active and cache
+                try:
+                    self._manual_levels_override = True
+                    self._manual_vmin = float(value)
+                    self._manual_vmax = float(vmax)
+                    # Update display-domain cache precisely
+                    if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                        self._manual_vmin_display = float(vmin_display)
+                        self._manual_vmax_display = float(vmax_display)
+                    else:
+                        self._manual_vmin_display = float(value)
+                        self._manual_vmax_display = float(vmax)
+                except Exception:
+                    pass
                 # Refresh ROI stats (based on displayed image)
                 try:
                     self.roi_manager.update_all_roi_stats()
@@ -3648,6 +4613,9 @@ class WorkbenchWindow(BaseWindow):
     def on_vmax_changed(self, value):
         """Handle vmax spinbox value change."""
         try:
+            # Skip handler during programmatic updates from histogram
+            if bool(getattr(self, '_suppress_spinbox_handlers', False)):
+                return
             if hasattr(self, 'image_view') and hasattr(self, 'current_2d_data') and self.current_2d_data is not None:
                 # Get current vmin
                 vmin = self.sbVmin.value() if hasattr(self, 'sbVmin') else 0
@@ -3666,6 +4634,31 @@ class WorkbenchWindow(BaseWindow):
 
                 # Update image levels
                 self.image_view.setLevels(min=vmin_display, max=vmax_display)
+                # Also sync the histogram widget to reflect the user-entered spinbox levels
+                try:
+                    hist = self._get_histogram_widget()
+                    if hist is not None:
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(vmin_display, vmax_display)
+                        finally:
+                            self._suppress_histogram_update = False
+                except Exception:
+                    pass
+                # Mark manual override active and cache
+                try:
+                    self._manual_levels_override = True
+                    self._manual_vmin = float(vmin)
+                    self._manual_vmax = float(value)
+                    # Update display-domain cache precisely
+                    if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                        self._manual_vmin_display = float(vmin_display)
+                        self._manual_vmax_display = float(vmax_display)
+                    else:
+                        self._manual_vmin_display = float(vmin)
+                        self._manual_vmax_display = float(value)
+                except Exception:
+                    pass
                 # Refresh ROI stats (based on displayed image)
                 try:
                     self.roi_manager.update_all_roi_stats()
@@ -3770,6 +4763,12 @@ class WorkbenchWindow(BaseWindow):
                     self.play_timer.stop()
             except Exception:
                 pass
+
+            # Update data-domain hint labels for Vmin/Vmax for the new frame
+            try:
+                self._update_vmin_vmax_hints()
+            except Exception:
+                pass
         except Exception as e:
             self.update_status(f"Error updating frame controls for 3D data: {e}")
 
@@ -3805,21 +4804,72 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error updating speckle controls: {e}")
 
     def update_vmin_vmax_controls_for_data(self, data):
-        """Update vmin/vmax controls based on data range."""
+        """Update vmin/vmax controls with awareness of current scale mode (log vs linear).
+
+        Delegates to update_vmin_vmax_for_log_scale() using the current cbLogScale state,
+        and then refreshes the data-domain hint labels.
+        """
         try:
-            min_val = int(np.min(data))
-            max_val = int(np.max(data))
-
-            if hasattr(self, 'sbVmin'):
-                self.sbVmin.setRange(min_val, max_val)
-                self.sbVmin.setValue(min_val)
-
-            if hasattr(self, 'sbVmax'):
-                self.sbVmax.setRange(min_val + 1, max_val * 2)
-                self.sbVmax.setValue(max_val)
-
+            log_enabled = hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked()
+            self.update_vmin_vmax_for_log_scale(data, log_enabled)
+            # Keep hint labels in sync with the current data frame (data-domain)
+            try:
+                self._update_vmin_vmax_hints()
+            except Exception:
+                pass
         except Exception as e:
             self.update_status(f"Error updating vmin/vmax controls: {e}")
+
+    def _update_vmin_vmax_hints(self):
+        """Update the informational Vmin/Vmax hint labels based on the current frame, in data domain.
+
+        Creates integer-friendly labels like "Vmin(123):" and "Vmax(456):".
+        If no frame or no finite values exist, uses placeholders "Vmin(...):" and "Vmax(...):".
+        Labels are informational only and do not affect spinboxes or histogram levels.
+        """
+        try:
+            # Ensure labels exist
+            if not hasattr(self, 'lblVminHint') or not hasattr(self, 'lblVmaxHint'):
+                return
+            lbl_min = getattr(self, 'lblVminHint', None)
+            lbl_max = getattr(self, 'lblVmaxHint', None)
+            if lbl_min is None and lbl_max is None:
+                return
+
+            frame = None
+            try:
+                frame = self.get_current_frame_data()
+            except Exception:
+                frame = None
+
+            vmin_txt = "Vmin(...):"
+            vmax_txt = "Vmax(...):"
+            try:
+                if frame is not None:
+                    arr = np.asarray(frame)
+                    finite = arr[np.isfinite(arr)]
+                    if finite.size > 0:
+                        dmin = int(np.min(finite))
+                        dmax = int(np.max(finite))
+                        vmin_txt = f"Vmin({dmin}):"
+                        vmax_txt = f"Vmax({dmax}):"
+            except Exception:
+                # Keep placeholders on error
+                pass
+
+            try:
+                if lbl_min is not None:
+                    lbl_min.setText(vmin_txt)
+            except Exception:
+                pass
+            try:
+                if lbl_max is not None:
+                    lbl_max.setText(vmax_txt)
+            except Exception:
+                pass
+        except Exception:
+            # Silent guard
+            pass
 
     # === ROI Stats & Context Menu Actions ===
     def get_current_frame_data(self):
