@@ -45,8 +45,20 @@ class Controls2D:
                 self.main.cbLogScale.toggled.connect(self.main.on_log_scale_toggled)
             if hasattr(self.main, 'sbVmin'):
                 self.main.sbVmin.valueChanged.connect(self.main.on_vmin_changed)
+                # Stabilize spinbox width to prevent constant shrinking/growing as ranges/values change
+                try:
+                    # Widen to avoid truncation and keep a stable width
+                    self.main.sbVmin.setFixedWidth(120)
+                except Exception:
+                    pass
             if hasattr(self.main, 'sbVmax'):
                 self.main.sbVmax.valueChanged.connect(self.main.on_vmax_changed)
+                # Stabilize spinbox width to prevent constant shrinking/growing as ranges/values change
+                try:
+                    # Widen to avoid truncation and keep a stable width
+                    self.main.sbVmax.setFixedWidth(120)
+                except Exception:
+                    pass
 
             # Create two hint labels for Vmin/Vmax (data-domain). Create once on main.
             try:

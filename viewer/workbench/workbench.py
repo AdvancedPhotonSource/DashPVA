@@ -894,6 +894,23 @@ class WorkbenchWindow(BaseWindow):
             # Wire histogram-level signals so dragging the sidebar becomes authoritative in manual mode
             try:
                 self._wire_histogram_levels_signals()
+                self._debug_histogram_types(prefix="[DEBUG] initial wiring")
+            except Exception:
+                pass
+
+            # Start a lightweight poller to detect histogram level changes on versions that don't emit signals
+            try:
+                if not hasattr(self, '_histogram_poll_timer') or self._histogram_poll_timer is None:
+                    self._histogram_poll_timer = QTimer(self)
+                    self._histogram_poll_timer.setInterval(100)  # 10 Hz polling
+                    self._histogram_poll_timer.timeout.connect(self._poll_histogram_levels)
+                    self._last_hist_levels = None
+                    self._histogram_poll_timer.start()
+                    try:
+                        print("[DEBUG] Histogram polling timer started (10 Hz)")
+                        self.update_status("Histogram polling enabled (10 Hz)")
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -2143,22 +2160,82 @@ class WorkbenchWindow(BaseWindow):
         try:
             hist = self._get_histogram_widget()
             if hist is None:
+                try:
+                    self.update_status("Histogram widget not found; levels sync disabled")
+                except Exception:
+                    pass
                 return
-            # Prefer dedicated level-change signal if available
+
+            connected = False
+            # Prefer dedicated level-change signal on the item
             try:
-                if hasattr(hist, 'sigLevelChange'):
+                item = getattr(hist, 'item', None)
+                if item is not None:
+                    if hasattr(item, 'sigLevelsChanged'):
+                        item.sigLevelsChanged.connect(self._on_histogram_levels_changed)
+                        connected = True
+                    elif hasattr(item, 'sigLevelChange'):
+                        item.sigLevelChange.connect(self._on_histogram_levels_changed)
+                        connected = True
+                    # Also listen to region signals attached to the item (some versions)
+                    try:
+                        iregion = getattr(item, 'region', None)
+                        if iregion is not None:
+                            if hasattr(iregion, 'sigRegionChanged'):
+                                iregion.sigRegionChanged.connect(lambda _=None: self._on_histogram_levels_changed())
+                                connected = True
+                            if hasattr(iregion, 'sigRegionChangeFinished'):
+                                iregion.sigRegionChangeFinished.connect(lambda _=None: self._on_histogram_levels_changed())
+                                connected = True
+                    except Exception:
+                        pass
+            except Exception:
+                item = None
+
+            # Some versions may emit on the widget directly
+            try:
+                if not connected and hasattr(hist, 'sigLevelsChanged'):
+                    hist.sigLevelsChanged.connect(self._on_histogram_levels_changed)
+                    connected = True
+                if not connected and hasattr(hist, 'sigLevelChange'):
                     hist.sigLevelChange.connect(self._on_histogram_levels_changed)
-                    return
+                    connected = True
             except Exception:
                 pass
-            # Fallback: listen to the draggable region signals
+
+            # Fallback: listen to the draggable region signals on the widget
             try:
-                region = getattr(hist, 'region', None)
-                if region is not None:
-                    if hasattr(region, 'sigRegionChanged'):
-                        region.sigRegionChanged.connect(lambda _=None: self._on_histogram_levels_changed())
-                    if hasattr(region, 'sigRegionChangeFinished'):
-                        region.sigRegionChangeFinished.connect(lambda _=None: self._on_histogram_levels_changed())
+                if not connected:
+                    region = getattr(hist, 'region', None)
+                    if region is not None:
+                        if hasattr(region, 'sigRegionChanged'):
+                            region.sigRegionChanged.connect(lambda _=None: self._on_histogram_levels_changed())
+                            connected = True
+                        if hasattr(region, 'sigRegionChangeFinished'):
+                            region.sigRegionChangeFinished.connect(lambda _=None: self._on_histogram_levels_changed())
+                            connected = True
+            except Exception:
+                pass
+
+            # Log connection status and types to aid runtime diagnosis
+            try:
+                if connected:
+                    msg = "Histogram signals wired: "
+                    srcs = []
+                    try:
+                        if item is not None:
+                            srcs.append(f"item={type(item).__name__}")
+                    except Exception:
+                        pass
+                    try:
+                        srcs.append(f"widget={type(hist).__name__}")
+                    except Exception:
+                        pass
+                    self.update_status(msg + ", ".join(srcs))
+                else:
+                    itype = type(getattr(hist, 'item', None)).__name__ if hasattr(hist, 'item') else 'None'
+                    wtype = type(hist).__name__
+                    self.update_status(f"Could not wire histogram signals; widget={wtype}, item={itype}")
             except Exception:
                 pass
         except Exception:
@@ -2182,17 +2259,34 @@ class WorkbenchWindow(BaseWindow):
             # Get current histogram levels in display (ImageItem) domain
             vmin_d = vmax_d = None
             try:
+                # Try widget first
                 if hasattr(hist, 'getLevels'):
                     vmin_d, vmax_d = hist.getLevels()
                 else:
-                    # Fallback: read region positions
-                    region = getattr(hist, 'region', None)
-                    if region is not None and hasattr(region, 'getRegion'):
-                        vmin_d, vmax_d = region.getRegion()
+                    raise AttributeError
             except Exception:
-                vmin_d = vmax_d = None
+                # Try item
+                try:
+                    item = getattr(hist, 'item', None)
+                    if item is not None and hasattr(item, 'getLevels'):
+                        vmin_d, vmax_d = item.getLevels()
+                except Exception:
+                    # Fallback: read region positions
+                    try:
+                        region = getattr(hist, 'region', None)
+                        if region is None:
+                            region = getattr(getattr(hist, 'item', None), 'region', None)
+                        if region is not None and hasattr(region, 'getRegion'):
+                            vmin_d, vmax_d = region.getRegion()
+                    except Exception:
+                        vmin_d = vmax_d = None
             if vmin_d is None or vmax_d is None:
                 return
+            # Cache last polled levels to avoid redundant updates
+            try:
+                self._last_hist_levels = (float(vmin_d), float(vmax_d))
+            except Exception:
+                pass
             # Convert to data domain if log scale is enabled
             try:
                 if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
@@ -2254,6 +2348,14 @@ class WorkbenchWindow(BaseWindow):
                     except Exception:
                         pass
                     self.sbVmax.setValue(self._manual_vmax)
+                # Also reflect histogram-driven values into the hint labels near the controls
+                try:
+                    if hasattr(self, 'lblVminHint') and self.lblVminHint is not None:
+                        self.lblVminHint.setText(f"Vmin({int(self._manual_vmin)}):")
+                    if hasattr(self, 'lblVmaxHint') and self.lblVmaxHint is not None:
+                        self.lblVmaxHint.setText(f"Vmax({int(self._manual_vmax)}):")
+                except Exception:
+                    pass
             finally:
                 try:
                     self._suppress_spinbox_update = False
@@ -2266,6 +2368,67 @@ class WorkbenchWindow(BaseWindow):
                 self._refresh_current_frame_image()
             except Exception:
                 pass
+
+            # Debug/logging to help verify runtime behavior
+            try:
+                self.update_status(f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _poll_histogram_levels(self):
+        """Fallback polling for histogram levels to ensure UI sync when signals are not emitted.
+
+        Checks at ~10 Hz during manual levels mode. If levels change compared to the last seen,
+        triggers _on_histogram_levels_changed()."""
+        try:
+            # Skip when auto levels are on or when we are programmatically updating histogram
+            if bool(getattr(self, '_suppress_histogram_update', False)):
+                return
+            auto_levels = hasattr(self, 'cbAutoLevels') and self.cbAutoLevels.isChecked()
+            if auto_levels:
+                return
+            hist = self._get_histogram_widget()
+            if hist is None:
+                return
+            vmin_d = vmax_d = None
+            try:
+                if hasattr(hist, 'getLevels'):
+                    vmin_d, vmax_d = hist.getLevels()
+                else:
+                    item = getattr(hist, 'item', None)
+                    if item is not None and hasattr(item, 'getLevels'):
+                        vmin_d, vmax_d = item.getLevels()
+            except Exception:
+                # Last fallback to region
+                try:
+                    region = getattr(hist, 'region', None)
+                    if region is None:
+                        region = getattr(getattr(hist, 'item', None), 'region', None)
+                    if region is not None and hasattr(region, 'getRegion'):
+                        vmin_d, vmax_d = region.getRegion()
+                except Exception:
+                    vmin_d = vmax_d = None
+            if vmin_d is None or vmax_d is None:
+                return
+            try:
+                cur = (float(vmin_d), float(vmax_d))
+            except Exception:
+                cur = (vmin_d, vmax_d)
+            prev = getattr(self, '_last_hist_levels', None)
+            changed = False
+            try:
+                if prev is None:
+                    changed = True
+                else:
+                    changed = (abs(cur[0] - prev[0]) > 1e-9) or (abs(cur[1] - prev[1]) > 1e-9)
+            except Exception:
+                changed = True
+            if changed:
+                self._last_hist_levels = cur
+                # Delegate to the authoritative handler
+                self._on_histogram_levels_changed()
         except Exception:
             pass
 
@@ -2305,7 +2468,13 @@ class WorkbenchWindow(BaseWindow):
                         dmin = float(np.nanmin(display_data))
                         dmax = float(np.nanmax(display_data))
                     if hist is not None and np.isfinite(dmin) and np.isfinite(dmax) and dmax > dmin:
+                        # Update histogram range and levels to reflect the new dataset/frame
                         hist.setHistogramRange(dmin, dmax)
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(dmin, dmax)
+                        finally:
+                            self._suppress_histogram_update = False
                 except Exception:
                     pass
                 return
@@ -2357,6 +2526,40 @@ class WorkbenchWindow(BaseWindow):
                         hist.setLevels(vmin_d, vmax_d)
                     finally:
                         self._suppress_histogram_update = False
+                    # Keep spinboxes in sync with the histogram levels even when set programmatically
+                    try:
+                        # Map display-domain -> data-domain for spinboxes
+                        if hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked():
+                            vmin_data = float(np.expm1(max(0.0, float(vmin_d))))
+                            vmax_data = float(np.expm1(max(0.0, float(vmax_d))))
+                        else:
+                            vmin_data = float(vmin_d)
+                            vmax_data = float(vmax_d)
+                        # Update without firing handlers
+                        self._suppress_spinbox_handlers = True
+                        if hasattr(self, 'sbVmin') and self.sbVmin is not None:
+                            try:
+                                self.sbVmin.setValue(vmin_data)
+                            except Exception:
+                                pass
+                        if hasattr(self, 'sbVmax') and self.sbVmax is not None:
+                            try:
+                                self.sbVmax.setValue(vmax_data)
+                            except Exception:
+                                pass
+                        # Also reflect into the hint labels near the spinboxes
+                        try:
+                            if hasattr(self, 'lblVminHint') and self.lblVminHint is not None:
+                                self.lblVminHint.setText(f"Vmin({int(vmin_data)}):")
+                            if hasattr(self, 'lblVmaxHint') and self.lblVmaxHint is not None:
+                                self.lblVmaxHint.setText(f"Vmax({int(vmax_data)}):")
+                        except Exception:
+                            pass
+                    finally:
+                        try:
+                            self._suppress_spinbox_handlers = False
+                        except Exception:
+                            pass
             except Exception:
                 pass
         except Exception:
@@ -2511,6 +2714,13 @@ class WorkbenchWindow(BaseWindow):
             # Ensure hover overlays exist after any prior clear
             try:
                 self._setup_2d_hover()
+            except Exception:
+                pass
+
+            # Re-wire histogram after first image is set to ensure item/region exist
+            try:
+                self._wire_histogram_levels_signals()
+                self._debug_histogram_types(prefix="[DEBUG] post-image wiring")
             except Exception:
                 pass
 
@@ -4366,6 +4576,17 @@ class WorkbenchWindow(BaseWindow):
 
                 # Update image levels
                 self.image_view.setLevels(min=vmin_display, max=vmax_display)
+                # Also sync the histogram widget to reflect the user-entered spinbox levels
+                try:
+                    hist = self._get_histogram_widget()
+                    if hist is not None:
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(vmin_display, vmax_display)
+                        finally:
+                            self._suppress_histogram_update = False
+                except Exception:
+                    pass
                 # Mark manual override active and cache
                 try:
                     self._manual_levels_override = True
@@ -4413,6 +4634,17 @@ class WorkbenchWindow(BaseWindow):
 
                 # Update image levels
                 self.image_view.setLevels(min=vmin_display, max=vmax_display)
+                # Also sync the histogram widget to reflect the user-entered spinbox levels
+                try:
+                    hist = self._get_histogram_widget()
+                    if hist is not None:
+                        try:
+                            self._suppress_histogram_update = True
+                            hist.setLevels(vmin_display, vmax_display)
+                        finally:
+                            self._suppress_histogram_update = False
+                except Exception:
+                    pass
                 # Mark manual override active and cache
                 try:
                     self._manual_levels_override = True
@@ -4572,29 +4804,19 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error updating speckle controls: {e}")
 
     def update_vmin_vmax_controls_for_data(self, data):
-        """Update vmin/vmax controls based on data range."""
+        """Update vmin/vmax controls with awareness of current scale mode (log vs linear).
+
+        Delegates to update_vmin_vmax_for_log_scale() using the current cbLogScale state,
+        and then refreshes the data-domain hint labels.
+        """
         try:
-            min_val = int(np.min(data))
-            max_val = int(np.max(data))
-            # Keep ranges wide enough to include any user-set manual levels; only set values if no override
-            if hasattr(self, 'sbVmin'):
-                lower = min(min_val, int(getattr(self, '_manual_vmin', min_val) or min_val))
-                self.sbVmin.setRange(lower, max_val)
-                if not bool(getattr(self, '_manual_levels_override', False)):
-                    self.sbVmin.setValue(min_val)
-
-            if hasattr(self, 'sbVmax'):
-                upper = max(max_val * 2, int(getattr(self, '_manual_vmax', max_val) or max_val))
-                self.sbVmax.setRange(min_val + 1, upper)
-                if not bool(getattr(self, '_manual_levels_override', False)):
-                    self.sbVmax.setValue(max_val)
-
+            log_enabled = hasattr(self, 'cbLogScale') and self.cbLogScale.isChecked()
+            self.update_vmin_vmax_for_log_scale(data, log_enabled)
             # Keep hint labels in sync with the current data frame (data-domain)
             try:
                 self._update_vmin_vmax_hints()
             except Exception:
                 pass
-
         except Exception as e:
             self.update_status(f"Error updating vmin/vmax controls: {e}")
 
