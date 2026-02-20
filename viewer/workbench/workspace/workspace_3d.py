@@ -138,6 +138,11 @@ class Workspace3D(BaseTab):
             self.lut.apply_opacity([0, 1])
             self.lut2 = pv.LookupTable(cmap='jet')
             self.lut2.apply_opacity([0, 1])
+            # Sync initial LUTs to the UI-selected colormap and current intensity controls
+            try:
+                self.on_3d_colormap_changed()
+            except Exception:
+                pass
         except Exception:
             self.lut = None
             self.lut2 = None
@@ -280,6 +285,26 @@ class Workspace3D(BaseTab):
             self.lut.apply_opacity([0, 1])
             self.lut2 = pv.LookupTable(cmap=cmap_name)
             self.lut2.apply_opacity([0, 1])
+            # Keep LUT scalar ranges in sync with current controls or cached bounds
+            try:
+                # Prefer current UI intensity range
+                vmin = float(self.sb_min_intensity_3d.value())
+                vmax = float(self.sb_max_intensity_3d.value())
+            except Exception:
+                # Fallback to data bounds if UI unavailable
+                vmin = getattr(self, '_data_intensity_min', None)
+                vmax = getattr(self, '_data_intensity_max', None)
+            try:
+                if vmin is not None and vmax is not None:
+                    # Ensure proper ordering and non-zero span
+                    if vmin > vmax:
+                        vmin, vmax = vmax, vmin
+                    if vmin == vmax:
+                        vmax = vmin + 1e-6
+                    self.lut.scalar_range = (vmin, vmax)
+                    self.lut2.scalar_range = (vmin, vmax)
+            except Exception:
+                pass
         except Exception:
             self.lut = None
             self.lut2 = None
@@ -313,21 +338,29 @@ class Workspace3D(BaseTab):
 
         # Attempt to update slab colormap (best-effort) using a separate LUT
         try:
-            if self.slab_actor is not None:
+            # Use the cached actor if present otherwise lookup by name
+            slab_actor = self.slab_actor
+            if slab_actor is None:
+                actors = getattr(self.plotter, 'actors', {}) or {}
+                slab_actor = actors.get('slab_points')
+            if slab_actor is not None:
                 try:
+                    # Apply LUT to mapper
                     try:
-                        # Prefer self.lut2 if available
-                        self.slab_actor.mapper.lookup_table = (self.lut2 or self.lut)
+                        slab_actor.mapper.lookup_table = (self.lut2 or self.lut)
                     except Exception:
-                        try:
-                            self.slab_actor.GetMapper().SetLookupTable(self.lut2 or self.lut)
-                        except Exception:
-                            pass
+                        slab_actor.GetMapper().SetLookupTable(self.lut2 or self.lut)
+                except Exception:
+                    pass
+                # Apply scalar range from UI if available
+                try:
+                    rng = [self.sb_min_intensity_3d.value(), self.sb_max_intensity_3d.value()]
+                    slab_actor.mapper.scalar_range = rng
                 except Exception:
                     pass
                 # Keep visibility consistent
                 try:
-                    self.slab_actor.SetVisibility(bool(self.cb_show_slice.isChecked()))
+                    slab_actor.SetVisibility(bool(self.cb_show_slice.isChecked()))
                 except Exception:
                     pass
         except Exception:
@@ -423,6 +456,11 @@ class Workspace3D(BaseTab):
                             self.lut.scalar_range = (self._data_intensity_min, self._data_intensity_max)
                         if self.lut2 is not None:
                             self.lut2.scalar_range = (self._data_intensity_min, self._data_intensity_max)
+                    except Exception:
+                        pass
+                    # Ensure the currently selected colormap is applied immediately on load
+                    try:
+                        self.on_3d_colormap_changed()
                     except Exception:
                         pass
                     # Apply LUTs to actors
@@ -523,23 +561,52 @@ class Workspace3D(BaseTab):
         mask = np.abs(dist) < thickness
         
         slab = self.cloud_mesh_3d.extract_points(mask)
-        
+
+        # Clean up any existing slab actor before adding a new one to keep references current
+        try:
+            actors = getattr(self.plotter, 'actors', {}) or {}
+            if 'slab_points' in actors:
+                try:
+                    self.plotter.remove_actor('slab_points', reset_camera=False)
+                except Exception:
+                    try:
+                        self.plotter.remove_actor(actors.get('slab_points'), reset_camera=False)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        self.slab_actor = None
+
         if slab.n_points > 0:
+            # Add the slab without passing cmap; set mapper.lookup_table explicitly afterwards
             self.slab_actor = self.plotter.add_mesh(
-                slab, 
-                name="slab_points", 
-                render_points_as_spheres=True, 
-                point_size=8, 
-                scalars='intensity', 
-                cmap=(self.lut2 or self.lut), 
+                slab,
+                name="slab_points",
+                render_points_as_spheres=True,
+                point_size=8,
+                scalars='intensity',
                 show_scalar_bar=False
             )
+            # Apply current LUT and scalar range to the new slab actor
+            try:
+                if (self.lut2 or self.lut) is not None:
+                    try:
+                        self.slab_actor.mapper.lookup_table = (self.lut2 or self.lut)
+                    except Exception:
+                        self.slab_actor.GetMapper().SetLookupTable(self.lut2 or self.lut)
+            except Exception:
+                pass
+            # Match current intensity/clim
+            try:
+                clim = [self.sb_min_intensity_3d.value(), self.sb_max_intensity_3d.value()]
+                self.slab_actor.mapper.scalar_range = clim
+            except Exception:
+                pass
             # Ensure the new slab respects the current checkbox state
-            self.slab_actor.SetVisibility(self.cb_show_slice.isChecked())
-            
-            # Match current intensity
-            clim = [self.sb_min_intensity_3d.value(), self.sb_max_intensity_3d.value()]
-            self.slab_actor.mapper.scalar_range = clim
+            try:
+                self.slab_actor.SetVisibility(self.cb_show_slice.isChecked())
+            except Exception:
+                pass
         
         # Keep plane widget synchronized to final state
         try:
@@ -630,6 +697,15 @@ class Workspace3D(BaseTab):
 
         if "slab_points" in self.plotter.actors:
             self.plotter.actors["slab_points"].mapper.scalar_range = (new_range[0], new_range[1])
+
+        # Keep LUTs' internal ranges consistent as well
+        try:
+            if self.lut is not None:
+                self.lut.scalar_range = (new_range[0], new_range[1])
+            if self.lut2 is not None:
+                self.lut2.scalar_range = (new_range[0], new_range[1])
+        except Exception:
+            pass
             
         # Update the volume actor by re-adding with new clim range
         if hasattr(self.plotter, 'scalar_bars'):
