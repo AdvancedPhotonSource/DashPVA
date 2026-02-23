@@ -18,9 +18,10 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QMe
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import PVAReader, HDF5Writer, SizeManager
 from hkl_3d_slice_window import HKL3DSliceWindow
+from utils.log_manager import LogMixin
 
 
-class ConfigDialog(QDialog):
+class ConfigDialog(QDialog, LogMixin):
 
     def __init__(self):
         """
@@ -33,6 +34,10 @@ class ConfigDialog(QDialog):
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
+        try:
+            self.set_log_manager(viewer_name="HKLConfigDialog")
+        except Exception:
+            pass
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
         self.input_channel = ""
@@ -77,13 +82,17 @@ class ConfigDialog(QDialog):
             self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel,
                                             file_path=self.config_path,) 
         else:
-            print(f'File Path {self.config_path} Doesn\'t Exitst')  
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.error(f"File Path {self.config_path} doesn't exist")
+            except Exception:
+                pass
             #TODO: ADD ERROR Dialog rather than print message so message is clearer
             self.new_dialog = ConfigDialog()
             self.new_dialog.show()    
 
 
-class HKLImageWindow(QMainWindow):
+class HKLImageWindow(QMainWindow, LogMixin):
     images_plotted = pyqtSignal(bool)
 
     def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
@@ -96,6 +105,10 @@ class HKLImageWindow(QMainWindow):
         """
         super(HKLImageWindow, self).__init__()
         uic.loadUi('gui/hkl_viewer_window.ui', self)
+        try:
+            self.set_log_manager(viewer_name="HKLViewer")
+        except Exception:
+            pass
         self.setWindowTitle('HKL Viewer')
         self.show()
 
@@ -200,7 +213,11 @@ class HKLImageWindow(QMainWindow):
             if self.reader.CACHING_MODE == 'scan':
                 self.file_writer_thread.start()
         except Exception as e:
-            print(f'Failed to Connect to {self._input_channel}: {e}')
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f'Failed to Connect to {self._input_channel}: {e}')
+            except Exception:
+                pass
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
@@ -305,7 +322,11 @@ class HKLImageWindow(QMainWindow):
                         qx, qy, qz
                     ))
                 except Exception as e:
-                    print(f'[HKL Viewer] Failed to concatenate caches: {e}')
+                    try:
+                        if hasattr(self, 'logger'):
+                            self.logger.exception(f'[HKL Viewer] Failed to concatenate caches: {e}')
+                    except Exception:
+                        pass
 
 
                 try:
@@ -337,7 +358,11 @@ class HKLImageWindow(QMainWindow):
 
                     self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
                 except Exception as e:
-                    print(f"[HKL Viewer] Failed to update 3D plot: {e}")
+                    try:
+                        if hasattr(self, 'logger'):
+                            self.logger.exception(f"[HKL Viewer] Failed to update 3D plot: {e}")
+                    except Exception:
+                        pass
 
     def update_opacity(self) -> None:
         """
@@ -387,9 +412,11 @@ class HKLImageWindow(QMainWindow):
             self.slice_window = HKL3DSliceWindow(self) 
             self.slice_window.show()
         except Exception as e:
-            import traceback
-            with open('error_output2.txt','w') as f:
-                f.write(f"Traceback:\n{traceback.format_exc()}\n\nError:\n{str(e)}")
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception("Failed to open 3D slice window", exc_info=e)
+            except Exception:
+                pass
 
 
 if __name__ == '__main__':

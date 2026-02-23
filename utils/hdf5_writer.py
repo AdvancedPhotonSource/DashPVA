@@ -5,10 +5,11 @@ from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import hdf5plugin
 from utils.metadata_converter import convert_files_or_dir
 import settings
+from utils.log_manager import LogMixin
 # removed traceback import
 # from utils import PVAReader
 
-class HDF5Writer(QObject):
+class HDF5Writer(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
     
     def __init__(self, file_path: str, pva_reader):
@@ -16,6 +17,11 @@ class HDF5Writer(QObject):
         self.file_path = file_path
         self.pva_reader = pva_reader
         self.default_output_file_config = {'FilePath': 'SCAN_OUTPUT.h5'}
+        # Initialize logging
+        try:
+            self.set_log_manager()
+        except Exception:
+            pass
 
     @pyqtSlot()
     def save_caches_to_h5(self, clear_caches:bool=True, compress=False) -> None:
@@ -182,6 +188,18 @@ class HDF5Writer(QObject):
             except Exception as conv_err:
                 conversion_suffix = f" (conversion failed: {conv_err})"
 
+            # Log success
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"Saved {len_images} items to {OUTPUT_FILE_LOCATION}{conversion_suffix}")
+            except Exception:
+                pass
             self.hdf5_writer_finished.emit(f"{len_images} successfully saved to {OUTPUT_FILE_LOCATION}{conversion_suffix}")
         except Exception as e:
+            # Log exception with traceback
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
+            except Exception:
+                pass
             self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")

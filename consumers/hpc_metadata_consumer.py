@@ -10,6 +10,7 @@ import os
 # Add the parent directory to the Python path to find utils module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
+from utils.log_manager import LogMixin
 
 # COPIED FROM hpc_rsm_consumer.py - Compression libraries
 import bitshuffle
@@ -19,7 +20,7 @@ import toml
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
-class HpcAdMetadataProcessor(AdImageProcessor):
+class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
 
     # Acceptable difference between image timestamp and metadata timestamp
     DEFAULT_TIMESTAMP_TOLERANCE = 0.001
@@ -30,6 +31,10 @@ class HpcAdMetadataProcessor(AdImageProcessor):
 
     def __init__(self, configDict={}):
         AdImageProcessor.__init__(self, configDict)
+        try:
+            self.set_log_manager(viewer_name="HpcAdMetadataProcessor")
+        except Exception:
+            pass
         # Configuration
         self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
         # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
@@ -125,9 +130,12 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                     for channel in section.values(): # the values of each seciton is the pv name string
                         self.hkl_pv_channels.add(channel)
         
-        with open('error_output.txt','w') as f:
-            f.write(str(configDict))
-        self.logger(configDict)
+        # Log configuration via central logger instead of writing to a file
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"Config dict: {configDict}")
+        except Exception:
+            pass
         #self.processor_id = configDict.get('collectorId') if 'collectorId' in configDict else configDict.get('metadataId', None)
 
     # Associate metadata

@@ -7,14 +7,20 @@ from pathlib import Path
 import traceback
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils.log_manager import LogMixin
 
-class HDF5Loader:
+class HDF5Loader(LogMixin):
     """
     Utility class for loading and saving HDF5 files with 2D and 3D point cloud data
     """
     
     def __init__(self):
         """Initialize the HDF5 loader"""
+        try:
+            # Bind a logger for this utility
+            self.set_log_manager(viewer_name="HDF5Loader")
+        except Exception:
+            pass
         # ================ FILE HANDLING ======================= #
         self.current_file_path = None
         self.output_file_location = None
@@ -1220,15 +1226,10 @@ class HDF5Loader:
                                           float_precision=float_precision, summarize_datasets=summarize_datasets)
 
         except Exception as e:
-            # Also log to error file
+            # Log via central logger instead of writing to a txt file
             try:
-                with open(self.log_file_path, 'a') as f:
-                    f.write("==== HDF5 Inspect Error ====\n")
-                    f.write(f"File Path: {file_path}\n")
-                    f.write(f"Error: {repr(e)}\n")
-                    f.write("Traceback:\n")
-                    f.write(traceback.format_exc())
-                    f.write("\n")
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"HDF5 Inspect Error for {file_path}: {e}")
             except Exception:
                 pass
             return info if raw else self._format_file_info(info, style=style, include_unknown=include_unknown,
@@ -1471,10 +1472,16 @@ class HDF5Loader:
             error (Exception): The exception that occurred
             file_path (str): Path to file that caused error
         """
-        f = open('error_output.txt', 'w')
-        f.write(f'Error Loading HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
-        f.close()
-        print(self.last_error)
+        try:
+            self.last_error = f"Error Loading HDF5 File: {str(error)} (path={file_path})"
+        except Exception:
+            self.last_error = str(error)
+        # Emit to central logger
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.exception(self.last_error)
+        except Exception:
+            pass
         
     
     def _handle_saving_error(self, error: Exception, file_path: str) -> None:
@@ -1485,10 +1492,16 @@ class HDF5Loader:
             error (Exception): The exception that occurred
             file_path (str): Path to file that caused error
         """
-        f = open('error_output.txt', 'w')
-        f.write(f'Error Saving HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
-        f.close()
-        print(self.last_error)
+        try:
+            self.last_error = f"Error Saving HDF5 File: {str(error)} (path={file_path})"
+        except Exception:
+            self.last_error = str(error)
+        # Emit to central logger
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.exception(self.last_error)
+        except Exception:
+            pass
 
 # ================= HKL METADATA DISCOVERY HELPER ======================= #
 

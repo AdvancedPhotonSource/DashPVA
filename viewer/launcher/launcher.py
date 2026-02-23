@@ -1,7 +1,6 @@
 import sys
 import os, subprocess
 from collections import OrderedDict
-from pathlib import Path
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtCore import QTimer, Qt
@@ -36,6 +35,13 @@ class LauncherDialog(QDialog):
             self.btn_shutdown_all.clicked.connect(self._confirm_shutdown_all)
 
         self._update_status()
+
+        # Static tip in the info footer, if present
+        try:
+            if hasattr(self, 'lbl_info') and self.lbl_info is not None:
+                self.lbl_info.setText("Note: On first time use loading may take a while")
+        except Exception:
+            pass
 
     def _insert_registry_sections(self):
         """Build all section headers and buttons from the VIEWS registry.
@@ -174,6 +180,8 @@ class LauncherDialog(QDialog):
         if not lines:
             return "Running modules:\nNone"
         return "Running modules:\n" + "\n".join(lines)
+
+    
 
     def _terminate_proc(self, p, timeout=3.0):
         """Attempt graceful terminate, then force kill if still alive."""

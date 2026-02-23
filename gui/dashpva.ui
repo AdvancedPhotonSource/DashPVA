@@ -56,6 +56,21 @@
      </property>
     </widget>
    </item>
+  <!-- Ephemeral info banner just above the bottom button bar -->
+  <item>
+   <widget class="QLabel" name="lbl_info">
+    <property name="styleSheet">
+     <string notr="true">background-color: #FFF9C4; color: #555; border: 1px solid #F0E68C; padding: 6px; border-radius: 4px; font-size: 11px;</string>
+    </property>
+    <property name="text">
+     <string></string>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+   </widget>
+  </item>
+
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>

@@ -38,6 +38,7 @@ from viewer.workbench.workspace.workspace_3d import Workspace3D
 # sys.path.insert(0, str(project_root))
 
 from viewer.base_window import BaseWindow
+from utils.log_manager import get_default_manager
 from utils.hdf5_loader import HDF5Loader
 
 # Dimension-specific controls
@@ -908,7 +909,9 @@ class WorkbenchWindow(BaseWindow):
                     self._histogram_poll_timer.start()
                     try:
                         print("[DEBUG] Histogram polling timer started (10 Hz)")
-                        self.update_status("Histogram polling enabled (10 Hz)")
+                        # Reduce noise: debug log instead of user-facing status
+                        if hasattr(self, 'logger'):
+                            self.logger.debug("Histogram polling enabled (10 Hz)")
                     except Exception:
                         pass
             except Exception:
@@ -2220,6 +2223,7 @@ class WorkbenchWindow(BaseWindow):
             # Log connection status and types to aid runtime diagnosis
             try:
                 if connected:
+                    # Reduce noise: debug log instead of user-facing status
                     msg = "Histogram signals wired: "
                     srcs = []
                     try:
@@ -2231,7 +2235,11 @@ class WorkbenchWindow(BaseWindow):
                         srcs.append(f"widget={type(hist).__name__}")
                     except Exception:
                         pass
-                    self.update_status(msg + ", ".join(srcs))
+                    try:
+                        if hasattr(self, 'logger'):
+                            self.logger.debug(msg + ", ".join(srcs))
+                    except Exception:
+                        pass
                 else:
                     itype = type(getattr(hist, 'item', None)).__name__ if hasattr(hist, 'item') else 'None'
                     wtype = type(hist).__name__
@@ -2369,9 +2377,12 @@ class WorkbenchWindow(BaseWindow):
             except Exception:
                 pass
 
-            # Debug/logging to help verify runtime behavior
+            # Debug logging to help verify runtime behavior without spamming INFO logs
             try:
-                self.update_status(f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]")
+                if hasattr(self, 'logger'):
+                    self.logger.debug(
+                        f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]"
+                    )
             except Exception:
                 pass
         except Exception:
@@ -4946,21 +4957,20 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("DashPVA")
 
-    # Global excepthook to log unhandled errors to error_output.txt
-    def _log_excepthook(exctype, value, tb):
-        try:
-            import datetime, traceback
-            error_file = project_root / "error_output.txt"
-            with open(error_file, "a") as f:
-                f.write(f"[{datetime.datetime.now().isoformat()}] Unhandled exception: {exctype.__name__}: {value}\n")
-                traceback.print_tb(tb, file=f)
-        except Exception:
-            pass
-    sys.excepthook = _log_excepthook
+    # Initialize shared LogManager (installs global excepthook and rotating file handler)
+    try:
+        get_default_manager(app)
+    except Exception:
+        pass
 
     # Create and show the main window
     window = WorkbenchWindow()
     window.show()
+    try:
+        if hasattr(window, 'logger'):
+            window.logger.info("Workbench started")
+    except Exception:
+        pass
 
     # Start the event loop
     sys.exit(app.exec_())

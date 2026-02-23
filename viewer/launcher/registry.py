@@ -1,7 +1,17 @@
 import sys
 
-# Define view entries to be rendered as buttons in the Launcher.
-# Each entry must have a 'section' key that determines which group it appears under.
+"""
+Define view entries to be rendered as buttons in the Launcher.
+Each entry must have a 'section' key that determines which group it appears under.
+
+Fields per entry:
+  - key: unique key for the module
+  - label: button label
+  - section: grouping header
+  - cmd: list command to execute
+  - running_text: button text while running
+  - tooltip: short help text
+"""
 # Sections are rendered in the order they first appear in this list.
 # To add a new view, append another dict with the same keys.
 VIEWS = [
