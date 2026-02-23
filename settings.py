@@ -65,10 +65,10 @@ STATS: Dict[str, Any] = {}
 HKL: Dict[str, Any] = {}
 ANALYSIS: Dict[str, Any] = {}
 
-#AppSettings
-LOG_PATH: Optional[str] = None
-OUTPUT_PATH: Optional[str] = None
-CONFIG_PATH: Optional[str] = None
+# AppSettings
+LOG_PATH: Optional[str] = PROJECT_ROOT+"/logs"
+OUTPUT_PATH: Optional[str] = PROJECT_ROOT+"/outputs"
+CONFIG_PATH: Optional[str] = PROJECT_ROOT+"/pv_configs"
 CONSUMERS_PATH: Optional[str] = None
 
 # Diagnostics
@@ -102,6 +102,7 @@ def reload() -> None:
     global SCAN_FLAG_PV, SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
     global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
+    global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
     LOCATOR = eff
@@ -169,6 +170,21 @@ def reload() -> None:
     STATS = cfg.get('STATS', {}) or {}
     HKL = cfg.get('HKL', {}) or {}
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
+
+    # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
+    try:
+        lp = cfg.get('LOG_PATH')
+        LOG_PATH = str(Path(lp).expanduser()) if isinstance(lp, str) and lp.strip() else './logs'
+    except Exception:
+        LOG_PATH = './logs'
+    try:
+        op = cfg.get('OUTPUT_PATH')
+        OUTPUT_PATH = str(Path(op).expanduser()) if isinstance(op, str) and op.strip() else './outputs'
+    except Exception:
+        OUTPUT_PATH = './outputs'
+    # Pass through any optional paths if present
+    CONFIG_PATH = cfg.get('CONFIG_PATH')
+    CONSUMERS_PATH = cfg.get('CONSUMERS_PATH')
 
 
 def _get_effective_locator() -> Union[int, str, None]:
@@ -417,6 +433,18 @@ class Settings:
         self.STATS = cfg.get('STATS', {}) or {}
         self.HKL = cfg.get('HKL', {}) or {}
         self.ANALYSIS = cfg.get('ANALYSIS', {}) or {}
+
+        # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
+        try:
+            lp = cfg.get('LOG_PATH')
+            self.LOG_PATH = str(Path(lp).expanduser()) if isinstance(lp, str) and lp.strip() else './logs'
+        except Exception:
+            self.LOG_PATH = './logs'
+        try:
+            op = cfg.get('OUTPUT_PATH')
+            self.OUTPUT_PATH = str(Path(op).expanduser()) if isinstance(op, str) and op.strip() else './outputs'
+        except Exception:
+            self.OUTPUT_PATH = './outputs'
 
     @property
     def db(self) -> DatabaseInterface:

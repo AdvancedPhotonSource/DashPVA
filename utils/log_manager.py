@@ -6,6 +6,7 @@ import sys
 import re
 from typing import List, Pattern
 from pathlib import Path
+import settings
 
 
 class UINoiseFilter(logging.Filter):
@@ -46,7 +47,8 @@ class UINoiseFilter(logging.Filter):
 class LogManager:
     """
     Central logging manager with a single RotatingFileHandler.
-    - Log file: logs/general.log (ensures directory exists)
+    - Log file: <settings.LOG_PATH>/general.log when available, otherwise logs/general.log
+      (ensures directory exists)
     - Format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
     - Rotation defaults: 10 MB per file, 10 backups
       Override via env: DASHPVA_LOG_MAX_BYTES, DASHPVA_LOG_BACKUPS
@@ -62,7 +64,13 @@ class LogManager:
     def __init__(self, app: QApplication = None, app_name: str = "DashPVA", log_file: str = "logs/general.log"):
         self.app = app
         self.app_name = app_name
-        self.log_file = log_file
+        # Resolve log path from settings module; fallback to provided default
+        if settings.LOG_PATH:
+            log_path = Path(settings.LOG_PATH).expanduser()
+            self.log_file = str(log_path / "general.log")
+        else:
+            self.log_file = log_file
+        
 
         # Rotation configuration with env overrides
         default_max_bytes = 10 * 1024 * 1024
