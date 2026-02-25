@@ -33,7 +33,10 @@ from pathlib import Path
 
 from utils.config.repository import ConfigRepository
 from utils.config.interfaces import ConfigSource
-from database import DatabaseInterface
+try:
+    from database import DatabaseInterface
+except Exception:
+    DatabaseInterface = None  # type: ignore[assignment]
 
 
 # User variables
@@ -66,9 +69,9 @@ HKL: Dict[str, Any] = {}
 ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
-LOG_PATH: Optional[str] = PROJECT_ROOT+"/logs"
-OUTPUT_PATH: Optional[str] = PROJECT_ROOT+"/outputs"
-CONFIG_PATH: Optional[str] = PROJECT_ROOT+"/pv_configs"
+LOG_PATH: Optional[str] = str(PROJECT_ROOT / "logs")
+OUTPUT_PATH: Optional[str] = str(PROJECT_ROOT / "outputs")
+CONFIG_PATH: Optional[str] = str(PROJECT_ROOT / "pv_configs")
 CONSUMERS_PATH: Optional[str] = None
 
 # Diagnostics
@@ -77,7 +80,7 @@ SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
 
 # Internal state
-_repo = ConfigRepository(DatabaseInterface())
+_repo = ConfigRepository(DatabaseInterface() if DatabaseInterface else None)
 _default_toml = 'pv_configs/sample_config.toml'
 _locator_internal: Optional[Union[int, str]] = None
 
@@ -253,7 +256,7 @@ class Settings:
         locator: Optional[Union[int, str, ConfigSource, Dict[str, Any]]] = None,
         repo: Optional[ConfigRepository] = None,
     ) -> None:
-        self.repo = repo or ConfigRepository(DatabaseInterface())
+        self.repo = repo or ConfigRepository(DatabaseInterface() if DatabaseInterface else None)
         self.source_type: Optional[str] = None
         self.locator: Optional[Union[int, str]] = None
         self._source: Optional[ConfigSource] = None
