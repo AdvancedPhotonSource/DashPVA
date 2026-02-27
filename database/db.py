@@ -4,13 +4,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
+import settings
 
 Base = declarative_base()
 
 
-# Database configuration
-DATABASE_URL = "sqlite:///dashpva.db"
+# Database configuration using absolute path
+# Get project root from the centralized settings module
+PROJECT_ROOT = settings.PROJECT_ROOT
+DB_FILE = PROJECT_ROOT / "dashpva.db"
+DATABASE_URL = f"sqlite:///{DB_FILE.as_posix()}"
 
 def get_engine():
     """Create and return database engine"""
@@ -29,13 +32,14 @@ def create_tables():
 
 def init_database():
     """Initialize the database with tables"""
-    if not os.path.exists("dashpva.db"):
+    if not DB_FILE.exists():
         create_tables()
         # Seed default settings only on first creation using raw SQL script
         try:
             from scripts.seed_settings_defaults_sql import seed_defaults
             seed_defaults()
         except Exception:
+            # Seed script may be absent; ignore errors per original behavior
             pass
         print("Database initialized successfully")
     else:
