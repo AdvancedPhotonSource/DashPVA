@@ -19,9 +19,9 @@ VIEWS = [
         'key': 'area_det',
         'label': 'Area Detector 2D',
         'section': 'Streaming',
-        'cmd': [sys.executable, 'dashpva.py', 'hkl3d'],
-        'running_text': 'HKL 3D — Running…',
-        'tooltip': 'Open HKL 3D (CLI: dashpva.py hkl3d)'
+        'cmd': [sys.executable, 'dashpva.py', 'detector'],
+        'running_text': 'Area Detector — Running…',
+        'tooltip': 'Open Area detector (CLI: dashpva.py detector)'
     },
     {
         'key': 'hkl3d',
@@ -71,5 +71,14 @@ VIEWS = [
         'cmd': [sys.executable, 'viewer/tools/file_convert.py'],
         'running_text': 'File Convert — Running…',
         'tooltip': 'Convert folder(s) to HDF5 in standard structure'
+    },
+    # bayesian
+    {
+        'key': 'bayesian_scan',
+        'label': 'Bayesian Scan',
+        'section': 'Bayesian',
+        'cmd': [sys.executable, 'dashpva.py', 'bayesian'],
+        'running_text': 'Bayesian Scan — Running…',
+        'tooltip': 'Open Bayesian 2-D Scan Viewer (CLI: dashpva.py bayesian)'
     },
 ]

@@ -63,6 +63,9 @@ dependencies = [
     "deepinv>=0.3.7",
     "click>=8.1.7",
     "xrayutilities==1.7.10",
+    "gpytorch>=1.11",
+    "linear-operator>=0.5.0",
+    "botorch>=0.9.0",
 ]
 
 [build-system]

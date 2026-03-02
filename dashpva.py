@@ -93,6 +93,13 @@ def setup(ioc):
     subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py'])
 
 @cli.command()
+def bayesian():
+    """Launch Bayesian 2-D Scan Viewer"""
+    click.echo('Running Bayesian 2-D Scan Viewer')
+    subprocess.run([sys.executable, '-m', 'viewer.bayesian.bayesian_viewer'])
+
+
+@cli.command()
 def workbench():
     """Launch Workbench - Data Analysis Tool"""
     click.echo('Running Workbench - Data Analysis Tool')
