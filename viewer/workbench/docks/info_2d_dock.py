@@ -17,8 +17,9 @@ class Info2DDock(InformationDockBase):
         title: str = "2D Info",
         segment_name: Optional[str] = "2d",
         dock_area: Qt.DockWidgetArea = Qt.RightDockWidgetArea,
+        show: bool = True,
     ):
-        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area)
+        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
 
     def refresh(self) -> None:
         """Refresh the displayed information based on the main window's 2D state."""

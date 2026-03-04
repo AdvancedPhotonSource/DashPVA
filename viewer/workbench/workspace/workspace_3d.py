@@ -178,38 +178,11 @@ class Workspace3D(BaseTab):
                     mw.layout3DPlotHost.addWidget(mw.plotter_3d)
             else:
                 print("Warning: layout3DPlotHost not found, 3D plot may not display correctly")
-            # Info dock
-            try:
-                self._setup_info_dock()
-            except Exception:
-                pass
             # Clear initial state
             self.clear_plot()
         except Exception as e:
             try:
                 mw.update_status(f"Error setting up 3D plot viewer: {e}")
-            except Exception:
-                pass
-
-    def _setup_info_dock(self):
-        """Create a small 3D Info dock to display render metrics (e.g., render time)."""
-        mw = self.main_window
-        try:
-            mw.three_d_info_dock = QDockWidget("3D Info", mw)
-            mw.three_d_info_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-            container = QWidget(mw.three_d_info_dock)
-            layout = QVBoxLayout(container)
-            mw.three_d_info_label = QLabel("Render time: - ms")
-            layout.addWidget(mw.three_d_info_label)
-            mw.three_d_info_dock.setWidget(container)
-            mw.addDockWidget(Qt.RightDockWidgetArea, mw.three_d_info_dock)
-            try:
-                mw.add_dock_toggle_action(mw.three_d_info_dock, "3D Info", segment_name="3d")
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                mw.update_status(f"Error setting up 3D info dock: {e}")
             except Exception:
                 pass
 
@@ -384,14 +357,6 @@ class Workspace3D(BaseTab):
         except Exception:
             pass
 
-    def update_info(self, render_ms: int):
-        """Update the 3D info dock with render timing in milliseconds."""
-        mw = self.main_window
-        try:
-            if hasattr(mw, 'three_d_info_label') and mw.three_d_info_label is not None:
-                mw.three_d_info_label.setText(f"Render time: {int(render_ms)} ms")
-        except Exception:
-            pass
 
     # === Clear ===
     def clear_plot(self):
@@ -411,9 +376,6 @@ class Workspace3D(BaseTab):
         """Load dataset and render using the tab's local plotter."""
         print("Loading data into 3D viewer...")
         mw = self.main_window
-        import time as _time
-        start_all = _time.perf_counter()
-
         try:
             if not PYVISTA_AVAILABLE:
                 QMessageBox.warning(self, "3D Viewer", "PyVista is not available.")
@@ -544,8 +506,7 @@ class Workspace3D(BaseTab):
         except Exception as e:
             QMessageBox.critical(self, "3D Viewer Error", f"Error: {str(e)}")
         finally:
-            elapsed = int((_time.perf_counter() - start_all) * 1000)
-            self.update_info(elapsed)
+            pass
 
     def on_plane_update(self, normal, origin):
         """Extracts points near the plane to simulate a 3D slice."""

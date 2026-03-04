@@ -617,21 +617,6 @@ class WorkbenchWindow(BaseWindow):
         except Exception as e:
             self.update_status(f"Error opening ROI Math dock in window: {e}")
 
-    def setup_roi_stats_dock(self):
-        try:
-            self.roi_stats_dock = QDockWidget("ROI", self)
-            self.roi_stats_dock.setAllowedAreas(Qt.RightDockWidgetArea)
-            self.roi_stats_table = QTableWidget(0, 11, self.roi_stats_dock)
-            self.roi_stats_table.setHorizontalHeaderLabels(["Name","sum","min","max","mean","std","count","x","y","w","h"])
-            self.roi_stats_dock.setWidget(self.roi_stats_table)
-            self.addDockWidget(Qt.RightDockWidgetArea, self.roi_stats_dock)
-            try:
-                self.roi_stats_dock.visibilityChanged.connect(self.on_roi_stats_dock_visibility_changed)
-            except Exception:
-                pass
-        except Exception as e:
-            self.update_status(f"Error setting up ROI stats dock: {e}")
-
     def get_roi_name(self, roi):
         try:
             # Prefer ROIManager's naming to keep everything in sync (including renames)
@@ -720,12 +705,14 @@ class WorkbenchWindow(BaseWindow):
         except Exception:
             pass
 
-    def on_roi_stats_dock_visibility_changed(self, visible):
-        try:
-            if hasattr(self, 'action_show_roi_stats_dock'):
-                self.action_show_roi_stats_dock.setChecked(bool(visible))
-        except Exception:
-            pass
+    def closeEvent(self, event):
+        """Close all secondary dock windows before the workbench exits."""
+        for win in list(getattr(self, '_dock_windows', [])):
+            try:
+                win.close()
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     def setup_workbench_connections(self):
         """Set up connections specific to the workbench."""
@@ -761,12 +748,6 @@ class WorkbenchWindow(BaseWindow):
         #         except Exception:
         #             pass
 
-        #     # ROI dock toggle (renamed from 'ROI Stats' to 'ROI')
-        #         self.action_show_roi_stats_dock = QAction("ROI", self)
-        #         self.action_show_roi_stats_dock.setCheckable(True)
-        #         self.action_show_roi_stats_dock.setChecked(True if hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.isVisible() else True)
-        #         self.action_show_roi_stats_dock.toggled.connect(lambda checked: hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.setVisible(checked))
-        #         windows_menu.addAction(self.action_show_roi_stats_dock)
 
         #         # Open ROI Math dock for the active ROI
         #         self.action_open_roi_math_dock = QAction("ROI Math (Active ROI)", self)

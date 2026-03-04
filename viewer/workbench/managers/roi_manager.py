@@ -7,7 +7,6 @@ from typing import List, Optional, Callable, Set
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import (
-    QDockWidget,
     QListWidget,
     QListWidgetItem,
     QTableWidget,
@@ -146,46 +145,17 @@ class ROIManager:
             self.main.update_status(f"Error setting up ROI dock: {e}", level='error')
 
         try:
-            # ROI stats dock (renamed to 'ROI') with selection and actions
-            self.main.roi_stats_dock = QDockWidget("ROI", self.main)
-            self.main.roi_stats_dock.setAllowedAreas(Qt.RightDockWidgetArea)
-
-            # Container widget to hold controls + table
-            container = QWidget(self.main.roi_stats_dock)
-            vlayout = QVBoxLayout(container)
-            try:
-                vlayout.setContentsMargins(6, 6, 6, 6)
-                vlayout.setSpacing(6)
-            except Exception:
-                pass
-
-            # Top controls: actions for selected
-            controls_layout = QHBoxLayout()
-            lbl_actions = QLabel("Actions for selected:")
-            self.show_names_checkbox = QCheckBox("Show names above ROIs")
+            from viewer.workbench.docks.roi_stats_dock import ROIStatsDock
+            dock = ROIStatsDock(main_window=self.main, segment_name="2d", dock_area=Qt.RightDockWidgetArea)
+            self.main.roi_stats_dock = dock
+            self.show_names_checkbox = dock.show_names_checkbox
+            self.main.roi_stats_table = dock.roi_stats_table
             try:
                 self.show_names_checkbox.toggled.connect(lambda _: self.update_all_roi_labels())
             except Exception:
                 pass
-            controls_layout.addWidget(lbl_actions)
-            controls_layout.addWidget(self.show_names_checkbox)
-            controls_layout.addStretch(1)
-            vlayout.addLayout(controls_layout)
-
-            # ROI stats table with a selection checkbox column
-            self.main.roi_stats_table = QTableWidget(0, 13, container)
-            self.main.roi_stats_table.setHorizontalHeaderLabels([
-                "","Actions","Name","sum","min","max","mean","std","count","x","y","w","h"
-            ])
-            vlayout.addWidget(self.main.roi_stats_table)
-
-            # Set container as dock widget
-            self.main.roi_stats_dock.setWidget(container)
-            self.main.addDockWidget(Qt.RightDockWidgetArea, self.main.roi_stats_dock)
-            # Register toggle under Windows->2d submenu
-            self.main.add_dock_toggle_action(self.main.roi_stats_dock, "ROI", segment_name="2d")
             try:
-                self.main.roi_stats_dock.visibilityChanged.connect(self.on_roi_stats_dock_visibility_changed)
+                dock.visibilityChanged.connect(self.on_roi_stats_dock_visibility_changed)
             except Exception:
                 pass
             try:
