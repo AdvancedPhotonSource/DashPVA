@@ -606,7 +606,8 @@ class PVASetupDialog(QDialog, LogMixin):
             
             # Check for the existence of the stats dictionary
             if 'userStats' not in pv_object:
-                print(f"Warning: 'userStats' not found in PV from {channel_name}")
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"'userStats' not found in PV from {channel_name}")
                 return {}
 
             # Unpack the userStats dictionary
@@ -615,18 +616,16 @@ class PVASetupDialog(QDialog, LogMixin):
                 for key, val in pv_object['userStats'].items()
             }
 
-            # Write stats to a file for analysis
-            with open('stats_output.txt', 'w') as f:
-                f.write(f"Number of frames processed: {self.spinBoxNf.value()}\n")
-                f.write(f"Hertz: {self.spinBoxFps.value()}\n")
-                f.write(f"Image size: {self.spinBoxNx.value()} x {self.spinBoxNy.value()}\n\n")
-                f.write(f"Latency Stats from {channel_name}:\n{pv_object}\n\n")
-                
-                f.write("**** Metadata ****\n")
-                f.write(f"First Frame ID: {first_frame_id}\n")
-                f.write(f"First Frame Internal Processing Time: {first_frame_time:.5f} ms\n")
-                f.write(f"First Frame Timestamp: {first_frame_timestamp}\n")
-            
+            if hasattr(self, 'logger'):
+                self.logger.info(
+                    f"Stats from {channel_name} — frames: {self.spinBoxNf.value()}, "
+                    f"Hz: {self.spinBoxFps.value()}, "
+                    f"size: {self.spinBoxNx.value()}x{self.spinBoxNy.value()}, "
+                    f"first_frame_id: {first_frame_id}, "
+                    f"first_frame_time: {first_frame_time:.5f} ms, "
+                    f"first_frame_timestamp: {first_frame_timestamp}"
+                )
+
             return stats
 
         except Exception as e:

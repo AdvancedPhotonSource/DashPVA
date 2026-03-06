@@ -36,14 +36,14 @@ class BaseTab(QWidget):
         Called when new data is loaded or the selected dataset changes.
         Subclasses should implement this to update their display.
         """
-        pass
+        raise NotImplementedError
 
     def clear_data(self):
         """
         Called when the HDF5 file is closed or cleared.
         Subclasses should implement this to clear their display.
         """
-        pass
+        raise NotImplementedError
 
     def get_tab_name(self) -> str:
         """

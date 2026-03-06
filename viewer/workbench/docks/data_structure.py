@@ -272,7 +272,7 @@ class DataStructureDock(BaseDock):
             self.update_status("Failed to load folder")
 
     def _populate_tree_recursive(self):
-        pass
+        raise NotImplementedError
 
     def _start_dataset_load(self):
         """Create a worker thread to load dataset without blocking the UI."""

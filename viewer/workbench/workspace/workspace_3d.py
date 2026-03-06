@@ -36,7 +36,10 @@ class Workspace3D(BaseTab):
             self.build()
             self.connect_all()
         except Exception as e:
-            print(e)
+            try:
+                self.main_window.update_status(f"Error initializing 3D workspace: {e}")
+            except Exception:
+                pass
 
     def connect_all(self):
         """Wire up 3D controls to main window handlers."""
@@ -177,7 +180,10 @@ class Workspace3D(BaseTab):
                 except Exception:
                     mw.layout3DPlotHost.addWidget(mw.plotter_3d)
             else:
-                print("Warning: layout3DPlotHost not found, 3D plot may not display correctly")
+                try:
+                    mw.update_status("Warning: layout3DPlotHost not found, 3D plot may not display correctly")
+                except Exception:
+                    pass
             # Clear initial state
             self.clear_plot()
         except Exception as e:
@@ -374,8 +380,11 @@ class Workspace3D(BaseTab):
     # === Loading & Plotting ===
     def load_data(self):
         """Load dataset and render using the tab's local plotter."""
-        print("Loading data into 3D viewer...")
         mw = self.main_window
+        try:
+            mw.update_status("Loading data into 3D viewer...")
+        except Exception:
+            pass
         try:
             if not PYVISTA_AVAILABLE:
                 QMessageBox.warning(self, "3D Viewer", "PyVista is not available.")
@@ -479,7 +488,10 @@ class Workspace3D(BaseTab):
                     
                     self.main_window.update_status("3D Rendering Complete")
                 except Exception as e:
-                    print(f"Render Error: {e}")
+                    try:
+                        self.main_window.update_status(f"Render Error: {e}")
+                    except Exception:
+                        pass
 
             # 4. Threaded Execution
             self._render_thread = QThread(self)

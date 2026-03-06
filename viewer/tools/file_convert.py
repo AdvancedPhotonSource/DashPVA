@@ -8,6 +8,7 @@ from PyQt5 import uic
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QMessageBox
 )
+import settings
 
 try:
     from utils.hdf5_loader import HDF5Loader
@@ -105,6 +106,24 @@ class FileConvertDialog(QDialog):
                 pass
             self._sync_output_mode()
 
+        # Pre-fill default OUTPUT_PATH when available
+        try:
+            out_base = getattr(settings, 'OUTPUT_PATH', './outputs')
+        except Exception:
+            out_base = './outputs'
+        if hasattr(self, 'txt_output_dir') and not getattr(self, 'txt_output_dir').text().strip():
+            try:
+                self.txt_output_dir.setText(str(out_base))
+            except Exception:
+                pass
+        if hasattr(self, 'txt_output_file') and not getattr(self, 'txt_output_file').text().strip():
+            try:
+                from datetime import datetime as _dt
+                default_name = f"stack_{_dt.now().strftime('%Y%m%d_%H%M%S')}.h5"
+                self.txt_output_file.setText(str(Path(out_base) / default_name))
+            except Exception:
+                pass
+
     # ---------- Browsers ----------
     def _browse_source(self):
         dname = QFileDialog.getExistingDirectory(self, 'Select source folder', '')
@@ -112,12 +131,14 @@ class FileConvertDialog(QDialog):
             self.txt_source_dir.setText(dname)
 
     def _browse_output_file(self):
-        fname, _ = QFileDialog.getSaveFileName(self, 'Select output HDF5 file', '', 'HDF5 Files (*.h5 *.hdf5);;All Files (*)')
+        start_dir = str(getattr(settings, 'OUTPUT_PATH', './outputs'))
+        fname, _ = QFileDialog.getSaveFileName(self, 'Select output HDF5 file', start_dir, 'HDF5 Files (*.h5 *.hdf5);;All Files (*)')
         if fname and hasattr(self, 'txt_output_file'):
             self.txt_output_file.setText(fname)
 
     def _browse_output_dir(self):
-        dname = QFileDialog.getExistingDirectory(self, 'Select output directory', '')
+        start_dir = str(getattr(settings, 'OUTPUT_PATH', './outputs'))
+        dname = QFileDialog.getExistingDirectory(self, 'Select output directory', start_dir)
         if dname and hasattr(self, 'txt_output_dir'):
             self.txt_output_dir.setText(dname)
 
@@ -168,12 +189,24 @@ class FileConvertDialog(QDialog):
             return Path(''), False, False, Path(''), Path('')
         if per_sub:
             if not out_dir:
-                QMessageBox.warning(self, 'Missing Output Directory', 'Please select an output directory for per-subfolder mode.')
-                return Path(''), False, False, Path(''), Path('')
+                # Use settings.OUTPUT_PATH as default when not provided
+                out_dir = Path(str(getattr(settings, 'OUTPUT_PATH', './outputs')))
+                if hasattr(self, 'txt_output_dir'):
+                    try:
+                        self.txt_output_dir.setText(str(out_dir))
+                    except Exception:
+                        pass
         else:
             if not out_file:
-                QMessageBox.warning(self, 'Missing Output File', 'Please select an output HDF5 file path for single-file mode.')
-                return Path(''), False, False, Path(''), Path('')
+                # Use a default file path under OUTPUT_PATH
+                base = Path(str(getattr(settings, 'OUTPUT_PATH', './outputs')))
+                base.mkdir(parents=True, exist_ok=True)
+                out_file = base / 'stack.h5'
+                if hasattr(self, 'txt_output_file'):
+                    try:
+                        self.txt_output_file.setText(str(out_file))
+                    except Exception:
+                        pass
         return src_dir, recursive, per_sub, out_file, out_dir
 
     # ---------- Conversion ----------

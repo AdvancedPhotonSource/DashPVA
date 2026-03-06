@@ -1212,7 +1212,7 @@ class WorkbenchWindow(BaseWindow):
 
     # === Controls: 3D ===
     def setup_controls_3d(self):
-        pass
+        raise NotImplementedError
 
     def setup_2d_file_display(self):
         """Set up the 2D file information display in the main workspace."""
@@ -3413,10 +3413,10 @@ class WorkbenchWindow(BaseWindow):
 
     # === 3D Helpers ===
     def _set_3d_overlay(self, text: str):
-        pass
+        raise NotImplementedError
 
     def _debug_3d_state(self, tag: str = ""):
-        pass
+        raise NotImplementedError
     def clear_3d_plot(self):
         """Delegate 3D plot clearing to Tab3D."""
         try:
@@ -3426,10 +3426,10 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error clearing 3D plot: {e}")
 
     def create_3d_from_2d(self, data):
-        pass
+        raise NotImplementedError
 
     def create_3d_from_3d(self, data):
-        pass
+        raise NotImplementedError
 
 
 
@@ -3451,7 +3451,7 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error updating intensity controls: {e}")
 
     def apply_3d_visibility_settings(self):
-        pass
+        raise NotImplementedError
 
     def on_3d_colormap_changed(self, colormap_name):
         """Delegate 3D colormap change to Tab3D."""

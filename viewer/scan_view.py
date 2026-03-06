@@ -1,4 +1,6 @@
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import toml
 from datetime import datetime
 from PyQt5 import uic
@@ -6,16 +8,23 @@ from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout
 import pyqtgraph as pg
 
-from utils import PVAReader, HDF5Writer
+from utils import PVAReader, HDF5Handler
+from utils.log_manager import LogMixin
 from epics import caput
 
-class ScanMonitorWindow(QMainWindow):
+class ScanMonitorWindow(QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
+    signal_trigger_save = pyqtSignal(bool, bool, bool)  # clear_caches, write_temp, write_output
     
     def __init__(self, channel: str = "", config_filepath: str = ""):
         super(ScanMonitorWindow, self).__init__()
         uic.loadUi('gui/scan_view.ui', self)
         # Title comes from UI; ensure consistent naming in code comments
+        # Initialize structured logger via LogMixin (defaults to module.class name)
+        try:
+            self.set_log_manager()
+        except Exception:
+            pass
 
         self.channel = channel
         self.config_filepath = config_filepath
@@ -31,7 +40,7 @@ class ScanMonitorWindow(QMainWindow):
         self.writer_thread = QThread()
 
         self.reader: PVAReader = None
-        self.h5_handler: HDF5Writer = None
+        self.h5_handler: HDF5Handler = None
         
         # Timer for updating info display
         self.info_timer = QTimer()
@@ -111,7 +120,10 @@ class ScanMonitorWindow(QMainWindow):
                 layout.addWidget(self.graph_plot)
                 self._reset_graph()
         except Exception as e:
-            print(f"Graph setup error: {e}")
+            try:
+                self.logger.error(f"Graph setup error: {e}")
+            except Exception:
+                pass
 
     # ================================================================================================
     # CORE LOGIC & THREADING
@@ -124,6 +136,15 @@ class ScanMonitorWindow(QMainWindow):
 
         self._cleanup_existing_instances()
 
+        # Point settings at selected TOML so the writer's converter can find it.
+        # Wrapped in try/except so a settings failure cannot abort monitor startup.
+        try:
+            import settings
+            settings.set_locator(self.config_filepath)
+            settings.reload()
+        except Exception as e:
+            pass
+
         try:
             # 1. Create instances
             self.reader = PVAReader(
@@ -132,8 +153,8 @@ class ScanMonitorWindow(QMainWindow):
                 viewer_type='image'
             )
             
-            self.h5_handler = HDF5Writer(
-                file_path="", 
+            self.h5_handler = HDF5Handler(
+                file_path="",
                 pva_reader=self.reader
             )
 
@@ -145,6 +166,7 @@ class ScanMonitorWindow(QMainWindow):
             self.reader.reader_scan_complete.connect(self._on_reader_scan_complete, Qt.QueuedConnection)
             self.h5_handler.hdf5_writer_finished.connect(self._on_writer_finished, Qt.QueuedConnection)
             self.signal_start_monitor.connect(self.reader.start_channel_monitor, Qt.QueuedConnection)
+            self.signal_trigger_save.connect(self.h5_handler.save_to_h5, Qt.QueuedConnection)
 
             if hasattr(self.reader, 'scan_state_changed'):
                 self.reader.scan_state_changed.connect(self._on_scan_state_changed, Qt.QueuedConnection)
@@ -152,7 +174,7 @@ class ScanMonitorWindow(QMainWindow):
             # 4. Start Thread Event Loops
             self.reader_thread.start()
             self.writer_thread.start()
-            
+
             # 5. Begin Monitoring
             self.signal_start_monitor.emit()
 
@@ -176,25 +198,47 @@ class ScanMonitorWindow(QMainWindow):
                 self._frames_baseline = 0
             
         except Exception as e:
-            print(f"Apply Error: {e}")
+            try:
+                self.logger.error(f"Apply Error: {e}")
+            except Exception:
+                pass
             self.reader = None
             self.h5_handler = None
 
     def _on_reader_scan_complete(self) -> None:
         """Slot executed when PVAReader emits the completion signal."""
-        print(f"LOG: reader_scan_complete received by ScanMonitor at {datetime.now()}")
+        try:
+            self.logger.info(f"reader_scan_complete received at {datetime.now()}")
+        except Exception:
+            pass
         self._trigger_automatic_save()
 
     def _trigger_automatic_save(self) -> None:
         """Triggers the HDF5Writer save process."""
         if self.h5_handler:
-            print("LOG: Triggering HDF5Writer.save_caches_to_h5...")
-            # This method runs in the writer_thread due to moveToThread earlier
-            self.h5_handler.save_caches_to_h5(clear_caches=True, compress=True)
+            # Read checkbox states; default to True if widgets missing
+            write_temp = True
+            write_output = True
+            try:
+                if hasattr(self, 'checkbox_write_temp') and self.checkbox_write_temp is not None:
+                    write_temp = bool(self.checkbox_write_temp.isChecked())
+                if hasattr(self, 'checkbox_write_output') and self.checkbox_write_output is not None:
+                    write_output = bool(self.checkbox_write_output.isChecked())
+            except Exception:
+                pass
+
+            try:
+                self.logger.info("Triggering HDF5Handler.save_to_h5...")
+            except Exception:
+                pass
+            self.signal_trigger_save.emit(True, write_temp, write_output)
 
     def _on_writer_finished(self, message: str) -> None:
         """Callback when the HDF5 file is finished writing."""
-        print(f"LOG: Writer finished - {message}")
+        try:
+            self.logger.info(f"Writer finished - {message}")
+        except Exception:
+            pass
         if hasattr(self, 'label_indicator'):
             self.label_indicator.setText('scan: off')
             self._apply_indicator_style()
@@ -211,7 +255,10 @@ class ScanMonitorWindow(QMainWindow):
                 # If no flag PV triggers the reader, we trigger the complete sequence manually
                 self._on_reader_scan_complete() 
         except Exception as e:
-            print(f"Manual Stop Error: {e}")
+            try:
+                self.logger.error(f"Manual Stop Error: {e}")
+            except Exception:
+                pass
 
     def _on_start_scan_clicked(self) -> None:
         if self.reader:
@@ -224,7 +271,13 @@ class ScanMonitorWindow(QMainWindow):
                 self.reader.reader_scan_complete.disconnect()
                 self.h5_handler.hdf5_writer_finished.disconnect()
             except: pass
-            
+            try:
+                self.signal_start_monitor.disconnect()
+            except: pass
+            try:
+                self.signal_trigger_save.disconnect()
+            except: pass
+
             self.reader_thread.quit()
             self.reader_thread.wait()
             self.writer_thread.quit()
@@ -416,7 +469,10 @@ class ScanMonitorWindow(QMainWindow):
                 except Exception as _:
                     pass
         except Exception as e:
-            print(f"Graph update error: {e}")
+            try:
+                self.logger.error(f"Graph update error: {e}")
+            except Exception:
+                pass
 
     def closeEvent(self, event):
         self.info_timer.stop()
