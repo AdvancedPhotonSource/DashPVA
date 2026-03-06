@@ -190,16 +190,7 @@ class HDF5Writer(QObject, LogMixin):
                 except Exception as conv_err:
                     conversion_suffix = f" (conversion failed: {conv_err})"
 
-            # Log success and emit appropriate message
-            try:
-                if write_temp and write_output:
-                    self.logger.info(f"Saved {data['len_images']} items to {TEMP_FILE_LOCATION} and {OUTPUT_FILE_LOCATION}{conversion_suffix}")
-                elif write_output:
-                    self.logger.info(f"Saved {data['len_images']} items to {OUTPUT_FILE_LOCATION}{conversion_suffix}")
-                else:
-                    self.logger.info(f"Saved {data['len_images']} items to {TEMP_FILE_LOCATION} (temp only)")
-            except Exception:
-                pass
+            # Emit appropriate message (logging handled by the receiver)
             if write_temp and write_output:
                 self.hdf5_writer_finished.emit(f"{data['len_images']} successfully saved to {TEMP_FILE_LOCATION} and {OUTPUT_FILE_LOCATION}{conversion_suffix}")
             elif write_output:

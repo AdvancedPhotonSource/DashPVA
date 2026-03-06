@@ -70,6 +70,11 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
     def _setup_ui_elements(self):
         if hasattr(self, 'label_mode'):
             self.label_mode.setText("")
+        if hasattr(self, 'checkbox_write_temp'):
+            self.checkbox_write_temp.stateChanged.connect(self._update_save_warning)
+        if hasattr(self, 'checkbox_write_output'):
+            self.checkbox_write_output.stateChanged.connect(self._update_save_warning)
+        self._update_save_warning()
         if hasattr(self, 'label_indicator'):
             self.label_indicator.setText('scan: off')
             self._apply_indicator_style()
@@ -236,7 +241,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
     def _on_writer_finished(self, message: str) -> None:
         """Callback when the HDF5 file is finished writing."""
         try:
-            self.logger.info(f"Writer finished - {message}")
+            self.logger.info(message)
         except Exception:
             pass
         if hasattr(self, 'label_indicator'):
@@ -341,8 +346,17 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         if hasattr(self, 'btn_start_scan'): self.btn_start_scan.setEnabled(not self.scan_state)
         if hasattr(self, 'btn_stop_scan'): self.btn_stop_scan.setEnabled(self.scan_state)
 
-    def _update_label_from_config(self):
-        if hasattr(self, 'label_mode'): self.label_mode.setText("")
+    def _update_save_warning(self):
+        if not hasattr(self, 'label_mode'):
+            return
+        write_temp = hasattr(self, 'checkbox_write_temp') and self.checkbox_write_temp.isChecked()
+        write_output = hasattr(self, 'checkbox_write_output') and self.checkbox_write_output.isChecked()
+        if not write_temp and not write_output:
+            self.label_mode.setText("Warning: No save targets selected — data will not be written")
+            self.label_mode.setStyleSheet("color: orange; font-weight: bold;")
+        else:
+            self.label_mode.setText("")
+            self.label_mode.setStyleSheet("")
 
     def _update_info_display(self):
         """Logic for periodically refreshing UI labels based on Reader state."""
