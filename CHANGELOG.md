@@ -3,6 +3,12 @@
 This file tracks the latest changes, features, and improvements in DashPVA.
 
 ---
+
+## Latest Changes (March 2026)
+### New Features
+- Scan Monitor gives you an option to save or write temp
+- Universal log system, all outputs go to logs/general.log
+
 ## Latest Changes (February 2026)
 ### Added
   - ROI calculated for math between specific ROI's
