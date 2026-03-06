@@ -7,8 +7,8 @@ from utils.hdf5_loader import HDF5Loader
 import os
 
 class DataStructureDock(BaseDock):
-    def __init__(self, title="Data Structure", main_window:BaseWindow=None, segment_name="other", dock_area=Qt.LeftDockWidgetArea):
-        super().__init__(title, main_window, segment_name=segment_name, dock_area=dock_area)
+    def __init__(self, title="Data Structure", main_window:BaseWindow=None, segment_name="other", dock_area=Qt.LeftDockWidgetArea, show: bool = True):
+        super().__init__(title, main_window, segment_name=segment_name, dock_area=dock_area, show=show)
         self.title = title
         self.main_window = main_window
         # Parent BaseDock.__init__ already performs setup; no need to call again
@@ -272,7 +272,7 @@ class DataStructureDock(BaseDock):
             self.update_status("Failed to load folder")
 
     def _populate_tree_recursive(self):
-        pass
+        raise NotImplementedError
 
     def _start_dataset_load(self):
         """Create a worker thread to load dataset without blocking the UI."""

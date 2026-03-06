@@ -270,13 +270,9 @@ class PVAReader(QObject):
 
             if self.is_scan_complete and not self.is_caching:
                 self.is_scan_complete = False
-                print('Scan Complete')
-                #TODO: add a check before emitting the signal to make sure the caches are all same length
-                # make into a function
                 self.reader_scan_complete.emit()
 
-        except Exception as e:
-            print(f'[PVA Reader] Failed to execute callback: {e}')
+        except Exception:
             self.frames_received -= 1
             self.frames_missed += 1
 
@@ -336,7 +332,7 @@ class PVAReader(QObject):
             return {}
 
     def parse_analysis_attributes(self, pv_attributes: dict) -> None:
-        pass
+        raise NotImplementedError
         # analysis_attributes: dict = pv_attributes['Analysis']
         # axis_pos = (analysis_attributes['Axis1'], analysis_attributes['Axis2'])
         # intensity = analysis_attributes['Intensity']
@@ -409,8 +405,8 @@ class PVAReader(QObject):
                 self.image = None
                 raise ValueError("[PV Parsing] Image data could not be processed.")
                 
-        except Exception as e:
-            print(f"[PVA Reader] Failed to process image: {e}")
+        except Exception:
+            pass
             
     def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
         # Handle LZ4 compressed data
@@ -520,8 +516,8 @@ class PVAReader(QObject):
 
                     self.rois.setdefault(roi_key, {}).update({pv_key: caget(pv_name)})
                     camonitor(pvname=pv_name, callback=self.roi_backup_callback)
-        except Exception as e:
-            print(f'[PVA Reader] Failed to setup backup ROI monitor: {e}')
+        except Exception:
+            pass
 
     ################################# Getters ################################# 
     def get_cached_images(self) -> list[np.ndarray]:

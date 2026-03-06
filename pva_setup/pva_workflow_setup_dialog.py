@@ -13,6 +13,7 @@ import sys
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import PVAReader
+from utils.log_manager import LogMixin
 from functools import partial
 
 class Worker(QObject):
@@ -54,7 +55,7 @@ class Worker(QObject):
         except Exception as e:
             pass
 
-class PVASetupDialog(QDialog):
+class PVASetupDialog(QDialog, LogMixin):
     """
     Dialog for setting up and managing the PVA workflow.
 
@@ -65,6 +66,11 @@ class PVASetupDialog(QDialog):
     def __init__(self, parent=None):
         super(PVASetupDialog, self).__init__(parent)
         uic.loadUi('gui/pva_workflow_setup.ui', self)
+        try:
+            # Bind a logger for this dialog
+            self.set_log_manager(viewer_name="PVASetup")
+        except Exception:
+            pass
 
         # Initialize process dictionaries
         self.processes = {}
@@ -600,7 +606,8 @@ class PVASetupDialog(QDialog):
             
             # Check for the existence of the stats dictionary
             if 'userStats' not in pv_object:
-                print(f"Warning: 'userStats' not found in PV from {channel_name}")
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"'userStats' not found in PV from {channel_name}")
                 return {}
 
             # Unpack the userStats dictionary
@@ -609,25 +616,25 @@ class PVASetupDialog(QDialog):
                 for key, val in pv_object['userStats'].items()
             }
 
-            # Write stats to a file for analysis
-            with open('stats_output.txt', 'w') as f:
-                f.write(f"Number of frames processed: {self.spinBoxNf.value()}\n")
-                f.write(f"Hertz: {self.spinBoxFps.value()}\n")
-                f.write(f"Image size: {self.spinBoxNx.value()} x {self.spinBoxNy.value()}\n\n")
-                f.write(f"Latency Stats from {channel_name}:\n{pv_object}\n\n")
-                
-                f.write("**** Metadata ****\n")
-                f.write(f"First Frame ID: {first_frame_id}\n")
-                f.write(f"First Frame Internal Processing Time: {first_frame_time:.5f} ms\n")
-                f.write(f"First Frame Timestamp: {first_frame_timestamp}\n")
-            
+            if hasattr(self, 'logger'):
+                self.logger.info(
+                    f"Stats from {channel_name} — frames: {self.spinBoxNf.value()}, "
+                    f"Hz: {self.spinBoxFps.value()}, "
+                    f"size: {self.spinBoxNx.value()}x{self.spinBoxNy.value()}, "
+                    f"first_frame_id: {first_frame_id}, "
+                    f"first_frame_time: {first_frame_time:.5f} ms, "
+                    f"first_frame_timestamp: {first_frame_timestamp}"
+                )
+
             return stats
 
         except Exception as e:
-            import traceback
-            with open('error_output.txt', 'w') as f:
-                f.write(f"Error getting stats from {channel_name}:\n")
-                f.write(traceback.format_exc())
+            # Log error via central logger
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"Error getting stats from {channel_name}: {e}")
+            except Exception:
+                pass
             return {}
     
     def closeEvent(self, event):

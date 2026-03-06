@@ -11,8 +11,8 @@ class SlicePlaneDock(BaseDock):
     Loads its UI from gui/workbench/docks/slice_plane.ui and wires signals
     into Workspace3D (tab_3d) methods.
     """
-    def __init__(self, title: str = "Slice Controls", main_window=None, segment_name: str = "3d", dock_area: Qt.DockWidgetArea = Qt.LeftDockWidgetArea):
-        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area)
+    def __init__(self, title: str = "Slice Controls", main_window=None, segment_name: str = "3d", dock_area: Qt.DockWidgetArea = Qt.LeftDockWidgetArea, show: bool = False):
+        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
         self._widget = None
         self._build()
         self._wire()

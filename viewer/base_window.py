@@ -14,6 +14,7 @@ from PyQt5 import uic
 #from database import DatabaseInterface
 from viewer.documentation.dialog import DocumentationDialog
 import time, subprocess, shutil
+from utils.log_manager import get_default_manager, LogManager
 
 #di = DatabaseInterface()
 
@@ -30,18 +31,34 @@ class BaseWindow(QMainWindow):
     file_opened = pyqtSignal(str)  # Emitted when a file is opened
     file_saved = pyqtSignal(str)   # Emitted when a file is saved
     
-    def __init__(self, ui_file_name=None, viewer_name=None):
+    def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None):
         """
         Initialize the base window.
         
         Args:
             ui_file_name (str): Name of the UI file to load (without path)
             viewer_name (str, optional): Human-friendly name of the viewer for status messages
+            log_manager (LogManager, optional): Injected LogManager to use for logging
         """
         super().__init__()
         self.ui_file_name = ui_file_name
         self.current_file_path = None
         self.viewer_name = viewer_name
+        # Obtain the logging manager and a per-viewer logger
+        try:
+            self._log_manager = log_manager or get_default_manager()
+        except Exception:
+            self._log_manager = None
+        try:
+            logger_name = self.viewer_name or f"{self.__module__}.{self.__class__.__name__}"
+            if self._log_manager is not None:
+                self.logger = self._log_manager.get_logger(logger_name)
+            else:
+                import logging as _logging
+                self.logger = _logging.getLogger(logger_name)
+        except Exception:
+            import logging as _logging
+            self.logger = _logging.getLogger(f"{self.__module__}.{self.__class__.__name__}")
         
         if ui_file_name:
             self.load_ui()
@@ -295,14 +312,14 @@ class BaseWindow(QMainWindow):
     def update_status(self, message, level: str = 'info', source: str = None):
         """
         Update the status label with a message and include the viewer name.
-        Also logs error-like messages to error_output.txt with viewer context.
-        
+        Also emits the message to the application logger with the logger name set to the viewer name.
+
         Args:
             message (str): Status message to display
-            level (str): Optional level ('info', 'warning', 'error')
+            level (str): Optional level ('debug', 'info', 'warning', 'error')
             source (str): Optional override for viewer/source name; defaults to self.viewer_name
         """
-        # Compose prefixed message
+        # Compose prefixed message for UI only; logging uses logger name
         src = source or getattr(self, 'viewer_name', None) or self.__class__.__name__
         prefix = f"[{src}] "
         full_msg = f"{prefix}{message}" if isinstance(message, str) else message
@@ -315,19 +332,33 @@ class BaseWindow(QMainWindow):
                 # Fallback to plain message if label does not accept complex types
                 self.label_status.setText(str(message))
         
-        # Log to error_output.txt if message indicates an error or failure
+        # Log via LogManager at the requested level. If source override differs from logger name,
+        # include the source prefix to disambiguate in the log message.
         try:
-            import datetime
-            error_file = project_root / "error_output.txt"
-            should_log = False
-            if isinstance(message, str):
-                msg_lower = message.lower()
-                should_log = (level in ('error', 'warning')) or ('error' in msg_lower) or ('failed' in msg_lower)
-            if should_log:
-                with open(error_file, "a") as f:
-                    f.write(f"[{datetime.datetime.now().isoformat()}] {prefix}{message}\n")
+            log_text = str(message)
+            if source and source != getattr(self, 'viewer_name', None):
+                log_text = f"{prefix}{message}"
+            lvl = (level or 'info').lower()
+            if hasattr(self, 'logger'):
+                if lvl == 'debug':
+                    self.logger.debug(log_text)
+                elif lvl == 'warning':
+                    self.logger.warning(log_text)
+                elif lvl == 'error':
+                    # Include traceback automatically if an exception is active
+                    include_exc = False
+                    try:
+                        etype, evalue, etb = sys.exc_info()
+                        include_exc = etype is not None
+                    except Exception:
+                        include_exc = False
+                    if include_exc:
+                        self.logger.error(log_text, exc_info=True)
+                    else:
+                        self.logger.error(log_text)
+                else:
+                    self.logger.info(log_text)
         except Exception:
-            # Avoid raising during logging
             pass
             
     def init_perf_statusbar(self):
@@ -407,3 +438,10 @@ class BaseWindow(QMainWindow):
             self.viewer_name = str(name) if name else None
         except Exception:
             self.viewer_name = None
+        # Rebind logger to use the updated viewer_name for subsequent logs
+        try:
+            if hasattr(self, '_log_manager') and self._log_manager is not None:
+                new_name = self.viewer_name or f"{self.__module__}.{self.__class__.__name__}"
+                self.logger = self._log_manager.get_logger(new_name)
+        except Exception:
+            pass

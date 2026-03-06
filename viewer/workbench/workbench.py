@@ -38,6 +38,7 @@ from viewer.workbench.workspace.workspace_3d import Workspace3D
 # sys.path.insert(0, str(project_root))
 
 from viewer.base_window import BaseWindow
+from utils.log_manager import get_default_manager
 from utils.hdf5_loader import HDF5Loader
 
 # Dimension-specific controls
@@ -616,21 +617,6 @@ class WorkbenchWindow(BaseWindow):
         except Exception as e:
             self.update_status(f"Error opening ROI Math dock in window: {e}")
 
-    def setup_roi_stats_dock(self):
-        try:
-            self.roi_stats_dock = QDockWidget("ROI", self)
-            self.roi_stats_dock.setAllowedAreas(Qt.RightDockWidgetArea)
-            self.roi_stats_table = QTableWidget(0, 11, self.roi_stats_dock)
-            self.roi_stats_table.setHorizontalHeaderLabels(["Name","sum","min","max","mean","std","count","x","y","w","h"])
-            self.roi_stats_dock.setWidget(self.roi_stats_table)
-            self.addDockWidget(Qt.RightDockWidgetArea, self.roi_stats_dock)
-            try:
-                self.roi_stats_dock.visibilityChanged.connect(self.on_roi_stats_dock_visibility_changed)
-            except Exception:
-                pass
-        except Exception as e:
-            self.update_status(f"Error setting up ROI stats dock: {e}")
-
     def get_roi_name(self, roi):
         try:
             # Prefer ROIManager's naming to keep everything in sync (including renames)
@@ -719,12 +705,14 @@ class WorkbenchWindow(BaseWindow):
         except Exception:
             pass
 
-    def on_roi_stats_dock_visibility_changed(self, visible):
-        try:
-            if hasattr(self, 'action_show_roi_stats_dock'):
-                self.action_show_roi_stats_dock.setChecked(bool(visible))
-        except Exception:
-            pass
+    def closeEvent(self, event):
+        """Close all secondary dock windows before the workbench exits."""
+        for win in list(getattr(self, '_dock_windows', [])):
+            try:
+                win.close()
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     def setup_workbench_connections(self):
         """Set up connections specific to the workbench."""
@@ -760,12 +748,6 @@ class WorkbenchWindow(BaseWindow):
         #         except Exception:
         #             pass
 
-        #     # ROI dock toggle (renamed from 'ROI Stats' to 'ROI')
-        #         self.action_show_roi_stats_dock = QAction("ROI", self)
-        #         self.action_show_roi_stats_dock.setCheckable(True)
-        #         self.action_show_roi_stats_dock.setChecked(True if hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.isVisible() else True)
-        #         self.action_show_roi_stats_dock.toggled.connect(lambda checked: hasattr(self, 'roi_stats_dock') and self.roi_stats_dock.setVisible(checked))
-        #         windows_menu.addAction(self.action_show_roi_stats_dock)
 
         #         # Open ROI Math dock for the active ROI
         #         self.action_open_roi_math_dock = QAction("ROI Math (Active ROI)", self)
@@ -908,7 +890,9 @@ class WorkbenchWindow(BaseWindow):
                     self._histogram_poll_timer.start()
                     try:
                         print("[DEBUG] Histogram polling timer started (10 Hz)")
-                        self.update_status("Histogram polling enabled (10 Hz)")
+                        # Reduce noise: debug log instead of user-facing status
+                        if hasattr(self, 'logger'):
+                            self.logger.debug("Histogram polling enabled (10 Hz)")
                     except Exception:
                         pass
             except Exception:
@@ -1228,7 +1212,7 @@ class WorkbenchWindow(BaseWindow):
 
     # === Controls: 3D ===
     def setup_controls_3d(self):
-        pass
+        raise NotImplementedError
 
     def setup_2d_file_display(self):
         """Set up the 2D file information display in the main workspace."""
@@ -2220,6 +2204,7 @@ class WorkbenchWindow(BaseWindow):
             # Log connection status and types to aid runtime diagnosis
             try:
                 if connected:
+                    # Reduce noise: debug log instead of user-facing status
                     msg = "Histogram signals wired: "
                     srcs = []
                     try:
@@ -2231,7 +2216,11 @@ class WorkbenchWindow(BaseWindow):
                         srcs.append(f"widget={type(hist).__name__}")
                     except Exception:
                         pass
-                    self.update_status(msg + ", ".join(srcs))
+                    try:
+                        if hasattr(self, 'logger'):
+                            self.logger.debug(msg + ", ".join(srcs))
+                    except Exception:
+                        pass
                 else:
                     itype = type(getattr(hist, 'item', None)).__name__ if hasattr(hist, 'item') else 'None'
                     wtype = type(hist).__name__
@@ -2369,9 +2358,12 @@ class WorkbenchWindow(BaseWindow):
             except Exception:
                 pass
 
-            # Debug/logging to help verify runtime behavior
+            # Debug logging to help verify runtime behavior without spamming INFO logs
             try:
-                self.update_status(f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]")
+                if hasattr(self, 'logger'):
+                    self.logger.debug(
+                        f"Histogram drag -> display [{vmin_d:.3f}, {vmax_d:.3f}] -> data [{vmin_data:.3f}, {vmax_data:.3f}]"
+                    )
             except Exception:
                 pass
         except Exception:
@@ -3421,10 +3413,10 @@ class WorkbenchWindow(BaseWindow):
 
     # === 3D Helpers ===
     def _set_3d_overlay(self, text: str):
-        pass
+        raise NotImplementedError
 
     def _debug_3d_state(self, tag: str = ""):
-        pass
+        raise NotImplementedError
     def clear_3d_plot(self):
         """Delegate 3D plot clearing to Tab3D."""
         try:
@@ -3434,10 +3426,10 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error clearing 3D plot: {e}")
 
     def create_3d_from_2d(self, data):
-        pass
+        raise NotImplementedError
 
     def create_3d_from_3d(self, data):
-        pass
+        raise NotImplementedError
 
 
 
@@ -3459,7 +3451,7 @@ class WorkbenchWindow(BaseWindow):
             self.update_status(f"Error updating intensity controls: {e}")
 
     def apply_3d_visibility_settings(self):
-        pass
+        raise NotImplementedError
 
     def on_3d_colormap_changed(self, colormap_name):
         """Delegate 3D colormap change to Tab3D."""
@@ -4946,21 +4938,20 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("DashPVA")
 
-    # Global excepthook to log unhandled errors to error_output.txt
-    def _log_excepthook(exctype, value, tb):
-        try:
-            import datetime, traceback
-            error_file = project_root / "error_output.txt"
-            with open(error_file, "a") as f:
-                f.write(f"[{datetime.datetime.now().isoformat()}] Unhandled exception: {exctype.__name__}: {value}\n")
-                traceback.print_tb(tb, file=f)
-        except Exception:
-            pass
-    sys.excepthook = _log_excepthook
+    # Initialize shared LogManager (installs global excepthook and rotating file handler)
+    try:
+        get_default_manager(app)
+    except Exception:
+        pass
 
     # Create and show the main window
     window = WorkbenchWindow()
     window.show()
+    try:
+        if hasattr(window, 'logger'):
+            window.logger.info("Workbench started")
+    except Exception:
+        pass
 
     # Start the event loop
     sys.exit(app.exec_())

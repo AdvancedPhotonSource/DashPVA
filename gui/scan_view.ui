@@ -125,6 +125,30 @@
      </layout>
     </item>
     <item>
+     <layout class="QHBoxLayout" name="horizontalLayoutWriteTargets">
+      <item>
+       <widget class="QCheckBox" name="checkbox_write_temp">
+        <property name="text">
+         <string>Write temp</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="checkbox_write_output">
+        <property name="text">
+         <string>Write to disk</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
      <widget class="QLabel" name="label_mode">
       <property name="text">
        <string></string>

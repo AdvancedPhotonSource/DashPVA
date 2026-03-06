@@ -27,8 +27,9 @@ class Info3DDock(InformationDockBase):
         title: str = "3D Info",
         segment_name: Optional[str] = "3d",
         dock_area: Qt.DockWidgetArea = Qt.RightDockWidgetArea,
+        show: bool = False,
     ):
-        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area)
+        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
         self._setup_extra_rows()
 
     # UI augmentation

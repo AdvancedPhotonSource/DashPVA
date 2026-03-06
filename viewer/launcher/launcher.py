@@ -1,7 +1,6 @@
 import sys
 import os, subprocess
 from collections import OrderedDict
-from pathlib import Path
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtCore import QTimer, Qt
@@ -22,20 +21,21 @@ class LauncherDialog(QDialog):
         self._insert_registry_sections()
 
         if hasattr(self, 'btn_settings'):
-            self.btn_settings.clicked.connect(
-                lambda: self.launch(
-                    'settings',
-                    [sys.executable, 'viewer/settings/settings_dialog.py'],
-                    self.btn_settings,
-                    'Settings — Running…'
-                )
-            )
+            # Open settings dialog in-process so fields are prefilled from current global settings
+            self.btn_settings.clicked.connect(self._open_settings)
         if hasattr(self, 'btn_exit'):
             self.btn_exit.clicked.connect(self.request_close)
         if hasattr(self, 'btn_shutdown_all'):
             self.btn_shutdown_all.clicked.connect(self._confirm_shutdown_all)
 
         self._update_status()
+
+        # Static tip in the info footer, if present
+        try:
+            if hasattr(self, 'lbl_info') and self.lbl_info is not None:
+                self.lbl_info.setText("Note: On first time use loading may take a while")
+        except Exception:
+            pass
 
     def _insert_registry_sections(self):
         """Build all section headers and buttons from the VIEWS registry.
@@ -156,6 +156,28 @@ class LauncherDialog(QDialog):
         if hasattr(self, 'btn_shutdown_all'):
             self.btn_shutdown_all.setEnabled(count > 0)
 
+    def _open_settings(self):
+        """Open the Settings dialog modally and prefilled from current global settings."""
+        try:
+            # Prefer in-process dialog so it uses current global settings values
+            from viewer.settings.settings_dialog import SettingsDialog as _SettingsDialog
+            dlg = _SettingsDialog(self)
+            dlg.exec_()
+        except Exception as e:
+            # Fallback: launch as a separate process if import or dialog fails
+            try:
+                if hasattr(self, 'btn_settings'):
+                    self.launch(
+                        'settings',
+                        [sys.executable, 'viewer/settings/settings_dialog.py'],
+                        self.btn_settings,
+                        'Settings — Running…'
+                    )
+                else:
+                    raise e
+            except Exception:
+                QMessageBox.critical(self, 'Settings', f'Failed to open Settings dialog:\n{e}')
+
     def _format_running_modules_list(self):
         """Return a human-readable list of running modules and their PIDs."""
         lines = []
@@ -174,6 +196,8 @@ class LauncherDialog(QDialog):
         if not lines:
             return "Running modules:\nNone"
         return "Running modules:\n" + "\n".join(lines)
+
+    
 
     def _terminate_proc(self, p, timeout=3.0):
         """Attempt graceful terminate, then force kill if still alive."""

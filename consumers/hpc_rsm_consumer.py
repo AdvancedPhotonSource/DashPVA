@@ -13,11 +13,16 @@ from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 # logging
 import traceback
+from utils.log_manager import LogMixin
 
-class HpcRsmProcessor(AdImageProcessor):
+class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
     def __init__(self, configDict={}):
         super(HpcRsmProcessor, self).__init__(configDict)
+        try:
+            self.set_log_manager(viewer_name="HpcRsmProcessor")
+        except Exception:
+            pass
 
         # Config Variables
         self.path = None
@@ -252,8 +257,11 @@ class HpcRsmProcessor(AdImageProcessor):
             angles = [*sample_circle_positions, *det_circle_positions]
             return hxrd.Ang2Q.area(*angles, UB=ub_matrix)
         except Exception as e:
-            with open("error_output1.txt", "w") as f:
-                f.write(str(e))
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"RSM creation failed: {e}")
+            except Exception:
+                pass
             return None, None, None
         
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
@@ -446,8 +454,11 @@ class HpcRsmProcessor(AdImageProcessor):
 
         except Exception as e:
             self.nFrameErrors += 1
-            with open("error_output2.txt", "w") as f:
-                f.writelines([''.join(traceback.format_exception(None, e, e.__traceback__))])
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception("Frame processing error", exc_info=e)
+            except Exception:
+                pass
             return pvObject
 
     def resetStats(self):

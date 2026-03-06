@@ -3,13 +3,14 @@ HDF5 Handler that writes, reads in nexus standard file format
 """
 import h5py
 import numpy as np
+import time
 from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import hdf5plugin
 from utils.pva_reader import PVAReader
 from utils.metadata_converter import convert_files_or_dir
+from utils.log_manager import LogMixin
 import settings
-from pathlib import Path
 import toml
 
 
@@ -126,26 +127,38 @@ HDF5_STRUCTURE = {
     }        
 }
 
-class HDF5Handler(QObject):
+class HDF5Handler(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
     def __init__(self, file_path:str="", pva_reader:PVAReader=None, compress:bool=True):
         super(HDF5Handler, self).__init__()
         self.pva_reader = pva_reader
         self.file_path = file_path
-        self.default_output = Path('~/DashPVA/outputs/scans/demo/nexus_standard_default_format.h5').expanduser()
-        self.temp_output = Path('~/DashPVA/outputs/scans/demo/temp.h5').expanduser()
+        # Default outputs under settings.OUTPUT_PATH/scans/demo
+        try:
+            base_out = Path(getattr(settings, 'OUTPUT_PATH', './outputs')).expanduser()
+        except Exception:
+            base_out = Path('./outputs')
+        # Construct defaults and ensure parent directories exist
+        self.default_output = base_out.joinpath('scans/demo/nexus_standard_default_format.h5')
+        self.temp_output = base_out.joinpath('scans/demo/temp.h5')
+        self.default_output.parent.mkdir(parents=True, exist_ok=True)
+        self.temp_output.parent.mkdir(parents=True, exist_ok=True)
         self.compress = compress
         # Build reverse HKL map from the loaded TOML config (via PVAReader)
         self.hkl_reverse_map = {}
         if self.pva_reader is not None:
             try:
                 self.hkl_reverse_map = self.parse_toml()
-            except Exception as e:
-                print(f"[HDF5Handler] Failed to parse TOML for HKL map: {e}")
+            except Exception:
+                pass
+        try:
+            self.set_log_manager()
+        except Exception:
+            pass
 
     #Loading
     def load_data(self):
-        pass
+        raise NotImplementedError
 
     @pyqtSlot()
     def save_data(self, compress=False, file_path=None, clear_caches=False, is_scan=False):
@@ -205,11 +218,6 @@ class HDF5Handler(QObject):
         hkl_cfg = getattr(self.pva_reader, 'config', {}).get('HKL', {})
         HKL_IN_CONFIG = bool(hkl_cfg)
 
-        def is_position_pv(pv: str) -> bool:
-            if not isinstance(pv, str):
-                return False
-            return (":Position" in pv) or (".RBV" in pv) or ("_RBV" in pv)
-
         ds_kwargs = (hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True) if compress else {})
 
         with h5py.File(self.file_path, 'w') as h5f:
@@ -224,7 +232,7 @@ class HDF5Handler(QObject):
             for key, values in merged_metadata.items():
                 try:
                     arr = np.array(values)
-                    target = motor_pos_grp if is_position_pv(key) else metadata_grp
+                    target = motor_pos_grp if self._is_position_pv(key) else metadata_grp
                     if arr.dtype.kind in ('i', 'u', 'f'):
                         target.create_dataset(key, data=arr)
                     elif arr.dtype.kind in ('U', 'S', 'O'):
@@ -240,33 +248,19 @@ class HDF5Handler(QObject):
             if HKL_IN_CONFIG:
                 hkl_root = metadata_grp.create_group('HKL')
 
-                def _write_from_pv(group, name, pv_key):
-                    vals = merged_metadata.get(pv_key)
-                    if vals is None:
-                        return
-                    arr = np.array(vals)
-                    if arr.dtype.kind in ('i', 'u', 'f'):
-                        group.create_dataset(name, data=arr)
-                    elif arr.dtype.kind in ('U', 'S', 'O'):
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        group.create_dataset(name, data=arr.astype(dt))
-                    else:
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        group.create_dataset(name, data=str(vals), dtype=dt)
-
                 for section_name in ['PRIMARY_BEAM_DIRECTION', 'INPLANE_REFERENCE_DIRECITON', 'SAMPLE_SURFACE_NORMAL_DIRECITON']:
                     sec = hkl_cfg.get(section_name, {})
                     if sec:
                         sec_grp = hkl_root.create_group(section_name)
                         for k, pv in sec.items():
-                            _write_from_pv(sec_grp, k, pv)
+                            self._write_pv_dataset(sec_grp, k, pv, merged_metadata)
 
                 for base in ['SAMPLE_CIRCLE_AXIS_1', 'SAMPLE_CIRCLE_AXIS_2', 'SAMPLE_CIRCLE_AXIS_3', 'SAMPLE_CIRCLE_AXIS_4', 'DETECTOR_CIRCLE_AXIS_1', 'DETECTOR_CIRCLE_AXIS_2']:
                     sec = hkl_cfg.get(base, {})
                     if sec:
                         grp = hkl_root.create_group(base)
                         for k, pv in sec.items():
-                            _write_from_pv(grp, k, pv)
+                            self._write_pv_dataset(grp, k, pv, merged_metadata)
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
@@ -288,7 +282,7 @@ class HDF5Handler(QObject):
                 if detector:
                     det_grp = hkl_root.create_group('DETECTOR_SETUP')
                     for k, pv in detector.items():
-                        _write_from_pv(det_grp, k, pv)
+                        self._write_pv_dataset(det_grp, k, pv, merged_metadata)
 
             # Optional HKL caches
             if HKL_IN_CONFIG and rsm:
@@ -321,6 +315,37 @@ class HDF5Handler(QObject):
             conversion_suffix = f" (conversion failed: {conv_err})"
 
         self.hdf5_writer_finished.emit(f"Saved to: {self.file_path}\nFormat: unified-structure{conversion_suffix}")
+
+    @staticmethod
+    def _is_position_pv(key: str) -> bool:
+        if not isinstance(key, str):
+            return False
+        return (":Position" in key) or (".RBV" in key) or ("_RBV" in key)
+
+    def _write_pv_dataset(self, group, name: str, pv_key: str, merged_metadata: dict):
+        vals = merged_metadata.get(pv_key)
+        if vals is None:
+            return
+        arr = np.array(vals)
+        if arr.dtype.kind in ('i', 'u', 'f'):
+            group.create_dataset(name, data=arr)
+        elif arr.dtype.kind in ('U', 'S', 'O'):
+            dt = h5py.string_dtype(encoding='utf-8')
+            group.create_dataset(name, data=arr.astype(dt))
+        else:
+            dt = h5py.string_dtype(encoding='utf-8')
+            group.create_dataset(name, data=str(vals), dtype=dt)
+
+    @pyqtSlot(bool, bool, bool)
+    def save_to_h5(self, clear_caches: bool = True, write_temp: bool = True, write_output: bool = True) -> None:
+        """Gateway slot — delegates to HDF5Writer.save_caches_to_h5. No h5py logic here."""
+        from utils.hdf5_writer import HDF5Writer
+        try:
+            writer = HDF5Writer(file_path="", pva_reader=self.pva_reader)
+            writer.hdf5_writer_finished.connect(self.hdf5_writer_finished)
+            writer.save_caches_to_h5(clear_caches, write_temp, write_output)
+        except Exception as e:
+            self.hdf5_writer_finished.emit(f"Failed to save: {e}")
 
     def save_as_scan_format(self, compress:bool=True, clear_caches:bool=True):
         all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
@@ -375,7 +400,10 @@ class HDF5Handler(QObject):
                             str_series = [str(v) if v is not None else '' for v in series]
                             setup_grp.create_dataset(str(field_name), data=np.array(str_series, dtype=dt))
             except Exception as e:
-                print(f"[HDF5Handler] Failed to write DETECTOR_SETUP attributes: {e}")
+                try:
+                    self.logger.warning(f"Failed to write DETECTOR_SETUP attributes: {e}")
+                except Exception:
+                    pass
             
             # Source (Energy)
             src_cfg = instr_cfg['source']
@@ -437,7 +465,7 @@ class HDF5Handler(QObject):
 
     # Info
     def get_file_info(self):
-        pass
+        raise NotImplementedError
 
     # Parse Toml dict
     def parse_toml(self):
@@ -459,7 +487,10 @@ class HDF5Handler(QObject):
                             reverse_map[pv_key] = (str(group_name).lower(), str(field_name).lower())
             return reverse_map
         except Exception as e:
-            print(f"[HDF5Handler] parse_toml failed: {e}")
+            try:
+                self.logger.warning(f"parse_toml failed: {e}")
+            except Exception:
+                pass
             return {}
 
     def get_structured_attr(self, attr):
@@ -523,5 +554,8 @@ class HDF5Handler(QObject):
                         grouped_series.setdefault(grp, {}).setdefault(field, []).append(val)
             return grouped_series
         except Exception as e:
-            print(f"[HDF5Handler] convert_to_nexus_format failed: {e}")
+            try:
+                self.logger.warning(f"convert_to_nexus_format failed: {e}")
+            except Exception:
+                pass
             return {}

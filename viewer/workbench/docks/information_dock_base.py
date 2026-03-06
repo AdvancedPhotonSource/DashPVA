@@ -22,9 +22,10 @@ class InformationDockBase(BaseDock):
         main_window=None,
         segment_name: Optional[str] = None,
         dock_area: Qt.DockWidgetArea = Qt.RightDockWidgetArea,
+        show: bool = True,
     ):
         # BaseDock will perform docking and Windows-menu registration
-        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area)
+        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
 
         # Load the UI into a QWidget and set as the dock widget
         project_root = Path(__file__).resolve().parents[3]

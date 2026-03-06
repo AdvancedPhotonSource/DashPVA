@@ -22,9 +22,9 @@ class DockWinDock(BaseDock):
 
     MAX_WINDOWS = 2
 
-    def __init__(self, title: str = "Add Window", main_window=None, segment_name: str = "other", dock_area=Qt.RightDockWidgetArea):
+    def __init__(self, title: str = "Add Window", main_window=None, segment_name: str = "other", dock_area=Qt.RightDockWidgetArea, show: bool = False):
         # Store title separately so BaseDock.setup can wire the dock and toggle
-        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area)
+        super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
 
         # UI
         self._container = QWidget(self)

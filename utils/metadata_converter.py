@@ -1,27 +1,15 @@
-import os
-import traceback
-import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import shutil
 
 import h5py
 import numpy as np
 import toml
+import settings
+from utils.log_manager import get_default_manager
 
-logger = logging.getLogger(__name__)
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
-try:
-    os.makedirs(log_dir, exist_ok=True)
-    fh = logging.FileHandler(os.path.join(log_dir, 'metadata_writer_errors.log'))
-    fh.setLevel(logging.ERROR)
-    fh.setFormatter(logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s'))
-    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', '') == fh.baseFilename for h in logger.handlers):
-        logger.addHandler(fh)
-    logger.setLevel(logging.ERROR)
-    logger.propagate = False
-except Exception:
-    pass
+# Use central LogManager rather than local handler configuration
+logger = get_default_manager().get_logger(__name__)
 
 
 def is_numeric(value):
@@ -233,7 +221,7 @@ def convert_files_or_dir(
     base_group: str = "entry/data/metadata",
     include: bool = False,
     in_place: bool = False,
-    output_dir: str = "outputs/conversions",
+    output_dir: Optional[str] = None,
     recursive: bool = False,
     pattern: str = "*.h5",
     dry_run: bool = False,
@@ -263,7 +251,12 @@ def convert_files_or_dir(
     """
     src = Path(hdf5_path)
     toml_p = Path(toml_path)
-    out_dir = Path(output_dir)
+    # Determine output directory default from settings.OUTPUT_PATH when not provided
+    if output_dir is None:
+        base_out = Path(getattr(settings, 'OUTPUT_PATH', './outputs')).expanduser()
+        out_dir = base_out.joinpath('conversions')
+    else:
+        out_dir = Path(output_dir)
 
     files: List[Path] = []
     if src.is_file():

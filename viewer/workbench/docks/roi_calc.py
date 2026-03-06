@@ -50,6 +50,7 @@ class ROICalcDock(BaseDock):
             main_window=main_window,
             segment_name="analysis",
             dock_area=dock_area,
+            show=False,
         )
         self._build_ui()
         # Internal mappings for memory ROIs

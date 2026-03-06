@@ -7,14 +7,20 @@ from pathlib import Path
 import traceback
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils.log_manager import LogMixin
 
-class HDF5Loader:
+class HDF5Loader(LogMixin):
     """
     Utility class for loading and saving HDF5 files with 2D and 3D point cloud data
     """
     
     def __init__(self):
         """Initialize the HDF5 loader"""
+        try:
+            # Bind a logger for this utility
+            self.set_log_manager(viewer_name="HDF5Loader")
+        except Exception:
+            pass
         # ================ FILE HANDLING ======================= #
         self.current_file_path = None
         self.output_file_location = None
@@ -51,13 +57,10 @@ class HDF5Loader:
             'comy': 'entry/analysis/comy'
         }
         # ================== ERROR ================= #
-        self.debug_mode = True
         self.last_error = ''
         self.flatten_intensities = True
         self.auto_calculate_bounds = True
         self.validate_coordinates = True
-        self.error_log = []
-        self.log_file_path = 'hdf5_loader_errors.txt'
         self.coordinates_loaded = False
         self.intensities_loaded = False
         self.points_assembled = False
@@ -186,7 +189,10 @@ class HDF5Loader:
             
         except Exception as e:
             self.last_error = f"File validation failed: {e}"
-            print(self.last_error)
+            try:
+                self.logger.error(self.last_error)
+            except Exception:
+                pass
             return False
     
     
@@ -659,8 +665,10 @@ class HDF5Loader:
             return np.concatenate(flattened_list)
             
         except Exception as e:
-            if self.debug_mode:
-                print(f"Error flattening coordinate data: {e}")
+            try:
+                self.logger.error(f"Error flattening coordinate data: {e}")
+            except Exception:
+                pass
             return np.array([])
 
     def _calculate_3d_bounds(self) -> None:
@@ -677,8 +685,10 @@ class HDF5Loader:
                 self.bounds_3d['z_max'] = np.max(self.points_3d[:, 2])
                 
         except Exception as e:
-            if self.debug_mode:
-                print(f"Error calculating 3D bounds: {e}")
+            try:
+                self.logger.error(f"Error calculating 3D bounds: {e}")
+            except Exception:
+                pass
     
     
     # ================ SAVING METHODS ======================= #
@@ -724,52 +734,24 @@ class HDF5Loader:
             
             with h5py.File(file_path, 'w') as h5f:
                 # Create main structure using hdf5_structure paths
-                print(f'Creating file at: {file_path}')
-                
-                # Create entry group
                 entry_grp = h5f.create_group(self.hdf5_structure['entry'])
-                
-                # Create data group
                 data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
-                
+
                 # Save intensities using standard images path
                 data_grp.create_dataset(
-                    self.hdf5_structure['images'].split('/')[-1], 
-                    data=intensities.reshape(-1, 1), 
+                    self.hdf5_structure['images'].split('/')[-1],
+                    data=intensities.reshape(-1, 1),
                     dtype=np.float32,
                     **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
                 )
-                print('Intensity data written to standard images path')
-                
+
                 # Create HKL subgroup using standard structure
                 hkl_grp = data_grp.create_group(self.hdf5_structure['hkl'].split('/')[-1])
-                
-                # Save coordinates using standard HKL paths
-                hkl_grp.create_dataset(
-                    self.hdf5_structure['qx'].split('/')[-1], 
-                    data=points[:, 0], 
-                    dtype=np.float32,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
-                )
-                hkl_grp.create_dataset(
-                    self.hdf5_structure['qy'].split('/')[-1], 
-                    data=points[:, 1], 
-                    dtype=np.float32,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
-                )
-                hkl_grp.create_dataset(
-                    self.hdf5_structure['qz'].split('/')[-1], 
-                    data=points[:, 2], 
-                    dtype=np.float32,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
-                )
-                print('HKL coordinates written to standard paths')
-                
-                # Create metadata group using standard structure
+                hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=points[:, 0], dtype=np.float32, **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=points[:, 1], dtype=np.float32, **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+                hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=points[:, 2], dtype=np.float32, **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
+
                 metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
-                print('Metadata group created using standard path')
-                
-                # Save metadata
                 for key, value in merged_metadata.items():
                     try:
                         if isinstance(value, (int, float, np.number)):
@@ -778,7 +760,6 @@ class HDF5Loader:
                             dt = h5py.string_dtype(encoding='utf-8')
                             metadata_grp.create_dataset(key, data=value, dtype=dt)
                         elif isinstance(value, (list, tuple, np.ndarray)):
-                            # Handle arrays/lists
                             if len(value) > 0:
                                 if all(isinstance(v, (int, float, np.number)) for v in value):
                                     metadata_grp.create_dataset(key, data=np.array(value))
@@ -786,44 +767,30 @@ class HDF5Loader:
                                     dt = h5py.string_dtype(encoding='utf-8')
                                     metadata_grp.create_dataset(key, data=np.array(value, dtype=dt))
                                 else:
-                                    # Mixed types, convert to string
                                     dt = h5py.string_dtype(encoding='utf-8')
                                     metadata_grp.create_dataset(key, data=str(value), dtype=dt)
                         else:
-                            # Convert to string for complex objects
                             dt = h5py.string_dtype(encoding='utf-8')
                             metadata_grp.create_dataset(key, data=str(value), dtype=dt)
                     except Exception as e:
-                        print(f"Warning: Could not save metadata key '{key}': {e}")
-                
-                print('Metadata saved')
-                
-                # Add file-level attributes
+                        try:
+                            self.logger.warning(f"Could not save metadata key '{key}': {e}")
+                        except Exception:
+                            pass
+
                 entry_grp.attrs['data_type'] = '3d_point_cloud'
                 entry_grp.attrs['num_points'] = len(points)
                 entry_grp.attrs['point_dimensions'] = points.shape[1]
-                
-                # Add data group attributes
                 data_grp.attrs['coordinate_system'] = 'hkl'
                 data_grp.attrs['units'] = 'reciprocal_space'
-            
-            print(f"3D point cloud successfully saved using standard HDF5 structure")
-            print(f"Saved {len(points)} points with 3D coordinates")
-            print(f"Structure paths used:")
-            print(f"  Entry: {self.hdf5_structure['entry']}")
-            print(f"  Data: {self.hdf5_structure['data']}")
-            print(f"  Images: {self.hdf5_structure['images']}")
-            print(f"  HKL: {self.hdf5_structure['hkl']}")
-            print(f"  QX: {self.hdf5_structure['qx']}")
-            print(f"  QY: {self.hdf5_structure['qy']}")
-            print(f"  QZ: {self.hdf5_structure['qz']}")
-            print(f"  Metadata: {self.hdf5_structure['metadata']}")
-            
+
+            try:
+                self.logger.info(f"3D point cloud saved to {file_path} ({len(points)} points)")
+            except Exception:
+                pass
             return True
-            
+
         except Exception as e:
-            error_msg = f"Failed to save point cloud to {file_path}: {e}"
-            print(error_msg)
             self._handle_saving_error(e, file_path)
             return False
     
@@ -912,23 +879,22 @@ class HDF5Loader:
                             dt = h5py.string_dtype(encoding='utf-8')
                             metadata_grp.create_dataset(key, data=str(value), dtype=dt)
                     except Exception as e:
-                        print(f"Warning: Could not save metadata key '{key}': {e}")
-                
+                        try:
+                            self.logger.warning(f"Could not save metadata key '{key}': {e}")
+                        except Exception:
+                            pass
+
                 # Attributes for quick discovery
                 entry_grp.attrs['data_type'] = meta.get('data_type', inferred_type)
                 data_grp.attrs['array_rank'] = volume.ndim
                 data_grp.attrs['array_shape'] = np.array(volume.shape, dtype=np.int64)
-            
-            print(f"{meta.get('data_type', inferred_type).capitalize()} successfully saved to {file_path}")
-            print(f"Structure paths used:")
-            print(f"  Entry: {self.hdf5_structure['entry']}")
-            print(f"  Data: {self.hdf5_structure['data']}")
-            print(f"  Images: {self.hdf5_structure['images']}")
-            print(f"  Metadata: {self.hdf5_structure['metadata']}")
+
+            try:
+                self.logger.info(f"{meta.get('data_type', inferred_type).capitalize()} saved to {file_path}")
+            except Exception:
+                pass
             return True
         except Exception as e:
-            error_msg = f"Failed to save volume to {file_path}: {e}"
-            print(error_msg)
             self._handle_saving_error(e, file_path)
             return False
     
@@ -1117,24 +1083,22 @@ class HDF5Loader:
                             dt = h5py.string_dtype(encoding='utf-8')
                             metadata_grp.create_dataset(key, data=str(value), dtype=dt)
                     except Exception as e:
-                        print(f"Warning: Could not save metadata key '{key}': {e}")
+                        try:
+                            self.logger.warning(f"Could not save metadata key '{key}': {e}")
+                        except Exception:
+                            pass
 
                 # Attributes
                 entry_grp.attrs['data_type'] = 'slice'
                 data_grp.attrs['array_rank'] = 2
                 data_grp.attrs['array_shape'] = np.array([H, W], dtype=np.int64)
 
-            print(f"Slice successfully saved to {file_path} (shape {H}x{W})")
-            print(f"Structure paths used:")
-            print(f"  Entry: {self.hdf5_structure['entry']}")
-            print(f"  Data: {self.hdf5_structure['data']}")
-            print(f"  Images: {self.hdf5_structure['images']}")
-            print(f"  HKL: {self.hdf5_structure['hkl']} -> qx,qy,qz grids")
-            print(f"  Metadata: {self.hdf5_structure['metadata']}")
+            try:
+                self.logger.info(f"Slice saved to {file_path} (shape {H}x{W})")
+            except Exception:
+                pass
             return True
         except Exception as e:
-            error_msg = f"Failed to save slice to {file_path}: {e}"
-            print(error_msg)
             self._handle_saving_error(e, file_path)
             return False
 
@@ -1220,15 +1184,10 @@ class HDF5Loader:
                                           float_precision=float_precision, summarize_datasets=summarize_datasets)
 
         except Exception as e:
-            # Also log to error file
+            # Log via central logger instead of writing to a txt file
             try:
-                with open(self.log_file_path, 'a') as f:
-                    f.write("==== HDF5 Inspect Error ====\n")
-                    f.write(f"File Path: {file_path}\n")
-                    f.write(f"Error: {repr(e)}\n")
-                    f.write("Traceback:\n")
-                    f.write(traceback.format_exc())
-                    f.write("\n")
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f"HDF5 Inspect Error for {file_path}: {e}")
             except Exception:
                 pass
             return info if raw else self._format_file_info(info, style=style, include_unknown=include_unknown,
@@ -1471,10 +1430,16 @@ class HDF5Loader:
             error (Exception): The exception that occurred
             file_path (str): Path to file that caused error
         """
-        f = open('error_output.txt', 'w')
-        f.write(f'Error Loading HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
-        f.close()
-        print(self.last_error)
+        try:
+            self.last_error = f"Error Loading HDF5 File: {str(error)} (path={file_path})"
+        except Exception:
+            self.last_error = str(error)
+        # Emit to central logger
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.exception(self.last_error)
+        except Exception:
+            pass
         
     
     def _handle_saving_error(self, error: Exception, file_path: str) -> None:
@@ -1485,10 +1450,16 @@ class HDF5Loader:
             error (Exception): The exception that occurred
             file_path (str): Path to file that caused error
         """
-        f = open('error_output.txt', 'w')
-        f.write(f'Error Saving HDF5 File: {str(error)}\nHDF5 File Path: {file_path}\n\nTraceback:\n{traceback.format_exc()}')
-        f.close()
-        print(self.last_error)
+        try:
+            self.last_error = f"Error Saving HDF5 File: {str(error)} (path={file_path})"
+        except Exception:
+            self.last_error = str(error)
+        # Emit to central logger
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.exception(self.last_error)
+        except Exception:
+            pass
 
 # ================= HKL METADATA DISCOVERY HELPER ======================= #
 

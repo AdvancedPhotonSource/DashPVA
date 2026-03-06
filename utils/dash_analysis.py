@@ -121,11 +121,11 @@ class LineCutData(Data):
     def get_peak(self):
         """
         Identify peak positions in the line cut data.
-        
+
         Returns:
             Peak analysis results (to be implemented)
         """
-        pass
+        raise NotImplementedError
 
 
 class SliceData:
