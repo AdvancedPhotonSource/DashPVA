@@ -30,6 +30,7 @@ from PyQt5.QtCore import Qt
 import numpy as np
 import pyqtgraph as pg
 import h5py
+import qtawesome as qta
 
 from utils.roi_ops import extract_roi_stack, align_stacks, per_frame_mean
 
@@ -74,6 +75,21 @@ class ROICalcDock(BaseDock):
         except Exception:
             pass
 
+        # Top-level Calculator Lock controls
+        self.chkCalcLock = QCheckBox("Calculator Lock")
+        self.chkCalcLock.setObjectName("chkCalcLock")
+        self.chkCalcLock.setChecked(True)
+        self.lblLockBanner = QLabel("Calculator lock enabled — ROIs are fixed")
+        self.lblLockBanner.setObjectName("lblLockBanner")
+        try:
+            self.lblLockBanner.setStyleSheet(
+                "background-color: #ffd6d6; color: #a94442; border: 1px solid #a94442; font-weight: bold; padding: 4px;"
+            )
+        except Exception:
+            pass
+        self.vbox.addWidget(self.chkCalcLock)
+        self.vbox.addWidget(self.lblLockBanner)
+
         # ROI A group
         self.grpRoiA = QGroupBox("ROI A")
         self.grpRoiA.setObjectName("grpRoiA")
@@ -113,6 +129,10 @@ class ROICalcDock(BaseDock):
         self.lblABounds = QLabel("Bounds: (not set)")
         self.lblABounds.setObjectName("lblABounds")
         vA.addWidget(self.lblABounds)
+        # A status label reflecting lock state
+        self.lblAStatus = QLabel("Status: (unknown)")
+        self.lblAStatus.setObjectName("lblAStatus")
+        vA.addWidget(self.lblAStatus)
 
         # ROI B group
         self.grpRoiB = QGroupBox("ROI B")
@@ -153,6 +173,10 @@ class ROICalcDock(BaseDock):
         self.lblBBounds = QLabel("Bounds: (not set)")
         self.lblBBounds.setObjectName("lblBBounds")
         vB.addWidget(self.lblBBounds)
+        # B status label reflecting lock state
+        self.lblBStatus = QLabel("Status: (unknown)")
+        self.lblBStatus.setObjectName("lblBStatus")
+        vB.addWidget(self.lblBStatus)
 
         # Operation group
         self.grpOperation = QGroupBox("Operation")
@@ -248,6 +272,22 @@ class ROICalcDock(BaseDock):
         row_adv.addWidget(self.cboTimeAxis)
         row_adv.addWidget(self.chkIncludeROIFrames)
         vOp.addLayout(row_adv)
+
+        # Editable ROIs group (multi-select Allow drag)
+        self.grpEditable = QGroupBox("Editable ROIs")
+        self.grpEditable.setObjectName("grpEditable")
+        self.vEditable = QVBoxLayout(self.grpEditable)
+        try:
+            self.vEditable.setContentsMargins(6, 6, 6, 6)
+            self.vEditable.setSpacing(4)
+        except Exception:
+            pass
+        # Placeholder until we populate
+        self.lblEditablePlaceholder = QLabel("No ROIs in memory")
+        self.lblEditablePlaceholder.setObjectName("lblEditablePlaceholder")
+        self.vEditable.addWidget(self.lblEditablePlaceholder)
+        # Map of roi id to checkbox
+        self._editable_check_by_id = {}
 
         # Results tab widget
         self.tabResults = QTabWidget()
@@ -355,6 +395,7 @@ class ROICalcDock(BaseDock):
         self.vbox.addWidget(self.grpRoiA)
         self.vbox.addWidget(self.grpRoiB)
         self.vbox.addWidget(self.grpOperation)
+        self.vbox.addWidget(self.grpEditable)
         self.vbox.addWidget(self.tabResults)
         self.vbox.addLayout(actions_row)
         # Add a spacer to push status to bottom if space allows
@@ -369,6 +410,7 @@ class ROICalcDock(BaseDock):
         # Initial population from memory
         try:
             self._refresh_memory_rois()
+            self._refresh_editable_rois()
         except Exception:
             pass
         # Persist last compute result/meta for Send/Save actions
@@ -404,8 +446,8 @@ class ROICalcDock(BaseDock):
 
         # Populate bounds when selection changes for A/B
         try:
-            self.cboAName.currentIndexChanged.connect(lambda _: self._update_bounds_label('A'))
-            self.cboBName.currentIndexChanged.connect(lambda _: self._update_bounds_label('B'))
+            self.cboAName.currentIndexChanged.connect(lambda _: (self._update_bounds_label('A'), self._update_status_label('A')))
+            self.cboBName.currentIndexChanged.connect(lambda _: (self._update_bounds_label('B'), self._update_status_label('B')))
         except Exception:
             pass
 
@@ -422,6 +464,14 @@ class ROICalcDock(BaseDock):
             pass
         try:
             self.btnSaveAsH5.clicked.connect(self._on_save_as_hdf5)
+        except Exception:
+            pass
+
+        # Calculator Lock toggle
+        try:
+            self.chkCalcLock.toggled.connect(self._on_calc_lock_toggled)
+            # Initialize banner/lock state
+            self._on_calc_lock_toggled(self.chkCalcLock.isChecked())
         except Exception:
             pass
 
@@ -605,6 +655,14 @@ class ROICalcDock(BaseDock):
                         self.main_window.tabWidget_analysis.setCurrentIndex(0)
                 except Exception:
                     pass
+                # After sending result to workspace, hide all ROIs (no disk deletion)
+                try:
+                    rm = getattr(self.main_window, 'roi_manager', None)
+                    if rm is not None:
+                        for r in list(getattr(rm, 'rois', [])):
+                            rm.set_roi_visibility(r, False)
+                except Exception:
+                    pass
                 self._set_status("Result sent to 2D workspace")
         except Exception as e:
             self._set_status(f"Send failed: {e}")
@@ -674,6 +732,12 @@ class ROICalcDock(BaseDock):
         try:
             if event in ('added', 'deleted', 'renamed', 'cleared'):
                 self._refresh_memory_rois()
+                self._refresh_editable_rois()
+            elif event in ('lock-changed',):
+                # Sync editable checkboxes and status labels
+                self._sync_editable_checks_to_lock_state()
+                self._update_status_label('A')
+                self._update_status_label('B')
         except Exception:
             pass
 
@@ -749,6 +813,8 @@ class ROICalcDock(BaseDock):
             # Update bounds labels after refresh
             self._update_bounds_label('A')
             self._update_bounds_label('B')
+            self._update_status_label('A')
+            self._update_status_label('B')
         except Exception:
             pass
 
@@ -791,6 +857,202 @@ class ROICalcDock(BaseDock):
                 self.lblABounds.setText(text)
             else:
                 self.lblBBounds.setText(text)
+        except Exception:
+            pass
+
+    # ----- Editable ROIs group -----
+    def _clear_layout(self, layout: QVBoxLayout):
+        try:
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    try:
+                        w.deleteLater()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _refresh_editable_rois(self):
+        try:
+            rm = getattr(self.main_window, 'roi_manager', None)
+            rois = list(getattr(rm, 'rois', [])) if rm else []
+            self._editable_check_by_id = {}
+            self._clear_layout(self.vEditable)
+            if not rois:
+                self.vEditable.addWidget(self.lblEditablePlaceholder)
+                return
+            # Build a checkbox for each ROI: "<name> — Allow drag"
+            for r in rois:
+                rid = id(r)
+                try:
+                    name = rm.get_roi_name(r) if hasattr(rm, 'get_roi_name') else 'ROI'
+                except Exception:
+                    name = 'ROI'
+                chk = QCheckBox(f"{name} — Allow drag")
+                chk.setObjectName(f"chkAllowDrag_{rid}")
+                # Checked means editable (unlocked)
+                try:
+                    is_locked = rm.is_locked(r) if hasattr(rm, 'is_locked') else True
+                except Exception:
+                    is_locked = True
+                try:
+                    chk.setChecked(not bool(is_locked))
+                except Exception:
+                    pass
+                # Wire toggle
+                def on_chk_toggled(checked, roi_ref=r):
+                    try:
+                        # If Calculator Lock is ON, ignore and revert
+                        if self.chkCalcLock.isChecked():
+                            # revert visual state to locked
+                            prev = rm.is_locked(roi_ref) if hasattr(rm, 'is_locked') else True
+                            self._set_checkbox_checked_safely(roi_ref, not prev)
+                            return
+                        if checked:
+                            if hasattr(rm, 'unlock_roi'):
+                                rm.unlock_roi(roi_ref)
+                        else:
+                            if hasattr(rm, 'lock_roi'):
+                                rm.lock_roi(roi_ref)
+                        # Update status labels for A/B if affected
+                        self._update_status_label('A')
+                        self._update_status_label('B')
+                    except Exception:
+                        pass
+                try:
+                    chk.toggled.connect(on_chk_toggled)
+                except Exception:
+                    pass
+                self._editable_check_by_id[rid] = chk
+                self.vEditable.addWidget(chk)
+            # Apply enable/disable based on Calculator Lock
+            self._apply_editable_checks_enabled_state()
+        except Exception:
+            pass
+
+    def _apply_editable_checks_enabled_state(self):
+        try:
+            locked = self.chkCalcLock.isChecked()
+            for chk in list(self._editable_check_by_id.values()):
+                try:
+                    chk.setEnabled(not locked)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _sync_editable_checks_to_lock_state(self):
+        try:
+            rm = getattr(self.main_window, 'roi_manager', None)
+            for rid, chk in list(self._editable_check_by_id.items()):
+                # Find ROI by rid
+                roi = None
+                try:
+                    # rm.rois contains actual objects; match by id
+                    for r in list(getattr(rm, 'rois', [])):
+                        if id(r) == rid:
+                            roi = r
+                            break
+                except Exception:
+                    roi = None
+                if roi is None:
+                    continue
+                try:
+                    is_locked = rm.is_locked(roi) if hasattr(rm, 'is_locked') else True
+                    self._set_checkbox_checked_safely(roi, not bool(is_locked))
+                except Exception:
+                    pass
+            # Ensure enabled state matches Calculator Lock
+            self._apply_editable_checks_enabled_state()
+        except Exception:
+            pass
+
+    def _set_checkbox_checked_safely(self, roi, checked: bool):
+        try:
+            chk = self._editable_check_by_id.get(id(roi))
+            if not chk:
+                return
+            try:
+                chk.blockSignals(True)
+                chk.setChecked(bool(checked))
+            except Exception:
+                pass
+            try:
+                chk.blockSignals(False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _on_calc_lock_toggled(self, checked: bool):
+        try:
+            # Banner visibility
+            try:
+                self.lblLockBanner.setVisible(bool(checked))
+            except Exception:
+                pass
+            rm = getattr(self.main_window, 'roi_manager', None)
+            if rm is None:
+                return
+            if bool(checked):
+                # Lock all ROIs and disable per-ROI edit controls
+                try:
+                    if hasattr(rm, 'lock_all_rois'):
+                        rm.lock_all_rois()
+                except Exception:
+                    pass
+            else:
+                # Apply per-ROI checkbox states: checked -> unlock, unchecked -> lock
+                try:
+                    for rid, chk in list(self._editable_check_by_id.items()):
+                        # Find ROI
+                        roi = None
+                        for r in list(getattr(rm, 'rois', [])):
+                            if id(r) == rid:
+                                roi = r
+                                break
+                        if roi is None:
+                            continue
+                        if chk.isChecked():
+                            if hasattr(rm, 'unlock_roi'):
+                                rm.unlock_roi(roi)
+                        else:
+                            if hasattr(rm, 'lock_roi'):
+                                rm.lock_roi(roi)
+                except Exception:
+                    pass
+            # Enable/disable checkboxes based on Calculator Lock
+            self._apply_editable_checks_enabled_state()
+            # Update status labels
+            self._update_status_label('A')
+            self._update_status_label('B')
+        except Exception:
+            pass
+
+    # ----- A/B status labels -----
+    def _update_status_label(self, which: str):
+        try:
+            rm = getattr(self.main_window, 'roi_manager', None)
+            roi = self._lookup_selected_roi(which)
+            status_lbl = self.lblAStatus if which == 'A' else self.lblBStatus
+            if roi is None or rm is None:
+                try:
+                    status_lbl.setText("Status: (unknown)")
+                except Exception:
+                    pass
+                return
+            locked = True
+            try:
+                locked = rm.is_locked(roi) if hasattr(rm, 'is_locked') else True
+            except Exception:
+                locked = True
+            try:
+                icon = "🔒" if locked else "🔓"
+                status_lbl.setText(f"Status: {icon} {'(locked)' if locked else '(editable)'}")
+            except Exception:
+                pass
         except Exception:
             pass
 

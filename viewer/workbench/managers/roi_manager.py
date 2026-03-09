@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QToolButton,
     QStyle,
     QFileDialog,
+    QMessageBox,
 )
 import numpy as np
 import pyqtgraph as pg
@@ -53,12 +54,14 @@ class ContextRectROI(pg.RectROI):
                 action_rename = QAction("Rename ROI", menu)
                 action_set_active = QAction("Set Active ROI", menu)
                 action_plot = QAction("Open ROI Plot", menu)
+                action_hide = QAction("Hide ROI", menu)
                 action_delete = QAction("Delete ROI", menu)
 
                 action_stats.triggered.connect(lambda: self.parent_window.roi_manager.show_roi_stats_for_roi(self))
                 action_rename.triggered.connect(lambda: self.parent_window.roi_manager.rename_roi(self))
                 action_set_active.triggered.connect(lambda: self.parent_window.roi_manager.set_active_roi(self))
                 action_plot.triggered.connect(lambda: self.parent_window.open_roi_plot_dock(self))
+                action_hide.triggered.connect(lambda: self.parent_window.roi_manager.set_roi_visibility(self, False))
                 action_delete.triggered.connect(lambda: self.parent_window.roi_manager.delete_roi(self))
 
                 # Add actions and separator before Save
@@ -66,6 +69,7 @@ class ContextRectROI(pg.RectROI):
                 menu.addAction(action_rename)
                 menu.addAction(action_set_active)
                 menu.addAction(action_plot)
+                menu.addAction(action_hide)
                 menu.addAction(action_delete)
                 menu.addSeparator()
                 # Save ROI action
@@ -113,6 +117,8 @@ class ROIManager:
         self.roi_source_by_id = {}
         # Guard to suppress itemChanged recursion when programmatically updating table cells
         self._suppress_table_item_changed = False
+        # Track lock state for ROIs (default locked)
+        self.locked_roi_ids: Set[int] = set()
 
     # ----- External listeners -----
     def add_listener(self, callback: Callable[[str, Optional[pg.ROI]], None]) -> None:
@@ -217,6 +223,12 @@ class ROIManager:
             except Exception:
                 pass
 
+            # Default lock ON: prevent drag/resize until explicitly unlocked
+            try:
+                self.lock_roi(roi)
+            except Exception:
+                pass
+
             # Populate stats immediately for the new ROI
             try:
                 self.show_roi_stats_for_roi(roi)
@@ -277,7 +289,8 @@ class ROIManager:
         except Exception as e:
             self.main.update_status(f"Error renaming ROI: {e}", level='error')
 
-    def delete_roi(self, roi) -> None:
+    def _remove_roi_memory(self, roi) -> None:
+        """Remove the ROI from UI/memory without touching disk (used by delete/hide flows)."""
         try:
             # remove overlay label if present
             try:
@@ -324,7 +337,6 @@ class ROIManager:
                             self.update_stats_table_for_roi(r, s)
             except Exception:
                 pass
-            self.main.update_status("ROI deleted")
             # Notify listeners about deletion
             try:
                 self._notify_listeners('deleted', roi)
@@ -335,6 +347,111 @@ class ROIManager:
                 self.roi_source_by_id.pop(id(roi), None)
             except Exception:
                 pass
+        except Exception:
+            pass
+
+    def delete_roi_from_disk(self, roi) -> None:
+        """Delete the ROI dataset from disk under /entry/data/rois. Ignores if not present."""
+        try:
+            # Resolve file path: prefer recorded source mapping, fallback to current file
+            src = dict(self.roi_source_by_id.get(id(roi), {}))
+            file_path = src.get('file_path') or getattr(self.main, 'current_file_path', None)
+            if not file_path or not isinstance(file_path, str) or not os.path.exists(file_path):
+                return
+
+            # Build candidate dataset paths for deletion
+            candidates = []
+            ds_path = src.get('dataset_path')
+            if isinstance(ds_path, str) and ds_path.startswith('/entry/data/rois'):
+                candidates.append(ds_path)
+            # Fallback using ROI name: raw and sanitized underscores
+            try:
+                name = self.get_roi_name(roi)
+            except Exception:
+                name = None
+            if isinstance(name, str) and name.strip():
+                raw = f"/entry/data/rois/{name}"
+                sani = f"/entry/data/rois/{name.replace(' ', '_')}"
+                # Avoid duplicates
+                for p in (raw, sani):
+                    if p not in candidates:
+                        candidates.append(p)
+
+            # Delete the first existing candidate
+            try:
+                with h5py.File(file_path, 'a') as h5f:
+                    for p in candidates:
+                        try:
+                            if p in h5f and isinstance(h5f[p], h5py.Dataset):
+                                del h5f[p]
+                                self.main.update_status(f"ROI dataset deleted from disk: {p}")
+                                break
+                        except Exception:
+                            # continue to next candidate
+                            continue
+            except Exception:
+                # Silently ignore disk errors per spec
+                pass
+        except Exception:
+            pass
+
+    def delete_roi(self, roi, prompt: bool = True) -> None:
+        """Delete an ROI. With prompt=True, shows a confirmation dialog offering Hide/Delete/No.
+        - Hide: hides the ROI from view (no disk changes)
+        - Delete: removes ROI dataset from disk (when resolvable) and from UI/memory
+        - No: cancels
+        With prompt=False, removes from UI/memory only (used for internal clear operations).
+        """
+        try:
+            if not prompt:
+                self._remove_roi_memory(roi)
+                self.main.update_status("ROI removed from workspace")
+                return
+
+            # Confirmation dialog
+            msg = QMessageBox(self.main)
+            msg.setWindowTitle("Delete ROI")
+            try:
+                msg.setIcon(QMessageBox.Warning)
+            except Exception:
+                pass
+            msg.setText("You are deleting your ROI from disk for this file.")
+            try:
+                msg.setInformativeText("This action is irreversible. Proceed?")
+            except Exception:
+                pass
+
+            btn_hide = msg.addButton("Hide", QMessageBox.ActionRole)
+            btn_delete = msg.addButton("Delete", QMessageBox.DestructiveRole)
+            btn_no = msg.addButton("No", QMessageBox.RejectRole)
+            # Style the Delete button in red
+            try:
+                btn_delete.setStyleSheet("color: white; background-color: #d9534f;")
+            except Exception:
+                pass
+
+            msg.exec_()
+            clicked = msg.clickedButton()
+
+            if clicked is btn_hide:
+                try:
+                    self.set_roi_visibility(roi, False)
+                except Exception:
+                    pass
+                self.main.update_status("ROI hidden")
+                return
+            if clicked is btn_delete:
+                # Attempt disk deletion first
+                try:
+                    self.delete_roi_from_disk(roi)
+                except Exception:
+                    pass
+                # Remove from UI/memory
+                self._remove_roi_memory(roi)
+                self.main.update_status("ROI deleted")
+                return
+            # No: do nothing
+            return
         except Exception as e:
             self.main.update_status(f"Error deleting ROI: {e}", level='error')
 
@@ -453,6 +570,14 @@ class ROIManager:
                         pass
 
                 self.main.update_status(f"ROI saved to HDF5 at /entry/data/rois/{ds_name}")
+                # Record source mapping for robust deletion later
+                try:
+                    self.roi_source_by_id[id(roi)] = {
+                        'file_path': file_path,
+                        'dataset_path': f"/entry/data/rois/{ds_name}",
+                    }
+                except Exception:
+                    pass
             except Exception as e:
                 self.main.update_status(f"Error writing ROI to HDF5: {e}", level='error')
         except Exception as e:
@@ -461,7 +586,13 @@ class ROIManager:
     def clear_all_rois(self) -> None:
         try:
             for r in list(self.rois):
-                self.delete_roi(r)
+                # Internal clear: no dialogs and no disk edits during dataset switches
+                self.delete_roi(r, prompt=False)
+            # Notify listeners that all ROIs were cleared
+            try:
+                self._notify_listeners('cleared', None)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -522,6 +653,11 @@ class ROIManager:
                         if hasattr(roi, 'sigRegionChangeFinished'):
                             roi.sigRegionChangeFinished.connect(lambda r=roi: (self.show_roi_stats_for_roi(r), self.update_roi_item(r), self.refresh_label_for_roi(r)))
                         self.show_roi_stats_for_roi(roi)
+                    except Exception:
+                        pass
+                    # Default lock ON for file-rendered ROIs
+                    try:
+                        self.lock_roi(roi)
                     except Exception:
                         pass
                 # Notify listeners each time an ROI is rendered from file metadata
@@ -827,6 +963,12 @@ class ROIManager:
                     pass
             elif col in (9, 10, 11, 12):
                 # x, y, w, h edits: apply to the ROI, clamp to image bounds, and refresh stats/label
+                # If locked, ignore XYWH edits
+                try:
+                    if self.is_locked(roi):
+                        return
+                except Exception:
+                    pass
                 try:
                     frame = self.get_current_frame_data()
                     if frame is None or frame.ndim != 2:
@@ -1052,6 +1194,8 @@ class ROIManager:
                 icon_visible = qta.icon('fa.eye', color='black')
                 icon_hidden = qta.icon('fa.eye-slash', color='black')
                 icon_trash = qta.icon('fa.trash', color='black')
+                icon_lock = qta.icon('fa.lock', color='black')
+                icon_unlock = qta.icon('fa.unlock', color='black')
                 # Match checkbox indicator size
                 try:
                     style = getattr(self.main, 'style', lambda: None)()
@@ -1089,8 +1233,45 @@ class ROIManager:
                     except Exception:
                         pass
                 btn_eye.toggled.connect(on_eye_toggled)
+                # Lock/unlock toggle
+                btn_lock = QToolButton(actions_widget)
+                btn_lock.setAutoRaise(True)
+                locked = self.is_locked(roi)
+                btn_lock.setCheckable(True)
+                btn_lock.setChecked(locked)
+                btn_lock.setIcon(icon_lock if locked else icon_unlock)
+                btn_lock.setIconSize(icon_size)
+                try:
+                    btn_lock.setFixedSize(icon_size.width()+4, icon_size.height()+4)
+                except Exception:
+                    pass
+                btn_lock.setToolTip("Lock/Unlock ROI (affects drag/resize and XYWH editing)")
+                def on_lock_toggled(checked, r=roi, b=btn_lock):
+                    try:
+                        if bool(checked):
+                            self.lock_roi(r)
+                            b.setIcon(icon_lock)
+                        else:
+                            self.unlock_roi(r)
+                            b.setIcon(icon_unlock)
+                    except Exception:
+                        pass
+                btn_lock.toggled.connect(on_lock_toggled)
+                # "Lock all except this" convenience
+                btn_lock_others = QToolButton(actions_widget)
+                btn_lock_others.setAutoRaise(True)
+                btn_lock_others.setIcon(icon_lock)
+                btn_lock_others.setIconSize(icon_size)
+                try:
+                    btn_lock_others.setFixedSize(icon_size.width()+4, icon_size.height()+4)
+                except Exception:
+                    pass
+                btn_lock_others.setToolTip("Lock all except this ROI")
+                btn_lock_others.clicked.connect(lambda _: self.lock_all_except(roi))
                 btn_trash.clicked.connect(lambda _, r=roi: self.delete_roi(r))
                 h.addWidget(btn_eye)
+                h.addWidget(btn_lock)
+                h.addWidget(btn_lock_others)
                 h.addWidget(btn_trash)
                 h.addStretch(1)
                 self.main.roi_stats_table.setCellWidget(row, 1, actions_widget)
@@ -1131,7 +1312,118 @@ class ROIManager:
             self.main.roi_stats_table.setItem(row, 10, QTableWidgetItem(str(stats['y'])))
             self.main.roi_stats_table.setItem(row, 11, QTableWidgetItem(str(stats['w'])))
             self.main.roi_stats_table.setItem(row, 12, QTableWidgetItem(str(stats['h'])))
+            # Apply editability based on lock state
+            try:
+                self.update_xywh_editability_for_roi(roi)
+            except Exception:
+                pass
             # Restore guard
             self._suppress_table_item_changed = prev_guard
+        except Exception:
+            pass
+
+    # ----- Locking API -----
+    def is_locked(self, roi) -> bool:
+        try:
+            return id(roi) in self.locked_roi_ids
+        except Exception:
+            return False
+
+    def lock_roi(self, roi) -> None:
+        try:
+            self.locked_roi_ids.add(id(roi))
+            # Block left-drag/resize
+            try:
+                roi.setMovable(False)
+            except Exception:
+                pass
+            try:
+                roi.setAcceptedMouseButtons(Qt.RightButton)
+            except Exception:
+                pass
+            # Update stats table editability
+            try:
+                self.update_xywh_editability_for_roi(roi)
+            except Exception:
+                pass
+            # Notify listeners so other UI (e.g., ROICalcDock) can reflect state
+            try:
+                self._notify_listeners('lock-changed', roi)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def unlock_roi(self, roi) -> None:
+        try:
+            self.locked_roi_ids.discard(id(roi))
+            # Restore left/right mouse for drag/resize
+            try:
+                roi.setMovable(True)
+            except Exception:
+                pass
+            try:
+                roi.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)
+            except Exception:
+                pass
+            # Update stats table editability
+            try:
+                self.update_xywh_editability_for_roi(roi)
+            except Exception:
+                pass
+            # Notify listeners
+            try:
+                self._notify_listeners('lock-changed', roi)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def lock_all_rois(self) -> None:
+        try:
+            for r in list(self.rois):
+                self.lock_roi(r)
+        except Exception:
+            pass
+
+    def unlock_all_rois(self) -> None:
+        try:
+            for r in list(self.rois):
+                self.unlock_roi(r)
+        except Exception:
+            pass
+
+    def lock_all_except(self, roi) -> None:
+        try:
+            for r in list(self.rois):
+                if r is roi:
+                    self.unlock_roi(r)
+                else:
+                    self.lock_roi(r)
+        except Exception:
+            pass
+
+    def update_xywh_editability_for_roi(self, roi) -> None:
+        """Set XYWH cells in stats table to editable when unlocked, non-editable when locked."""
+        try:
+            row = self.stats_row_by_roi_id.get(id(roi))
+            if row is None or not hasattr(self.main, 'roi_stats_table') or self.main.roi_stats_table is None:
+                return
+            locked = self.is_locked(roi)
+            for col in (9, 10, 11, 12):
+                item = self.main.roi_stats_table.item(row, col)
+                if item is None:
+                    continue
+                flags = item.flags()
+                if locked:
+                    try:
+                        item.setFlags(flags & ~Qt.ItemIsEditable)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        item.setFlags(flags | Qt.ItemIsEditable)
+                    except Exception:
+                        pass
         except Exception:
             pass

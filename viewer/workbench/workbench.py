@@ -247,6 +247,14 @@ class WorkbenchWindow(BaseWindow):
             if roi is None:
                 return
             menu = QMenu(self)
+            # ROI visibility and deletion actions
+            action_hide = QAction("Hide ROI", self)
+            action_hide.triggered.connect(lambda: self.roi_manager.set_roi_visibility(roi, False))
+            menu.addAction(action_hide)
+            action_delete = QAction("Delete ROI", self)
+            action_delete.triggered.connect(lambda: self.roi_manager.delete_roi(roi))
+            menu.addAction(action_delete)
+            menu.addSeparator()
             action_plot = QAction("Open ROI Plot", self)
             action_plot.triggered.connect(lambda: self.open_roi_plot_dock(roi))
             menu.addAction(action_plot)
