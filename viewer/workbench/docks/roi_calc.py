@@ -45,11 +45,11 @@ class ROICalcDock(BaseDock):
     for memory vs file selection and basic Close behavior.
     """
 
-    def __init__(self, main_window, dock_area=Qt.RightDockWidgetArea):
+    def __init__(self, main_window, dock_area=Qt.RightDockWidgetArea, segment_name="other"):
         super().__init__(
             title="ROI Calculator",
             main_window=main_window,
-            segment_name="analysis",
+            segment_name=segment_name,
             dock_area=dock_area,
             show=False,
         )

@@ -86,7 +86,8 @@ class WorkbenchWindow(BaseWindow):
             self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
         except Exception:
             self.add_window_dock = None
-        # roi 
+        # roi
+        self.roi_calc_dock = ROICalcDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
