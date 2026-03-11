@@ -26,7 +26,7 @@ class RSMConverter:
     - Build xrayutilities geometry and convert Angles → Q-space
     - Provide a compact public API for loading and computing
     """
-    def __init__(self, config_path: str = "pv_configs/s6lambda.toml"):
+    def __init__(self, config_path: str):
         """Initialize with a TOML HKL config path (used by other parts of the app)."""
         self.hkl_config: Dict[str, Dict[str, str]] = {}
         config = toml.load(config_path)

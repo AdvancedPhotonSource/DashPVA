@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 )
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+import settings
 from utils import SizeManager, RSMConverter
 from utils.hdf5_loader import HDF5Loader
 
@@ -400,7 +401,16 @@ class HKL3DSliceWindow(QMainWindow):
         except Exception:
             pass
         try:
-            conv = RSMConverter()
+            toml_path = getattr(settings, 'TOML_FILE', None)
+            if not toml_path:
+                toml_path, _ = QFileDialog.getOpenFileName(
+                    self, 'Select TOML Config File', '', 'TOML Files (*.toml);;All Files (*)'
+                )
+                if not toml_path:
+                    return
+                settings.set_locator(toml_path)
+                settings.reload()
+            conv = RSMConverter(toml_path)
             points, intensities, num_images, shape = conv.load_h5_to_3d(file_name)
             if points.size == 0 or intensities.size == 0:
                 QMessageBox.warning(self, 'Loading Warning', 'No valid point data found in HDF5 file')

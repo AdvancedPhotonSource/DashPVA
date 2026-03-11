@@ -1,15 +1,6 @@
 """
-Database package public API.
+Database package.
 
-Importing `database` exposes the DatabaseInterface facade, which is the single
-public entry point for all database operations (profiles, configs, import/export).
-Internal modules (manager, models, migrations) are implementation details.
-
-Usage:
-    from database import DatabaseInterface
-    db = DatabaseInterface()
+DatabaseInterface is not yet available — profile models and managers
+have not been implemented. Import directly from submodules as needed.
 """
-
-from .interface import DatabaseInterface
-
-__all__ = ["DatabaseInterface"]

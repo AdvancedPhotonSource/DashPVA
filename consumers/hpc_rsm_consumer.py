@@ -415,8 +415,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             frameAttributes = pvObject['attribute']
             frameAttributes.append(rsm_object)
             #pvObject['attribute'] = frameAttributes
-            self.nFramesProcessed += 1
- 
+
             # Update stats
             frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
             self.lastFrameTimestamp = frameTimestamp

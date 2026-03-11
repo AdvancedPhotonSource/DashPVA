@@ -86,7 +86,8 @@ class WorkbenchWindow(BaseWindow):
             self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
         except Exception:
             self.add_window_dock = None
-        # roi 
+        # roi
+        self.roi_calc_dock = ROICalcDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
@@ -247,6 +248,14 @@ class WorkbenchWindow(BaseWindow):
             if roi is None:
                 return
             menu = QMenu(self)
+            # ROI visibility and deletion actions
+            action_hide = QAction("Hide ROI", self)
+            action_hide.triggered.connect(lambda: self.roi_manager.set_roi_visibility(roi, False))
+            menu.addAction(action_hide)
+            action_delete = QAction("Delete ROI", self)
+            action_delete.triggered.connect(lambda: self.roi_manager.delete_roi(roi))
+            menu.addAction(action_delete)
+            menu.addSeparator()
             action_plot = QAction("Open ROI Plot", self)
             action_plot.triggered.connect(lambda: self.open_roi_plot_dock(roi))
             menu.addAction(action_plot)
@@ -553,7 +562,7 @@ class WorkbenchWindow(BaseWindow):
                 QMessageBox.information(self, "ROI Plot", "Could not open or create a Dock Window.")
                 return
             try:
-                from viewer.workbench.roi_plot_dock import ROIPlotDock
+                from viewer.workbench.rois.roi_plot_dock import ROIPlotDock
             except Exception:
                 ROIPlotDock = None
             if ROIPlotDock is None:
@@ -591,7 +600,7 @@ class WorkbenchWindow(BaseWindow):
                 QMessageBox.information(self, "ROI Math", "Could not open or create a Dock Window.")
                 return
             try:
-                from viewer.workbench.roi_math_dock import ROIMathDock
+                from viewer.workbench.rois.roi_math_dock import ROIMathDock
             except Exception:
                 ROIMathDock = None
             if ROIMathDock is None:
@@ -2959,7 +2968,7 @@ class WorkbenchWindow(BaseWindow):
                 return
             # Create or reuse HKL 3D Plot Dock
             try:
-                from viewer.workbench.rois.hkl_3d_plot_dock import HKL3DPlotDock
+                from viewer.workbench.hkl_3d_plot_dock import HKL3DPlotDock
             except Exception:
                 HKL3DPlotDock = None
             if HKL3DPlotDock is None:
