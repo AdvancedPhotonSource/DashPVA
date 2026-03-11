@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SlicePlaneDockWidget</class>
+ <widget class="QWidget" name="SlicePlaneDockWidget">
+  <property name="windowTitle">
+   <string>Slice Controls</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="gbSteps">
+     <property name="title">
+      <string>Steps</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutSteps">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelTranslateStep">
+        <property name="text">
+         <string>Translate step</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDoubleSpinBox" name="sb_slice_translate_step">
+        <property name="decimals">
+         <number>5</number>
+        </property>
+        <property name="singleStep">
+         <double>0.001000000000000</double>
+        </property>
+        <property name="minimum">
+         <double>-1000000.000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1000000.000000000000</double>
+        </property>
+        <property name="value">
+         <double>0.010000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelRotateStep">
+        <property name="text">
+         <string>Rotate step (deg)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QDoubleSpinBox" name="sb_slice_rotate_step_deg">
+        <property name="decimals">
+         <number>2</number>
+        </property>
+        <property name="singleStep">
+         <double>0.500000000000000</double>
+        </property>
+        <property name="minimum">
+         <double>-360.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>360.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>1.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbOrientation">
+     <property name="title">
+      <string>Orientation</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutOrientation">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelOrientation">
+        <property name="text">
+         <string>Preset</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="cb_slice_orientation">
+        <item>
+         <property name="text">
+          <string>HK (xy)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>KL (yz)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>HL (xz)</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Custom</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelNormH">
+        <property name="text">
+         <string>Normal H</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QDoubleSpinBox" name="sb_norm_h">
+        <property name="decimals">
+         <number>6</number>
+        </property>
+        <property name="singleStep">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="minimum">
+         <double>-1000.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1000.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>0.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelNormK">
+        <property name="text">
+         <string>Normal K</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QDoubleSpinBox" name="sb_norm_k">
+        <property name="decimals">
+         <number>6</number>
+        </property>
+        <property name="singleStep">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="minimum">
+         <double>-1000.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1000.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>0.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="labelNormL">
+        <property name="text">
+         <string>Normal L</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QDoubleSpinBox" name="sb_norm_l">
+        <property name="decimals">
+         <number>6</number>
+        </property>
+        <property name="singleStep">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="minimum">
+         <double>-1000.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1000.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>1.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbTranslate">
+     <property name="title">
+      <string>Translate</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutTranslate">
+      <item row="0" column="0">
+       <widget class="QPushButton" name="btn_up_normal">
+        <property name="text">
+         <string>Up Normal</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QPushButton" name="btn_down_normal">
+        <property name="text">
+         <string>Down Normal</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QPushButton" name="btn_pos_h">
+        <property name="text">
+         <string>+H</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QPushButton" name="btn_neg_h">
+        <property name="text">
+         <string>-H</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QPushButton" name="btn_pos_k">
+        <property name="text">
+         <string>+K</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QPushButton" name="btn_neg_k">
+        <property name="text">
+         <string>-K</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QPushButton" name="btn_pos_l">
+        <property name="text">
+         <string>+L</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="btn_neg_l">
+        <property name="text">
+         <string>-L</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbRotate">
+     <property name="title">
+      <string>Rotate</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutRotate">
+      <item row="0" column="0">
+       <widget class="QPushButton" name="btn_rot_plus_h">
+        <property name="text">
+         <string>+H</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QPushButton" name="btn_rot_minus_h">
+        <property name="text">
+         <string>-H</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QPushButton" name="btn_rot_plus_k">
+        <property name="text">
+         <string>+K</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QPushButton" name="btn_rot_minus_k">
+        <property name="text">
+         <string>-K</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QPushButton" name="btn_rot_plus_l">
+        <property name="text">
+         <string>+L</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QPushButton" name="btn_rot_minus_l">
+        <property name="text">
+         <string>-L</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbReset">
+     <property name="title">
+      <string>Reset</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayoutReset">
+      <item>
+       <widget class="QPushButton" name="btn_reset_slice">
+        <property name="text">
+         <string>Reset Slice</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbVisibility">
+     <property name="title">
+      <string>Visibility</string>
+     </property>
+     <layout class="QFormLayout" name="formLayoutVisibility">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelShowSlice">
+        <property name="text">
+         <string>Show Slice</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QCheckBox" name="cb_show_slice">
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelShowPoints">
+        <property name="text">
+         <string>Show Points</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QCheckBox" name="cb_show_points">
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbCamera">
+     <property name="title">
+      <string>Camera</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutCamera">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelCamPreset">
+        <property name="text">
+         <string>Preset</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="cb_cam_preset">
+        <item>
+         <property name="text">
+          <string>HK</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>KL</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>HL</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>ISO</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>H+</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>H-</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>K+</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>K-</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>L+</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>L-</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QPushButton" name="btn_zoom_in">
+        <property name="text">
+         <string>Zoom In</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QPushButton" name="btn_zoom_out">
+        <property name="text">
+         <string>Zoom Out</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QPushButton" name="btn_reset_camera">
+        <property name="text">
+         <string>Reset Camera</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QPushButton" name="btn_view_slice_normal">
+        <property name="text">
+         <string>View Slice Normal</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

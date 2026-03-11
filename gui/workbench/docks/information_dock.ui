@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>InformationDockWidget</class>
+ <widget class="QWidget" name="InformationDockWidget">
+  <property name="windowTitle">
+   <string>Information</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <property name="fieldGrowthPolicy">
+    <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+   </property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_points_caption">
+     <property name="text">
+      <string>Total Points:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLabel" name="lbl_points">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Total number of data points across the loaded dataset</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_axis_x_caption">
+     <property name="text">
+      <string>Axis X:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLabel" name="lbl_axis_x">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Label for the X axis variable</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_axis_y_caption">
+     <property name="text">
+      <string>Axis Y:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLabel" name="lbl_axis_y">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Label for the Y axis variable</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_int_low_caption">
+     <property name="text">
+      <string>Intensity Low:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLabel" name="lbl_int_low">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Minimum intensity across the loaded dataset</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_int_high_caption">
+     <property name="text">
+      <string>Intensity High:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QLabel" name="lbl_int_high">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Maximum intensity across the loaded dataset</string>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Mouse section -->
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_mouse_pos_caption">
+     <property name="text">
+      <string>Mouse Position:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QLabel" name="lbl_mouse_pos">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Current mouse cursor pixel position (x,y)</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_mouse_int_caption">
+     <property name="text">
+      <string>Mouse Intensity:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QLabel" name="lbl_mouse_int">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>Intensity at the current mouse position</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="label_mouse_h_caption">
+     <property name="text">
+      <string>h:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QLabel" name="lbl_mouse_H">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>H coordinate at mouse position</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_mouse_k_caption">
+     <property name="text">
+      <string>k:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="1">
+    <widget class="QLabel" name="lbl_mouse_K">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>K coordinate at mouse position</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0">
+    <widget class="QLabel" name="label_mouse_l_caption">
+     <property name="text">
+      <string>l:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QLabel" name="lbl_mouse_L">
+     <property name="text">
+      <string>—</string>
+     </property>
+     <property name="toolTip">
+      <string>L coordinate at mouse position</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

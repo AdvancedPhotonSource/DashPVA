@@ -1,24 +1,40 @@
 import time
+import copy
 import numpy as np
 import pvaccess as pva
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
+import sys
+import os
+# Add the parent directory to the Python path to find utils module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
+from utils.log_manager import LogMixin
+
+# COPIED FROM hpc_rsm_consumer.py - Compression libraries
+import bitshuffle
+import blosc2
+import lz4.block
+import toml
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
-class HpcAdMetadataProcessor(AdImageProcessor):
+class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
 
     # Acceptable difference between image timestamp and metadata timestamp
     DEFAULT_TIMESTAMP_TOLERANCE = 0.001
-
+    MIN_COMPRESS_BYTES = 4098
     # Offset that will be applied to metadata timestamp before comparing it with
     # the image timestamp
     DEFAULT_METADATA_TIMESTAMP_OFFSET = .001
 
     def __init__(self, configDict={}):
         AdImageProcessor.__init__(self, configDict)
+        try:
+            self.set_log_manager(viewer_name="HpcAdMetadataProcessor")
+        except Exception:
+            pass
         # Configuration
         self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
         # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
@@ -31,6 +47,8 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         self.nMetadataProcessed = 0 # Number of metadata values associated with images
         self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
         self.processingTime = 0
+        self.processor_id = configDict.get('collectorId') if 'collectorId' in configDict else configDict.get('metadataId', None)
+        self.cd = None
 
         # Current metadata map       
         self.currentMetadataMap = {}
@@ -39,12 +57,59 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         # The last object time
         self.lastFrameTimestamp = 0
 
+        # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
+        self.CODEC_PARAMETERS_MAP = {
+            np.dtype('uint8'): pva.UBYTE,
+            np.dtype('int8'): pva.BYTE,
+            np.dtype('uint16'): pva.USHORT,
+            np.dtype('int16'): pva.SHORT,
+            np.dtype('uint32'): pva.UINT,
+            np.dtype('int32'): pva.INT,
+            np.dtype('uint64'): pva.ULONG,
+            np.dtype('int64'): pva.LONG,
+            np.dtype('float32'): pva.FLOAT,
+            np.dtype('float64'): pva.DOUBLE,
+        }
+
+        # COPIED FROM hpc_rsm_consumer.py - HKL parameters
+        self.all_attributes = {}
+        self.hkl_pv_channels = set()
+        self.hkl_attributes = {}
+        self.hkl_config = None
+        self.config = None
+        self.old_hkl_attributes = None
+
         self.logger.debug(f'Created HpcAdMetadataProcessor')
-        # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
-      
+        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
+
+    # COPIED FROM hpc_rsm_consumer.py - Array compression method
+    def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
+        
+        if not isinstance(hkl_array, np.ndarray):
+            raise TypeError("hkl_array must be a numpy array")
+        if hkl_array.ndim != 1:
+            raise ValueError("hkl_array must be a 1D numpy array")
+        byte_data = hkl_array.tobytes()
+        typesize = hkl_array.dtype.itemsize
+
+        if codec_name == 'lz4':
+            compressed = lz4.block.compress(byte_data, store_size=False)
+        elif codec_name == 'bslz4':
+            compressed = bitshuffle.compress_lz4(hkl_array)
+        elif codec_name == 'blosc':
+            compressed = blosc2.compress(
+                byte_data,
+                typesize=typesize
+            )
+        else:
+            raise ValueError(f"Unsupported codec: {codec_name}")
+
+        # Convert compressed bytes to a uint8 numpy array
+        return np.frombuffer(compressed, dtype=np.uint8)
 
     # Configure user processor
     def configure(self, configDict):
+        self.cd = configDict
         self.logger.debug(f'Configuration update: {configDict}')
         if 'timestampTolerance' in configDict:
             self.timestampTolerance = float(configDict.get('timestampTolerance'))
@@ -52,6 +117,26 @@ class HpcAdMetadataProcessor(AdImageProcessor):
         if 'metadataTimestampOffset' in configDict:
             self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset'))
             self.logger.debug(f'Updated metadata timestamp offset: {self.metadataTimestampOffset} seconds')
+        
+        # COPIED FROM hpc_rsm_consumer.py - HKL configuration setup
+        if 'path' in configDict:
+            self.path = configDict["path"]
+            with open(self.path, "r") as config_file:
+                self.config = toml.load(config_file)
+                
+            if 'HKL' in self.config:
+                self.hkl_config : dict = self.config['HKL']
+                for section in self.hkl_config.values(): # every section holds a dict
+                    for channel in section.values(): # the values of each seciton is the pv name string
+                        self.hkl_pv_channels.add(channel)
+        
+        # Log configuration via central logger instead of writing to a file
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"Config dict: {configDict}")
+        except Exception:
+            pass
+        #self.processor_id = configDict.get('collectorId') if 'collectorId' in configDict else configDict.get('metadataId', None)
 
     # Associate metadata
     # Returns true on success, false on definite failure, none on failure/try another
@@ -89,16 +174,24 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                 pv = pva.PvScalarArray(pva.DOUBLE)
                 pv.set(mdValue.tolist())
                 nt_attribute = {'name': mdChannel, 'value': pv}
-        except ValueError:
-            self.logger.error(f"Failed to set ndAttribute {mdChannel}: {mdValue}")
+            elif isinstance(mdValue, bool):
+                nt_attribute = {'name':mdChannel, 'value': pva.PvBoolean(mdValue)}
+            else:
+                raise ValueError(f'Failed to create metadata attribute: {mdChannel}: {mdValue}')
 
+            frameAttributes.append(nt_attribute)
+        except Exception as e:
+            self.logger.error(f"[Metadata Associator] Error associatating metadata {e}")
             return False
         
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-        # Here is where any logic with time offsets would go
-        # Attach Metadata no matter what
-        frameAttributes.append(nt_attribute)
+        if diff > self.timestampTolerance:
+            self.logger.warning(
+                f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s'
+            )
+            self.nMetadataDiscarded += 1
+            return False
         self.nMetadataProcessed += 1
         return True
         
@@ -161,8 +254,6 @@ class HpcAdMetadataProcessor(AdImageProcessor):
                         # Definite failure
                         associationFailed = True 
                     break
-            
-        # #debug 
         # if 'attribute' in pvObject:
         #     frameAttributes = pvObject['attribute']
         #     print(f"DEBUG !! Original frame attributes: {frameAttributes}")
@@ -171,15 +262,103 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             self.nFrameErrors += 1 
         else:
             self.nFramesProcessed += 1 
-                       
-        pvObject['attribute'] = frameAttributes 
+        
+        #pvObject['attribute'] = frameAttributes 
+        proc_time_start = pva.PvObject({'value': pva.DOUBLE})
+        proc_time_start['value'] = t0  # seconds, or multiply by 1000.0 for ms
+        frameAttributes.append({
+            'name': f'procTimeStart_{self.__class__.__name__}{self.processor_id}' ,
+            'value': proc_time_start
+        })
+        proc_time_end = pva.PvObject({'value': pva.DOUBLE})
+        proc_time_end['value'] = time.time()  # seconds, or multiply by 1000.0 for ms
+        frameAttributes.append({
+            'name': f'procTimeEnd_{self.__class__.__name__}{self.processor_id}',
+            'value': proc_time_end
+        })
+        proc_time = pva.PvObject({'value': pva.DOUBLE})
+        proc_time['value'] = (time.time() - t0)  # seconds, or multiply by 1000.0 for ms
+        frameAttributes.append({
+            'name': f'procTime_{self.__class__.__name__}{self.processor_id}',
+            'value': proc_time
+        })
+
+        
+        self.compress_image(pvObject)
+
+        pvObject['attribute'] = frameAttributes
         self.updateOutputChannel(pvObject)
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
         self.processingTime += (t1-t0)
         return pvObject
+    
+    def compress_image(self, pvObject) -> None:
+        # Original bytes: 2097152, Compressed bytes: 55418, Codec: lz4, Image size 1024x1024
+        # Ratio 600 : 16
+        # If already compressed, do nothing
+        try:
+            codec_name = pvObject['codec']['name']
+        except Exception:
+            codec_name = ''
+        if codec_name:
+            return
 
-    # Reset statistics for user processor
+        # Extract active union field and its array
+        union_dict = pvObject['value'][0]
+        field_name = next(iter(union_dict))
+        pv_arr = union_dict[field_name]
+        data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
+
+        # Map union field to numpy dtype
+        UNION_FIELD_TO_DTYPE = {
+            'ubyteValue': np.uint8,
+            'byteValue': np.int8,
+            'ushortValue': np.uint16,
+            'shortValue': np.int16,
+            'uintValue': np.uint32,
+            'intValue': np.int32,
+            'ulongValue': np.uint64,
+            'longValue': np.int64,
+            'floatValue': np.float32,
+            'doubleValue': np.float64,
+        }
+        dtype = UNION_FIELD_TO_DTYPE.get(field_name, None)
+        arr = np.asarray(data_list, dtype=dtype) if dtype is not None else np.asarray(data_list)
+        arr_c = np.ascontiguousarray(arr)
+        raw = arr_c.tobytes()
+        raw_len = arr_c.nbytes
+
+        original_enum = self.CODEC_PARAMETERS_MAP.get(arr_c.dtype, None)
+
+        # Compress and decide
+        if raw_len >= self.MIN_COMPRESS_BYTES:
+            comp = lz4.block.compress(raw, store_size=False)
+            if len(comp) < raw_len:
+                comp_data, codec = comp, 'lz4'
+            else:
+                comp_data, codec = raw, 'none'
+        else:
+            comp_data, codec = raw, 'none'
+
+        if codec == 'lz4':
+            # Compressed path: put bytes under UBYTE union branch
+            arr_u8 = np.frombuffer(comp_data, dtype=np.uint8)
+            # PvAccess expects a list for union array values
+            pvObject['value'] = ({'ubyteValue': arr_u8.tolist()},)
+            pvObject['codec']['name'] = 'lz4'
+            pvObject['codec']['parameters'] = ({'value': int(original_enum)},) if original_enum is not None else ()
+            pvObject['uncompressedSize'] = raw_len
+        else:
+            # Leave original branch and clear codec
+            pvObject['codec']['name'] = ''
+            pvObject['codec']['parameters'] = ({'value': int(original_enum)},) if original_enum is not None else ()
+            pvObject['uncompressedSize'] = raw_len
+        # Debug
+        #msg = f"Original bytes: {raw_len}, Compressed bytes: {len(comp_data)}, Codec: {codec}" * 10
+        #print(msg)
+
+
     def resetStats(self):
         self.nFramesProcessed = 0 
         self.nFrameErrors = 0 
@@ -201,7 +380,7 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             'nMetadataDiscarded' : self.nMetadataDiscarded,
             'processingTime' : FloatWithUnits(self.processingTime, 's'),
             'processedFrameRate' : FloatWithUnits(processedFrameRate, 'fps'),
-            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
+            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps'),
         }
 
     # Define PVA types for different stats variables
@@ -213,5 +392,4 @@ class HpcAdMetadataProcessor(AdImageProcessor):
             'nMetadataDiscarded' : pva.UINT,
             'processingTime' : pva.DOUBLE,
             'processedFrameRate' : pva.DOUBLE,
-            'frameErrorRate' : pva.DOUBLE
         }
