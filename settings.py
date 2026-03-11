@@ -79,6 +79,10 @@ CONFIG: Dict[str, Any] = {}
 SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
 
+# Active TOML config path — set by the Settings dialog or resolved from the locator.
+# Used by RSMConverter and other components that need a direct TOML file path.
+TOML_FILE: Optional[str] = None
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
 
@@ -99,7 +103,7 @@ def ensure_path() -> Optional[str]:
 
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
-    global CONFIG, SOURCE_TYPE, LOCATOR
+    global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
     global DETECTOR_PREFIX, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
@@ -114,6 +118,11 @@ def reload() -> None:
     cfg = src.load() if src else {}
     CONFIG = cfg
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
+
+    try:
+        TOML_FILE = ensure_path()
+    except Exception:
+        TOML_FILE = None
 
     # Core
     DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')

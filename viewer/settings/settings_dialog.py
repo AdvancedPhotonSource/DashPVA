@@ -28,6 +28,8 @@ class SettingsDialog(QDialog):
         self.btn_browse_output = QPushButton("Browse…", self)
         self.edit_log = QLineEdit(self)
         self.btn_browse_log = QPushButton("Browse…", self)
+        self.edit_toml = QLineEdit(self)
+        self.btn_browse_toml = QPushButton("Browse…", self)
 
         # Prepopulate from current loaded settings (module-level or OO instance fallback)
         try:
@@ -48,6 +50,11 @@ class SettingsDialog(QDialog):
             self.edit_log.setText(str(log_val or ''))
         except Exception:
             self.edit_log.setText('')
+        try:
+            toml_val = getattr(settings, 'TOML_FILE', None) or ''
+            self.edit_toml.setText(str(toml_val))
+        except Exception:
+            self.edit_toml.setText('')
 
         # Layouts
         form = QFormLayout()
@@ -61,6 +68,11 @@ class SettingsDialog(QDialog):
         row2.addWidget(self.btn_browse_log)
         form.addRow("LOG_PATH", row2)
 
+        row3 = QHBoxLayout()
+        row3.addWidget(self.edit_toml)
+        row3.addWidget(self.btn_browse_toml)
+        form.addRow("TOML Config", row3)
+
         btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
 
         root = QVBoxLayout()
@@ -71,6 +83,7 @@ class SettingsDialog(QDialog):
         # Wire up
         self.btn_browse_output.clicked.connect(lambda: self._pick_dir(self.edit_output, "Select OUTPUT_PATH"))
         self.btn_browse_log.clicked.connect(lambda: self._pick_dir(self.edit_log, "Select LOG_PATH"))
+        self.btn_browse_toml.clicked.connect(self._pick_toml)
         btns.accepted.connect(self._save)
         btns.rejected.connect(self.reject)
 
@@ -80,9 +93,30 @@ class SettingsDialog(QDialog):
         if path:
             target_edit.setText(path)
 
+    def _pick_toml(self):
+        start = self.edit_toml.text().strip()
+        start_dir = str(Path(start).parent) if start else ""
+        path, _ = QFileDialog.getOpenFileName(self, "Select TOML Config", start_dir, "TOML Files (*.toml);;All Files (*)")
+        if path:
+            self.edit_toml.setText(path)
+
     def _save(self):
         out_val = self.edit_output.text().strip()
         log_val = self.edit_log.text().strip()
+        toml_val = self.edit_toml.text().strip()
+
+        # If a new TOML file was selected, load it as the active config source first
+        if toml_val and Path(toml_val).is_file():
+            try:
+                settings.set_locator(toml_val)
+                settings.reload()
+            except Exception:
+                pass
+        # Always keep TOML_FILE in sync with what the user entered
+        try:
+            settings.TOML_FILE = toml_val or None
+        except Exception:
+            pass
 
         # Update module-level settings immediately for runtime effect
         try:

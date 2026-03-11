@@ -186,8 +186,12 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-        # Here is where any logic with time offsets would go
-        # Attach Metadata no matter what
+        if diff > self.timestampTolerance:
+            self.logger.warning(
+                f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s'
+            )
+            self.nMetadataDiscarded += 1
+            return False
         self.nMetadataProcessed += 1
         return True
         

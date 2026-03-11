@@ -3,23 +3,24 @@ import os
 from PyQt5.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QLabel, QMessageBox, QFileDialog, QSizePolicy
 from PyQt5.QtCore import Qt, QThread
 import numpy as np
-import pyvista as pv
-
 
 # Import BaseTab using existing tabs package alias
 from .base_tab import BaseTab
 
 # Import 3D visualization components
 try:
+    import pyvista as pv
     import pyvista as pyv
     from pyvistaqt import QtInteractor
     PYVISTA_AVAILABLE = True
 except ImportError:
+    pv = None
     PYVISTA_AVAILABLE = False
 
 # Worker for off-UI-thread 3D prep
 from viewer.workbench.workers import Render3D
 from utils.hdf5_loader import HDF5Loader, discover_hkl_axis_labels
+import settings
 from utils.rsm_converter import RSMConverter
 
 class Workspace3D(BaseTab):
@@ -398,7 +399,16 @@ class Workspace3D(BaseTab):
                 )
                 if not file_name: return
                 file_path = file_name
-            conv = RSMConverter()
+            toml_path = getattr(settings, 'TOML_FILE', None)
+            if not toml_path:
+                toml_path, _ = QFileDialog.getOpenFileName(
+                    self, 'Select TOML Config File', '', 'TOML Files (*.toml);;All Files (*)'
+                )
+                if not toml_path:
+                    return
+                settings.set_locator(toml_path)
+                settings.reload()
+            conv = RSMConverter(toml_path)
             # 2. Load the raw data
             # if the data is uncompressed
             data = conv.load_h5_to_3d(file_path)

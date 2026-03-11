@@ -562,7 +562,7 @@ class WorkbenchWindow(BaseWindow):
                 QMessageBox.information(self, "ROI Plot", "Could not open or create a Dock Window.")
                 return
             try:
-                from viewer.workbench.roi_plot_dock import ROIPlotDock
+                from viewer.workbench.rois.roi_plot_dock import ROIPlotDock
             except Exception:
                 ROIPlotDock = None
             if ROIPlotDock is None:
@@ -600,7 +600,7 @@ class WorkbenchWindow(BaseWindow):
                 QMessageBox.information(self, "ROI Math", "Could not open or create a Dock Window.")
                 return
             try:
-                from viewer.workbench.roi_math_dock import ROIMathDock
+                from viewer.workbench.rois.roi_math_dock import ROIMathDock
             except Exception:
                 ROIMathDock = None
             if ROIMathDock is None:
@@ -2968,7 +2968,7 @@ class WorkbenchWindow(BaseWindow):
                 return
             # Create or reuse HKL 3D Plot Dock
             try:
-                from viewer.workbench.rois.hkl_3d_plot_dock import HKL3DPlotDock
+                from viewer.workbench.hkl_3d_plot_dock import HKL3DPlotDock
             except Exception:
                 HKL3DPlotDock = None
             if HKL3DPlotDock is None:

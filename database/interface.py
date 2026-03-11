@@ -21,9 +21,14 @@ Notes:
 
 from typing import List, Optional, Dict, Any, Union
 from database.db import init_database, create_tables
-from database.models.profile import Profile, ProfileConfig
-from database.managers.profile import ProfileManager
 from database.managers.settings import SettingsManager
+
+# NOTE: profile model/manager not yet implemented — ProfileManager and Profile
+# are unavailable until database/models/profile.py and database/managers/profile.py
+# are added.
+Profile = None
+ProfileConfig = None
+ProfileManager = None
 
 
 class DatabaseInterface:

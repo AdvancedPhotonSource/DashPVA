@@ -57,27 +57,31 @@ def run():
     """Open DashPVA launcher menu with process tracking and indicators."""
     click.echo('Opening DashPVA Launcher')
     # Use module entrypoint for reliable relative imports and the registry-based launcher
-    subprocess.run([sys.executable, '-m', 'viewer.launcher.launcher'])
+    exit_code = subprocess.run([sys.executable, '-m', 'viewer.launcher.launcher']).returncode
+    sys.exit(exit_code)
 
 @cli.command()
 def hkl3d():
     """Launch HKL 3D Viewer"""
     click.echo('Running HKL 3D Viewer')
-    subprocess.run([sys.executable, 'viewer/hkl_3d_viewer.py'])
+    exit_code = subprocess.run([sys.executable, 'viewer/hkl_3d_viewer.py']).returncode
+    sys.exit(exit_code)
 
 
 @cli.command()
 def slice3d():
     """(Standalone Mode) Launch HKL 3D Slicer"""
     click.echo('Running HKL 3D Slicer -- Standalone')
-    subprocess.run([sys.executable, 'viewer/hkl_3d_slice_window.py'])
+    exit_code = subprocess.run([sys.executable, 'viewer/hkl_3d_slice_window.py']).returncode
+    sys.exit(exit_code)
 
 
 @cli.command()
 def detector():
     """Launch Area Detector Viewer"""
     click.echo('Running Area Detector Viewer')
-    subprocess.run([sys.executable, 'viewer/area_det_viewer.py'])
+    exit_code = subprocess.run([sys.executable, 'viewer/area_det_viewer.py']).returncode
+    sys.exit(exit_code)
 
 
 @cli.command()
@@ -85,18 +89,20 @@ def detector():
 def setup(ioc):
     """Sets up the PVA workflow or the simulator."""
     if ioc:
-        command = [sys.executable, 'consumers/sim_rsm_data.py']
         click.echo('Running simulator setup...')
-        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen([sys.executable, 'consumers/sim_rsm_data.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
 
     click.echo('Running standard PVA setup...')
-    subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py'])
+    exit_code = subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py']).returncode
+    sys.exit(exit_code)
 
 @cli.command()
 def workbench():
     """Launch Workbench - Data Analysis Tool"""
     click.echo('Running Workbench - Data Analysis Tool')
-    subprocess.run([sys.executable, 'viewer/workbench/workbench.py'])
+    exit_code = subprocess.run([sys.executable, 'viewer/workbench/workbench.py']).returncode
+    sys.exit(exit_code)
 
 
 @cli.command()
@@ -114,7 +120,8 @@ def monitor(name, channel, config_path):
         command.extend(['--config', config_path])
     if channel:
         command.extend(['--channel', channel])
-    subprocess.run(command)
+    exit_code = subprocess.run(command).returncode
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':
