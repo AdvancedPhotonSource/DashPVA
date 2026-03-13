@@ -5,7 +5,7 @@ Centralizes ROI lifecycle, docks, stats computation, and interactions to shorten
 
 from typing import List, Optional, Callable, Set
 from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QCursor
+from PyQt5.QtGui import QBrush, QColor, QCursor
 from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QToolButton,
     QStyle,
+    QColorDialog,
     QFileDialog,
     QMessageBox,
 )
@@ -1196,6 +1197,7 @@ class ROIManager:
                 icon_trash = qta.icon('fa.trash', color='black')
                 icon_lock = qta.icon('fa.lock', color='black')
                 icon_unlock = qta.icon('fa.unlock', color='black')
+                icon_paint = qta.icon('fa.paint-brush', color='black')
                 # Match checkbox indicator size
                 try:
                     style = getattr(self.main, 'style', lambda: None)()
@@ -1268,10 +1270,36 @@ class ROIManager:
                     pass
                 btn_lock_others.setToolTip("Lock all except this ROI")
                 btn_lock_others.clicked.connect(lambda _: self.lock_all_except(roi))
+                # Color picker button
+                btn_paint = QToolButton(actions_widget)
+                btn_paint.setAutoRaise(True)
+                btn_paint.setIcon(icon_paint)
+                btn_paint.setIconSize(icon_size)
+                try:
+                    btn_paint.setFixedSize(icon_size.width()+4, icon_size.height()+4)
+                except Exception:
+                    pass
+                btn_paint.setToolTip("Change ROI color")
+                def on_paint_clicked(_, r=roi):
+                    try:
+                        initial = r.pen.color()
+                        color = QColorDialog.getColor(initial, self.main, "ROI Color")
+                        if color.isValid():
+                            r.setPen(pg.mkPen(color, width=r.pen.width()))
+                            # Refresh name cell foreground to match new color
+                            row_idx = self.stats_row_by_roi_id.get(id(r))
+                            if row_idx is not None:
+                                name_item = self.main.roi_stats_table.item(row_idx, 2)
+                                if name_item is not None:
+                                    name_item.setForeground(QBrush(color))
+                    except Exception:
+                        pass
+                btn_paint.clicked.connect(on_paint_clicked)
                 btn_trash.clicked.connect(lambda _, r=roi: self.delete_roi(r))
                 h.addWidget(btn_eye)
                 h.addWidget(btn_lock)
                 h.addWidget(btn_lock_others)
+                h.addWidget(btn_paint)
                 h.addWidget(btn_trash)
                 h.addStretch(1)
                 self.main.roi_stats_table.setCellWidget(row, 1, actions_widget)
@@ -1281,9 +1309,15 @@ class ROIManager:
                     pass
             except Exception:
                 pass
-            # set name cell (column 2)
+            # set name cell (column 2), colored to match the ROI pen
             name = self.get_roi_name(roi)
-            self.main.roi_stats_table.setItem(row, 2, QTableWidgetItem(name))
+            name_item = QTableWidgetItem(name)
+            try:
+                roi_color = roi.pen.color()
+                name_item.setForeground(QBrush(roi_color))
+            except Exception:
+                pass
+            self.main.roi_stats_table.setItem(row, 2, name_item)
             # Restore guard
             self._suppress_table_item_changed = prev_guard
             return row
@@ -1298,20 +1332,31 @@ class ROIManager:
             # Suppress itemChanged while we programmatically update cells
             prev_guard = self._suppress_table_item_changed
             self._suppress_table_item_changed = True
-            # keep name cell in sync (column 2)
-            self.main.roi_stats_table.setItem(row, 2, QTableWidgetItem(self.get_roi_name(roi)))
-            # fill numeric cells with xywh at the end starting column 3
-            self.main.roi_stats_table.setItem(row, 3, QTableWidgetItem(f"{stats['sum']:.3f}"))
-            self.main.roi_stats_table.setItem(row, 4, QTableWidgetItem(f"{stats['min']:.3f}"))
-            self.main.roi_stats_table.setItem(row, 5, QTableWidgetItem(f"{stats['max']:.3f}"))
-            self.main.roi_stats_table.setItem(row, 6, QTableWidgetItem(f"{stats['mean']:.3f}"))
-            self.main.roi_stats_table.setItem(row, 7, QTableWidgetItem(f"{stats['std']:.3f}"))
-            self.main.roi_stats_table.setItem(row, 8, QTableWidgetItem(str(stats['count'])))
-            # Make xywh editable by default
-            self.main.roi_stats_table.setItem(row, 9, QTableWidgetItem(str(stats['x'])))
-            self.main.roi_stats_table.setItem(row, 10, QTableWidgetItem(str(stats['y'])))
-            self.main.roi_stats_table.setItem(row, 11, QTableWidgetItem(str(stats['w'])))
-            self.main.roi_stats_table.setItem(row, 12, QTableWidgetItem(str(stats['h'])))
+            # keep name cell in sync (column 2), colored to match the ROI pen
+            name_item = QTableWidgetItem(self.get_roi_name(roi))
+            try:
+                roi_color = roi.pen.color()
+                name_item.setForeground(QBrush(roi_color))
+            except Exception:
+                pass
+            self.main.roi_stats_table.setItem(row, 2, name_item)
+            # fill numeric cells with xywh at the end starting column 3, right-aligned
+            _R = Qt.AlignRight | Qt.AlignVCenter
+            for col, text in [
+                (3,  f"{stats['sum']:.3f}"),
+                (4,  f"{stats['min']:.3f}"),
+                (5,  f"{stats['max']:.3f}"),
+                (6,  f"{stats['mean']:.3f}"),
+                (7,  f"{stats['std']:.3f}"),
+                (8,  str(stats['count'])),
+                (9,  str(stats['x'])),
+                (10, str(stats['y'])),
+                (11, str(stats['w'])),
+                (12, str(stats['h'])),
+            ]:
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(_R)
+                self.main.roi_stats_table.setItem(row, col, item)
             # Apply editability based on lock state
             try:
                 self.update_xywh_editability_for_roi(roi)
