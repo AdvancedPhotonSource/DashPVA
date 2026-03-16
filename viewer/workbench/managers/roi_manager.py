@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QStyle,
     QColorDialog,
     QFileDialog,
+    QLineEdit,
     QMessageBox,
 )
 import numpy as np
@@ -941,27 +942,6 @@ class ROIManager:
             if col == 0:
                 # Selection checkbox toggled
                 self.update_label_visibility_for_roi(roi)
-            elif col == 2:
-                # Name edited; update internal mapping and overlay label
-                try:
-                    new_name = item.text() if hasattr(item, 'text') else None
-                    if new_name:
-                        self.roi_names[id(roi)] = str(new_name)
-                        # update overlay label text if visible
-                        self.refresh_label_for_roi(roi)
-                        # update dockable ROI plot title if open
-                        try:
-                            if hasattr(self.main, 'update_roi_plot_dock_title'):
-                                self.main.update_roi_plot_dock_title(roi)
-                        except Exception:
-                            pass
-                        # Update any dock list item if present
-                        try:
-                            self.update_roi_item(roi)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
             elif col in (9, 10, 11, 12):
                 # x, y, w, h edits: apply to the ROI, clamp to image bounds, and refresh stats/label
                 # If locked, ignore XYWH edits
@@ -1192,12 +1172,23 @@ class ROIManager:
                 h = QHBoxLayout(actions_widget)
                 h.setContentsMargins(0, 0, 0, 0)
                 h.setSpacing(2)
-                icon_visible = qta.icon('fa.eye', color='black')
-                icon_hidden = qta.icon('fa.eye-slash', color='black')
-                icon_trash = qta.icon('fa.trash', color='black')
-                icon_lock = qta.icon('fa.lock', color='black')
-                icon_unlock = qta.icon('fa.unlock', color='black')
-                icon_paint = qta.icon('fa.paint-brush', color='black')
+                try:
+                    from PyQt5.QtWidgets import QApplication
+                    _icon_color = QApplication.instance().palette().text().color().name()
+                except Exception:
+                    _icon_color = 'gray'
+                def _qi(name, fallback='?'):
+                    for n in ([name] if isinstance(name, str) else name):
+                        try:
+                            return qta.icon(n, color=_icon_color), ''
+                        except Exception:
+                            pass
+                    return None, fallback
+                icon_visible,   _t_vis   = _qi(['fa.eye',       'fa5s.eye'],         '👁')
+                icon_hidden,    _t_hid   = _qi(['fa.eye-slash', 'fa5s.eye-slash'],   '🚫')
+                icon_trash,     _t_trash = _qi(['fa.trash',     'fa5s.trash'],       '✕')
+                icon_lock,      _t_lock  = _qi(['fa.lock',      'fa5s.lock'],        '🔒')
+                icon_unlock,    _t_unlock= _qi(['fa.unlock',    'fa5s.unlock-alt'],  '🔓')
                 # Match checkbox indicator size
                 try:
                     style = getattr(self.main, 'style', lambda: None)()
@@ -1211,8 +1202,11 @@ class ROIManager:
                 btn_eye.setCheckable(True)
                 visible = id(roi) not in self.hidden_roi_ids
                 btn_eye.setChecked(visible)
-                btn_eye.setIcon(icon_visible if visible else icon_hidden)
-                btn_eye.setIconSize(icon_size)
+                if icon_visible:
+                    btn_eye.setIcon(icon_visible if visible else icon_hidden)
+                    btn_eye.setIconSize(icon_size)
+                else:
+                    btn_eye.setText(_t_vis if visible else _t_hid)
                 try:
                     btn_eye.setFixedSize(icon_size.width()+4, icon_size.height()+4)
                 except Exception:
@@ -1220,8 +1214,11 @@ class ROIManager:
                 btn_eye.setToolTip("Hide/Show ROI")
                 btn_trash = QToolButton(actions_widget)
                 btn_trash.setAutoRaise(True)
-                btn_trash.setIcon(icon_trash)
-                btn_trash.setIconSize(icon_size)
+                if icon_trash:
+                    btn_trash.setIcon(icon_trash)
+                    btn_trash.setIconSize(icon_size)
+                else:
+                    btn_trash.setText(_t_trash)
                 try:
                     btn_trash.setFixedSize(icon_size.width()+4, icon_size.height()+4)
                 except Exception:
@@ -1231,7 +1228,10 @@ class ROIManager:
                 def on_eye_toggled(checked, r=roi, b=btn_eye):
                     try:
                         self.set_roi_visibility(r, bool(checked))
-                        b.setIcon(icon_visible if bool(checked) else icon_hidden)
+                        if icon_visible:
+                            b.setIcon(icon_visible if bool(checked) else icon_hidden)
+                        else:
+                            b.setText(_t_vis if bool(checked) else _t_hid)
                     except Exception:
                         pass
                 btn_eye.toggled.connect(on_eye_toggled)
@@ -1241,8 +1241,11 @@ class ROIManager:
                 locked = self.is_locked(roi)
                 btn_lock.setCheckable(True)
                 btn_lock.setChecked(locked)
-                btn_lock.setIcon(icon_lock if locked else icon_unlock)
-                btn_lock.setIconSize(icon_size)
+                if icon_lock:
+                    btn_lock.setIcon(icon_lock if locked else icon_unlock)
+                    btn_lock.setIconSize(icon_size)
+                else:
+                    btn_lock.setText(_t_lock if locked else _t_unlock)
                 try:
                     btn_lock.setFixedSize(icon_size.width()+4, icon_size.height()+4)
                 except Exception:
@@ -1252,54 +1255,22 @@ class ROIManager:
                     try:
                         if bool(checked):
                             self.lock_roi(r)
-                            b.setIcon(icon_lock)
+                            if icon_lock:
+                                b.setIcon(icon_lock)
+                            else:
+                                b.setText(_t_lock)
                         else:
                             self.unlock_roi(r)
-                            b.setIcon(icon_unlock)
+                            if icon_unlock:
+                                b.setIcon(icon_unlock)
+                            else:
+                                b.setText(_t_unlock)
                     except Exception:
                         pass
                 btn_lock.toggled.connect(on_lock_toggled)
-                # "Lock all except this" convenience
-                btn_lock_others = QToolButton(actions_widget)
-                btn_lock_others.setAutoRaise(True)
-                btn_lock_others.setIcon(icon_lock)
-                btn_lock_others.setIconSize(icon_size)
-                try:
-                    btn_lock_others.setFixedSize(icon_size.width()+4, icon_size.height()+4)
-                except Exception:
-                    pass
-                btn_lock_others.setToolTip("Lock all except this ROI")
-                btn_lock_others.clicked.connect(lambda _: self.lock_all_except(roi))
-                # Color picker button
-                btn_paint = QToolButton(actions_widget)
-                btn_paint.setAutoRaise(True)
-                btn_paint.setIcon(icon_paint)
-                btn_paint.setIconSize(icon_size)
-                try:
-                    btn_paint.setFixedSize(icon_size.width()+4, icon_size.height()+4)
-                except Exception:
-                    pass
-                btn_paint.setToolTip("Change ROI color")
-                def on_paint_clicked(_, r=roi):
-                    try:
-                        initial = r.pen.color()
-                        color = QColorDialog.getColor(initial, self.main, "ROI Color")
-                        if color.isValid():
-                            r.setPen(pg.mkPen(color, width=r.pen.width()))
-                            # Refresh name cell foreground to match new color
-                            row_idx = self.stats_row_by_roi_id.get(id(r))
-                            if row_idx is not None:
-                                name_item = self.main.roi_stats_table.item(row_idx, 2)
-                                if name_item is not None:
-                                    name_item.setForeground(QBrush(color))
-                    except Exception:
-                        pass
-                btn_paint.clicked.connect(on_paint_clicked)
                 btn_trash.clicked.connect(lambda _, r=roi: self.delete_roi(r))
                 h.addWidget(btn_eye)
                 h.addWidget(btn_lock)
-                h.addWidget(btn_lock_others)
-                h.addWidget(btn_paint)
                 h.addWidget(btn_trash)
                 h.addStretch(1)
                 self.main.roi_stats_table.setCellWidget(row, 1, actions_widget)
@@ -1309,15 +1280,8 @@ class ROIManager:
                     pass
             except Exception:
                 pass
-            # set name cell (column 2), colored to match the ROI pen
-            name = self.get_roi_name(roi)
-            name_item = QTableWidgetItem(name)
-            try:
-                roi_color = roi.pen.color()
-                name_item.setForeground(QBrush(roi_color))
-            except Exception:
-                pass
-            self.main.roi_stats_table.setItem(row, 2, name_item)
+            # set name cell (column 2): [paint btn] [editable name]
+            self._set_name_cell_widget(row, roi)
             # Restore guard
             self._suppress_table_item_changed = prev_guard
             return row
@@ -1332,14 +1296,8 @@ class ROIManager:
             # Suppress itemChanged while we programmatically update cells
             prev_guard = self._suppress_table_item_changed
             self._suppress_table_item_changed = True
-            # keep name cell in sync (column 2), colored to match the ROI pen
-            name_item = QTableWidgetItem(self.get_roi_name(roi))
-            try:
-                roi_color = roi.pen.color()
-                name_item.setForeground(QBrush(roi_color))
-            except Exception:
-                pass
-            self.main.roi_stats_table.setItem(row, 2, name_item)
+            # keep name cell in sync (column 2)
+            self._refresh_name_cell_widget(row, roi)
             # fill numeric cells with xywh at the end starting column 3, right-aligned
             _R = Qt.AlignRight | Qt.AlignVCenter
             for col, text in [
@@ -1366,6 +1324,113 @@ class ROIManager:
             self._suppress_table_item_changed = prev_guard
         except Exception:
             pass
+
+    def _get_roi_color(self, roi):
+        """Return the ROI pen color as a QColor, or None if it can't be determined."""
+        for attr in ('pen', 'currentPen'):
+            try:
+                c = getattr(roi, attr).color()
+                if c.isValid() and c.alpha() > 0:
+                    return c
+            except Exception:
+                pass
+        return None
+
+    def _apply_swatch_style(self, btn, color):
+        """Style a swatch button to show a solid color square."""
+        if color is not None:
+            hex_c = color.name()
+            btn.setStyleSheet(
+                f"QToolButton {{ background-color: {hex_c}; border: 1px solid gray; }}"
+            )
+        else:
+            btn.setStyleSheet("QToolButton { border: 1px solid gray; }")
+
+    def _make_paint_callback(self, roi):
+        def on_paint_clicked(_):
+            try:
+                initial = self._get_roi_color(roi) or QColor('white')
+                color = QColorDialog.getColor(initial, self.main, "ROI Color")
+                if color.isValid():
+                    roi.setPen(pg.mkPen(color, width=roi.pen.width()))
+                    row_idx = self.stats_row_by_roi_id.get(id(roi))
+                    if row_idx is not None:
+                        self._refresh_name_cell_widget(row_idx, roi)
+            except Exception:
+                pass
+        return on_paint_clicked
+
+    def _set_name_cell_widget(self, row, roi):
+        """Create and install the [color swatch][name edit] cell widget for column 2."""
+        color = self._get_roi_color(roi)
+        name = self.get_roi_name(roi)
+        container = QWidget()
+        nh = QHBoxLayout(container)
+        nh.setContentsMargins(2, 0, 2, 0)
+        nh.setSpacing(3)
+        btn_swatch = QToolButton(container)
+        btn_swatch.setObjectName('btn_paint_color')
+        btn_swatch.setAutoRaise(False)
+        btn_swatch.setText('')
+        try:
+            btn_swatch.setFixedSize(14, 14)
+        except Exception:
+            pass
+        btn_swatch.setToolTip("Change ROI color")
+        self._apply_swatch_style(btn_swatch, color)
+        btn_swatch.clicked.connect(self._make_paint_callback(roi))
+        name_edit = QLineEdit(name, container)
+        name_edit.setObjectName('roi_name_edit')
+        name_edit.setFrame(False)
+        if color is not None:
+            name_edit.setStyleSheet(
+                f"QLineEdit {{ color: {color.name()}; border: none; background: transparent; }}"
+            )
+        else:
+            name_edit.setStyleSheet("QLineEdit { border: none; background: transparent; }")
+        def on_name_edited(r=roi, e=name_edit):
+            try:
+                new_name = e.text().strip()
+                if new_name:
+                    self.roi_names[id(r)] = new_name
+                    self.refresh_label_for_roi(r)
+                    try:
+                        if hasattr(self.main, 'update_roi_plot_dock_title'):
+                            self.main.update_roi_plot_dock_title(r)
+                    except Exception:
+                        pass
+                    try:
+                        self.update_roi_item(r)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        name_edit.editingFinished.connect(on_name_edited)
+        nh.addWidget(btn_swatch)
+        nh.addWidget(name_edit, 1)
+        self.main.roi_stats_table.setCellWidget(row, 2, container)
+
+    def _refresh_name_cell_widget(self, row, roi):
+        """Update the color swatch and name text in an existing name cell widget.
+        Falls back to creating the widget if the cell was a plain QTableWidgetItem."""
+        color = self._get_roi_color(roi)
+        cell = self.main.roi_stats_table.cellWidget(row, 2)
+        if cell is None:
+            self._set_name_cell_widget(row, roi)
+            return
+        btn = cell.findChild(QToolButton, 'btn_paint_color')
+        edit = cell.findChild(QLineEdit, 'roi_name_edit')
+        if btn is None or edit is None:
+            self._set_name_cell_widget(row, roi)
+            return
+        self._apply_swatch_style(btn, color)
+        edit.setText(self.get_roi_name(roi))
+        if color is not None:
+            edit.setStyleSheet(
+                f"QLineEdit {{ color: {color.name()}; border: none; background: transparent; }}"
+            )
+        else:
+            edit.setStyleSheet("QLineEdit { border: none; background: transparent; }")
 
     # ----- Locking API -----
     def is_locked(self, roi) -> bool:
