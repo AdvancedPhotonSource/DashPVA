@@ -388,6 +388,11 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             if hasattr(self, 'label_channel_active'):
                 self.label_channel_active.setText(channel_active)
 
+            # Update Is Caching
+            if hasattr(self, 'label_is_caching') and self.reader is not None:
+                is_caching = bool(getattr(self.reader, 'is_caching', False))
+                self.label_is_caching.setText('Yes' if is_caching else 'No')
+
             # Update Listening label to show elapsed listening time (positive integers)
             if hasattr(self, 'label_listening'):
                 if is_listening:

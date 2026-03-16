@@ -8,42 +8,7 @@ from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QMessageBox
 )
 
-import h5py
-
 from utils.metadata_converter import convert_files_or_dir
-
-
-def is_already_formatted(h5_path: Path, base_group: str) -> bool:
-    """Return True if base_group/HKL exists AND there is at least one dataset named
-    'NAME' under base_group/HKL/motor_positions (recursively).
-    """
-    try:
-        with h5py.File(str(h5_path), 'r') as h5:
-            hkl_group = f"{base_group}/HKL"
-            if hkl_group not in h5:
-                return False
-            motor_root = f"{hkl_group}/motor_positions"
-            if motor_root not in h5:
-                return False
-
-            found_name = False
-
-            def visitor(name, obj):
-                nonlocal found_name
-                if found_name:
-                    return
-                try:
-                    # Check leaf name equals 'NAME' and object is a dataset
-                    leaf = name.split('/')[-1]
-                    if leaf == 'NAME' and isinstance(obj, h5py.Dataset):
-                        found_name = True
-                except Exception:
-                    pass
-
-            h5[motor_root].visititems(visitor)
-            return found_name
-    except Exception:
-        return False
 
 
 class MetadataConverterDialog(QDialog):
@@ -98,56 +63,47 @@ class MetadataConverterDialog(QDialog):
         base_group = self.txt_base_group.text().strip() if hasattr(self, 'txt_base_group') else 'entry/data/metadata'
         include = bool(self.chk_include.isChecked()) if hasattr(self, 'chk_include') else True
         in_place = bool(self.chk_in_place.isChecked()) if hasattr(self, 'chk_in_place') else True
+        force = bool(self.chk_force_convert.isChecked()) if hasattr(self, 'chk_force_convert') else False
 
         if not toml_path:
             QMessageBox.warning(self, 'Missing TOML', 'Please select a TOML mapping file.')
-            return '', '', '', False, False
+            return '', '', '', False, False, False
         if not hdf5_path:
             QMessageBox.warning(self, 'Missing Source', 'Please select a HDF5 file or directory.')
-            return '', '', '', False, False
-        return hdf5_path, toml_path, base_group, include, in_place
+            return '', '', '', False, False, False
+        return hdf5_path, toml_path, base_group, include, in_place, force
 
     def _convert(self):
-        hdf5_path, toml_path, base_group, include, in_place = self._validate_inputs()
+        hdf5_path, toml_path, base_group, include, in_place, force = self._validate_inputs()
         if not hdf5_path:
             return
 
         src = Path(hdf5_path)
         converted_count = 0
-        skipped_count = 0
         errors: List[str] = []
 
         try:
             if src.is_file():
-                # single file
-                if is_already_formatted(src, base_group):
-                    self._append_log(f"Skip (already formatted): {src}")
-                    skipped_count += 1
-                else:
-                    try:
-                        outputs = convert_files_or_dir(
-                            toml_path=toml_path,
-                            hdf5_path=str(src),
-                            base_group=base_group,
-                            include=include,
-                            in_place=in_place,
-                            recursive=False
-                        )
-                        converted_count += 1 if outputs else 0
-                        self._append_log(f"Converted: {src}")
-                    except Exception as e:
-                        errors.append(f"{src}: {e}")
-                        self._append_log(f"Error converting {src}: {e}")
+                try:
+                    outputs = convert_files_or_dir(
+                        toml_path=toml_path,
+                        hdf5_path=str(src),
+                        base_group=base_group,
+                        include=include,
+                        in_place=in_place,
+                        recursive=False,
+                        force=force,
+                    )
+                    converted_count += 1 if outputs else 0
+                    self._append_log(f"Converted: {src}")
+                except Exception as e:
+                    errors.append(f"{src}: {e}")
+                    self._append_log(f"Error converting {src}: {e}")
             elif src.is_dir():
-                # directory: recurse
                 files = list(src.rglob('*.h5'))
                 if not files:
                     self._append_log('No .h5 files found in directory.')
                 for f in files:
-                    if is_already_formatted(f, base_group):
-                        skipped_count += 1
-                        self._append_log(f"Skip (already formatted): {f}")
-                        continue
                     try:
                         outputs = convert_files_or_dir(
                             toml_path=toml_path,
@@ -155,7 +111,8 @@ class MetadataConverterDialog(QDialog):
                             base_group=base_group,
                             include=include,
                             in_place=in_place,
-                            recursive=False
+                            recursive=False,
+                            force=force,
                         )
                         converted_count += 1 if outputs else 0
                         self._append_log(f"Converted: {f}")
@@ -167,8 +124,6 @@ class MetadataConverterDialog(QDialog):
                 return
         finally:
             summary = f"Converted {converted_count} HDF5 file(s)."
-            if skipped_count:
-                summary += f" Skipped {skipped_count} already formatted."
             if errors:
                 summary += f" Errors: {len(errors)}"
             self._append_log(summary)

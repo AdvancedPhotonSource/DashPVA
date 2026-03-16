@@ -4,24 +4,28 @@ ROI Plot Dock for Workbench (Configurable X/Y Metrics)
 
 Provides a QDockWidget that displays a 1D plot of an ROI metric across frames.
 You can choose what the X and Y axes represent via dropdowns: time, sum, min,
-max, std. Includes a slider and an interactive vertical line to scrub frames;
+max, com. Includes a slider and an interactive vertical line to scrub frames;
 stays in sync with the Workbench's frame spinbox.
 """
 
+import os
+
+import h5py
+import numpy as np
+import pyqtgraph as pg
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSlider, QLabel, QComboBox
 )
-from PyQt5.QtCore import Qt
-import numpy as np
-import pyqtgraph as pg
 
-METRIC_OPTIONS = ["time", "sum", "min", "max", "std"]
+METRIC_OPTIONS = ["time", "sum", "min", "max", "comx", "comy"]
 AXIS_LABELS = {
     "time": "Time (Frame Index)",
     "sum": "ROI Sum",
     "min": "ROI Min",
     "max": "ROI Max",
-    "std": "ROI Std",
+    "comx": "ROI CoM X",
+    "comy": "ROI CoM Y",
 }
 
 class ROIPlotDock(QDockWidget):
@@ -94,6 +98,9 @@ class ROIPlotDock(QDockWidget):
 
         # Storage for series metrics
         self.series = {m: np.array([0.0], dtype=float) for m in METRIC_OPTIONS}
+        self.series['time'] = np.array([0], dtype=int)
+        self.series['comx'] = np.array([0.0], dtype=float)
+        self.series['comy'] = np.array([0.0], dtype=float)
 
         # Compute initial series and wire interactions
         self._compute_time_series()
@@ -149,7 +156,7 @@ class ROIPlotDock(QDockWidget):
 
         if data.ndim == 3:
             num_frames = data.shape[0]
-            sums, mins, maxs, stds = [], [], [], []
+            sums, mins, maxs, comxs, comys = [], [], [], [], []
             for i in range(num_frames):
                 frame = np.asarray(data[i], dtype=np.float32)
                 sub = self._extract_roi_sub(frame, image_item)
@@ -157,16 +164,20 @@ class ROIPlotDock(QDockWidget):
                     s = float(np.sum(sub))
                     mn = float(np.min(sub))
                     mx = float(np.max(sub))
-                    sd = float(np.std(sub))
+                    total = s if s != 0.0 else 1.0
+                    cy = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
+                    cx = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
                 else:
-                    s = 0.0; mn = 0.0; mx = 0.0; sd = 0.0
-                sums.append(s); mins.append(mn); maxs.append(mx); stds.append(sd)
+                    s = 0.0; mn = 0.0; mx = 0.0; cx = 0.0; cy = 0.0
+                sums.append(s); mins.append(mn); maxs.append(mx)
+                comxs.append(cx); comys.append(cy)
             self.series = {
                 'time': np.arange(num_frames, dtype=int),
                 'sum': np.asarray(sums, dtype=float),
                 'min': np.asarray(mins, dtype=float),
                 'max': np.asarray(maxs, dtype=float),
-                'std': np.asarray(stds, dtype=float),
+                'comx': np.asarray(comxs, dtype=float),
+                'comy': np.asarray(comys, dtype=float),
             }
             self.slider.setEnabled(True)
             try:
@@ -189,18 +200,70 @@ class ROIPlotDock(QDockWidget):
                 s = float(np.sum(sub))
                 mn = float(np.min(sub))
                 mx = float(np.max(sub))
-                sd = float(np.std(sub))
+                total = s if s != 0.0 else 1.0
+                cx = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
+                cy = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
             else:
-                s = 0.0; mn = 0.0; mx = 0.0; sd = 0.0
+                s = 0.0; mn = 0.0; mx = 0.0; cx = 0.0; cy = 0.0
             self.series = {
                 'time': np.array([0], dtype=int),
                 'sum': np.array([s], dtype=float),
                 'min': np.array([mn], dtype=float),
                 'max': np.array([mx], dtype=float),
-                'std': np.array([sd], dtype=float),
+                'comx': np.array([cx], dtype=float),
+                'comy': np.array([cy], dtype=float),
             }
             self.slider.setEnabled(False)
+        # Load motor positions and extend dropdowns/series
+        motor_dict = self._load_motor_positions()
+        self.series.update(motor_dict)
+        self._refresh_motor_position_options(motor_dict)
         self._update_plot()
+
+    def _load_motor_positions(self) -> dict:
+        """Read axis-labeled motor position arrays from the loaded HDF5 file.
+
+        Returns {axis_name: np.ndarray} for datasets whose names contain no ':'
+        (i.e. already converted from PV names to human-readable labels like ETA, MU).
+        """
+        result = {}
+        try:
+            fp = getattr(self.main, 'current_file_path', None)
+            if not fp or not os.path.exists(fp):
+                return result
+            motor_group_path = 'entry/data/metadata/motor_positions'
+            with h5py.File(fp, 'r') as h5f:
+                if motor_group_path not in h5f:
+                    return result
+                grp = h5f[motor_group_path]
+                for key in grp.keys():
+                    if ':' in key:
+                        continue  # skip unconverted PV-named datasets
+                    try:
+                        arr = np.asarray(grp[key], dtype=float).ravel()
+                        if arr.size > 1:  # skip scalars — constant across frames, useless as plot axis
+                            result[key] = arr
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return result
+
+    def _refresh_motor_position_options(self, motor_dict: dict):
+        """Sync X/Y combo boxes: keep base metrics, append sorted motor position names."""
+        motor_names = sorted(motor_dict.keys())
+        for combo in (self.x_select, self.y_select):
+            cur = combo.currentText()
+            combo.blockSignals(True)
+            # Trim any previously added motor options (beyond the base metrics)
+            while combo.count() > len(METRIC_OPTIONS):
+                combo.removeItem(combo.count() - 1)
+            for name in motor_names:
+                combo.addItem(name)
+            # Restore selection; fall back to first item if gone
+            idx = combo.findText(cur)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
 
     def _update_axis_labels(self):
         try:
@@ -257,17 +320,27 @@ class ROIPlotDock(QDockWidget):
 
     def _update_plot(self):
         try:
-            # Choose data by selection
-            try:
-                x_sel = self.x_select.currentText()
-            except Exception:
-                x_sel = 'time'
-            try:
-                y_sel = self.y_select.currentText()
-            except Exception:
-                y_sel = 'sum'
+            x_sel = self.x_select.currentText()
+        except Exception:
+            x_sel = 'time'
+        try:
+            y_sel = self.y_select.currentText()
+        except Exception:
+            y_sel = 'sum'
+
+        # Always update axis labels first so they reflect the current selection
+        # even if plotting subsequently fails
+        self._update_axis_labels()
+
+        try:
             x_data = np.asarray(self.series.get(x_sel, self.series.get('time')), dtype=float)
             y_data = np.asarray(self.series.get(y_sel, self.series.get('sum')), dtype=float)
+
+            # Trim to matching length so mismatched motor/metric arrays never crash plot()
+            min_len = min(len(x_data), len(y_data))
+            if min_len > 0:
+                x_data = x_data[:min_len]
+                y_data = y_data[:min_len]
 
             self.plot_item.clear()
             self.plot_item.plot(x_data, y_data, pen='y')
@@ -287,15 +360,11 @@ class ROIPlotDock(QDockWidget):
                 if x_sel == 'time':
                     self.frame_line.setPos(cur)
                 else:
-                    # Guard against index out of bounds
                     idx = np.clip(cur, 0, len(x_data) - 1)
                     self.frame_line.setPos(float(x_data[idx]))
             except Exception:
                 pass
-            # Update axis labels
-            self._update_axis_labels()
         except Exception:
-            # Fallback: simple plot call
             try:
                 self.plot_widget.plot(self.series.get('time'), self.series.get('sum'), pen='y', clear=True)
             except Exception:

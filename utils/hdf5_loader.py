@@ -1130,7 +1130,9 @@ class HDF5Loader(LogMixin):
             'dtypes': {},
             'entry_attrs': {},
             'data_attrs': {},
-            'metadata': {}
+            'metadata': {},
+            # soft link map: path -> target
+            'links': {}
         }
         try:
             if not os.path.exists(file_path) or not h5py.is_hdf5(file_path):
@@ -1168,6 +1170,15 @@ class HDF5Loader(LogMixin):
                             pass
                 # datasets enumeration
                 def visitor(name, obj):
+                    # Detect soft links at this path
+                    try:
+                        lnk = f.get(name, getlink=True)
+                        if isinstance(lnk, h5py.SoftLink):
+                            p = '/' + name
+                            info['links'][p] = lnk.path
+                    except Exception:
+                        pass
+                    # Record dataset info
                     if isinstance(obj, h5py.Dataset):
                         p = '/' + name
                         info['paths'].append(p)
@@ -1311,7 +1322,8 @@ class HDF5Loader(LogMixin):
             'datasets': datasets,
             'entry_attrs': entry_attrs,
             'data_attrs': data_attrs,
-            'other_metadata': other_metadata if include_unknown else {}
+            'other_metadata': other_metadata if include_unknown else {},
+            'links': info.get('links', {})
         }
 
         if style == "dict":
@@ -1359,6 +1371,13 @@ class HDF5Loader(LogMixin):
                     continue
                 _kv(f"{p} shape", ds.get('shape'))
                 _kv(f"{p} dtype", ds.get('dtype'))
+
+        # Links section (soft links)
+        links_map = grouped.get('links') or {}
+        if links_map:
+            _section("Links")
+            for pth, tgt in links_map.items():
+                _kv(f"{pth}", f"-> {tgt}")
 
         _section("Entry Attributes")
         for k, v in grouped['entry_attrs'].items():
