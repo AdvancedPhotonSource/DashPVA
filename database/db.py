@@ -8,7 +8,6 @@ import settings
 
 Base = declarative_base()
 
-
 # Database configuration using absolute path
 # Get project root from the centralized settings module
 PROJECT_ROOT = settings.PROJECT_ROOT
@@ -27,6 +26,10 @@ def get_session():
 
 def create_tables():
     """Create all tables in the database"""
+    # Late-import models so they register themselves with Base.metadata
+    import database.models.setting_value  # noqa: F401
+    import database.models.settings  # noqa: F401
+    import database.models.profile   # noqa: F401
     engine = get_engine()
     Base.metadata.create_all(engine)
 

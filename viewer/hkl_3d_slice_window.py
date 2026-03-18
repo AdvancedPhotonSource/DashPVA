@@ -401,16 +401,11 @@ class HKL3DSliceWindow(QMainWindow):
         except Exception:
             pass
         try:
-            toml_path = getattr(settings, 'TOML_FILE', None)
-            if not toml_path:
-                toml_path, _ = QFileDialog.getOpenFileName(
-                    self, 'Select TOML Config File', '', 'TOML Files (*.toml);;All Files (*)'
-                )
-                if not toml_path:
-                    return
-                settings.set_locator(toml_path)
-                settings.reload()
-            conv = RSMConverter(toml_path)
+            conv = RSMConverter()
+            if not conv.hkl_config:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(self, 'No Configuration', 'No configuration loaded. Please select a profile or TOML in the Workflow dialog.')
+                return
             points, intensities, num_images, shape = conv.load_h5_to_3d(file_name)
             if points.size == 0 or intensities.size == 0:
                 QMessageBox.warning(self, 'Loading Warning', 'No valid point data found in HDF5 file')
