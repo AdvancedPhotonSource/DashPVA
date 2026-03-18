@@ -21,7 +21,11 @@ This file tracks the latest changes, features, and improvements in DashPVA.
   - Conda supports hdf5plugin
 
 ### Change
-  - All placeholder variables raise NotImplementedError
+  - All placeholder methods raise NotImplementedError
+
+### Fixed
+  - Vmin/Vmax now syncs with histogram in 2d workbench
+
 
 ## Latest Changes (January 2026)
 - Workbench now supports loading compressed datasets for smoother analysis and smaller storage footprints. For legacy files, a converter will be provided to update the file structure so compression loads seamlessly.
