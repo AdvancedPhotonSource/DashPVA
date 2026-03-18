@@ -1,6 +1,5 @@
 import time
 import copy
-import toml
 import bitshuffle
 import blosc2
 import lz4.block
@@ -25,8 +24,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             pass
 
         # Config Variables
-        self.path = None
-        self.hkl_config = None
+        self.hkl_config = {}
         
         # Statistics
         self.nFramesProcessed = 0
@@ -129,18 +127,20 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.configure(configDict)
         
     def configure(self, configDict):
-        """Configure processor settings and initialize HKL parameters"""
+        """Configure processor settings and initialize HKL parameters from the active settings profile."""
         self.logger.debug(f'Configuration update: {configDict}')
-
-        if 'path' in configDict:
-            self.path = configDict["path"]
-            with open(self.path, "r") as config_file:
-                self.config = toml.load(config_file)
-                
-            if 'HKL' in self.config:
-                self.hkl_config : dict = self.config['HKL']
-                for section in self.hkl_config.values(): # every section holds a dict
-                    for channel in section.values(): # the values of each seciton is the pv name string
+        try:
+            import settings as app_settings
+            app_settings.reload()
+            self.hkl_config = dict(app_settings.HKL) or {}
+        except Exception as e:
+            self.logger.warning(f'Failed to load HKL config from settings: {e}')
+            self.hkl_config = {}
+        self.hkl_pv_channels = set()
+        for section in self.hkl_config.values():
+            if isinstance(section, dict):
+                for channel in section.values():
+                    if channel:
                         self.hkl_pv_channels.add(channel)
 
     def parse_hkl_ndattributes(self, pva_object):

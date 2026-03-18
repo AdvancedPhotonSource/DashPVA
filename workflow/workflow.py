@@ -923,47 +923,6 @@ class Workflow(QDialog, LogMixin):
         except Exception:
             pass
 
-    def parse_metadata_channels(self, metadata_config_path) -> str:
-        pv_config = self.parse_toml(path=metadata_config_path)
-        metadata_config: dict = pv_config.get("METADATA", {})
-        hkl_config: dict = pv_config.get('HKL', {})
-        ca_pvs = ""
-        pva_pvs = ""
-
-        if metadata_config:
-            ca = metadata_config.get("CA", {})
-            pva = metadata_config.get("PVA", {})
-            if ca:
-                for value in ca.values():
-                    ca_pvs += f"ca://{value},"
-            if pva:
-                for value in pva.values():
-                    pva_pvs += f"pva://{value},"
-
-        if hkl_config:
-            for pvs_dict in hkl_config.values():
-                for pv_channel in pvs_dict.values():
-                    ca_pvs += f"ca://{pv_channel},"
-
-        all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
-        return all_pvs
-
-    def parse_roi_channels(self, roi_config_path) -> str:
-        pv_config = self.parse_toml(roi_config_path)
-        roi_config: dict = pv_config.get("ROI", {})
-        roi_pvs = ""
-
-        if roi_config:
-            for roi in roi_config.keys():
-                roi_specific_pvs: dict = roi_config.get(roi, {})
-                if roi_specific_pvs:
-                    for pv in roi_specific_pvs.keys():
-                        pv_channel = roi_specific_pvs.get(pv, "")
-                        if pv_channel:
-                            roi_pvs += f"ca://{pv_channel},"
-
-        return roi_pvs.strip(',')
-
     # ------------------------------------------------------------------ #
     # Sim Server
     # ------------------------------------------------------------------ #
