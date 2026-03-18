@@ -8,8 +8,9 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 ### New Features
 - Scan Monitor gives you an option to save or write temp
 - Universal log system, all outputs go to logs/general.log
+- ROI Plot dock: added Single Frame mode with axis projection (Proj X / Proj Y) to sum ROI counts along a chosen axis for the current frame
 
-### Fix 
+### Fix
 - Profile import issue
 
 ## Latest Changes (February 2026)
@@ -21,7 +22,11 @@ This file tracks the latest changes, features, and improvements in DashPVA.
   - Conda supports hdf5plugin
 
 ### Change
-  - All placeholder variables raise NotImplementedError
+  - All placeholder methods raise NotImplementedError
+
+### Fixed
+  - Vmin/Vmax now syncs with histogram in 2d workbench
+
 
 ## Latest Changes (January 2026)
 - Workbench now supports loading compressed datasets for smoother analysis and smaller storage footprints. For legacy files, a converter will be provided to update the file structure so compression loads seamlessly.

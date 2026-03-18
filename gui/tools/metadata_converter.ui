@@ -134,6 +134,22 @@
         </property>
        </widget>
       </item>
+      <item row="2" column="0" colspan="2">
+       <widget class="QCheckBox" name="chk_force_convert">
+        <property name="text">
+         <string>Force conversion (ignore already-formatted guard)</string>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+        <property name="toolTip">
+         <string>This will force a conversion on files and a directory</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">color: red;</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

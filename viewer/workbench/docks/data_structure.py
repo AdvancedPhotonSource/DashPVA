@@ -1,9 +1,7 @@
 from viewer.workbench.docks.base_dock import BaseDock
 from viewer.base_window import BaseWindow
-from viewer.workbench.workers import DatasetLoader
-from PyQt5.QtCore import Qt, QThread
-from PyQt5.QtWidgets import QAction, QVBoxLayout, QHBoxLayout, QTreeWidget, QGroupBox, QPushButton, QMessageBox
-from utils.hdf5_loader import HDF5Loader
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QTreeWidget, QGroupBox, QPushButton, QMessageBox
 import os
 
 class DataStructureDock(BaseDock):

@@ -8,124 +8,16 @@ from pathlib import Path
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import hdf5plugin
 from utils.pva_reader import PVAReader
-from utils.metadata_converter import convert_files_or_dir
+from utils.metadata_converter import (
+    convert_files_or_dir,
+    _build_axis_lookup,
+    _derive_axis_from_pv,
+    is_position_pv,
+)
 from utils.log_manager import LogMixin
 import settings
 import toml
 
-
-HDF5_STRUCTURE = {
-    "nexus": {
-        "default": {
-            "NX_class": "NXroot",
-            "default": "entry",
-            "entry": {
-                "NX_class": "NXentry",
-                "default": "data",
-                
-                # --- INSTRUMENT: The 'How' (Source + Detector) ---
-                "instrument": {
-                    "NX_class": "NXinstrument",
-                    "source": {
-                        "NX_class": "NXsource",
-                        "target": "HKL/SPEC/ENERGY_VALUE",
-                        "units": "keV"
-                    },
-                    "detector": {
-                        "NX_class": "NXdetector",
-                        "target": "HKL/DETECTOR_SETUP",
-                        "data_link": "/entry/data/data" # Link to raw image stack
-                    }
-                },
-
-                # --- SAMPLE: The 'What' (Motor Stacks + Environment) ---
-                "sample": {
-                    "NX_class": "NXsample",
-                    "ub_matrix": {
-                        "NX_class": "NXcollection", 
-                        "target": "HKL/SPEC/UB_MATRIX_VALUE"
-                    },
-                    # Map your 4/6 circles here
-                    "geometry": {
-                        "NX_class": "NXtransformations",
-                        "sample_phi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_4", "type": "rotation"},
-                        "sample_chi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_3", "type": "rotation"},
-                        "sample_eta": {"target": "HKL/SAMPLE_CIRCLE_AXIS_2", "type": "rotation"},
-                        "sample_mu":  {"target": "HKL/SAMPLE_CIRCLE_AXIS_1", "type": "rotation"}
-                    }
-                },
-
-                # --- DATA: The 'View' (Plotting Entry Point) ---
-                "data": {
-                    "NX_class": "NXdata",
-                    "signal": "data",
-                    "data": {"link": "/entry/data/data"}
-                }
-            }
-        },
-        "scans": {
-            "NX_class": "NXroot",
-            "default": "entry",
-            "entry": {
-                "name": "entry",
-                "NX_class": "NXentry",
-                "default": "data",
-                # Nested Groups inside Entry
-                "instrument": {
-                    "name": "instrument",
-                    "NX_class": "NXinstrument",
-                    "detector": {
-                        "name": "detector",
-                        "NX_class": "NXdetector",
-                        "field": "data",
-                        # HKL.DETECTOR_SETUP
-                        "distance": {"value": None, "units": "mm"},
-                        "beam_center_x": {"value": None, "units": "pixel"},
-                        "beam_center_y": {"value": None, "units": "pixel"},
-                        "pixel_size": {"value": None, "units": "m"},
-                        # HKL.DETECTOR_CIRCLE_AXIS
-                        "transformations": {
-                            "NX_class": "NXtransformations",
-                            "axis_2": {"value": None, "type": "rotation", "vector": [0, 1, 0]}
-                        }
-                    },
-                    # HKL.SPEC ENERGY
-                    "source": {
-                        "name": "source",
-                        "NX_class": "NXsource",
-                        "energy": {"value": None, "units": "keV"} 
-                    },
-                },
-                "sample": {
-                        "name": "sample",
-                        "NX_class": "NXsample",
-                        "field": "rotation_angle",
-                        # HKL.SPEC UB_MATRIX
-                        "ub_matrix": {"value": None, "units": "1/angstrom"},
-                        "orientation_matrix": {"value": None},
-                        # HKL Orientation Directions
-                        "surface_normal": {"vector": [0, 0, 1]},
-                        "inplane_reference": {"vector": [1, 0, 0]}
-                    },
-                "data": {
-                    "name": "data",
-                    "NX_class": "NXdata",
-                    "signal": "data",
-                    "axes": "rotation_angle"
-                }
-            }
-        },
-
-        "format": {
-            "name":"nexus",
-            "links":{
-                "Nexus": "",
-                "Scan Standard":"",
-                "DashPVA":""
-                }
-        }
-    }        
-}
 
 class HDF5Handler(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
@@ -177,14 +69,17 @@ class HDF5Handler(QObject, LogMixin):
             self.save_as_default_format(compress, clear_caches)
 
     def save_as_default_format(self, compress: bool = True, clear_caches: bool = True):
-        """Save using the same unified structure as utils/metadata_converter.py.
+        """Save in NeXus-compliant HDF5 format.
 
         Layout:
-          /entry/data/data                         -> image stack
-          /entry/data/metadata                     -> base metadata
-          /entry/data/metadata/motor_positions     -> position PVs
+          /entry/                                  (NXentry)
+          /entry/data/data                         (NXdata) -> image stack
+          /entry/data/metadata/motor_positions/    -> axis-labeled motor positions (ETA, MU, ...)
           /entry/data/metadata/HKL/...             -> hierarchical HKL per config
-          /entry/data/hkl/qx,qy,qz                 -> optional caches when present
+          /entry/instrument/                       (NXinstrument)
+          /entry/instrument/detector/              (NXdetector) soft-linked to image data
+          /entry/sample/                           (NXsample)
+          /entry/sample/geometry/                  (NXtransformations) soft-linked to circle axes
         """
         all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
         images = all_caches.get('images')
@@ -205,6 +100,16 @@ class HDF5Handler(QObject, LogMixin):
         if images is None or len_images == 0:
             self.hdf5_writer_finished.emit("Failed to save: Empty image cache")
             return
+
+        # Build axis lookup from TOML for motor position label resolution
+        axis_lookup = {}
+        try:
+            toml_path = settings.ensure_path()
+            if toml_path:
+                mapping = toml.load(str(toml_path))
+                axis_lookup = _build_axis_lookup(mapping)
+        except Exception:
+            pass
 
         # Merge metadata across frames: key -> list of values
         merged_metadata = {}
@@ -232,15 +137,23 @@ class HDF5Handler(QObject, LogMixin):
             for key, values in merged_metadata.items():
                 try:
                     arr = np.array(values)
-                    target = motor_pos_grp if self._is_position_pv(key) else metadata_grp
-                    if arr.dtype.kind in ('i', 'u', 'f'):
-                        target.create_dataset(key, data=arr)
-                    elif arr.dtype.kind in ('U', 'S', 'O'):
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        target.create_dataset(key, data=arr.astype(dt))
+                    if is_position_pv(key):
+                        # Only write motor positions with a resolved axis label — no flat PV names
+                        axis_label = _derive_axis_from_pv(key, axis_lookup) if axis_lookup else None
+                        if not axis_label:
+                            continue
+                        if arr.dtype.kind in ('i', 'u', 'f'):
+                            ds = motor_pos_grp.create_dataset(axis_label, data=arr)
+                            ds.attrs['units'] = 'deg'
                     else:
-                        dt = h5py.string_dtype(encoding='utf-8')
-                        target.create_dataset(key, data=str(values), dtype=dt)
+                        if arr.dtype.kind in ('i', 'u', 'f'):
+                            metadata_grp.create_dataset(key, data=arr)
+                        elif arr.dtype.kind in ('U', 'S', 'O'):
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=arr.astype(dt))
+                        else:
+                            dt = h5py.string_dtype(encoding='utf-8')
+                            metadata_grp.create_dataset(key, data=str(values), dtype=dt)
                 except Exception:
                     pass
 
@@ -295,6 +208,9 @@ class HDF5Handler(QObject, LogMixin):
                 except Exception:
                     pass
 
+            # Apply NeXus NX_class attributes and structural groups
+            self._apply_nx_structure(h5f, entry)
+
         # Auto-convert metadata structure per current TOML before emitting signal
         conversion_suffix = ""
         try:
@@ -314,7 +230,7 @@ class HDF5Handler(QObject, LogMixin):
         except Exception as conv_err:
             conversion_suffix = f" (conversion failed: {conv_err})"
 
-        self.hdf5_writer_finished.emit(f"Saved to: {self.file_path}\nFormat: unified-structure{conversion_suffix}")
+        self.hdf5_writer_finished.emit(f"Saved to: {self.file_path}\nFormat: nexus{conversion_suffix}")
 
     @staticmethod
     def _is_position_pv(key: str) -> bool:
@@ -336,6 +252,58 @@ class HDF5Handler(QObject, LogMixin):
             dt = h5py.string_dtype(encoding='utf-8')
             group.create_dataset(name, data=str(vals), dtype=dt)
 
+    def _apply_nx_structure(self, h5f: h5py.File, entry: h5py.Group, base_group: str = "entry/data/metadata"):
+        """Apply NeXus NX_class attributes and create instrument/sample structural groups."""
+        nx_def = settings.HDF5_STRUCTURE['nexus']['default']
+        nx_entry = nx_def['entry']
+
+        # Root-level attributes
+        h5f.attrs['NX_class'] = nx_def['NX_class']
+        h5f.attrs['default'] = nx_def['default']
+
+        # Entry attributes
+        entry.attrs['NX_class'] = nx_entry['NX_class']
+        entry.attrs['default'] = nx_entry['default']
+
+        # /entry/data attributes
+        if 'data' in entry:
+            nx_data = nx_entry['data']
+            entry['data'].attrs['NX_class'] = nx_data['NX_class']
+            entry['data'].attrs['signal'] = nx_data['signal']
+
+        # /entry/instrument (NXinstrument)
+        instr_cfg = nx_entry['instrument']
+        instr_grp = entry.require_group('instrument')
+        instr_grp.attrs['NX_class'] = instr_cfg['NX_class']
+
+        src_grp = instr_grp.require_group('source')
+        src_grp.attrs['NX_class'] = instr_cfg['source']['NX_class']
+
+        det_grp = instr_grp.require_group('detector')
+        det_grp.attrs['NX_class'] = instr_cfg['detector']['NX_class']
+        if 'data' not in det_grp:
+            det_grp['data'] = h5py.SoftLink(instr_cfg['detector']['data_link'])
+
+        # /entry/sample (NXsample)
+        sample_cfg = nx_entry['sample']
+        sample_grp = entry.require_group('sample')
+        sample_grp.attrs['NX_class'] = sample_cfg['NX_class']
+
+        ub_grp = sample_grp.require_group('ub_matrix')
+        ub_grp.attrs['NX_class'] = sample_cfg['ub_matrix']['NX_class']
+        ub_src = f"{base_group}/HKL/SPEC/UB_MATRIX_VALUE"
+        if ub_src in h5f and 'value' not in ub_grp:
+            ub_grp['value'] = h5py.SoftLink(f'/{ub_src}')
+
+        geo_grp = sample_grp.require_group('geometry')
+        geo_grp.attrs['NX_class'] = sample_cfg['geometry']['NX_class']
+        for field, axis_cfg in sample_cfg['geometry'].items():
+            if field == 'NX_class' or not isinstance(axis_cfg, dict):
+                continue
+            target_path = f"{base_group}/HKL/{axis_cfg.get('target', '')}"
+            if target_path in h5f and field not in geo_grp:
+                geo_grp[field] = h5py.SoftLink(f'/{target_path}')
+
     @pyqtSlot(bool, bool, bool)
     def save_to_h5(self, clear_caches: bool = True, write_temp: bool = True, write_output: bool = True) -> None:
         """Gateway slot — delegates to HDF5Writer.save_caches_to_h5. No h5py logic here."""
@@ -347,121 +315,15 @@ class HDF5Handler(QObject, LogMixin):
         except Exception as e:
             self.hdf5_writer_finished.emit(f"Failed to save: {e}")
 
-    def save_as_scan_format(self, compress:bool=True, clear_caches:bool=True):
-        all_caches = self.pva_reader.get_all_caches(clear_caches=clear_caches)
-        images = all_caches['images']
-        attributes = all_caches['attributes']
-        rsm = all_caches['rsm']
-        shape = self.pva_reader.get_shape()
-
-        nx_conf = HDF5_STRUCTURE['nexus']['scans']
-        formatter = HDF5_STRUCTURE['nexus']['format']
-        with h5py.File(self.file_path, 'w') as h5_file:
-            # Set root
-            h5_file.attrs['NX_class'] = nx_conf['NX_class']
-            h5_file.attrs['default'] = nx_conf['default']
-
-            # Set entry
-            entry_cfg = nx_conf['entry']
-            entry = h5_file.create_group(entry_cfg['name'])
-            entry.attrs['NX_class'] = entry_cfg['NX_class']
-            entry.attrs['default'] = entry_cfg['default']
-
-            # Set instruments
-            instr_cfg = entry_cfg['instrument']
-            instr_grp = entry.create_group(instr_cfg['name'])
-            instr_grp.attrs['NX_class'] = instr_cfg['NX_class']
-
-            det_cfg = instr_cfg['detector']
-            det_grp = instr_grp.create_group(det_cfg['name'])
-            det_grp.attrs['NX_class'] = det_cfg['NX_class']
-
-            det_grp.create_dataset(det_cfg['field'], 
-                                   data=np.array([np.reshape(img, shape) for img in images]), 
-                                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-
-            # Write DETECTOR_SETUP attributes grouped per TOML under instrument/detector/DETECTOR_SETUP
-            try:
-                det_setup_cfg = getattr(self.pva_reader, 'config', {}).get('HKL', {}).get('DETECTOR_SETUP', {})
-                if isinstance(det_setup_cfg, dict) and attributes:
-                    setup_grp = det_grp.create_group('DETECTOR_SETUP')
-                    for field_name, pv_key in det_setup_cfg.items():
-                        series = [attr.get(pv_key, None) for attr in attributes]
-                        # Choose dtype based on series content
-                        if all((isinstance(v, (int, float, np.number)) or v is None) for v in series):
-                            numeric_series = [float(v) if v is not None else np.nan for v in series]
-                            setup_grp.create_dataset(str(field_name), data=np.array(numeric_series, dtype=np.float64))
-                        elif all(isinstance(v, str) or v is None for v in series):
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            str_series = [v if v is not None else '' for v in series]
-                            setup_grp.create_dataset(str(field_name), data=np.array(str_series, dtype=dt))
-                        else:
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            str_series = [str(v) if v is not None else '' for v in series]
-                            setup_grp.create_dataset(str(field_name), data=np.array(str_series, dtype=dt))
-            except Exception as e:
-                try:
-                    self.logger.warning(f"Failed to write DETECTOR_SETUP attributes: {e}")
-                except Exception:
-                    pass
-            
-            # Source (Energy)
-            src_cfg = instr_cfg['source']
-            src_grp = instr_grp.create_group(src_cfg['name'])
-            src_grp.attrs['NX_class'] = src_cfg['NX_class']
-            if src_cfg['energy']['value'] is not None:
-                en_ds = src_grp.create_dataset('energy', data=src_cfg['energy']['value'])
-                en_ds.attrs['units'] = src_cfg['energy']['units']
-
-            # Set sample -- Defines: ROI's, HKL
-            sample_cfg = entry_cfg['sample']
-            sample_grp = entry.create_group(sample_cfg['name'])
-            sample_grp.attrs['NX_class'] = sample_cfg['NX_class']
-            # Create rotation_angle dataset from motor position PVs
-            primary_axis_values = []
-            if attributes:
-                pos_keys = [k for k in attributes[0].keys() if 'Position' in k]
-                for attr in attributes:
-                    v = None
-                    for k in pos_keys:
-                        val = attr.get(k)
-                        if isinstance(val, (int, float, np.number)):
-                            v = float(val)
-                            break
-                    primary_axis_values.append(0.0 if v is None else v)
-            if primary_axis_values:
-                rot_ds = sample_grp.create_dataset(sample_cfg['field'], data=np.array(primary_axis_values, dtype=np.float64))
-                # Units could be degrees if known; skipping units attr due to lack of config
-
-            # Set data -- Where images and motor_positions are added 
-            data_cfg = entry_cfg['data']
-            data_grp = entry.create_group(data_cfg['name'])
-            data_grp.attrs['NX_class'] = data_cfg['NX_class']
-            data_grp.attrs['signal'] = data_cfg['signal']
-            data_grp.attrs['axes'] = data_cfg['axes']
-            
-            # Crucial for 2D Detectors: Map rotation_angle to the first dimension (index 0)
-            data_grp.attrs[f"{data_cfg['axes']}_indices"] = 0
-
-            # Write HKL grouped series under entry/hkl/<group>/<field>
-            hkl_series = self.convert_to_nexus_format()
-            if hkl_series:
-                hkl_grp = entry.create_group('hkl')
-                for grp_name, fields in hkl_series.items():
-                    subgrp = hkl_grp.create_group(grp_name)
-                    for field_name, series in fields.items():
-                        if series and isinstance(series[0], str):
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            subgrp.create_dataset(field_name, data=np.array(series, dtype=dt))
-                        else:
-                            subgrp.create_dataset(field_name, data=np.array(series, dtype=np.float64))
-
-            data_grp['data'] = h5py.SoftLink(f'/{entry_cfg["name"]}/instrument/detector/data')
-            data_grp['rotation_angle'] = h5py.SoftLink(f'/{entry_cfg["name"]}/sample/rotation_angle')
-        self.hdf5_writer_finished.emit(f'\
-                                    Saved to: {self.file_path}\n \
-                                    Format: {formatter["name"]} (conversion skipped for scan-format)\
-                                    ')
+    def save_as_scan_format(self, compress: bool = True, clear_caches: bool = True):
+        """Delegate scan-format write to HDF5Writer."""
+        from utils.hdf5_writer import HDF5Writer
+        try:
+            writer = HDF5Writer(file_path="", pva_reader=self.pva_reader)
+            writer.hdf5_writer_finished.connect(self.hdf5_writer_finished)
+            writer.save_scan_to_h5(self.file_path, compress=compress, clear_caches=clear_caches)
+        except Exception as e:
+            self.hdf5_writer_finished.emit(f"Failed to save scan: {e}")
 
     # Info
     def get_file_info(self):
