@@ -8,8 +8,9 @@ This file tracks the latest changes, features, and improvements in DashPVA.
 ### New Features
 - Scan Monitor gives you an option to save or write temp
 - Universal log system, all outputs go to logs/general.log
+- ROI Plot dock: added Single Frame mode with axis projection (Proj X / Proj Y) to sum ROI counts along a chosen axis for the current frame
 
-### Fix 
+### Fix
 - Profile import issue
 
 ## Latest Changes (February 2026)
