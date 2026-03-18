@@ -32,6 +32,29 @@ def create_tables():
     import database.models.profile   # noqa: F401
     engine = get_engine()
     Base.metadata.create_all(engine)
+    migrate_database()
+
+
+def migrate_database():
+    """Apply incremental column migrations to existing tables."""
+    import sqlite3
+    if not DB_FILE.exists():
+        return
+    conn = sqlite3.connect(str(DB_FILE))
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(profiles)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if 'is_default' not in existing_cols:
+                cursor.execute("ALTER TABLE profiles ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0")
+            if 'is_selected' not in existing_cols:
+                cursor.execute("ALTER TABLE profiles ADD COLUMN is_selected BOOLEAN NOT NULL DEFAULT 0")
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def init_database():
     """Initialize the database with tables"""

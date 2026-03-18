@@ -236,24 +236,36 @@ class Workflow(QDialog, LogMixin):
     # ------------------------------------------------------------------ #
 
     def _auto_select_first_profile(self):
-        """When the DB is first activated, ensure a profile is marked default+selected."""
+        """When the DB is first activated, ensure a profile is marked default+selected.
+        If exactly one profile exists, always ensure it is default+selected."""
         if not self._db_available:
             return
         try:
-            # Only act if no profile is already selected/default in the DB
-            if self._db.any_default_exists():
-                return
             profiles = self._db.get_all_profiles()
             if not profiles:
                 return
-            first = profiles[0]
-            self._db.set_default_profile(first.id)
-            self._db.set_selected_profile(first.id)
-            self._refresh_profile_combo()
-            # Point the combo at that first profile
-            idx = self.comboBoxProfile.findData(first.id)
-            if idx >= 0:
-                self.comboBoxProfile.setCurrentIndex(idx)
+            if len(profiles) == 1:
+                first = profiles[0]
+                # Always ensure the sole profile is default and selected
+                needs_update = (
+                    not getattr(first, 'is_default', False)
+                    or not getattr(first, 'is_selected', False)
+                )
+                if needs_update:
+                    self._db.set_default_profile(first.id)
+                    self._db.set_selected_profile(first.id)
+                    self._refresh_profile_combo()
+                    idx = self.comboBoxProfile.findData(first.id)
+                    if idx >= 0:
+                        self.comboBoxProfile.setCurrentIndex(idx)
+            elif not self._db.any_default_exists():
+                first = profiles[0]
+                self._db.set_default_profile(first.id)
+                self._db.set_selected_profile(first.id)
+                self._refresh_profile_combo()
+                idx = self.comboBoxProfile.findData(first.id)
+                if idx >= 0:
+                    self.comboBoxProfile.setCurrentIndex(idx)
         except Exception:
             pass
 
@@ -265,16 +277,22 @@ class Workflow(QDialog, LogMixin):
             return
         try:
             profiles = self._db.get_all_profiles()
-            target_idx = 0
-            for i, p in enumerate(profiles):
-                self.comboBoxProfile.addItem(p.name, userData=p.id)
-                if getattr(p, 'is_selected', False):
-                    target_idx = i
-                elif getattr(p, 'is_default', False) and not any(
-                    getattr(profiles[j], 'is_selected', False) for j in range(i + 1)
-                ):
-                    target_idx = i
-            if profiles:
+            if not profiles:
+                self.comboBoxProfile.addItem("No Profiles Available")
+                item = self.comboBoxProfile.model().item(0)
+                if item:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                self.comboBoxProfile.setCurrentIndex(-1)
+            else:
+                target_idx = 0
+                for i, p in enumerate(profiles):
+                    self.comboBoxProfile.addItem(p.name, userData=p.id)
+                    if getattr(p, 'is_selected', False):
+                        target_idx = i
+                    elif getattr(p, 'is_default', False) and not any(
+                        getattr(profiles[j], 'is_selected', False) for j in range(i + 1)
+                    ):
+                        target_idx = i
                 self.comboBoxProfile.setCurrentIndex(target_idx)
         except Exception:
             pass
@@ -317,12 +335,20 @@ class Workflow(QDialog, LogMixin):
                 profile = self._db.create_profile(candidate)
                 profile_name = candidate
                 self._db.import_toml_to_profile(profile.id, data)
+                # If this is the only profile, auto-mark it default+selected
+                if profile is not None and len(self._db.get_all_profiles()) == 1:
+                    self._db.set_default_profile(profile.id)
+                    self._db.set_selected_profile(profile.id)
                 self._refresh_profile_combo()
                 idx = self.comboBoxProfile.findText(profile_name)
                 if idx >= 0:
                     self.comboBoxProfile.setCurrentIndex(idx)
                 # Switch to DB mode so the tree loads from the saved profile
                 self.radioDatabase.setChecked(True)
+                # Explicitly populate tree — setChecked is a no-op if already checked,
+                # and setCurrentIndex won't fire if index didn't change (first import case)
+                if self.comboBoxProfile.currentIndex() >= 0:
+                    self.load_profile_to_tree()
                 return
             except Exception as e:
                 QMessageBox.critical(self, 'Error', f'Failed to save TOML to database:\n{e}')
@@ -375,6 +401,18 @@ class Workflow(QDialog, LogMixin):
             self.checkBoxSelectedProfile.setChecked(bool(getattr(profile, 'is_selected', False)))
             self.checkBoxDefaultProfile.blockSignals(False)
             self.checkBoxSelectedProfile.blockSignals(False)
+            # Show tooltips when this is the only profile
+            is_sole = len(self._db.get_all_profiles()) == 1
+            if is_sole:
+                self.checkBoxDefaultProfile.setToolTip(
+                    'Only profile — automatically set as default'
+                )
+                self.checkBoxSelectedProfile.setToolTip(
+                    'Only profile — automatically set as selected'
+                )
+            else:
+                self.checkBoxDefaultProfile.setToolTip('')
+                self.checkBoxSelectedProfile.setToolTip('')
             data = self._db.export_profile_to_toml(profile_id)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load profile:\n{e}')
@@ -508,10 +546,18 @@ class Workflow(QDialog, LogMixin):
                     self._db.import_toml_to_profile(profile.id, defaults)
                 except Exception:
                     pass  # don't block profile creation if seeding fails
+            # If this is the only profile, auto-mark it default+selected before refreshing
+            if profile is not None and len(self._db.get_all_profiles()) == 1:
+                self._db.set_default_profile(profile.id)
+                self._db.set_selected_profile(profile.id)
             self._refresh_profile_combo()
             idx = self.comboBoxProfile.findText(name)
             if idx >= 0:
                 self.comboBoxProfile.setCurrentIndex(idx)
+            # setCurrentIndex won't fire if index didn't change (first-profile case),
+            # so explicitly load the tree here
+            if self.comboBoxProfile.currentIndex() >= 0:
+                self.load_profile_to_tree()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to create profile:\n{e}')
 
