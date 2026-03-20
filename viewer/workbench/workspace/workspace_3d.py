@@ -20,7 +20,6 @@ except ImportError:
 # Worker for off-UI-thread 3D prep
 from viewer.workbench.workers import Render3D
 from utils.hdf5_loader import HDF5Loader, discover_hkl_axis_labels
-import settings
 from utils.rsm_converter import RSMConverter
 
 class Workspace3D(BaseTab):
@@ -399,16 +398,11 @@ class Workspace3D(BaseTab):
                 )
                 if not file_name: return
                 file_path = file_name
-            toml_path = getattr(settings, 'TOML_FILE', None)
-            if not toml_path:
-                toml_path, _ = QFileDialog.getOpenFileName(
-                    self, 'Select TOML Config File', '', 'TOML Files (*.toml);;All Files (*)'
-                )
-                if not toml_path:
-                    return
-                settings.set_locator(toml_path)
-                settings.reload()
-            conv = RSMConverter(toml_path)
+            conv = RSMConverter()
+            if not conv.hkl_config:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(self, 'No Configuration', 'No configuration loaded. Please select a profile or TOML in the Workflow dialog.')
+                return
             # 2. Load the raw data
             # if the data is uncompressed
             data = conv.load_h5_to_3d(file_path)

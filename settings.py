@@ -187,7 +187,7 @@ SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
 
 # Active TOML config path — set by the Settings dialog or resolved from the locator.
-# Used by RSMConverter and other components that need a direct TOML file path.
+# Resolved TOML path for components that need a direct file path.
 TOML_FILE: Optional[str] = None
 
 # Internal state

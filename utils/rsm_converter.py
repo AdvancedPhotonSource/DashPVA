@@ -1,8 +1,7 @@
-import toml
 import numpy as np
 import h5py
 import xrayutilities as xu
-from typing import Dict, Optional
+from typing import Optional
 
 """Utilities for converting detector frames into reciprocal space (RSM).
 This module provides a concise RSMConverter focused on the essential
@@ -26,12 +25,6 @@ class RSMConverter:
     - Build xrayutilities geometry and convert Angles → Q-space
     - Provide a compact public API for loading and computing
     """
-    def __init__(self, config_path: str):
-        """Initialize with a TOML HKL config path (used by other parts of the app)."""
-        self.hkl_config: Dict[str, Dict[str, str]] = {}
-        config = toml.load(config_path)
-        if "HKL" in config:
-            self.hkl_config = config["HKL"]
 
     # Public API
     def load_data(self, file_path: Optional[str] = None) -> Data:

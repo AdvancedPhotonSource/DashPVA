@@ -94,7 +94,7 @@ def setup(ioc):
         return
 
     click.echo('Running standard PVA setup...')
-    exit_code = subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py']).returncode
+    exit_code = subprocess.run([sys.executable, 'workflow/workflow.py']).returncode
     sys.exit(exit_code)
 
 @cli.command()
