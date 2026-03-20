@@ -108,16 +108,13 @@ def workbench():
 @cli.command()
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
-@click.option('--config', 'config_path', default='', help='Path to TOML config file (optional).')
-def monitor(name, channel, config_path):
+def monitor(name, channel):
     """Open a specific monitor by name. Supported: scan (alias: scan-monitors)."""
     click.echo(f'Opening monitor: {name}')
     if name in ('scan', 'scan-monitors'):
         command = [sys.executable, 'viewer/scan_view.py']
     else:
         raise click.BadParameter(f'Unknown view name: {name}')
-    if config_path:
-        command.extend(['--config', config_path])
     if channel:
         command.extend(['--channel', channel])
     exit_code = subprocess.run(command).returncode

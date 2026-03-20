@@ -1,4 +1,3 @@
-import toml
 import blosc2
 import lz4.block
 import bitshuffle
@@ -7,6 +6,7 @@ import pvaccess as pva
 from collections import deque
 from epics import camonitor, caget
 from PyQt5.QtCore import QObject, pyqtSignal
+import settings as app_settings
 
 class PVAReader(QObject):
     # Signals
@@ -18,10 +18,9 @@ class PVAReader(QObject):
     reader_scan_complete = pyqtSignal()  
     scan_state_changed = pyqtSignal(bool)
     
-    def __init__(self, 
-                 input_channel='s6lambda1:Pva1:Image', 
-                 provider=pva.PVA, 
-                 config_filepath: str = 'pv_configs/metadata_pvs.toml', 
+    def __init__(self,
+                 input_channel='s6lambda1:Pva1:Image',
+                 provider=pva.PVA,
                  viewer_type:str='image'):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
@@ -29,7 +28,6 @@ class PVAReader(QObject):
         Args:
             input_channel (str): Input channel for the PVA connection.
             provider (protocol): The protocol for the PVA channel.
-            config_filepath (str): File path to the configuration TOML file.
         """
         super(PVAReader, self).__init__()
         # Each PVA ScalarType is enumerated in C++ starting 1-10
@@ -141,58 +139,50 @@ class PVAReader(QObject):
         self.cached_qz = None
         # self._on_scan_complete_callbacks = []
 
-        self._configure(config_filepath)
+        self._configure()
 
 ############################# Configuration #############################
-    def _configure(self, config_path: str) -> None:
-        if config_path != '':
-            with open(config_path, 'r') as toml_file:
-                # loads toml config into a python dict
-                self.config:dict = toml.load(toml_file)
-        
-        #TODO: make it so that file location can be parsed as a pv with a function
-        # using something like caget or parse the pv attributes
-        self.OUTPUT_FILE_LOCATION = self.config.get('OUTPUT_FILE_LOCATION','OUTPUT.h5')  
-        self.stats:dict = self.config.get('STATS', {})
-        self.ROI_IN_CONFIG = ('ROI' in self.config)
-        self.ANALYSIS_IN_CONFIG = ('ANALYSIS' in self.config)
-        self.HKL_IN_CONFIG = ('HKL' in self.config)
+    def _configure(self) -> None:
+        self.config = app_settings.CONFIG
+        self.OUTPUT_FILE_LOCATION = app_settings.OUTPUT_PATH
+        self.stats: dict = app_settings.STATS
+        self.ROI_IN_CONFIG = (app_settings.ROI != {})
+        self.ANALYSIS_IN_CONFIG = (app_settings.ANALYSIS != {})
+        self.HKL_IN_CONFIG = (app_settings.HKL != {})
+        self.CONSUMER_MODE = app_settings.CONSUMER_MODE or ''
+        self.CACHE_OPTIONS: dict = app_settings.CACHE_OPTIONS
 
-        if self.config.get('DETECTOR_PREFIX', ''):
-            self.pva_prefix = self.config['DETECTOR_PREFIX']
+        if app_settings.DETECTOR_PREFIX:
+            self.pva_prefix = app_settings.DETECTOR_PREFIX
 
         if self.ROI_IN_CONFIG:
-            for roi in self.config['ROI']:
+            for roi in app_settings.ROI:
                 self._roi_names.append(roi)
 
-        # Configuring Cache settings
-        self.CACHE_OPTIONS: dict = self.config.get('CACHE_OPTIONS', {})
         self.set_cache_options()
         if self.caches_needed != self.caches_initialized:
             self.init_caches()
-        
-        # Configuring Analysis Caches
-        if self.ANALYSIS_IN_CONFIG:
-            self.CONSUMER_MODE = self.config.get('CONSUMER_MODE', '')
-            if self.CONSUMER_MODE == "continuous":
-                self.analysis_cache_dict = {"Position": set(),
-                                            "Intensity": {},
-                                            "ComX": {},
-                                            "ComY": {}}
+
+        if self.ANALYSIS_IN_CONFIG and self.CONSUMER_MODE == "continuous":
+            self.analysis_cache_dict = {"Position": set(),
+                                        "Intensity": {},
+                                        "ComX": {},
+                                        "ComY": {}}
     def set_cache_options(self) -> None:
-        self.CACHING_MODE = self.CACHE_OPTIONS.get('CACHING_MODE', '')
-        if self.CACHING_MODE != '':
+        self.CACHING_MODE = app_settings.CACHING_MODE or ''
+        if self.CACHING_MODE:
             self.caches_needed = True
             if self.CACHING_MODE == 'alignment':
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('ALIGNMENT', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                self.MAX_CACHE_SIZE = app_settings.ALIGNMENT_MAX_CACHE_SIZE or 100
             elif self.CACHING_MODE == 'scan':
-                self.FLAG_PV = self.CACHE_OPTIONS.setdefault('SCAN', {'FLAG_PV': ''}).get('FLAG_PV')
-                self.START_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'START_SCAN': True}).get('START_SCAN')
-                self.STOP_SCAN = self.CACHE_OPTIONS.setdefault('SCAN', {'STOP_SCAN': False}).get('STOP_SCAN')
-                self.MAX_CACHE_SIZE = self.CACHE_OPTIONS.setdefault('SCAN', {'MAX_CACHE_SIZE': 100}).get('MAX_CACHE_SIZE')
+                scan = app_settings.CACHE_OPTIONS.get('SCAN', {})
+                self.FLAG_PV = scan.get('FLAG_PV', '')
+                self.START_SCAN = app_settings.SCAN_START_SCAN if app_settings.SCAN_START_SCAN is not None else True
+                self.STOP_SCAN = app_settings.SCAN_STOP_SCAN if app_settings.SCAN_STOP_SCAN is not None else False
+                self.MAX_CACHE_SIZE = app_settings.SCAN_MAX_CACHE_SIZE or 100
             elif self.CACHING_MODE == 'bin':
-                self.BIN_COUNT = self.CACHE_OPTIONS.setdefault('BIN', {'COUNT': 10}).get('COUNT')
-                self.BIN_SIZE = self.CACHE_OPTIONS.setdefault('BIN', {'SIZE': 16}).get('SIZE')
+                self.BIN_COUNT = app_settings.BIN_COUNT or 10
+                self.BIN_SIZE = app_settings.BIN_SIZE or 16
 
     def init_caches(self) -> None:
         if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
@@ -257,7 +247,7 @@ class PVAReader(QObject):
                 # Only runs if an analysis index was found
                 if self.analysis_index is not None:
                     self.analysis_attributes = self.attributes[self.analysis_index]
-                    if self.config["CONSUMER_MODE"] == "continuous":
+                    if self.CONSUMER_MODE == "continuous":
                         # turns axis1 and axis2 into a tuple
                         incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
                                         self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
@@ -507,7 +497,7 @@ class PVAReader(QObject):
 
     def start_roi_backup_monitor(self) -> None:
         try:
-            for roi_num, roi_dict in self.config['ROI'].items():
+            for roi_num, roi_dict in app_settings.ROI.items():
                 for config_key, pv_name in roi_dict.items():
                     name_components = pv_name.split(":")
 
@@ -578,8 +568,10 @@ class PVAReader(QObject):
         else:
             latest_attribute: dict = self.pv_attributes
             
-        file_path_pv = latest_attribute.get('FilePath:Value', '')
-        file_name_pv = latest_attribute.get('FileName:Value', '')
+        fp_pv_name = app_settings.METADATA_CA.get('FILE_PATH', 'FilePath:Value')
+        fn_pv_name = app_settings.METADATA_CA.get('FILE_NAME', 'FileName:Value')
+        file_path_pv = latest_attribute.get(fp_pv_name, '')
+        file_name_pv = latest_attribute.get(fn_pv_name, '')
         
         if file_path_pv != ' ' and file_name_pv != ' ':
             return {'FilePath': file_path_pv,

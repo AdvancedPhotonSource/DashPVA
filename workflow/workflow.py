@@ -674,7 +674,7 @@ class Workflow(QDialog, LogMixin):
                     item = QTreeWidgetItem(self.treeWidgetConfig, [key, ''])
                 else:
                     item = QTreeWidgetItem(parent, [key, ''])
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
                 self._populate_tree_node(value, item)
             else:
                 if parent is None:
@@ -720,10 +720,7 @@ class Workflow(QDialog, LogMixin):
             item = QTreeWidgetItem(self.treeWidgetConfig, [key, col1])
         else:
             item = QTreeWidgetItem(parent, [key, col1])
-        if value is None:
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-        else:
-            item.setFlags(item.flags() | Qt.ItemIsEditable)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
         return item
 
     def _add_top_level_key(self):
@@ -741,7 +738,7 @@ class Workflow(QDialog, LogMixin):
         # If parent was a leaf, promote it to a section
         if parent_item.childCount() == 0 and parent_item.text(1):
             parent_item.setText(1, '')
-            parent_item.setFlags(parent_item.flags() & ~Qt.ItemIsEditable)
+            parent_item.setFlags(parent_item.flags() | Qt.ItemIsEditable)
         self._make_tree_item(parent_item, key, value)
         parent_item.setExpanded(True)
         self._save_tree_to_active_profile()
