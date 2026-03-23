@@ -99,17 +99,33 @@ class SettingsManager:
         finally:
             session.close()
 
+    def update_setting(self, id_: int, name: str, type_: str) -> bool:
+        session = self._session()
+        try:
+            obj = session.query(Settings).get(id_)
+            if not obj:
+                return False
+            obj.name = name
+            obj.type = type_
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
     # Setting Value operations
-    def add_setting_value(self, setting_id: int, key: str, value: Union[str, int]) -> bool:
+    def add_setting_value(self, setting_id: int, key: str, value, value_type: Optional[str] = None) -> bool:
         """Add a new key-value pair to a setting."""
         session = self._session()
         try:
             setting = session.query(Settings).get(setting_id)
             if not setting:
                 return False
-            
+
             setting_value = SettingValue(setting_id=setting_id, key=key)
-            setting_value.set_value(value)
+            setting_value.set_value(value, value_type)
             session.add(setting_value)
             session.commit()
             return True
@@ -138,7 +154,7 @@ class SettingsManager:
         finally:
             session.close()
 
-    def update_setting_value(self, setting_id: int, key: str, value: Union[str, int]) -> bool:
+    def update_setting_value(self, setting_id: int, key: str, value, value_type: Optional[str] = None) -> bool:
         """Update an existing setting value."""
         session = self._session()
         try:
@@ -146,11 +162,11 @@ class SettingsManager:
                 SettingValue.setting_id == setting_id,
                 SettingValue.key == key
             ).first()
-            
+
             if not setting_value:
                 return False
-            
-            setting_value.set_value(value)
+
+            setting_value.set_value(value, value_type)
             session.commit()
             return True
         except Exception:
@@ -274,6 +290,17 @@ class SettingsManager:
             if not setting:
                 return {}
             return setting.get_all_values()
+        finally:
+            session.close()
+
+    def get_all_setting_values_with_type(self, setting_id: int) -> List[tuple]:
+        """Return (key, value, value_type) tuples for a setting."""
+        session = self._session()
+        try:
+            setting = session.query(Settings).get(setting_id)
+            if not setting:
+                return []
+            return [(sv.key, sv.get_value(), sv.value_type) for sv in setting.values]
         finally:
             session.close()
 

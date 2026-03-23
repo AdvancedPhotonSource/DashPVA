@@ -56,17 +56,19 @@ def migrate_database():
         conn.close()
 
 
+_init_done = False
+
 def init_database():
-    """Initialize the database with tables"""
+    """Initialize the database with tables. No-op after the first call."""
+    global _init_done
+    if _init_done:
+        return
+    _init_done = True
     if not DB_FILE.exists():
         create_tables()
-        # Seed default settings only on first creation using raw SQL script
         try:
             from scripts.seed_settings_defaults_sql import seed_defaults
             seed_defaults()
         except Exception:
-            # Seed script may be absent; ignore errors per original behavior
             pass
         print("Database initialized successfully")
-    else:
-        print("Database already exists")

@@ -4,6 +4,7 @@ from collections import OrderedDict
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QCursor
 from .registry import VIEWS
 
 
@@ -34,6 +35,18 @@ class LauncherDialog(QDialog):
         try:
             if hasattr(self, 'lbl_info') and self.lbl_info is not None:
                 self.lbl_info.setText("Note: On first time use loading may take a while")
+        except Exception:
+            pass
+
+        # Add "logs" clickable label to the bottom button bar
+        try:
+            bottom_layout = getattr(self, 'horizontalLayout', None)
+            if bottom_layout is not None:
+                lbl_logs = QLabel('<a href="#" style="color:#666; text-decoration:none; font-size:10px;">logs</a>', self)
+                lbl_logs.setCursor(QCursor(Qt.PointingHandCursor))
+                lbl_logs.setToolTip("View application logs")
+                lbl_logs.linkActivated.connect(self._open_logs)
+                bottom_layout.insertWidget(0, lbl_logs)
         except Exception:
             pass
 
@@ -155,6 +168,15 @@ class LauncherDialog(QDialog):
             self.btn_exit.setEnabled(True)
         if hasattr(self, 'btn_shutdown_all'):
             self.btn_shutdown_all.setEnabled(count > 0)
+
+    def _open_logs(self, _=None):
+        """Open the log viewer dialog."""
+        try:
+            from .log_viewer_dialog import LogViewerDialog
+            dlg = LogViewerDialog(self)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, 'Logs', f'Failed to open log viewer:\n{e}')
 
     def _open_settings(self):
         """Open the Settings dialog modally and prefilled from current global settings."""

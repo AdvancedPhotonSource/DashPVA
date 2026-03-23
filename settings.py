@@ -145,6 +145,7 @@ HDF5_STRUCTURE = {
     }
 }
 
+__VERSION__ = 2.1
 
 # User variables
 BEAMLINE_NAME: Optional[str] = None

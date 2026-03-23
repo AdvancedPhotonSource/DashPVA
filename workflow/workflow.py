@@ -5,7 +5,7 @@ import os
 import signal
 import toml
 import json
-from PyQt5 import QtWidgets, uic, QtCore
+from PyQt5 import QtWidgets, uic, QtCore, QtGui
 from PyQt5.QtWidgets import (
     QFileDialog, QDialog, QTextEdit, QTreeWidgetItem, QHeaderView,
     QInputDialog, QAbstractItemView, QMessageBox, QFormLayout, QLineEdit, QDialogButtonBox,
@@ -76,6 +76,224 @@ class ProfileEditDialog(QDialog):
         return self._desc_edit.text().strip()
 
 
+class JsonEditorDialog(QDialog):
+    """Modal JSON editor with a Simple tree view and a Raw JSON text view."""
+
+    def __init__(self, value=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Edit JSON Value')
+        self.setMinimumSize(560, 500)
+        self._value = value if value is not None else {}
+
+        main_layout = QtWidgets.QVBoxLayout(self)
+
+        # ── Tab widget ──────────────────────────────────────────────────
+        self._tabs = QtWidgets.QTabWidget()
+
+        # Simple tab
+        simple_widget = QtWidgets.QWidget()
+        simple_layout = QtWidgets.QVBoxLayout(simple_widget)
+        simple_layout.setContentsMargins(4, 4, 4, 4)
+
+        self._tree = QtWidgets.QTreeWidget()
+        self._tree.setColumnCount(2)
+        self._tree.setHeaderLabels(['Key', 'Value'])
+        self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self._tree.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._tree_context_menu)
+        simple_layout.addWidget(self._tree)
+
+        tree_btn_row = QtWidgets.QHBoxLayout()
+        for label, slot in [
+            ('Add Key',       self._add_key),
+            ('Add Child Key', self._add_child_key),
+            ('Delete',        self._delete_key),
+        ]:
+            b = QtWidgets.QPushButton(label)
+            b.clicked.connect(slot)
+            tree_btn_row.addWidget(b)
+        tree_btn_row.addStretch()
+        simple_layout.addLayout(tree_btn_row)
+        self._tabs.addTab(simple_widget, 'Simple')
+
+        # Raw tab
+        raw_widget = QtWidgets.QWidget()
+        raw_layout = QtWidgets.QVBoxLayout(raw_widget)
+        raw_layout.setContentsMargins(4, 4, 4, 4)
+
+        self._editor = QtWidgets.QPlainTextEdit()
+        self._editor.setFont(QtGui.QFont('Courier', 10))
+        self._editor.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        raw_layout.addWidget(self._editor)
+
+        fmt_row = QtWidgets.QHBoxLayout()
+        fmt_btn = QtWidgets.QPushButton('Format')
+        fmt_btn.clicked.connect(self._format)
+        fmt_row.addWidget(fmt_btn)
+        fmt_row.addStretch()
+        raw_layout.addLayout(fmt_row)
+        self._tabs.addTab(raw_widget, 'Raw JSON')
+
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+        main_layout.addWidget(self._tabs)
+
+        # Error label
+        self._error_label = QtWidgets.QLabel()
+        self._error_label.setStyleSheet('color: #E74C3C; font-size: 11px;')
+        self._error_label.setVisible(False)
+        main_layout.addWidget(self._error_label)
+
+        # OK / Cancel
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        main_layout.addWidget(btns)
+
+        # Seed both views
+        self._populate_tree(self._value)
+        self._editor.setPlainText(json.dumps(self._value, indent=2))
+
+    # ── Tree helpers ────────────────────────────────────────────────────
+
+    def _populate_tree(self, data, parent=None):
+        if parent is None:
+            self._tree.clear()
+        for key, value in (data.items() if isinstance(data, dict) else []):
+            item = QTreeWidgetItem(self._tree if parent is None else parent, [str(key), ''])
+            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            if isinstance(value, dict):
+                self._populate_tree(value, item)
+                item.setExpanded(True)
+            else:
+                if value is None:
+                    display = 'null'
+                elif isinstance(value, bool):
+                    display = 'true' if value else 'false'
+                elif isinstance(value, (list, dict)):
+                    display = json.dumps(value)
+                else:
+                    display = str(value)
+                item.setText(1, display)
+
+    def _tree_to_dict(self, parent=None):
+        result = {}
+        if parent is None:
+            items = [self._tree.topLevelItem(i) for i in range(self._tree.topLevelItemCount())]
+        else:
+            items = [parent.child(i) for i in range(parent.childCount())]
+        for item in items:
+            key = item.text(0)
+            result[key] = self._tree_to_dict(item) if item.childCount() > 0 else self._coerce(item.text(1))
+        return result
+
+    @staticmethod
+    def _coerce(text):
+        if text == 'null':  return None
+        if text == 'true':  return True
+        if text == 'false': return False
+        try: return int(text)
+        except ValueError: pass
+        try: return float(text)
+        except ValueError: pass
+        try:
+            v = json.loads(text)
+            if isinstance(v, (list, dict)):
+                return v
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return text
+
+    def _new_item(self, parent=None, key='key', value=''):
+        item = QTreeWidgetItem(self._tree if parent is None else parent, [key, value])
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        return item
+
+    # ── Tree actions ────────────────────────────────────────────────────
+
+    def _add_key(self):
+        selected = self._tree.currentItem()
+        parent = selected.parent() if selected else None
+        item = self._new_item(parent)
+        self._tree.setCurrentItem(item)
+        self._tree.editItem(item, 0)
+
+    def _add_child_key(self):
+        selected = self._tree.currentItem()
+        item = self._new_item(selected)   # root if selected is None
+        if selected:
+            selected.setExpanded(True)
+        self._tree.setCurrentItem(item)
+        self._tree.editItem(item, 0)
+
+    def _delete_key(self):
+        selected = self._tree.currentItem()
+        if selected is None:
+            return
+        parent = selected.parent()
+        if parent is None:
+            self._tree.takeTopLevelItem(self._tree.indexOfTopLevelItem(selected))
+        else:
+            parent.removeChild(selected)
+
+    def _tree_context_menu(self, pos):
+        item = self._tree.itemAt(pos)
+        menu = QtWidgets.QMenu(self)
+        menu.addAction('Add Key').triggered.connect(self._add_key)
+        menu.addAction('Add Child Key').triggered.connect(self._add_child_key)
+        if item:
+            menu.addSeparator()
+            menu.addAction('Delete').triggered.connect(self._delete_key)
+        menu.exec_(self._tree.viewport().mapToGlobal(pos))
+
+    # ── Tab sync ────────────────────────────────────────────────────────
+
+    def _on_tab_changed(self, index):
+        self._error_label.setVisible(False)
+        if index == 0:   # → Simple: parse raw text
+            try:
+                data = json.loads(self._editor.toPlainText())
+                self._populate_tree(data)
+            except json.JSONDecodeError as e:
+                self._error_label.setText(f'Cannot switch — invalid JSON: {e}')
+                self._error_label.setVisible(True)
+                self._tabs.blockSignals(True)
+                self._tabs.setCurrentIndex(1)
+                self._tabs.blockSignals(False)
+        else:            # → Raw: serialize tree
+            self._editor.setPlainText(json.dumps(self._tree_to_dict(), indent=2))
+
+    # ── Raw tab ─────────────────────────────────────────────────────────
+
+    def _format(self):
+        try:
+            self._editor.setPlainText(json.dumps(json.loads(self._editor.toPlainText()), indent=2))
+            self._error_label.setVisible(False)
+        except json.JSONDecodeError as e:
+            self._error_label.setText(f'Invalid JSON: {e}')
+            self._error_label.setVisible(True)
+
+    # ── Accept ───────────────────────────────────────────────────────────
+
+    def _on_accept(self):
+        if self._tabs.currentIndex() == 0:
+            self._value = self._tree_to_dict()
+            self.accept()
+        else:
+            try:
+                self._value = json.loads(self._editor.toPlainText())
+                self._error_label.setVisible(False)
+                self.accept()
+            except json.JSONDecodeError as e:
+                self._error_label.setText(f'Invalid JSON: {e}')
+                self._error_label.setVisible(True)
+
+    @property
+    def value(self):
+        return self._value
+
+
 class Workflow(QDialog, LogMixin):
     """
     Dialog for setting up and managing the PVA workflow.
@@ -128,7 +346,11 @@ class Workflow(QDialog, LogMixin):
         self.buttonExportConfigToFile.clicked.connect(self.export_config_to_file)
         self.lineEditTreeSearch.textChanged.connect(self._filter_tree)
 
-        self.treeWidgetConfig.itemChanged.connect(self._save_tree_to_active_profile)
+        # Config Tab — apply/save
+        self.buttonApplySave.clicked.connect(self._on_apply_save)
+
+        self.treeWidgetConfig.itemChanged.connect(self._on_tree_item_changed)
+        self.treeWidgetConfig.itemDoubleClicked.connect(self._on_tree_item_double_clicked)
         self.treeWidgetConfig.setEditTriggers(QAbstractItemView.DoubleClicked)
         self.treeWidgetConfig.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.treeWidgetConfig.header().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -150,8 +372,29 @@ class Workflow(QDialog, LogMixin):
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
-        # DB init button
+        # DB init / refresh buttons
         self.buttonInitDb.clicked.connect(self._init_db_and_recheck)
+        self.buttonRefreshDb.clicked.connect(self._refresh_db)
+
+        # Named config save / load buttons
+        self.buttonSaveConfigMeta.clicked.connect(
+            lambda: self._save_named_config_dialog(self._META_ASSOC_PATH, self._collect_meta_assoc_config)
+        )
+        self.buttonLoadConfigMeta.clicked.connect(
+            lambda: self._load_named_config_dialog(self._META_ASSOC_PATH, self._apply_meta_assoc_config)
+        )
+        self.buttonSaveConfigCollector.clicked.connect(
+            lambda: self._save_named_config_dialog(self._COLLECTOR_PATH, self._collect_collector_config)
+        )
+        self.buttonLoadConfigCollector.clicked.connect(
+            lambda: self._load_named_config_dialog(self._COLLECTOR_PATH, self._apply_collector_config)
+        )
+        self.buttonSaveConfigAnalysis.clicked.connect(
+            lambda: self._save_named_config_dialog(self._ANALYSIS_PATH, self._collect_analysis_config)
+        )
+        self.buttonLoadConfigAnalysis.clicked.connect(
+            lambda: self._load_named_config_dialog(self._ANALYSIS_PATH, self._apply_analysis_config)
+        )
 
         # Check DB availability, populate combo, then switch to DB mode if possible
         self._check_db_availability()
@@ -159,6 +402,10 @@ class Workflow(QDialog, LogMixin):
         self._refresh_profile_combo()      # populate combo, pre-select right profile
         if self._db_available:
             self.radioDatabase.setChecked(True)  # triggers _on_config_source_changed → load
+        self._populate_processor_file_combos()
+        self._load_meta_assoc_last()
+        self._load_collector_last()
+        self._load_analysis_last()
 
     # ------------------------------------------------------------------ #
     # DB availability check
@@ -199,6 +446,70 @@ class Workflow(QDialog, LogMixin):
         if not self._db_available:
             detail = '\n'.join(errors) if errors else self.labelDbStatus.toolTip()
             QMessageBox.warning(self, 'DB Initialization Failed', f'Could not initialize database.\n\n{detail}')
+
+    def _refresh_db(self):
+        """Re-check DB, reload the active view, and re-populate meta assoc fields."""
+        self._check_db_availability()
+        if self._db_available:
+            self._refresh_profile_combo()
+            if self.radioViewSettings.isChecked():
+                self._load_settings_tree()
+            self._populate_processor_file_combos()
+            self._load_meta_assoc_last()
+            self._load_collector_last()
+            self._load_analysis_last()
+
+    def _populate_processor_file_combos(self):
+        """Populate processor file dropdowns from CONSUMERS > hpc in the DB."""
+        if not self._db_available:
+            return
+        try:
+            # Look up CONSUMERS by name — works whether it's root or under PATHS
+            consumers_setting = self._db.get_setting_by_name('CONSUMERS')
+            if consumers_setting is None:
+                return
+            consumers_base = self._db.get_setting_value(consumers_setting.id, 'BASE') or ''
+
+            hpc_setting = next(
+                (c for c in self._db.get_setting_children(consumers_setting.id) if c.name == 'hpc'),
+                None
+            )
+            if hpc_setting is None:
+                return
+            hpc_base     = self._db.get_setting_value(hpc_setting.id, 'BASE')     or ''
+            meta_dir     = self._db.get_setting_value(hpc_setting.id, 'meta')     or ''
+            analysis_dir = self._db.get_setting_value(hpc_setting.id, 'analysis') or ''
+        except Exception:
+            return
+
+        # Resolve relative to the project root so cwd doesn't matter
+        project_root = pathlib.Path(__file__).parent.parent
+
+        def list_py_files(subdir):
+            try:
+                d = project_root / consumers_base / hpc_base / subdir if subdir else project_root / consumers_base / hpc_base
+                if not d.is_dir():
+                    return []
+                rel_base = pathlib.Path(consumers_base) / hpc_base / subdir
+                return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
+            except Exception:
+                return []
+
+        meta_files     = list_py_files(meta_dir)
+        analysis_files = list_py_files(analysis_dir)
+
+        for combo, files in [
+            (self.comboBoxProcessorFileAssociator, meta_files),
+            (self.comboBoxProcessorFileCollector,  meta_files),
+            (self.comboBoxProcessorFileAnalysis,   analysis_files),
+        ]:
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(files)
+            if current:
+                combo.setCurrentText(current)
+            combo.blockSignals(False)
 
     # ------------------------------------------------------------------ #
     # Config source toggle
@@ -387,7 +698,7 @@ class Workflow(QDialog, LogMixin):
     def load_profile_to_tree(self):
         idx = self.comboBoxProfile.currentIndex()
         if idx < 0:
-            QMessageBox.warning(self, 'No Profile', 'No database profile selected.')
+            self.treeWidgetConfig.clear()
             return
         profile_id = self.comboBoxProfile.itemData(idx)
         try:
@@ -458,49 +769,86 @@ class Workflow(QDialog, LogMixin):
     # View mode toggle (Profile / Settings)
     # ------------------------------------------------------------------ #
 
+    def _set_profile_widgets_visible(self, visible: bool):
+        for w in (
+            self.labelDatabaseHeader,
+            self.labelProfile, self.comboBoxProfile,
+            self.checkBoxDefaultProfile, self.checkBoxSelectedProfile,
+            self.labelProfileDescription, self.lineEditProfileDescription,
+            self.buttonAddProfile, self.buttonDeleteProfile,
+            self.buttonRenameProfile, self.buttonDuplicateProfile,
+            self.buttonImportToml, self.buttonExportConfigToFile,
+        ):
+            w.setVisible(visible)
+
     def _on_view_mode_changed(self):
-        # if self.radioViewSettings.isChecked():
-        #     self._load_settings_tree()
-        # else:
-        if self.radioDatabase.isChecked() and self._db_available:
+        settings_mode = self.radioViewSettings.isChecked()
+        self._set_profile_widgets_visible(not settings_mode)
+        if settings_mode:
+            self._load_settings_tree()
+        elif self.radioDatabase.isChecked() and self._db_available:
+            self._restore_two_column_tree()
+            self.treeWidgetConfig.setEditTriggers(QAbstractItemView.DoubleClicked)
             self.load_profile_to_tree()
         else:
+            self._restore_two_column_tree()
+            self.treeWidgetConfig.setEditTriggers(QAbstractItemView.DoubleClicked)
             self.treeWidgetConfig.clear()
 
-    def _load_settings_tree(self):
-        # TODO: enable once Settings model is ready
-        self.treeWidgetConfig.clear()
-        # if not self._db_available:
-        #     return
-        # try:
-        #     roots = self._db.get_root_settings()
-        # except Exception as e:
-        #     QMessageBox.critical(self, 'Error', f'Failed to load settings:\n{e}')
-        #     return
-        # for root in roots:
-        #     self._add_setting_node(root.id, root.name, parent=None)
+    def _restore_two_column_tree(self):
+        self.treeWidgetConfig.setColumnCount(2)
+        self.treeWidgetConfig.setHeaderLabels(['Setting', 'Value'])
+        self.treeWidgetConfig.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.treeWidgetConfig.header().setSectionResizeMode(1, QHeaderView.Stretch)
 
-    def _add_setting_node(self, setting_id: int, name: str, parent):
+    def _load_settings_tree(self):
+        self.treeWidgetConfig.blockSignals(True)
+        self.treeWidgetConfig.clear()
+        self.treeWidgetConfig.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.treeWidgetConfig.setColumnCount(3)
+        self.treeWidgetConfig.setHeaderLabels(['Setting', 'Value', 'Type'])
+        self.treeWidgetConfig.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.treeWidgetConfig.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.treeWidgetConfig.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        if not self._db_available:
+            self.treeWidgetConfig.blockSignals(False)
+            return
+        try:
+            roots = self._db.get_root_settings()
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to load settings:\n{e}')
+            self.treeWidgetConfig.blockSignals(False)
+            return
+        for root in roots:
+            self._add_setting_node(root.id, root.name, root.type, parent=None)
+        self.treeWidgetConfig.blockSignals(False)
+
+    def _add_setting_node(self, setting_id: int, name: str, type_: str, parent):
         if parent is None:
-            item = QTreeWidgetItem(self.treeWidgetConfig, [name, ''])
+            item = QTreeWidgetItem(self.treeWidgetConfig, [name, '', type_])
         else:
-            item = QTreeWidgetItem(parent, [name, ''])
-        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-        # Leaf values — TODO: enable once Settings model is ready
-        # try:
-        #     values = self._db.get_all_setting_values(setting_id)
-        #     for k, v in values.items():
-        #         val_item = QTreeWidgetItem(item, [k, str(v)])
-        #         val_item.setFlags(val_item.flags() | Qt.ItemIsEditable)
-        # except Exception:
-        #     pass
-        # Children (sub-settings) — TODO: enable once Settings model is ready
-        # try:
-        #     children = self._db.get_setting_children(setting_id)
-        #     for child in children:
-        #         self._add_setting_node(child.id, child.name, parent=item)
-        # except Exception:
-        #     pass
+            item = QTreeWidgetItem(parent, [name, '', type_])
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)   # section header — not editable
+        item.setData(0, Qt.UserRole, setting_id)           # store for child-add operations
+        try:
+            values = self._db.get_all_setting_values_with_type(setting_id)
+            for k, v, vtype in values:
+                if vtype == 'json' and not isinstance(v, str):
+                    display_val = json.dumps(v)
+                else:
+                    display_val = str(v) if v is not None else ''
+                val_item = QTreeWidgetItem(item, [k, display_val, vtype or ''])
+                # Make value items editable (column 1 = Value); store setting_id for save
+                val_item.setFlags(val_item.flags() | Qt.ItemIsEditable)
+                val_item.setData(0, Qt.UserRole, setting_id)
+        except Exception:
+            pass
+        try:
+            children = self._db.get_setting_children(setting_id)
+            for child in children:
+                self._add_setting_node(child.id, child.name, child.type, parent=item)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ #
     # Config tab — profile management
@@ -674,7 +1022,7 @@ class Workflow(QDialog, LogMixin):
                     item = QTreeWidgetItem(self.treeWidgetConfig, [key, ''])
                 else:
                     item = QTreeWidgetItem(parent, [key, ''])
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
                 self._populate_tree_node(value, item)
             else:
                 if parent is None:
@@ -687,31 +1035,109 @@ class Workflow(QDialog, LogMixin):
     # Tree editing — add / delete keys, right-click context menu
     # ------------------------------------------------------------------ #
 
-    def _add_tree_key_dialog(self, title='Add Key'):
-        """Show a small dialog asking for a key name and optional value.
+    def _add_tree_key_dialog(self, title='Add Key', type_choices=None, default_key='', default_type=None):
+        """Name + optional Type dialog (no value step).
 
-        Returns (key, value_or_None, accepted).  value is None when the user
-        left the Value field blank — meaning they want a section node.
+        Used for profile-view add and for editing section metadata.
+        Returns (key, None, type_or_None, accepted).
         """
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         layout = QFormLayout(dlg)
-        key_edit = QLineEdit()
-        val_edit = QLineEdit()
-        val_edit.setPlaceholderText('Leave blank to create a section')
-        layout.addRow('Key:', key_edit)
-        layout.addRow('Value:', val_edit)
+        key_edit = QLineEdit(default_key)
+        layout.addRow('Name:', key_edit)
+        type_combo = None
+        val_edit = None
+        if type_choices:
+            type_combo = QtWidgets.QComboBox()
+            for t in type_choices:
+                type_combo.addItem(t)
+            if default_type and default_type in type_choices:
+                type_combo.setCurrentText(default_type)
+            layout.addRow('Type:', type_combo)
+        else:
+            val_edit = QLineEdit()
+            val_edit.setPlaceholderText('(optional)')
+            layout.addRow('Value:', val_edit)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         layout.addRow(btns)
         if dlg.exec_() != QDialog.Accepted:
-            return None, None, False
+            return None, None, None, False
         key = key_edit.text().strip()
         if not key:
-            return None, None, False
-        val = val_edit.text().strip() or None
-        return key, val, True
+            return None, None, None, False
+        chosen_type = type_combo.currentText() if type_combo else None
+        val = val_edit.text().strip() or None if val_edit else None
+        return key, val, chosen_type, True
+
+    def _settings_two_step_add(self, title='Add Key', container_label='section'):
+        """Two-step dialog for adding items in the settings view.
+
+        container_label: label shown as the first type option ('root' for top-level,
+                         'section' for child additions).
+
+        Step 1: Name + Type  (<container_label> | string | int | float | json)
+        Step 2 depends on type:
+            container_label   → no value dialog, returns is_section=True
+            json              → JSON editor opens
+            string/int/float  → simple value input dialog
+
+        Returns (name, value_or_None, type_str, accepted, is_section).
+        """
+        TYPE_CHOICES = [container_label, 'string', 'int', 'float', 'json']
+
+        # --- Step 1: Name + Type ---
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        layout = QFormLayout(dlg)
+        name_edit = QLineEdit()
+        type_combo = QtWidgets.QComboBox()
+        for t in TYPE_CHOICES:
+            type_combo.addItem(t)
+        layout.addRow('Name:', name_edit)
+        layout.addRow('Type:', type_combo)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addRow(btns)
+        if dlg.exec_() != QDialog.Accepted:
+            return None, None, None, False, False
+        name = name_edit.text().strip()
+        if not name:
+            return None, None, None, False, False
+        chosen_type = type_combo.currentText()
+
+        # --- Step 2: Value ---
+        if chosen_type == container_label:
+            return name, None, container_label, True, True
+
+        if chosen_type == 'json':
+            try:
+                json_dlg = JsonEditorDialog(value={}, parent=self)
+                json_dlg.raise_()
+                json_dlg.activateWindow()
+                if json_dlg.exec_() != QDialog.Accepted:
+                    return None, None, None, False, False
+                return name, json.dumps(json_dlg.value), 'json', True, False
+            except Exception as e:
+                QMessageBox.critical(self, 'JSON Editor Error', f'Failed to open JSON editor:\n{e}')
+                return None, None, None, False, False
+
+        # string / int / float — plain value input
+        val_dlg = QDialog(self)
+        val_dlg.setWindowTitle(f'Set Value ({chosen_type})')
+        val_layout = QFormLayout(val_dlg)
+        val_edit = QLineEdit()
+        val_layout.addRow('Value:', val_edit)
+        val_btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        val_btns.accepted.connect(val_dlg.accept)
+        val_btns.rejected.connect(val_dlg.reject)
+        val_layout.addRow(val_btns)
+        if val_dlg.exec_() != QDialog.Accepted:
+            return None, None, None, False, False
+        return name, val_edit.text().strip(), chosen_type, True, False
 
     def _make_tree_item(self, parent, key, value):
         """Create a correctly-flagged QTreeWidgetItem (section or leaf)."""
@@ -720,31 +1146,151 @@ class Workflow(QDialog, LogMixin):
             item = QTreeWidgetItem(self.treeWidgetConfig, [key, col1])
         else:
             item = QTreeWidgetItem(parent, [key, col1])
-        if value is None:
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-        else:
-            item.setFlags(item.flags() | Qt.ItemIsEditable)
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
         return item
 
     def _add_top_level_key(self):
-        key, value, ok = self._add_tree_key_dialog('Add Top-Level Key')
+        if self.radioViewSettings.isChecked():
+            self._add_settings_view_key()
+            return
+        key, value, _, ok = self._add_tree_key_dialog('Add Top-Level Key')
         if not ok:
             return
         item = self._make_tree_item(None, key, value)
         self.treeWidgetConfig.scrollToItem(item)
         self._save_tree_to_active_profile()
 
-    def _add_child_key(self, parent_item):
-        key, value, ok = self._add_tree_key_dialog('Add Child Key')
-        if not ok:
+    def _add_settings_view_key(self):
+        """Create a new root-level Settings record (and optional value) via two-step dialog."""
+        if not self._db_available:
             return
-        # If parent was a leaf, promote it to a section
-        if parent_item.childCount() == 0 and parent_item.text(1):
-            parent_item.setText(1, '')
-            parent_item.setFlags(parent_item.flags() & ~Qt.ItemIsEditable)
-        self._make_tree_item(parent_item, key, value)
+        name, value, chosen_type, ok, is_section = self._settings_two_step_add('Add Top-Level Key', container_label='root')
+        if not ok or not name:
+            return
+        section_type = 'root' if is_section else (chosen_type or 'root')
+        try:
+            new_setting = self._db.create_setting(name=name, type_=section_type)
+            if new_setting is None:
+                raise RuntimeError('create_setting returned None')
+            if not is_section and value is not None:
+                self._db.add_setting_value(new_setting.id, key=name, value=value, value_type=chosen_type)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to create setting:\n{e}')
+            return
+        self.treeWidgetConfig.blockSignals(True)
+        self._add_setting_node(new_setting.id, new_setting.name, new_setting.type, parent=None)
+        self.treeWidgetConfig.blockSignals(False)
+        new_top = self.treeWidgetConfig.topLevelItem(
+            self.treeWidgetConfig.topLevelItemCount() - 1
+        )
+        if new_top:
+            self.treeWidgetConfig.scrollToItem(new_top)
+
+    def _add_child_key(self, parent_item):
+        in_settings = self.radioViewSettings.isChecked()
+        if in_settings:
+            name, value, chosen_type, ok, is_section = self._settings_two_step_add('Add Child Key')
+            if not ok or not name:
+                return
+            parent_setting_id = parent_item.data(0, Qt.UserRole)
+            if is_section:
+                # Create a child Settings record
+                if parent_setting_id is None:
+                    QMessageBox.warning(self, 'Cannot Add Section', 'Select a section to nest under.')
+                    return
+                try:
+                    child = self._db.create_child_setting(parent_id=parent_setting_id, name=name, type_='section')
+                    if child is None:
+                        raise RuntimeError('create_child_setting returned None')
+                except Exception as e:
+                    QMessageBox.critical(self, 'Error', f'Failed to create section:\n{e}')
+                    return
+                self.treeWidgetConfig.blockSignals(True)
+                self._add_setting_node(child.id, child.name, child.type, parent=parent_item)
+                self.treeWidgetConfig.blockSignals(False)
+            else:
+                # Create a SettingValue under the parent Settings record
+                if parent_setting_id is not None and value is not None:
+                    try:
+                        self._db.add_setting_value(parent_setting_id, name, value, chosen_type or 'string')
+                    except Exception as e:
+                        QMessageBox.critical(self, 'Error', f'Failed to add setting value:\n{e}')
+                        return
+                self.treeWidgetConfig.blockSignals(True)
+                new_item = self._make_tree_item(parent_item, name, value)
+                new_item.setData(0, Qt.UserRole, parent_setting_id)
+                new_item.setText(2, chosen_type or 'string')
+                self.treeWidgetConfig.blockSignals(False)
+            parent_item.setExpanded(True)
+        else:
+            key, value, _, ok = self._add_tree_key_dialog('Add Child Key')
+            if not ok:
+                return
+            if parent_item.childCount() == 0 and parent_item.text(1):
+                parent_item.setText(1, '')
+                parent_item.setFlags(parent_item.flags() | Qt.ItemIsEditable)
+            self._make_tree_item(parent_item, key, value)
+            parent_item.setExpanded(True)
+            self._save_tree_to_active_profile()
+
+    def _add_section(self, parent_item):
+        """Create a new child Settings record under parent_item's setting (settings view only)."""
+        parent_setting_id = parent_item.data(0, Qt.UserRole)
+        if parent_setting_id is None:
+            QMessageBox.warning(self, 'Cannot Add Section', 'Select a section to nest under.')
+            return
+        try:
+            existing_types = self._db._settings_mgr.get_distinct_types()
+        except Exception:
+            existing_types = []
+        setting_types = sorted({'custom', 'path', 'root'} | set(existing_types))
+        key, _, chosen_type, ok = self._add_tree_key_dialog('Add Section', type_choices=setting_types)
+        if not ok or not key:
+            return
+        try:
+            child_setting = self._db.create_child_setting(
+                parent_id=parent_setting_id, name=key, type_=chosen_type or 'custom'
+            )
+            if child_setting is None:
+                raise RuntimeError('create_child_setting returned None')
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to create section:\n{e}')
+            return
+        self.treeWidgetConfig.blockSignals(True)
+        self._add_setting_node(child_setting.id, child_setting.name, child_setting.type, parent=parent_item)
+        self.treeWidgetConfig.blockSignals(False)
         parent_item.setExpanded(True)
-        self._save_tree_to_active_profile()
+
+    def _edit_section(self, item):
+        """Rename/retype an existing Settings record (section header) in settings view."""
+        setting_id = item.data(0, Qt.UserRole)
+        if setting_id is None:
+            return
+        current_name = item.text(0)
+        current_type = item.text(2)
+        try:
+            existing_types = self._db._settings_mgr.get_distinct_types()
+        except Exception:
+            existing_types = []
+        setting_types = sorted({'custom', 'path', 'root'} | set(existing_types))
+        # Reuse the key dialog: key=name, value unused, type=section type
+        new_name, _, new_type, ok = self._add_tree_key_dialog(
+            'Edit Section',
+            type_choices=setting_types,
+            default_key=current_name,
+            default_type=current_type,
+        )
+        if not ok or not new_name:
+            return
+        try:
+            self._db.update_setting(setting_id, new_name, new_type or current_type)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to update section:\n{e}')
+            return
+        self.treeWidgetConfig.blockSignals(True)
+        item.setText(0, new_name)
+        item.setText(2, new_type or current_type)
+        self.treeWidgetConfig.blockSignals(False)
 
     def _delete_tree_item(self, item):
         def _summarize(node, indent=0):
@@ -768,12 +1314,34 @@ class Workflow(QDialog, LogMixin):
         )
         if reply != QMessageBox.Yes:
             return
+
+        if self.radioViewSettings.isChecked():
+            self._delete_settings_item_from_db(item)
+
         parent = item.parent()
         if parent is None:
             self.treeWidgetConfig.invisibleRootItem().removeChild(item)
         else:
             parent.removeChild(item)
-        self._save_tree_to_active_profile()
+
+        if not self.radioViewSettings.isChecked():
+            self._save_tree_to_active_profile()
+
+    def _delete_settings_item_from_db(self, item):
+        """Delete a settings tree item from the DB immediately."""
+        if not self._db_available:
+            return
+        setting_id = item.data(0, Qt.UserRole)
+        if setting_id is None:
+            return
+        is_value_item = bool(item.flags() & Qt.ItemIsEditable)
+        try:
+            if is_value_item:
+                self._db.remove_setting_value(setting_id, item.text(0))
+            else:
+                self._db.delete_setting(setting_id)
+        except Exception as e:
+            QMessageBox.critical(self, 'Delete Error', f'Failed to delete from database:\n{e}')
 
     def _duplicate_tree_item(self, item):
         """Deep-copy a tree item and insert it after the original with a unique key name."""
@@ -819,11 +1387,21 @@ class Workflow(QDialog, LogMixin):
 
     def _show_tree_context_menu(self, pos):
         item = self.treeWidgetConfig.itemAt(pos)
+        in_settings = self.radioViewSettings.isChecked()
         menu = QtWidgets.QMenu(self)
         if item is None:
             act = menu.addAction('Add top-level key')
             act.triggered.connect(self._add_top_level_key)
         else:
+            is_section = in_settings and not (item.flags() & Qt.ItemIsEditable)
+            if in_settings and item.text(2) == 'json':
+                act_json = menu.addAction('Edit JSON…')
+                act_json.triggered.connect(lambda checked=False, i=item: self._open_json_editor(i))
+                menu.addSeparator()
+            if is_section:
+                act_edit_sec = menu.addAction('Edit section…')
+                act_edit_sec.triggered.connect(lambda checked=False, i=item: self._edit_section(i))
+                menu.addSeparator()
             act_child = menu.addAction('Add child key')
             act_child.triggered.connect(lambda checked=False, i=item: self._add_child_key(i))
             act_dup = menu.addAction('Duplicate')
@@ -833,9 +1411,122 @@ class Workflow(QDialog, LogMixin):
             act_del.triggered.connect(lambda checked=False, i=item: self._delete_tree_item(i))
         menu.exec_(self.treeWidgetConfig.viewport().mapToGlobal(pos))
 
+    # ------------------------------------------------------------------ #
+    # Lock toggle
+    # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
+    # Apply / Save
+    # ------------------------------------------------------------------ #
+
+    def _on_apply_save(self):
+        reply = QMessageBox.question(
+            self,
+            'Save Changes',
+            'Are you sure you want to save these changes?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        if self.radioViewSettings.isChecked():
+            self._save_settings_from_tree()
+        else:
+            self._save_tree_to_active_profile()
+
+    def _save_settings_from_tree(self):
+        """Persist all edited setting values from the Settings tree back to the DB."""
+        if not self._db_available:
+            return
+        errors = []
+        self._save_setting_items(self.treeWidgetConfig.invisibleRootItem(), errors)
+        if errors:
+            QMessageBox.warning(
+                self, 'Save Warnings',
+                'Some values could not be saved:\n' + '\n'.join(errors[:10]),
+            )
+
+    def _save_setting_items(self, parent_item, errors):
+        for i in range(parent_item.childCount()):
+            item = parent_item.child(i)
+            setting_id = item.data(0, Qt.UserRole)
+            if setting_id is not None:
+                # Value item: key = column 0, value = column 1
+                key = item.text(0)
+                value = item.text(1)
+                try:
+                    self._db.update_setting_value(setting_id, key, value)
+                except Exception as e:
+                    errors.append(f'{key}: {e}')
+            self._save_setting_items(item, errors)
+
+    def _on_tree_item_double_clicked(self, item, column):
+        """Route double-clicks in settings view: JSON items open the editor; others use inline edit."""
+        if not self.radioViewSettings.isChecked():
+            return
+        if item.text(2) == 'json':
+            self._open_json_editor(item)
+        elif item.flags() & Qt.ItemIsEditable:
+            self.treeWidgetConfig.editItem(item, 1)
+
+    def _open_json_editor(self, item):
+        """Open the JSON editor dialog for a json-typed settings value item."""
+        raw = item.text(1)
+        try:
+            current_value = json.loads(raw) if raw.strip() else {}
+        except (json.JSONDecodeError, ValueError):
+            current_value = {}
+        try:
+            dlg = JsonEditorDialog(value=current_value, parent=self)
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            QMessageBox.critical(self, 'JSON Editor Error', f'Failed to open JSON editor:\n{e}')
+            return
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        new_value = dlg.value
+        serialized = json.dumps(new_value)
+        self.treeWidgetConfig.blockSignals(True)
+        item.setText(1, serialized)
+        self.treeWidgetConfig.blockSignals(False)
+        self._save_settings_view_item(item, column=1)
+
+    def _on_tree_item_changed(self, item, column):
+        if self.radioViewSettings.isChecked():
+            self._save_settings_view_item(item, column)
+        else:
+            self._save_tree_to_active_profile()
+
+    def _save_settings_view_item(self, item, column):
+        """Save an edited value in the Settings view back to the DB."""
+        if column != 1:
+            return
+        if not self._db_available:
+            return
+        setting_id = item.data(0, Qt.UserRole)
+        # New items added via dialog have no UserRole — resolve from parent section header
+        if setting_id is None:
+            parent = item.parent()
+            if parent is not None:
+                setting_id = parent.data(0, Qt.UserRole)
+        if setting_id is None:
+            return
+        key = item.text(0)
+        new_value = self._coerce_value(item.text(1))
+        try:
+            updated = self._db.update_setting_value(setting_id, key, new_value)
+            if not updated:
+                self._db.add_setting_value(setting_id, key, new_value)
+                item.setData(0, Qt.UserRole, setting_id)
+        except Exception as e:
+            QMessageBox.critical(self, 'Save Error', f'Failed to save setting:\n{e}')
+
     def _save_tree_to_active_profile(self):
-        """Persist current tree contents to the active DB profile. No-op in TOML mode."""
+        """Persist current tree contents to the active DB profile. No-op in TOML mode or Settings view."""
         if not (self.radioDatabase.isChecked() and self._db_available):
+            return
+        if self.radioViewSettings.isChecked():
             return
         idx = self.comboBoxProfile.currentIndex()
         if idx < 0:
@@ -981,13 +1672,320 @@ class Workflow(QDialog, LogMixin):
             self.textEditSimServerOutput.appendPlainText('Sim Server stopped.')
 
     # ------------------------------------------------------------------ #
+    # Named config save / load (shared helpers)
+    # ------------------------------------------------------------------ #
+
+    def _save_named_config_dialog(self, path, collect_fn):
+        """Prompt for a name and save the collected config dict under that key."""
+        if not self._db_available:
+            return
+        name, ok = QtWidgets.QInputDialog.getText(self, 'Save Configuration', 'Configuration name:')
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        setting = self._db.get_setting_by_path(path)
+        if setting is None:
+            QMessageBox.warning(self, 'Error', f'Settings path not found:\n{" > ".join(path)}')
+            return
+        config = collect_fn()
+        if not self._db.update_setting_value(setting.id, name, config, value_type='json'):
+            self._db.add_setting_value(setting.id, name, config, value_type='json')
+        QMessageBox.information(self, 'Saved', f'Configuration "{name}" saved.')
+
+    def _load_named_config_dialog(self, path, apply_fn):
+        """Show a list of saved configs and apply the chosen one."""
+        if not self._db_available:
+            return
+        setting = self._db.get_setting_by_path(path)
+        if setting is None:
+            QMessageBox.warning(self, 'Error', f'Settings path not found:\n{" > ".join(path)}')
+            return
+        all_values = self._db.get_all_setting_values(setting.id)
+        configs = {k: v for k, v in all_values.items() if k != 'last' and isinstance(v, dict)}
+        if not configs:
+            QMessageBox.information(self, 'No Configs', 'No saved configurations found.')
+            return
+        name, ok = QtWidgets.QInputDialog.getItem(
+            self, 'Load Configuration', 'Select configuration:', sorted(configs.keys()), 0, False
+        )
+        if not ok or not name:
+            return
+        apply_fn(configs[name])
+
+    # ------------------------------------------------------------------ #
     # Associator Consumers
     # ------------------------------------------------------------------ #
+
+    _META_ASSOC_PATH  = ['APP_DATA', 'workflow', 'meta']
+    _COLLECTOR_PATH   = ['APP_DATA', 'workflow', 'collector']
+    _ANALYSIS_PATH    = ['APP_DATA', 'workflow', 'analysis']
+
+    def _load_meta_assoc_last(self):
+        """Populate associator UI fields from APP_DATA > workflow > meta > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._META_ASSOC_PATH)
+            if setting is None:
+                return
+            last = self._db.get_setting_value(setting.id, 'last')
+            if not isinstance(last, dict):
+                return
+            self.lineEditInputChannelAssociator.setText(last.get('input_channel', ''))
+            self.lineEditControlChannelAssociator.setText(last.get('control_channel', ''))
+            self.lineEditStatusChannelAssociator.setText(last.get('status_channel', ''))
+            self.lineEditOutputChannelAssociator.setText(last.get('output_channel', ''))
+            self.comboBoxProcessorFileAssociator.setCurrentText(last.get('processor_file', ''))
+            self.lineEditProcessorClassAssociator.setText(last.get('processor_class', ''))
+            if 'report_period' in last:
+                self.spinBoxReportPeriodAssociator.setValue(int(last['report_period']))
+            if 'server_queue_size' in last:
+                self.spinBoxServerQueueSizeAssociator.setValue(int(last['server_queue_size']))
+            if 'n_consumers' in last:
+                self.spinBoxNConsumersAssociator.setValue(int(last['n_consumers']))
+            if 'distributor_updates' in last:
+                self.spinBoxDistributorUpdatesAssociator.setValue(int(last['distributor_updates']))
+        except Exception:
+            pass
+
+    def _save_meta_assoc_last(self):
+        """Save current associator UI fields to APP_DATA > workflow > meta > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._META_ASSOC_PATH)
+            if setting is None:
+                return
+            config = {
+                'input_channel':       self.lineEditInputChannelAssociator.text(),
+                'control_channel':     self.lineEditControlChannelAssociator.text(),
+                'status_channel':      self.lineEditStatusChannelAssociator.text(),
+                'output_channel':      self.lineEditOutputChannelAssociator.text(),
+                'processor_file':      self.comboBoxProcessorFileAssociator.currentText(),
+                'processor_class':     self.lineEditProcessorClassAssociator.text(),
+                'report_period':       self.spinBoxReportPeriodAssociator.value(),
+                'server_queue_size':   self.spinBoxServerQueueSizeAssociator.value(),
+                'n_consumers':         self.spinBoxNConsumersAssociator.value(),
+                'distributor_updates': self.spinBoxDistributorUpdatesAssociator.value(),
+            }
+            if not self._db.update_setting_value(setting.id, 'last', config, value_type='json'):
+                self._db.add_setting_value(setting.id, 'last', config, value_type='json')
+        except Exception:
+            pass
+
+    def _collect_meta_assoc_config(self):
+        return {
+            'input_channel':       self.lineEditInputChannelAssociator.text(),
+            'control_channel':     self.lineEditControlChannelAssociator.text(),
+            'status_channel':      self.lineEditStatusChannelAssociator.text(),
+            'output_channel':      self.lineEditOutputChannelAssociator.text(),
+            'processor_file':      self.comboBoxProcessorFileAssociator.currentText(),
+            'processor_class':     self.lineEditProcessorClassAssociator.text(),
+            'report_period':       self.spinBoxReportPeriodAssociator.value(),
+            'server_queue_size':   self.spinBoxServerQueueSizeAssociator.value(),
+            'n_consumers':         self.spinBoxNConsumersAssociator.value(),
+            'distributor_updates': self.spinBoxDistributorUpdatesAssociator.value(),
+        }
+
+    def _apply_meta_assoc_config(self, cfg):
+        self.lineEditInputChannelAssociator.setText(cfg.get('input_channel', ''))
+        self.lineEditControlChannelAssociator.setText(cfg.get('control_channel', ''))
+        self.lineEditStatusChannelAssociator.setText(cfg.get('status_channel', ''))
+        self.lineEditOutputChannelAssociator.setText(cfg.get('output_channel', ''))
+        self.comboBoxProcessorFileAssociator.setCurrentText(cfg.get('processor_file', ''))
+        self.lineEditProcessorClassAssociator.setText(cfg.get('processor_class', ''))
+        if 'report_period' in cfg:
+            self.spinBoxReportPeriodAssociator.setValue(int(cfg['report_period']))
+        if 'server_queue_size' in cfg:
+            self.spinBoxServerQueueSizeAssociator.setValue(int(cfg['server_queue_size']))
+        if 'n_consumers' in cfg:
+            self.spinBoxNConsumersAssociator.setValue(int(cfg['n_consumers']))
+        if 'distributor_updates' in cfg:
+            self.spinBoxDistributorUpdatesAssociator.setValue(int(cfg['distributor_updates']))
+
+    # ------------------------------------------------------------------ #
+    # Collector last-used save / load
+    # ------------------------------------------------------------------ #
+
+    def _load_collector_last(self):
+        """Populate collector UI fields from APP_DATA > workflow > collector > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._COLLECTOR_PATH)
+            if setting is None:
+                return
+            last = self._db.get_setting_value(setting.id, 'last')
+            if not isinstance(last, dict):
+                return
+            self.lineEditInputChannelCollector.setText(last.get('input_channel', ''))
+            self.lineEditControlChannelCollector.setText(last.get('control_channel', ''))
+            self.lineEditStatusChannelCollector.setText(last.get('status_channel', ''))
+            self.lineEditOutputChannelCollector.setText(last.get('output_channel', ''))
+            self.comboBoxProcessorFileCollector.setCurrentText(last.get('processor_file', ''))
+            self.lineEditProcessorClassCollector.setText(last.get('processor_class', ''))
+            self.lineEditProducerIdList.setText(last.get('producer_id_list', ''))
+            if 'collector_id' in last:
+                self.spinBoxCollectorId.setValue(int(last['collector_id']))
+            if 'report_period' in last:
+                self.spinBoxReportPeriodCollector.setValue(int(last['report_period']))
+            if 'server_queue_size' in last:
+                self.spinBoxServerQueueSizeCollector.setValue(int(last['server_queue_size']))
+            if 'collector_cache_size' in last:
+                self.spinBoxCollectorCacheSize.setValue(int(last['collector_cache_size']))
+        except Exception:
+            pass
+
+    def _save_collector_last(self):
+        """Save current collector UI fields to APP_DATA > workflow > collector > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._COLLECTOR_PATH)
+            if setting is None:
+                return
+            config = {
+                'collector_id':       self.spinBoxCollectorId.value(),
+                'producer_id_list':   self.lineEditProducerIdList.text(),
+                'input_channel':      self.lineEditInputChannelCollector.text(),
+                'control_channel':    self.lineEditControlChannelCollector.text(),
+                'status_channel':     self.lineEditStatusChannelCollector.text(),
+                'output_channel':     self.lineEditOutputChannelCollector.text(),
+                'processor_file':     self.comboBoxProcessorFileCollector.currentText(),
+                'processor_class':    self.lineEditProcessorClassCollector.text(),
+                'report_period':      self.spinBoxReportPeriodCollector.value(),
+                'server_queue_size':  self.spinBoxServerQueueSizeCollector.value(),
+                'collector_cache_size': self.spinBoxCollectorCacheSize.value(),
+            }
+            if not self._db.update_setting_value(setting.id, 'last', config, value_type='json'):
+                self._db.add_setting_value(setting.id, 'last', config, value_type='json')
+        except Exception:
+            pass
+
+    def _collect_collector_config(self):
+        return {
+            'collector_id':         self.spinBoxCollectorId.value(),
+            'producer_id_list':     self.lineEditProducerIdList.text(),
+            'input_channel':        self.lineEditInputChannelCollector.text(),
+            'control_channel':      self.lineEditControlChannelCollector.text(),
+            'status_channel':       self.lineEditStatusChannelCollector.text(),
+            'output_channel':       self.lineEditOutputChannelCollector.text(),
+            'processor_file':       self.comboBoxProcessorFileCollector.currentText(),
+            'processor_class':      self.lineEditProcessorClassCollector.text(),
+            'report_period':        self.spinBoxReportPeriodCollector.value(),
+            'server_queue_size':    self.spinBoxServerQueueSizeCollector.value(),
+            'collector_cache_size': self.spinBoxCollectorCacheSize.value(),
+        }
+
+    def _apply_collector_config(self, cfg):
+        self.lineEditInputChannelCollector.setText(cfg.get('input_channel', ''))
+        self.lineEditControlChannelCollector.setText(cfg.get('control_channel', ''))
+        self.lineEditStatusChannelCollector.setText(cfg.get('status_channel', ''))
+        self.lineEditOutputChannelCollector.setText(cfg.get('output_channel', ''))
+        self.comboBoxProcessorFileCollector.setCurrentText(cfg.get('processor_file', ''))
+        self.lineEditProcessorClassCollector.setText(cfg.get('processor_class', ''))
+        self.lineEditProducerIdList.setText(cfg.get('producer_id_list', ''))
+        if 'collector_id' in cfg:
+            self.spinBoxCollectorId.setValue(int(cfg['collector_id']))
+        if 'report_period' in cfg:
+            self.spinBoxReportPeriodCollector.setValue(int(cfg['report_period']))
+        if 'server_queue_size' in cfg:
+            self.spinBoxServerQueueSizeCollector.setValue(int(cfg['server_queue_size']))
+        if 'collector_cache_size' in cfg:
+            self.spinBoxCollectorCacheSize.setValue(int(cfg['collector_cache_size']))
+
+    # ------------------------------------------------------------------ #
+    # Analysis Consumer last-used save / load
+    # ------------------------------------------------------------------ #
+
+    def _load_analysis_last(self):
+        """Populate analysis consumer UI fields from APP_DATA > workflow > analysis > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._ANALYSIS_PATH)
+            if setting is None:
+                return
+            last = self._db.get_setting_value(setting.id, 'last')
+            if not isinstance(last, dict):
+                return
+            self.lineEditInputChannelAnalysis.setText(last.get('input_channel', ''))
+            self.lineEditControlChannelAnalysis.setText(last.get('control_channel', ''))
+            self.lineEditStatusChannelAnalysis.setText(last.get('status_channel', ''))
+            self.lineEditOutputChannelAnalysis.setText(last.get('output_channel', ''))
+            self.comboBoxProcessorFileAnalysis.setCurrentText(last.get('processor_file', ''))
+            self.lineEditProcessorClassAnalysis.setText(last.get('processor_class', ''))
+            if 'report_period' in last:
+                self.spinBoxReportPeriodAnalysis.setValue(int(last['report_period']))
+            if 'server_queue_size' in last:
+                self.spinBoxServerQueueSizeAnalysis.setValue(int(last['server_queue_size']))
+            if 'n_consumers' in last:
+                self.spinBoxNConsumersAnalysis.setValue(int(last['n_consumers']))
+            if 'distributor_updates' in last:
+                self.spinBoxDistributorUpdatesAnalysis.setValue(int(last['distributor_updates']))
+        except Exception:
+            pass
+
+    def _save_analysis_last(self):
+        """Save current analysis consumer UI fields to APP_DATA > workflow > analysis > last in the DB."""
+        if not self._db_available:
+            return
+        try:
+            setting = self._db.get_setting_by_path(self._ANALYSIS_PATH)
+            if setting is None:
+                return
+            config = {
+                'input_channel':      self.lineEditInputChannelAnalysis.text(),
+                'control_channel':    self.lineEditControlChannelAnalysis.text(),
+                'status_channel':     self.lineEditStatusChannelAnalysis.text(),
+                'output_channel':     self.lineEditOutputChannelAnalysis.text(),
+                'processor_file':     self.comboBoxProcessorFileAnalysis.currentText(),
+                'processor_class':    self.lineEditProcessorClassAnalysis.text(),
+                'report_period':      self.spinBoxReportPeriodAnalysis.value(),
+                'server_queue_size':  self.spinBoxServerQueueSizeAnalysis.value(),
+                'n_consumers':        self.spinBoxNConsumersAnalysis.value(),
+                'distributor_updates': self.spinBoxDistributorUpdatesAnalysis.value(),
+            }
+            if not self._db.update_setting_value(setting.id, 'last', config, value_type='json'):
+                self._db.add_setting_value(setting.id, 'last', config, value_type='json')
+        except Exception:
+            pass
+
+    def _collect_analysis_config(self):
+        return {
+            'input_channel':       self.lineEditInputChannelAnalysis.text(),
+            'control_channel':     self.lineEditControlChannelAnalysis.text(),
+            'status_channel':      self.lineEditStatusChannelAnalysis.text(),
+            'output_channel':      self.lineEditOutputChannelAnalysis.text(),
+            'processor_file':      self.comboBoxProcessorFileAnalysis.currentText(),
+            'processor_class':     self.lineEditProcessorClassAnalysis.text(),
+            'report_period':       self.spinBoxReportPeriodAnalysis.value(),
+            'server_queue_size':   self.spinBoxServerQueueSizeAnalysis.value(),
+            'n_consumers':         self.spinBoxNConsumersAnalysis.value(),
+            'distributor_updates': self.spinBoxDistributorUpdatesAnalysis.value(),
+        }
+
+    def _apply_analysis_config(self, cfg):
+        self.lineEditInputChannelAnalysis.setText(cfg.get('input_channel', ''))
+        self.lineEditControlChannelAnalysis.setText(cfg.get('control_channel', ''))
+        self.lineEditStatusChannelAnalysis.setText(cfg.get('status_channel', ''))
+        self.lineEditOutputChannelAnalysis.setText(cfg.get('output_channel', ''))
+        self.comboBoxProcessorFileAnalysis.setCurrentText(cfg.get('processor_file', ''))
+        self.lineEditProcessorClassAnalysis.setText(cfg.get('processor_class', ''))
+        if 'report_period' in cfg:
+            self.spinBoxReportPeriodAnalysis.setValue(int(cfg['report_period']))
+        if 'server_queue_size' in cfg:
+            self.spinBoxServerQueueSizeAnalysis.setValue(int(cfg['server_queue_size']))
+        if 'n_consumers' in cfg:
+            self.spinBoxNConsumersAnalysis.setValue(int(cfg['n_consumers']))
+        if 'distributor_updates' in cfg:
+            self.spinBoxDistributorUpdatesAnalysis.setValue(int(cfg['distributor_updates']))
 
     def run_associator_consumers(self):
         if 'associator_consumers' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
+        self._save_meta_assoc_last()
 
         cmd = [
             'pvapy-hpc-consumer',
@@ -995,7 +1993,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAssociator.text(),
             '--status-channel', self.lineEditStatusChannelAssociator.text(),
             '--output-channel', self.lineEditOutputChannelAssociator.text(),
-            '--processor-file', self.lineEditProcessorFileAssociator.text(),
+            '--processor-file', self.comboBoxProcessorFileAssociator.currentText(),
             '--processor-class', self.lineEditProcessorClassAssociator.text(),
             '--report-period', str(self.spinBoxReportPeriodAssociator.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
@@ -1062,6 +2060,7 @@ class Workflow(QDialog, LogMixin):
         if 'collector' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Collector is already running.')
             return
+        self._save_collector_last()
 
         producer_id_list = [str(i) for i in range(1, int(self.lineEditProducerIdList.text()) + 1)]
         producer_id_list = ','.join(producer_id_list)
@@ -1074,7 +2073,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),
             '--output-channel', self.lineEditOutputChannelCollector.text(),
-            '--processor-file', self.lineEditProcessorFileCollector.text(),
+            '--processor-file', self.comboBoxProcessorFileCollector.currentText(),
             '--processor-class', self.lineEditProcessorClassCollector.text(),
             '--report-period', str(self.spinBoxReportPeriodCollector.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeCollector.value()),
@@ -1125,6 +2124,7 @@ class Workflow(QDialog, LogMixin):
         if 'analysis_consumer' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Analysis Consumer is already running.')
             return
+        self._save_analysis_last()
 
         cmd = [
             'pvapy-hpc-consumer',
@@ -1132,7 +2132,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAnalysis.text(),
             '--status-channel', self.lineEditStatusChannelAnalysis.text(),
             '--output-channel', self.lineEditOutputChannelAnalysis.text(),
-            '--processor-file', self.lineEditProcessorFileAnalysis.text(),
+            '--processor-file', self.comboBoxProcessorFileAnalysis.currentText(),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),

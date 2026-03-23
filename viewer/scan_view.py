@@ -1,25 +1,24 @@
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import toml
 from datetime import datetime
 from PyQt5 import uic
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout
 import pyqtgraph as pg
 
 from utils import PVAReader, HDF5Handler
 from utils.log_manager import LogMixin
-from epics import caput
+from epics import caput, caget
+import settings as app_settings
 
 class ScanMonitorWindow(QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
     signal_trigger_save = pyqtSignal(bool, bool, bool)  # clear_caches, write_temp, write_output
     
-    def __init__(self, channel: str = "", config_filepath: str = ""):
+    def __init__(self, channel: str = ""):
         super(ScanMonitorWindow, self).__init__()
         uic.loadUi('gui/scan_view.ui', self)
-        # Title comes from UI; ensure consistent naming in code comments
         # Initialize structured logger via LogMixin (defaults to module.class name)
         try:
             self.set_log_manager()
@@ -27,12 +26,10 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             pass
 
         self.channel = channel
-        self.config_filepath = config_filepath
         self.scan_state = False
-        
+
         # Track applied state for UI labels
         self.applied_channel = None
-        self.applied_config = None
         self._last_frames_received = 0
         
         # Define Threads
@@ -84,11 +81,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self._apply_listening_style(False)
 
         self.lineedit_channel.setText(self.channel or "")
-        self.lineedit_channel.textChanged.connect(self._on_channel_changed) 
-        self.lineedit_config.setText(self.config_filepath or "")
-        self.lineedit_config.textChanged.connect(self._on_config_path_changed) 
+        self.lineedit_channel.textChanged.connect(self._on_channel_changed)
 
-        self.btn_browse_config.clicked.connect(self._on_browse_config_clicked)
         self.btn_apply.clicked.connect(self._on_apply_clicked)
         
         self._update_info_display()
@@ -136,25 +130,20 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
 
     def _on_apply_clicked(self) -> None:
         """Initializes Reader and Writer on separate threads."""
-        if not self.channel or not self.config_filepath:
+        if not self.channel:
             return
 
         self._cleanup_existing_instances()
 
-        # Point settings at selected TOML so the writer's converter can find it.
-        # Wrapped in try/except so a settings failure cannot abort monitor startup.
         try:
-            import settings
-            settings.set_locator(self.config_filepath)
-            settings.reload()
-        except Exception as e:
+            app_settings.reload()
+        except Exception:
             pass
 
         try:
             # 1. Create instances
             self.reader = PVAReader(
                 input_channel=self.channel,
-                config_filepath=self.config_filepath,
                 viewer_type='image'
             )
             
@@ -185,7 +174,6 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
 
             # 6. Update UI Tracking
             self.applied_channel = self.channel
-            self.applied_config = self.config_filepath
             if hasattr(self, 'label_listening'):
                 self.label_listening.setText('True')
                 self._apply_listening_style(True)
@@ -304,19 +292,6 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self.label_listening.setText('0')
             self._apply_listening_style(False)
 
-    def _on_config_path_changed(self, text):
-        self.config_filepath = text
-        self.applied_config = None
-        if hasattr(self, 'label_listening'):
-            # Reset listening timer when config changes
-            self.listening_start_time = None
-            self.label_listening.setText('0')
-            self._apply_listening_style(False)
-
-    def _on_browse_config_clicked(self):
-        fname, _ = QFileDialog.getOpenFileName(self, 'Select Config', '', 'TOML (*.toml)')
-        if fname: self.lineedit_config.setText(fname)
-
     def _on_scan_state_changed(self, is_on: bool) -> None:
         if is_on:
             self.scan_start_time = datetime.now()
@@ -362,13 +337,10 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         """Logic for periodically refreshing UI labels based on Reader state."""
         try:
             # Update Caching Mode
-            caching_mode = "Not set"
-            if self.config_filepath:
-                try:
-                    with open(self.config_filepath, 'r') as f:
-                        cfg = toml.load(f)
-                    caching_mode = cfg.get('CACHE_OPTIONS', {}).get('CACHING_MODE', 'Not set')
-                except: pass
+            try:
+                caching_mode = app_settings.CACHE_OPTIONS.get('CACHING_MODE', 'Not set') or 'Not set'
+            except Exception:
+                caching_mode = 'Not set'
             if hasattr(self, 'label_caching_mode'): self.label_caching_mode.setText(str(caching_mode))
             
             # Update Flag PV
@@ -419,6 +391,22 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
 
             if self.last_scan_completion_time and hasattr(self, 'label_last_scan_date'):
                 self.label_last_scan_date.setText(self.last_scan_completion_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+            # Update File Output from PVs in settings
+            if hasattr(self, 'label_file_output'):
+                file_output = "--"
+                try:
+                    file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
+                    file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+                    if file_path_pv or file_name_pv:
+                        fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
+                        fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
+                        combined = str(fp or '').strip() + str(fn or '').strip()
+                        file_output = combined if combined else "--"
+                except Exception:
+                    pass
+                self.label_file_output.setText(file_output)
+
             # Update graph after refreshing labels
             self._update_graph()
         except: pass
@@ -502,10 +490,9 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Scan Monitor Window')
     parser.add_argument('--channel', default='', help='PVA channel name')
-    parser.add_argument('--config', dest='config_path', default='', help='Path to TOML config file')
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
-    window = ScanMonitorWindow(channel=args.channel, config_filepath=args.config_path)
+    window = ScanMonitorWindow(channel=args.channel)
     window.show()
     sys.exit(app.exec_())
