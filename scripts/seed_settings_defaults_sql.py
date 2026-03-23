@@ -15,7 +15,7 @@ Creates (if missing):
         SCAN   (BASE=scans)
         SLICES (BASE=slices)
 - PATHS (root) continued:
-    CONSUMERS (root)
+    CONSUMERS (path)
         BASE = consumers        — consumer working directory
         IOC  = caIOC_servers    — IOC directory name
         hpc (section)
@@ -93,10 +93,11 @@ def seed_defaults() -> None:
         add_value_if_missing(cur, slices_id, "BASE", "slices")
 
         # ── CONSUMERS (under PATHS) ───────────────────────────────────────── #
-        consumers_id = get_or_create_setting(cur, "CONSUMERS", "root", "Consumer directories", paths_id)
-        add_value_if_missing(cur, consumers_id, "BASE", "consumers")
+        consumers_id = get_or_create_setting(cur, "CONSUMERS", "path", "Consumer directories", paths_id)
+        add_value_if_missing(cur, consumers_id, "BASE", "consumers/hpc")
         add_value_if_missing(cur, consumers_id, "IOC", "caIOC_servers")
         hpc_id = get_or_create_setting(cur, "hpc", "section", "HPC consumer names", consumers_id)
+        add_value_if_missing(cur, hpc_id, "BASE", "hpc")
         add_value_if_missing(cur, hpc_id, "meta", "meta")
         add_value_if_missing(cur, hpc_id, "analysis", "analysis")
 

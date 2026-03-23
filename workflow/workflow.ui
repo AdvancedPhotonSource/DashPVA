@@ -817,9 +817,9 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
           </widget>
          </item>
          <item row="4" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileAssociator">
-           <property name="text">
-            <string>consumers/hpc_metadata_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileAssociator">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -1100,9 +1100,9 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
           </widget>
          </item>
          <item row="6" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileCollector">
-           <property name="text">
-            <string>consumers/hpc_metadata_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileCollector">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -1322,9 +1322,9 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
        <item>
         <layout class="QGridLayout" name="gridLayout_4">
          <item row="4" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileAnalysis">
-           <property name="text">
-            <string>consumers/hpc_rsm_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileAnalysis">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>

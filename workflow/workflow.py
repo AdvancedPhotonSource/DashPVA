@@ -402,6 +402,7 @@ class Workflow(QDialog, LogMixin):
         self._refresh_profile_combo()      # populate combo, pre-select right profile
         if self._db_available:
             self.radioDatabase.setChecked(True)  # triggers _on_config_source_changed → load
+        self._populate_processor_file_combos()
         self._load_meta_assoc_last()
         self._load_collector_last()
         self._load_analysis_last()
@@ -453,9 +454,62 @@ class Workflow(QDialog, LogMixin):
             self._refresh_profile_combo()
             if self.radioViewSettings.isChecked():
                 self._load_settings_tree()
+            self._populate_processor_file_combos()
             self._load_meta_assoc_last()
             self._load_collector_last()
             self._load_analysis_last()
+
+    def _populate_processor_file_combos(self):
+        """Populate processor file dropdowns from CONSUMERS > hpc in the DB."""
+        if not self._db_available:
+            return
+        try:
+            # Look up CONSUMERS by name — works whether it's root or under PATHS
+            consumers_setting = self._db.get_setting_by_name('CONSUMERS')
+            if consumers_setting is None:
+                return
+            consumers_base = self._db.get_setting_value(consumers_setting.id, 'BASE') or ''
+
+            hpc_setting = next(
+                (c for c in self._db.get_setting_children(consumers_setting.id) if c.name == 'hpc'),
+                None
+            )
+            if hpc_setting is None:
+                return
+            hpc_base     = self._db.get_setting_value(hpc_setting.id, 'BASE')     or ''
+            meta_dir     = self._db.get_setting_value(hpc_setting.id, 'meta')     or ''
+            analysis_dir = self._db.get_setting_value(hpc_setting.id, 'analysis') or ''
+        except Exception:
+            return
+
+        # Resolve relative to the project root so cwd doesn't matter
+        project_root = pathlib.Path(__file__).parent.parent
+
+        def list_py_files(subdir):
+            try:
+                d = project_root / consumers_base / hpc_base / subdir if subdir else project_root / consumers_base / hpc_base
+                if not d.is_dir():
+                    return []
+                rel_base = pathlib.Path(consumers_base) / hpc_base / subdir
+                return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
+            except Exception:
+                return []
+
+        meta_files     = list_py_files(meta_dir)
+        analysis_files = list_py_files(analysis_dir)
+
+        for combo, files in [
+            (self.comboBoxProcessorFileAssociator, meta_files),
+            (self.comboBoxProcessorFileCollector,  meta_files),
+            (self.comboBoxProcessorFileAnalysis,   analysis_files),
+        ]:
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(files)
+            if current:
+                combo.setCurrentText(current)
+            combo.blockSignals(False)
 
     # ------------------------------------------------------------------ #
     # Config source toggle
@@ -1681,7 +1735,7 @@ class Workflow(QDialog, LogMixin):
             self.lineEditControlChannelAssociator.setText(last.get('control_channel', ''))
             self.lineEditStatusChannelAssociator.setText(last.get('status_channel', ''))
             self.lineEditOutputChannelAssociator.setText(last.get('output_channel', ''))
-            self.lineEditProcessorFileAssociator.setText(last.get('processor_file', ''))
+            self.comboBoxProcessorFileAssociator.setCurrentText(last.get('processor_file', ''))
             self.lineEditProcessorClassAssociator.setText(last.get('processor_class', ''))
             if 'report_period' in last:
                 self.spinBoxReportPeriodAssociator.setValue(int(last['report_period']))
@@ -1707,7 +1761,7 @@ class Workflow(QDialog, LogMixin):
                 'control_channel':     self.lineEditControlChannelAssociator.text(),
                 'status_channel':      self.lineEditStatusChannelAssociator.text(),
                 'output_channel':      self.lineEditOutputChannelAssociator.text(),
-                'processor_file':      self.lineEditProcessorFileAssociator.text(),
+                'processor_file':      self.comboBoxProcessorFileAssociator.currentText(),
                 'processor_class':     self.lineEditProcessorClassAssociator.text(),
                 'report_period':       self.spinBoxReportPeriodAssociator.value(),
                 'server_queue_size':   self.spinBoxServerQueueSizeAssociator.value(),
@@ -1725,7 +1779,7 @@ class Workflow(QDialog, LogMixin):
             'control_channel':     self.lineEditControlChannelAssociator.text(),
             'status_channel':      self.lineEditStatusChannelAssociator.text(),
             'output_channel':      self.lineEditOutputChannelAssociator.text(),
-            'processor_file':      self.lineEditProcessorFileAssociator.text(),
+            'processor_file':      self.comboBoxProcessorFileAssociator.currentText(),
             'processor_class':     self.lineEditProcessorClassAssociator.text(),
             'report_period':       self.spinBoxReportPeriodAssociator.value(),
             'server_queue_size':   self.spinBoxServerQueueSizeAssociator.value(),
@@ -1738,7 +1792,7 @@ class Workflow(QDialog, LogMixin):
         self.lineEditControlChannelAssociator.setText(cfg.get('control_channel', ''))
         self.lineEditStatusChannelAssociator.setText(cfg.get('status_channel', ''))
         self.lineEditOutputChannelAssociator.setText(cfg.get('output_channel', ''))
-        self.lineEditProcessorFileAssociator.setText(cfg.get('processor_file', ''))
+        self.comboBoxProcessorFileAssociator.setCurrentText(cfg.get('processor_file', ''))
         self.lineEditProcessorClassAssociator.setText(cfg.get('processor_class', ''))
         if 'report_period' in cfg:
             self.spinBoxReportPeriodAssociator.setValue(int(cfg['report_period']))
@@ -1768,7 +1822,7 @@ class Workflow(QDialog, LogMixin):
             self.lineEditControlChannelCollector.setText(last.get('control_channel', ''))
             self.lineEditStatusChannelCollector.setText(last.get('status_channel', ''))
             self.lineEditOutputChannelCollector.setText(last.get('output_channel', ''))
-            self.lineEditProcessorFileCollector.setText(last.get('processor_file', ''))
+            self.comboBoxProcessorFileCollector.setCurrentText(last.get('processor_file', ''))
             self.lineEditProcessorClassCollector.setText(last.get('processor_class', ''))
             self.lineEditProducerIdList.setText(last.get('producer_id_list', ''))
             if 'collector_id' in last:
@@ -1797,7 +1851,7 @@ class Workflow(QDialog, LogMixin):
                 'control_channel':    self.lineEditControlChannelCollector.text(),
                 'status_channel':     self.lineEditStatusChannelCollector.text(),
                 'output_channel':     self.lineEditOutputChannelCollector.text(),
-                'processor_file':     self.lineEditProcessorFileCollector.text(),
+                'processor_file':     self.comboBoxProcessorFileCollector.currentText(),
                 'processor_class':    self.lineEditProcessorClassCollector.text(),
                 'report_period':      self.spinBoxReportPeriodCollector.value(),
                 'server_queue_size':  self.spinBoxServerQueueSizeCollector.value(),
@@ -1816,7 +1870,7 @@ class Workflow(QDialog, LogMixin):
             'control_channel':      self.lineEditControlChannelCollector.text(),
             'status_channel':       self.lineEditStatusChannelCollector.text(),
             'output_channel':       self.lineEditOutputChannelCollector.text(),
-            'processor_file':       self.lineEditProcessorFileCollector.text(),
+            'processor_file':       self.comboBoxProcessorFileCollector.currentText(),
             'processor_class':      self.lineEditProcessorClassCollector.text(),
             'report_period':        self.spinBoxReportPeriodCollector.value(),
             'server_queue_size':    self.spinBoxServerQueueSizeCollector.value(),
@@ -1828,7 +1882,7 @@ class Workflow(QDialog, LogMixin):
         self.lineEditControlChannelCollector.setText(cfg.get('control_channel', ''))
         self.lineEditStatusChannelCollector.setText(cfg.get('status_channel', ''))
         self.lineEditOutputChannelCollector.setText(cfg.get('output_channel', ''))
-        self.lineEditProcessorFileCollector.setText(cfg.get('processor_file', ''))
+        self.comboBoxProcessorFileCollector.setCurrentText(cfg.get('processor_file', ''))
         self.lineEditProcessorClassCollector.setText(cfg.get('processor_class', ''))
         self.lineEditProducerIdList.setText(cfg.get('producer_id_list', ''))
         if 'collector_id' in cfg:
@@ -1859,7 +1913,7 @@ class Workflow(QDialog, LogMixin):
             self.lineEditControlChannelAnalysis.setText(last.get('control_channel', ''))
             self.lineEditStatusChannelAnalysis.setText(last.get('status_channel', ''))
             self.lineEditOutputChannelAnalysis.setText(last.get('output_channel', ''))
-            self.lineEditProcessorFileAnalysis.setText(last.get('processor_file', ''))
+            self.comboBoxProcessorFileAnalysis.setCurrentText(last.get('processor_file', ''))
             self.lineEditProcessorClassAnalysis.setText(last.get('processor_class', ''))
             if 'report_period' in last:
                 self.spinBoxReportPeriodAnalysis.setValue(int(last['report_period']))
@@ -1885,7 +1939,7 @@ class Workflow(QDialog, LogMixin):
                 'control_channel':    self.lineEditControlChannelAnalysis.text(),
                 'status_channel':     self.lineEditStatusChannelAnalysis.text(),
                 'output_channel':     self.lineEditOutputChannelAnalysis.text(),
-                'processor_file':     self.lineEditProcessorFileAnalysis.text(),
+                'processor_file':     self.comboBoxProcessorFileAnalysis.currentText(),
                 'processor_class':    self.lineEditProcessorClassAnalysis.text(),
                 'report_period':      self.spinBoxReportPeriodAnalysis.value(),
                 'server_queue_size':  self.spinBoxServerQueueSizeAnalysis.value(),
@@ -1903,7 +1957,7 @@ class Workflow(QDialog, LogMixin):
             'control_channel':     self.lineEditControlChannelAnalysis.text(),
             'status_channel':      self.lineEditStatusChannelAnalysis.text(),
             'output_channel':      self.lineEditOutputChannelAnalysis.text(),
-            'processor_file':      self.lineEditProcessorFileAnalysis.text(),
+            'processor_file':      self.comboBoxProcessorFileAnalysis.currentText(),
             'processor_class':     self.lineEditProcessorClassAnalysis.text(),
             'report_period':       self.spinBoxReportPeriodAnalysis.value(),
             'server_queue_size':   self.spinBoxServerQueueSizeAnalysis.value(),
@@ -1916,7 +1970,7 @@ class Workflow(QDialog, LogMixin):
         self.lineEditControlChannelAnalysis.setText(cfg.get('control_channel', ''))
         self.lineEditStatusChannelAnalysis.setText(cfg.get('status_channel', ''))
         self.lineEditOutputChannelAnalysis.setText(cfg.get('output_channel', ''))
-        self.lineEditProcessorFileAnalysis.setText(cfg.get('processor_file', ''))
+        self.comboBoxProcessorFileAnalysis.setCurrentText(cfg.get('processor_file', ''))
         self.lineEditProcessorClassAnalysis.setText(cfg.get('processor_class', ''))
         if 'report_period' in cfg:
             self.spinBoxReportPeriodAnalysis.setValue(int(cfg['report_period']))
@@ -1939,7 +1993,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAssociator.text(),
             '--status-channel', self.lineEditStatusChannelAssociator.text(),
             '--output-channel', self.lineEditOutputChannelAssociator.text(),
-            '--processor-file', self.lineEditProcessorFileAssociator.text(),
+            '--processor-file', self.comboBoxProcessorFileAssociator.currentText(),
             '--processor-class', self.lineEditProcessorClassAssociator.text(),
             '--report-period', str(self.spinBoxReportPeriodAssociator.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
@@ -2019,7 +2073,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),
             '--output-channel', self.lineEditOutputChannelCollector.text(),
-            '--processor-file', self.lineEditProcessorFileCollector.text(),
+            '--processor-file', self.comboBoxProcessorFileCollector.currentText(),
             '--processor-class', self.lineEditProcessorClassCollector.text(),
             '--report-period', str(self.spinBoxReportPeriodCollector.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeCollector.value()),
@@ -2078,7 +2132,7 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAnalysis.text(),
             '--status-channel', self.lineEditStatusChannelAnalysis.text(),
             '--output-channel', self.lineEditOutputChannelAnalysis.text(),
-            '--processor-file', self.lineEditProcessorFileAnalysis.text(),
+            '--processor-file', self.comboBoxProcessorFileAnalysis.currentText(),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
