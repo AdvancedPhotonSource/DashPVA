@@ -22,6 +22,7 @@ Notes:
 from typing import List, Optional, Dict, Any, Union
 from database.db import init_database, create_tables
 from database.managers.profile import ProfileManager
+from database.managers.settings import SettingsManager
 from database.models.profile import Profile, ProfileConfig
 
 
@@ -35,6 +36,13 @@ class DatabaseInterface:
         create_tables()
         # Internal manager implementation
         self._mgr = ProfileManager()
+        self._settings_mgr = SettingsManager()
+        # Ensure default settings structure exists (idempotent — safe to run every time)
+        try:
+            from scripts.seed_settings_defaults_sql import seed_defaults
+            seed_defaults()
+        except Exception:
+            pass
 
     # Profiles CRUD
 
@@ -153,77 +161,85 @@ class DatabaseInterface:
     def clone_profile_configs(self, source_profile_id: int, dest_profile_id: int) -> bool:
         return self._mgr.clone_profile_configs(source_profile_id, dest_profile_id)
 
-    # Settings CRUD wrappers — commented out until Settings model is ready
-    # def create_setting(self, name: str, type_: str, desc: Optional[str] = None, parent_id: Optional[int] = None):
-    #     return self._settings_mgr.create_setting(name, type_, desc, parent_id)
+    # Settings read wrappers
+    def get_root_settings(self):
+        return self._settings_mgr.get_root_settings()
 
-    # def create_child_setting(self, parent_id: int, name: str, type_: str, desc: Optional[str] = None):
-    #     return self._settings_mgr.create_child_setting(parent_id, name, type_, desc)
+    def get_setting_children(self, setting_id: int):
+        return self._settings_mgr.get_children(setting_id)
 
-    # def get_all_settings(self):
-    #     return self._settings_mgr.get_all_settings()
+    def get_all_setting_values(self, setting_id: int) -> Dict[str, Any]:
+        return self._settings_mgr.get_all_setting_values(setting_id)
 
-    # def get_settings_by_type(self, type_: str):
-    #     return self._settings_mgr.get_settings_by_type(type_)
+    def get_all_setting_values_with_type(self, setting_id: int):
+        return self._settings_mgr.get_all_setting_values_with_type(setting_id)
 
-    # def get_setting_by_name(self, name: str):
-    #     return self._settings_mgr.get_setting_by_name(name)
+    def create_setting(self, name: str, type_: str, desc: str = '', parent_id: Optional[int] = None):
+        return self._settings_mgr.create_setting(name, type_, desc, parent_id)
 
-    # def get_setting_by_id(self, id_: int):
-    #     return self._settings_mgr.get_setting_by_id(id_)
+    def add_setting_value(self, setting_id: int, key: str, value, value_type=None) -> bool:
+        return self._settings_mgr.add_setting_value(setting_id, key, value, value_type)
 
-    # def get_distinct_setting_types(self):
-    #     return self._settings_mgr.get_distinct_types()
+    def create_child_setting(self, parent_id: int, name: str, type_: str, desc: Optional[str] = None):
+        return self._settings_mgr.create_child_setting(parent_id, name, type_, desc)
 
-    # def update_setting_desc(self, id_: int, desc: str) -> bool:
-    #     return self._settings_mgr.update_setting_desc(id_, desc)
+    def get_all_settings(self):
+        return self._settings_mgr.get_all_settings()
 
-    # def delete_setting(self, id_: int) -> bool:
-    #     return self._settings_mgr.delete_setting(id_)
+    def get_settings_by_type(self, type_: str):
+        return self._settings_mgr.get_settings_by_type(type_)
 
-    # # Setting Value operations
-    # def add_setting_value(self, setting_id: int, key: str, value: Union[str, int]) -> bool:
-    #     return self._settings_mgr.add_setting_value(setting_id, key, value)
+    def get_setting_by_name(self, name: str):
+        return self._settings_mgr.get_setting_by_name(name)
 
-    # def add_setting_value_by_name(self, setting_name: str, key: str, value: Union[str, int]) -> bool:
-    #     return self._settings_mgr.add_setting_value_by_name(setting_name, key, value)
+    def get_setting_by_id(self, id_: int):
+        return self._settings_mgr.get_setting_by_id(id_)
 
-    # def update_setting_value(self, setting_id: int, key: str, value: Union[str, int]) -> bool:
-    #     return self._settings_mgr.update_setting_value(setting_id, key, value)
+    def get_distinct_setting_types(self):
+        return self._settings_mgr.get_distinct_types()
 
-    # def update_setting_value_by_name(self, setting_name: str, key: str, value: Union[str, int]) -> bool:
-    #     return self._settings_mgr.update_setting_value_by_name(setting_name, key, value)
+    def update_setting_desc(self, id_: int, desc: str) -> bool:
+        return self._settings_mgr.update_setting_desc(id_, desc)
 
-    # def get_setting_value(self, setting_id: int, key: str) -> Optional[Union[str, int]]:
-    #     return self._settings_mgr.get_setting_value(setting_id, key)
+    def update_setting(self, id_: int, name: str, type_: str) -> bool:
+        return self._settings_mgr.update_setting(id_, name, type_)
 
-    # def get_setting_value_by_name(self, setting_name: str, key: str) -> Optional[Union[str, int]]:
-    #     return self._settings_mgr.get_setting_value_by_name(setting_name, key)
+    def delete_setting(self, id_: int) -> bool:
+        return self._settings_mgr.delete_setting(id_)
 
-    # def remove_setting_value(self, setting_id: int, key: str) -> bool:
-    #     return self._settings_mgr.remove_setting_value(setting_id, key)
+    # Setting Value operations
 
-    # def remove_setting_value_by_name(self, setting_name: str, key: str) -> bool:
-    #     return self._settings_mgr.remove_setting_value_by_name(setting_name, key)
+    def add_setting_value_by_name(self, setting_name: str, key: str, value: Union[str, int]) -> bool:
+        return self._settings_mgr.add_setting_value_by_name(setting_name, key, value)
 
-    # def get_all_setting_values(self, setting_id: int) -> Dict[str, Union[str, int]]:
-    #     return self._settings_mgr.get_all_setting_values(setting_id)
+    def update_setting_value(self, setting_id: int, key: str, value, value_type=None) -> bool:
+        return self._settings_mgr.update_setting_value(setting_id, key, value, value_type)
 
-    # def get_all_setting_values_by_name(self, setting_name: str) -> Dict[str, Union[str, int]]:
-    #     return self._settings_mgr.get_all_setting_values_by_name(setting_name)
+    def update_setting_value_by_name(self, setting_name: str, key: str, value: Union[str, int]) -> bool:
+        return self._settings_mgr.update_setting_value_by_name(setting_name, key, value)
 
-    # # Hierarchical settings operations
-    # def get_root_settings(self):
-    #     return self._settings_mgr.get_root_settings()
+    def get_setting_value(self, setting_id: int, key: str) -> Optional[Union[str, int]]:
+        return self._settings_mgr.get_setting_value(setting_id, key)
 
-    # def get_setting_children(self, parent_id: int):
-    #     return self._settings_mgr.get_children(parent_id)
+    def get_setting_value_by_name(self, setting_name: str, key: str) -> Optional[Union[str, int]]:
+        return self._settings_mgr.get_setting_value_by_name(setting_name, key)
 
-    # def get_setting_tree(self):
-    #     return self._settings_mgr.get_setting_tree()
+    def remove_setting_value(self, setting_id: int, key: str) -> bool:
+        return self._settings_mgr.remove_setting_value(setting_id, key)
 
-    # def get_setting_by_path(self, path: List[str]):
-    #     return self._settings_mgr.get_setting_by_path(path)
+    def remove_setting_value_by_name(self, setting_name: str, key: str) -> bool:
+        return self._settings_mgr.remove_setting_value_by_name(setting_name, key)
 
-    # def move_setting(self, setting_id: int, new_parent_id: Optional[int]) -> bool:
-    #     return self._settings_mgr.move_setting(setting_id, new_parent_id)
+    def get_all_setting_values_by_name(self, setting_name: str) -> Dict[str, Union[str, int]]:
+        return self._settings_mgr.get_all_setting_values_by_name(setting_name)
+
+    # Hierarchical settings operations
+
+    def get_setting_tree(self):
+        return self._settings_mgr.get_setting_tree()
+
+    def get_setting_by_path(self, path: List[str]):
+        return self._settings_mgr.get_setting_by_path(path)
+
+    def move_setting(self, setting_id: int, new_parent_id: Optional[int]) -> bool:
+        return self._settings_mgr.move_setting(setting_id, new_parent_id)

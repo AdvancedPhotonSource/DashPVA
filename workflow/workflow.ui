@@ -336,6 +336,19 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonRefreshDb">
+           <property name="text">
+            <string>↻ Refresh</string>
+           </property>
+           <property name="toolTip">
+            <string>Reload the database and refresh the current view</string>
+           </property>
+           <property name="styleSheet">
+            <string>QPushButton { font-size: 10px; padding: 1px 6px; }</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacerConfigSource">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -435,9 +448,6 @@
              <property name="checked">
               <bool>true</bool>
              </property>
-             <property name="visible">
-              <bool>false</bool>
-             </property>
             </widget>
            </item>
            <item>
@@ -446,9 +456,6 @@
               <string>Settings</string>
              </property>
              <property name="enabled">
-              <bool>false</bool>
-             </property>
-             <property name="visible">
               <bool>false</bool>
              </property>
             </widget>
@@ -669,6 +676,25 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
               <widget class="QPushButton" name="buttonExportConfigToFile">
                <property name="text">
                 <string>Export to File</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacerApplySave">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonApplySave">
+               <property name="text">
+                <string>Apply / Save</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { background-color: #2980B9; color: white; border-radius: 3px; padding: 3px 14px; font-weight: bold; }
+QPushButton:hover { background-color: #3498DB; }
+QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; }</string>
                </property>
               </widget>
              </item>
@@ -969,6 +995,39 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonSaveConfigMeta">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigMeta">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerAssoc">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
           <widget class="QLabel" name="labelStatusAssociatorConsumers">
            <property name="text">
             <string>Process ID: Not running</string>
@@ -1199,6 +1258,39 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonSaveConfigCollector">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigCollector">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerCollector">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
           <widget class="QLabel" name="labelStatusCollector">
            <property name="text">
             <string>Process ID: Not running</string>
@@ -1404,6 +1496,39 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
             <string>Stop</string>
            </property>
           </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonSaveConfigAnalysis">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigAnalysis">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerAnalysis">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
          </item>
          <item>
           <widget class="QLabel" name="labelStatusAnalysisConsumer">
