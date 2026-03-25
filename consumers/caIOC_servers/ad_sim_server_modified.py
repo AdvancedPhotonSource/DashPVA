@@ -585,11 +585,15 @@ class AdSimServer:
         if self.caMetadataPvs:
             if not os.environ.get('EPICS_DB_INCLUDE_PATH'):
                 pvDataLib = ctypes.util.find_library('pvData')
-                if not pvDataLib:
-                    raise Exception('Cannot find dbd directory, please set EPICS_DB_INCLUDE_PATH environment variable to use CA metadata PVs.')
-                pvDataLib = os.path.realpath(pvDataLib)
-                epicsLibDir = os.path.dirname(pvDataLib)
-                dbdDir = os.path.realpath(f'{epicsLibDir}/../../dbd')
+                if pvDataLib:
+                    pvDataLib = os.path.realpath(pvDataLib)
+                    epicsLibDir = os.path.dirname(pvDataLib)
+                    dbdDir = os.path.realpath(f'{epicsLibDir}/../../dbd')
+                else:
+                    # Fallback: use dbd directory bundled with the pvaccess Python package
+                    dbdDir = os.path.join(os.path.dirname(pva.__file__), 'dbd')
+                    if not os.path.isdir(dbdDir):
+                        raise Exception('Cannot find dbd directory, please set EPICS_DB_INCLUDE_PATH environment variable to use CA metadata PVs.')
                 os.environ['EPICS_DB_INCLUDE_PATH'] = dbdDir
 
         print(f'CA Metadata PVs: {self.caMetadataPvs}')
