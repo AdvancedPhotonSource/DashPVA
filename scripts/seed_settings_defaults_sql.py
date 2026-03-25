@@ -28,9 +28,12 @@ Creates (if missing):
         analysis   (section)    — analysis consumer last-used / named configs
 """
 import sqlite3
-from pathlib import Path
+import settings as _settings
 
-_DB_FILE = Path(__file__).resolve().parent.parent / "dashpva.db"
+# Issue 3: resolve the DB path from settings.PROJECT_ROOT — same anchor used by
+# database.db — instead of computing it relative to __file__ which breaks when the
+# scripts/ directory moves or the package is installed elsewhere.
+_DB_FILE = _settings.PROJECT_ROOT / "dashpva.db"
 DB_PATH = str(_DB_FILE)
 
 
@@ -94,7 +97,12 @@ def seed_defaults() -> None:
 
         # ── CONSUMERS (under PATHS) ───────────────────────────────────────── #
         consumers_id = get_or_create_setting(cur, "CONSUMERS", "path", "Consumer directories", paths_id)
-        add_value_if_missing(cur, consumers_id, "BASE", "consumers/hpc")
+        add_value_if_missing(cur, consumers_id, "BASE", "consumers")
+        # Correct previously wrong seed value ("consumers/hpc" → "consumers")
+        cur.execute(
+            "UPDATE setting_values SET value=? WHERE setting_id=? AND key=? AND value=?",
+            ("consumers", consumers_id, "BASE", "consumers/hpc"),
+        )
         add_value_if_missing(cur, consumers_id, "IOC", "caIOC_servers")
         hpc_id = get_or_create_setting(cur, "hpc", "section", "HPC consumer names", consumers_id)
         add_value_if_missing(cur, hpc_id, "BASE", "hpc")

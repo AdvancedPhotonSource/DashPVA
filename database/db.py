@@ -1,10 +1,13 @@
 # """
 # SQLAlchemy models for DashPVA profile management
 # """
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import settings
+
+log = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -14,24 +17,32 @@ PROJECT_ROOT = settings.PROJECT_ROOT
 DB_FILE = PROJECT_ROOT / "dashpva.db"
 DATABASE_URL = f"sqlite:///{DB_FILE.as_posix()}"
 
+# Issue 5: module-level engine and session factory (not created per-call)
+_engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False},
+)
+_Session = sessionmaker(bind=_engine, expire_on_commit=False)
+
+
 def get_engine():
-    """Create and return database engine"""
-    return create_engine(DATABASE_URL, echo=False)
+    """Return the shared database engine."""
+    return _engine
+
 
 def get_session():
-    """Create and return database session"""
-    engine = get_engine()
-    Session = sessionmaker(bind=engine)
-    return Session()
+    """Return a new session from the shared session factory."""
+    return _Session()
+
 
 def create_tables():
-    """Create all tables in the database"""
+    """Create all tables in the database (idempotent via create_all)."""
     # Late-import models so they register themselves with Base.metadata
     import database.models.setting_value  # noqa: F401
     import database.models.settings  # noqa: F401
     import database.models.profile   # noqa: F401
-    engine = get_engine()
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(_engine)
     migrate_database()
 
 
@@ -58,17 +69,22 @@ def migrate_database():
 
 _init_done = False
 
+
 def init_database():
-    """Initialize the database with tables. No-op after the first call."""
+    """Initialize the database (tables + seed). No-op after the first successful call."""
     global _init_done
     if _init_done:
         return
-    _init_done = True
-    if not DB_FILE.exists():
-        create_tables()
+    # Issue 1: always create tables so new models get their tables on existing DBs
+    is_new_db = not DB_FILE.exists()
+    create_tables()
+    if is_new_db:
+        # Issue 7: log failures instead of silently swallowing them
         try:
             from scripts.seed_settings_defaults_sql import seed_defaults
             seed_defaults()
-        except Exception:
-            pass
-        print("Database initialized successfully")
+        except Exception as exc:
+            log.warning("seed_defaults() failed on new database: %s", exc)
+    # Issue 2: set flag only after all operations succeed
+    _init_done = True
+    log.debug("Database initialized (new_db=%s)", is_new_db)
