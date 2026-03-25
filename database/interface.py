@@ -19,11 +19,14 @@ Notes:
 - Wraps internal ProfileManager methods with a stable, GUI/service-friendly API.
 """
 
+import logging
 from typing import List, Optional, Dict, Any, Union
 from database.db import init_database, create_tables
 from database.managers.profile import ProfileManager
 from database.managers.settings import SettingsManager
 from database.models.profile import Profile, ProfileConfig
+
+_log = logging.getLogger(__name__)
 
 
 class DatabaseInterface:
@@ -41,8 +44,8 @@ class DatabaseInterface:
         try:
             from scripts.seed_settings_defaults_sql import seed_defaults
             seed_defaults()
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("seed_defaults() failed: %s", exc)
 
     # Profiles CRUD
 

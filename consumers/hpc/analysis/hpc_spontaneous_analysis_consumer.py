@@ -45,10 +45,17 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         if 'path' in configDict:
             self.path = configDict['path']
-            with open(self.path, 'r') as f:
-                self.config: dict = toml.load(f)
         else:
-            self.path = None
+            import settings as _settings
+            self.path = _settings.TOML_FILE
+            if self.path is None:
+                raise RuntimeError(
+                    "HpcAnalysisProcessor: no 'path' in configDict and "
+                    "settings.TOML_FILE is not set — configure a TOML config first."
+                )
+
+        with open(self.path, 'r') as f:
+            self.config: dict = toml.load(f)
 
         self.axis1 = self.config.get('ANALYSIS', {}).get('AXIS1', None)
         self.axis2 = self.config.get('ANALYSIS', {}).get('AXIS2', None)

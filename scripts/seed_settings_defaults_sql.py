@@ -28,9 +28,12 @@ Creates (if missing):
         analysis   (section)    — analysis consumer last-used / named configs
 """
 import sqlite3
-from pathlib import Path
+import settings as _settings
 
-_DB_FILE = Path(__file__).resolve().parent.parent / "dashpva.db"
+# Issue 3: resolve the DB path from settings.PROJECT_ROOT — same anchor used by
+# database.db — instead of computing it relative to __file__ which breaks when the
+# scripts/ directory moves or the package is installed elsewhere.
+_DB_FILE = _settings.PROJECT_ROOT / "dashpva.db"
 DB_PATH = str(_DB_FILE)
 
 

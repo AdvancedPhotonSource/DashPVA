@@ -1,8 +1,12 @@
 from typing import List, Optional, Union, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from database.db import get_session
 from database.models.settings import Settings
 from database.models.setting_value import SettingValue
+
+# Eager-load options reused across read methods so callers never hit
+# DetachedInstanceError when accessing .values or .children after session close.
+_SETTING_OPTS = [selectinload(Settings.values), selectinload(Settings.children)]
 
 class SettingsManager:
     """
@@ -19,17 +23,21 @@ class SettingsManager:
         session = self._session()
         try:
             # Check for existing setting with same name and parent
-            existing = session.query(Settings).filter(
-                Settings.name == name,
-                Settings.parent_id == parent_id
-            ).first()
+            existing = (
+                session.query(Settings)
+                .filter(Settings.name == name, Settings.parent_id == parent_id)
+                .options(*_SETTING_OPTS)
+                .first()
+            )
             if existing:
+                session.expunge_all()
                 return existing
-            
+
             obj = Settings(name=name, type=type_, desc=desc or "", parent_id=parent_id)
             session.add(obj)
             session.commit()
             session.refresh(obj)
+            session.expunge_all()
             return obj
         except Exception:
             session.rollback()
@@ -45,19 +53,29 @@ class SettingsManager:
     def get_all_settings(self) -> List[Settings]:
         session = self._session()
         try:
-            return session.query(Settings).order_by(Settings.type, Settings.name).all()
+            objs = (
+                session.query(Settings)
+                .options(*_SETTING_OPTS)
+                .order_by(Settings.type, Settings.name)
+                .all()
+            )
+            session.expunge_all()
+            return objs
         finally:
             session.close()
 
     def get_settings_by_type(self, type_: str) -> List[Settings]:
         session = self._session()
         try:
-            return (
+            objs = (
                 session.query(Settings)
                 .filter(Settings.type == type_)
+                .options(*_SETTING_OPTS)
                 .order_by(Settings.name)
                 .all()
             )
+            session.expunge_all()
+            return objs
         finally:
             session.close()
 
@@ -72,14 +90,30 @@ class SettingsManager:
     def get_setting_by_name(self, name: str) -> Optional[Settings]:
         session = self._session()
         try:
-            return session.query(Settings).filter(Settings.name == name).first()
+            obj = (
+                session.query(Settings)
+                .filter(Settings.name == name)
+                .options(*_SETTING_OPTS)
+                .first()
+            )
+            if obj:
+                session.expunge_all()
+            return obj
         finally:
             session.close()
 
     def get_setting_by_id(self, id_: int) -> Optional[Settings]:
         session = self._session()
         try:
-            return session.query(Settings).get(id_)
+            obj = (
+                session.query(Settings)
+                .filter(Settings.id == id_)
+                .options(*_SETTING_OPTS)
+                .first()
+            )
+            if obj:
+                session.expunge_all()
+            return obj
         finally:
             session.close()
 
@@ -87,7 +121,7 @@ class SettingsManager:
     def update_setting_desc(self, id_: int, desc: str) -> bool:
         session = self._session()
         try:
-            obj = session.query(Settings).get(id_)
+            obj = session.query(Settings).filter(Settings.id == id_).first()
             if not obj:
                 return False
             obj.desc = desc
@@ -102,7 +136,7 @@ class SettingsManager:
     def update_setting(self, id_: int, name: str, type_: str) -> bool:
         session = self._session()
         try:
-            obj = session.query(Settings).get(id_)
+            obj = session.query(Settings).filter(Settings.id == id_).first()
             if not obj:
                 return False
             obj.name = name
@@ -117,12 +151,20 @@ class SettingsManager:
 
     # Setting Value operations
     def add_setting_value(self, setting_id: int, key: str, value, value_type: Optional[str] = None) -> bool:
-        """Add a new key-value pair to a setting."""
+        """Add a new key-value pair to a setting (no-op if key already exists)."""
         session = self._session()
         try:
-            setting = session.query(Settings).get(setting_id)
+            setting = session.query(Settings).filter(Settings.id == setting_id).first()
             if not setting:
                 return False
+
+            # Issue 6: dedup on (setting_id, key) — consistent with seed script
+            existing = session.query(SettingValue).filter(
+                SettingValue.setting_id == setting_id,
+                SettingValue.key == key,
+            ).first()
+            if existing:
+                return True
 
             setting_value = SettingValue(setting_id=setting_id, key=key)
             setting_value.set_value(value, value_type)
@@ -286,7 +328,12 @@ class SettingsManager:
         """Get all values for a setting as a dictionary."""
         session = self._session()
         try:
-            setting = session.query(Settings).get(setting_id)
+            setting = (
+                session.query(Settings)
+                .filter(Settings.id == setting_id)
+                .options(selectinload(Settings.values))
+                .first()
+            )
             if not setting:
                 return {}
             return setting.get_all_values()
@@ -297,7 +344,12 @@ class SettingsManager:
         """Return (key, value, value_type) tuples for a setting."""
         session = self._session()
         try:
-            setting = session.query(Settings).get(setting_id)
+            setting = (
+                session.query(Settings)
+                .filter(Settings.id == setting_id)
+                .options(selectinload(Settings.values))
+                .first()
+            )
             if not setting:
                 return []
             return [(sv.key, sv.get_value(), sv.value_type) for sv in setting.values]
@@ -320,7 +372,11 @@ class SettingsManager:
         """Get all root settings (settings with no parent)."""
         session = self._session()
         try:
-            return session.query(Settings).filter(Settings.parent_id.is_(None)).order_by(Settings.type, Settings.name).all()
+            # Load all so that children references across objects are populated
+            all_objs = session.query(Settings).options(*_SETTING_OPTS).all()
+            roots = [o for o in all_objs if o.parent_id is None]
+            session.expunge_all()
+            return roots
         finally:
             session.close()
 
@@ -328,18 +384,35 @@ class SettingsManager:
         """Get all direct children of a setting."""
         session = self._session()
         try:
-            return session.query(Settings).filter(Settings.parent_id == parent_id).order_by(Settings.name).all()
+            objs = (
+                session.query(Settings)
+                .filter(Settings.parent_id == parent_id)
+                .options(*_SETTING_OPTS)
+                .order_by(Settings.name)
+                .all()
+            )
+            session.expunge_all()
+            return objs
         finally:
             session.close()
 
     def get_setting_tree(self) -> List[Settings]:
-        """Get all settings organized as a tree structure."""
+        """Get all settings organised as a tree structure."""
         session = self._session()
         try:
-            # Get all settings with their relationships loaded
-            settings = session.query(Settings).all()
-            # Return only root settings - children will be accessible via relationships
-            return [s for s in settings if s.parent_id is None]
+            # Load everything with values eager-loaded; then touch .children for
+            # every node so SQLAlchemy populates the InstrumentedLists from the
+            # identity map before we expunge — no extra round-trips needed.
+            all_settings = (
+                session.query(Settings)
+                .options(selectinload(Settings.values))
+                .all()
+            )
+            for s in all_settings:
+                _ = s.children  # populate from identity map while session is live
+            roots = [s for s in all_settings if s.parent_id is None]
+            session.expunge_all()
+            return roots
         finally:
             session.close()
 
@@ -347,27 +420,29 @@ class SettingsManager:
         """Get a setting by its hierarchical path."""
         if not path:
             return None
-        
+
         session = self._session()
         try:
             current = None
             for name in path:
                 if current is None:
-                    # Looking for root setting
-                    current = session.query(Settings).filter(
-                        Settings.name == name,
-                        Settings.parent_id.is_(None)
-                    ).first()
+                    current = (
+                        session.query(Settings)
+                        .filter(Settings.name == name, Settings.parent_id.is_(None))
+                        .options(*_SETTING_OPTS)
+                        .first()
+                    )
                 else:
-                    # Looking for child setting
-                    current = session.query(Settings).filter(
-                        Settings.name == name,
-                        Settings.parent_id == current.id
-                    ).first()
-                
+                    current = (
+                        session.query(Settings)
+                        .filter(Settings.name == name, Settings.parent_id == current.id)
+                        .options(*_SETTING_OPTS)
+                        .first()
+                    )
                 if current is None:
                     return None
-            
+            if current:
+                session.expunge_all()
             return current
         finally:
             session.close()
@@ -376,23 +451,22 @@ class SettingsManager:
         """Move a setting to a new parent (or make it root if new_parent_id is None)."""
         session = self._session()
         try:
-            setting = session.query(Settings).get(setting_id)
+            setting = session.query(Settings).filter(Settings.id == setting_id).first()
             if not setting:
                 return False
-            
-            # Check for circular reference
+
             if new_parent_id is not None:
-                parent = session.query(Settings).get(new_parent_id)
+                parent = session.query(Settings).filter(Settings.id == new_parent_id).first()
                 if not parent:
                     return False
-                
-                # Check if new parent is a descendant of this setting
+
+                # Check for circular reference
                 current = parent
                 while current:
                     if current.id == setting_id:
-                        return False  # Would create circular reference
+                        return False
                     current = current.parent
-            
+
             setting.parent_id = new_parent_id
             session.commit()
             return True
@@ -406,7 +480,7 @@ class SettingsManager:
     def delete_setting(self, id_: int) -> bool:
         session = self._session()
         try:
-            obj = session.query(Settings).get(id_)
+            obj = session.query(Settings).filter(Settings.id == id_).first()
             if not obj:
                 return False
             session.delete(obj)
