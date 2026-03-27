@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
 from PyQt5 import uic
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QFileDialog
 import pyqtgraph as pg
 
 from utils import PVAReader, HDF5Handler
@@ -14,7 +14,7 @@ import settings as app_settings
 
 class ScanMonitorWindow(QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
-    signal_trigger_save = pyqtSignal(bool, bool, bool)  # clear_caches, write_temp, write_output
+    signal_trigger_save = pyqtSignal(bool, bool, bool, str)  # clear_caches, write_temp, write_output, output_override
     
     def __init__(self, channel: str = ""):
         super(ScanMonitorWindow, self).__init__()
@@ -84,7 +84,11 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         self.lineedit_channel.textChanged.connect(self._on_channel_changed)
 
         self.btn_apply.clicked.connect(self._on_apply_clicked)
-        
+
+        if hasattr(self, 'btn_browse_folder'):
+            self.btn_browse_folder.clicked.connect(self._browse_save_folder)
+
+        self._refresh_save_fields()
         self._update_info_display()
 
     def _setup_graph(self):
@@ -224,7 +228,19 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
                 self.logger.info("Triggering HDF5Handler.save_to_h5...")
             except Exception:
                 pass
-            self.signal_trigger_save.emit(True, write_temp, write_output)
+            output_override = ''
+            try:
+                folder = self.lineedit_save_folder.text().strip() if hasattr(self, 'lineedit_save_folder') else ''
+                filename = self.lineedit_save_filename.text().strip() if hasattr(self, 'lineedit_save_filename') else ''
+                if folder and filename:
+                    output_override = folder.rstrip('/') + '/' + filename.lstrip('/')
+                elif folder:
+                    output_override = folder
+                elif filename:
+                    output_override = filename
+            except Exception:
+                pass
+            self.signal_trigger_save.emit(True, write_temp, write_output, output_override)
 
     def _on_writer_finished(self, message: str) -> None:
         """Callback when the HDF5 file is finished writing."""
@@ -401,7 +417,12 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
                     if file_path_pv or file_name_pv:
                         fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
                         fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
-                        combined = str(fp or '').strip() + str(fn or '').strip()
+                        fp_str = str(fp or '').strip()
+                        fn_str = str(fn or '').strip()
+                        if fp_str and fn_str:
+                            combined = fp_str.rstrip('/') + '/' + fn_str.lstrip('/')
+                        else:
+                            combined = fp_str or fn_str
                         file_output = combined if combined else "--"
                 except Exception:
                     pass
@@ -410,6 +431,26 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             # Update graph after refreshing labels
             self._update_graph()
         except: pass
+
+    def _refresh_save_fields(self):
+        """Re-read FILE_PATH and FILE_NAME PVs and populate the Save folder/filename fields."""
+        try:
+            file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
+            file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+            fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
+            fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
+            if hasattr(self, 'lineedit_save_folder'):
+                self.lineedit_save_folder.setText(str(fp or '').strip())
+            if hasattr(self, 'lineedit_save_filename'):
+                self.lineedit_save_filename.setText(str(fn or '').strip())
+        except Exception:
+            pass
+
+    def _browse_save_folder(self):
+        """Open a folder picker and set lineedit_save_folder."""
+        folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
+        if folder and hasattr(self, 'lineedit_save_folder'):
+            self.lineedit_save_folder.setText(folder)
 
     def _reset_graph(self):
         self.graph_x = []

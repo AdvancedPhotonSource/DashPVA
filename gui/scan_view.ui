@@ -198,7 +198,7 @@
        <item row="7" column="0">
         <widget class="QLabel" name="label_file_output_text">
          <property name="text">
-          <string>File Output:</string>
+          <string>Beamline Output (PV):</string>
          </property>
         </widget>
        </item>
@@ -206,6 +206,58 @@
         <widget class="QLabel" name="label_file_output">
          <property name="text">
           <string>--</string>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="0">
+        <widget class="QLabel" name="label_save_section">
+         <property name="text">
+          <string>─── DashPVA Save Override ───</string>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QLabel" name="label_save_folder_text">
+         <property name="text">
+          <string>Folder:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="1">
+        <layout class="QHBoxLayout" name="horizontalLayoutSaveFolder">
+         <item>
+          <widget class="QLineEdit" name="lineedit_save_folder">
+           <property name="placeholderText">
+            <string>Save folder...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btn_browse_folder">
+           <property name="text">
+            <string>Browse</string>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>60</width>
+             <height>28</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item row="10" column="0">
+        <widget class="QLabel" name="label_save_filename_text">
+         <property name="text">
+          <string>File Name:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="10" column="1">
+        <widget class="QLineEdit" name="lineedit_save_filename">
+         <property name="placeholderText">
+          <string>filename.h5</string>
          </property>
         </widget>
        </item>

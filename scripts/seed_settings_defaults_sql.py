@@ -94,7 +94,7 @@ def seed_defaults() -> None:
 
         # ── CONSUMERS (under PATHS) ───────────────────────────────────────── #
         consumers_id = get_or_create_setting(cur, "CONSUMERS", "path", "Consumer directories", paths_id)
-        add_value_if_missing(cur, consumers_id, "BASE", "consumers/hpc")
+        add_value_if_missing(cur, consumers_id, "BASE", "consumers")
         add_value_if_missing(cur, consumers_id, "IOC", "caIOC_servers")
         hpc_id = get_or_create_setting(cur, "hpc", "section", "HPC consumer names", consumers_id)
         add_value_if_missing(cur, hpc_id, "BASE", "hpc")
