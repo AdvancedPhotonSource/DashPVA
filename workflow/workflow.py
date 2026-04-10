@@ -1,3 +1,4 @@
+import re
 import sys
 import subprocess
 import threading
@@ -1650,6 +1651,7 @@ class Workflow(QDialog, LogMixin):
             self.processes['sim_server'] = process
             worker = Worker(process)
             worker.output_signal.connect(self.textEditSimServerOutput.appendPlainText)
+            worker.output_signal.connect(self._on_sim_server_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()
@@ -1670,6 +1672,10 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopSimServer.setEnabled(False)
             self.labelStatusSimServer.setText('Process ID: Not running')
             self.textEditSimServerOutput.appendPlainText('Sim Server stopped.')
+
+    def _on_sim_server_output(self, line: str):
+        if 'Generating random frames' in line:
+            self.labelStatusSimServer.setText(f'Please wait \u2192 {line.strip()}')
 
     # ------------------------------------------------------------------ #
     # Named config save / load (shared helpers)
@@ -2016,8 +2022,7 @@ class Workflow(QDialog, LogMixin):
             )
             self.processes['associator_consumers'] = process
             worker = Worker(process)
-            output_format = partial(self._format_and_append_output, target_widget=self.textEditAssociatorConsumersOutput)
-            worker.output_signal.connect(output_format)
+            worker.output_signal.connect(self._format_associator_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()
@@ -2051,6 +2056,76 @@ class Workflow(QDialog, LogMixin):
             color = "#33FF57"
         formatted_line = f"<font color='gray'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
         target_widget.appendHtml(formatted_line)
+
+    def _format_associator_output(self, line: str) -> None:
+        """Accumulate pvapy stats blocks and replace them with a compact one-liner."""
+        if not hasattr(self, '_assoc_buffer'):
+            self._assoc_buffer = []
+            self._assoc_in_stats = False
+        stripped = line.strip()
+        if "'consumerId'" in stripped:
+            if self._assoc_buffer:
+                self._flush_associator_stats()
+            self._assoc_buffer = [stripped]
+            self._assoc_in_stats = True
+            return
+        if self._assoc_in_stats:
+            self._assoc_buffer.append(stripped)
+            if stripped.endswith('}}'):
+                self._flush_associator_stats()
+            return
+        self._format_and_append_output(line, self.textEditAssociatorConsumersOutput)
+
+    def _flush_associator_stats(self) -> None:
+        """Parse accumulated stats lines and emit a compact summary."""
+        full = ' '.join(self._assoc_buffer)
+        self._assoc_buffer = []
+        self._assoc_in_stats = False
+
+        def get_int(pat):
+            m = re.search(pat, full)
+            return int(m.group(1)) if m else 0
+
+        def get_float(pat):
+            m = re.search(pat, full)
+            return float(m.group(1)) if m else 0.0
+
+        consumer_id = get_int(r"'consumerId':\s*(\d+)")
+        ch_m = re.search(r"'inputChannel':\s*'([^']+)'", full)
+        channel = ch_m.group(1) if ch_m else '?'
+        recv_rate = get_float(r"'receivedRate':\s*([\d.]+)Hz")
+        pub_rate  = get_float(r"'publishedRate':\s*([\d.]+)Hz")
+        n_proc    = get_int(r"'nFramesProcessed':\s*(\d+)")
+        n_err     = get_int(r"'nFrameErrors':\s*(\d+)")
+        n_disc    = get_int(r"'nMetadataDiscarded':\s*(\d+)")
+        n_md_ok   = get_int(r"'nMetadataProcessed':\s*(\d+)")
+
+        # Find channels with no data (receivedRate 0.0 in their metadata entry)
+        dead = []
+        for sec in re.split(r"'metadata-\d+':", full)[1:]:
+            ch = re.search(r"'channel':\s*'([^']+)'", sec)
+            if ch and re.search(r"'receivedRate':\s*0\.0Hz", sec):
+                dead.append(ch.group(1))
+
+        ts = datetime.now().strftime('%H:%M:%S')
+        color = '#FF5733' if n_err > 0 else ('#33FF57' if n_proc > 0 else '#FFC300')
+        summary = (
+            f"Consumer {consumer_id} | {channel} | "
+            f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
+            f"frames: {n_proc} ok  {n_err} err | "
+            f"meta: {n_md_ok} ok  {n_disc} discarded"
+        )
+        self.textEditAssociatorConsumersOutput.appendHtml(
+            f"<font color='gray'>{ts}</font> <font color='{color}'>{summary}</font>"
+        )
+        if dead:
+            dead_list = ', '.join(dead[:6])
+            if len(dead) > 6:
+                dead_list += f' +{len(dead) - 6} more'
+            self.textEditAssociatorConsumersOutput.appendHtml(
+                f"<font color='gray'>{ts}</font>"
+                f"<font color='#FF8C00'>&nbsp;&nbsp;no data: {dead_list}</font>"
+            )
 
     # ------------------------------------------------------------------ #
     # Collector

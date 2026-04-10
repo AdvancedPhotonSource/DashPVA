@@ -21,6 +21,10 @@
        <pointsize>12</pointsize>
       </font>
      </property>
+     <property name="styleSheet">
+      <string notr="true">QTabBar::tab:first { background-color: #BDE0F7; }
+QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
+     </property>
      <property name="currentIndex">
       <number>1</number>
      </property>
@@ -28,6 +32,9 @@
       <attribute name="title">
        <string>Sim Server Processor</string>
       </attribute>
+      <property name="styleSheet">
+       <string notr="true">background-color: #D6EEF8;</string>
+      </property>
       <layout class="QVBoxLayout" name="verticalLayoutSimServer">
        <item>
         <layout class="QGridLayout" name="gridLayout_2">
@@ -226,7 +233,7 @@
          <item>
           <widget class="QPushButton" name="buttonRunSimServer">
            <property name="text">
-            <string>Run</string>
+            <string>Generate</string>
            </property>
           </widget>
          </item>

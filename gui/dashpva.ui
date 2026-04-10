@@ -6,33 +6,54 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>420</width>
-    <height>360</height>
+    <width>480</width>
+    <height>300</height>
    </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>460</width>
+    <height>0</height>
+   </size>
   </property>
   <property name="windowTitle">
    <string>DashPVA Launcher</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="spacing">
-    <number>8</number>
+    <number>6</number>
    </property>
    <property name="leftMargin">
-    <number>12</number>
+    <number>16</number>
    </property>
    <property name="topMargin">
-    <number>12</number>
+    <number>16</number>
    </property>
    <property name="rightMargin">
-    <number>12</number>
+    <number>16</number>
    </property>
    <property name="bottomMargin">
     <number>12</number>
    </property>
+
    <item>
     <widget class="QLabel" name="lbl_header">
      <property name="styleSheet">
-      <string notr="true">font-size: 16px; font-weight: bold;</string>
+      <string notr="true">font-size: 22px; font-weight: 700; color: #1B2333; padding: 2px 0 0 0;</string>
+     </property>
+     <property name="text">
+      <string>DashPVA</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+
+   <item>
+    <widget class="QLabel" name="lbl_subtitle">
+     <property name="styleSheet">
+      <string notr="true">font-size: 12px; color: #7A8394; padding: 0 0 6px 0;</string>
      </property>
      <property name="text">
       <string>Select a module to launch</string>
@@ -43,10 +64,12 @@
     </widget>
    </item>
 
+   <!-- Dynamic sections inserted here by _insert_registry_sections() -->
+
    <item>
     <widget class="QLabel" name="lbl_status">
      <property name="styleSheet">
-      <string notr="true">color: #666;</string>
+      <string notr="true">font-size: 11px; color: #7A8394;</string>
      </property>
      <property name="text">
       <string>No modules running</string>
@@ -56,23 +79,26 @@
      </property>
     </widget>
    </item>
-  <!-- Ephemeral info banner just above the bottom button bar -->
-  <item>
-   <widget class="QLabel" name="lbl_info">
-    <property name="styleSheet">
-     <string notr="true">background-color: #FFF9C4; color: #555; border: 1px solid #F0E68C; padding: 6px; border-radius: 4px; font-size: 11px;</string>
-    </property>
-    <property name="text">
-     <string></string>
-    </property>
-    <property name="wordWrap">
-     <bool>true</bool>
-    </property>
-   </widget>
-  </item>
+
+   <item>
+    <widget class="QLabel" name="lbl_info">
+     <property name="styleSheet">
+      <string notr="true">background-color: #FFF8E1; color: #8B6914; border: 1px solid #FFE08A; padding: 7px 10px; border-radius: 6px; font-size: 11px;</string>
+     </property>
+     <property name="text">
+      <string></string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
 
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <property name="spacing">
+      <number>6</number>
+     </property>
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">
@@ -112,6 +138,7 @@
      </item>
     </layout>
    </item>
+
   </layout>
  </widget>
  <resources/>

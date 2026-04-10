@@ -90,7 +90,7 @@ def setup(ioc):
     """Sets up the PVA workflow or the simulator."""
     if ioc:
         click.echo('Running simulator setup...')
-        subprocess.Popen([sys.executable, 'consumers/sim_rsm_data.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen([sys.executable, 'consumers/caIOC_servers/sim_rsm_data.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
 
     click.echo('Running standard PVA setup...')
