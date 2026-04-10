@@ -563,19 +563,33 @@ class PVAReader(QObject):
         return data
     
     def get_output_file_location(self) -> dict:
-        if self.caches_initialized and self.cached_attributes:   
-            latest_attribute: dict = self.cached_attributes[-1]
-        else:
-            latest_attribute: dict = self.pv_attributes
-            
-        fp_pv_name = app_settings.METADATA_CA.get('FILE_PATH', 'FilePath:Value')
-        fn_pv_name = app_settings.METADATA_CA.get('FILE_NAME', 'FileName:Value')
-        file_path_pv = latest_attribute.get(fp_pv_name, '')
-        file_name_pv = latest_attribute.get(fn_pv_name, '')
-        
-        if file_path_pv != ' ' and file_name_pv != ' ':
-            return {'FilePath': file_path_pv,
-                    'FileName': file_name_pv}
+        fp_pv_name = app_settings.METADATA_CA.get('FILE_PATH', '')
+        fn_pv_name = app_settings.METADATA_CA.get('FILE_NAME', '')
+
+        file_path_val = ''
+        file_name_val = ''
+
+        # Always caget the live PV values — the save location can change between
+        # scan start and scan end, so cached frame attributes may be stale.
+        if fp_pv_name:
+            try:
+                val = caget(fp_pv_name, timeout=1.0)
+                if val is not None:
+                    file_path_val = str(val).strip()
+            except Exception:
+                pass
+        if fn_pv_name:
+            try:
+                val = caget(fn_pv_name, timeout=1.0)
+                if val is not None:
+                    file_name_val = str(val).strip()
+            except Exception:
+                pass
+
+        if file_path_val and file_name_val:
+            return {'FilePath': file_path_val, 'FileName': file_name_val}
+        elif file_path_val:
+            return {'FilePath': file_path_val}
         else:
             return {'FilePath': str(self.OUTPUT_FILE_LOCATION).strip()}
        
