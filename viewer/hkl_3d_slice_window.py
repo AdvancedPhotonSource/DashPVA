@@ -402,10 +402,6 @@ class HKL3DSliceWindow(QMainWindow):
             pass
         try:
             conv = RSMConverter()
-            if not conv.hkl_config:
-                from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(self, 'No Configuration', 'No configuration loaded. Please select a profile or TOML in the Workflow dialog.')
-                return
             points, intensities, num_images, shape = conv.load_h5_to_3d(file_name)
             if points.size == 0 or intensities.size == 0:
                 QMessageBox.warning(self, 'Loading Warning', 'No valid point data found in HDF5 file')

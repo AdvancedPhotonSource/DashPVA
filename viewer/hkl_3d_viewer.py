@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QFileDialog, QMe
 # Add the parent directory to the path so the font_scaling.py file can be imported
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import PVAReader, HDF5Writer, SizeManager
+import settings as app_settings
 from hkl_3d_slice_window import HKL3DSliceWindow
 from utils.log_manager import LogMixin
 
@@ -39,69 +40,28 @@ class ConfigDialog(QDialog, LogMixin):
         except Exception:
             pass
         self.setWindowTitle('PV Config')
-        # initializing variables to pass to Image Viewer
         self.input_channel = ""
-        self.config_path =  ""
-        # class can be prefilled with text
         self.init_ui()
-        
-        # Connecting signasl to 
-        self.btn_clear.clicked.connect(self.clear_pv_setup)
-        self.btn_browse.clicked.connect(self.browse_file_dialog)
-        self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
+        self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        """
-        Prefills text in the Line Editors for the user.
-        """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_config.setText(self.le_config.text())
-
-    def browse_file_dialog(self) -> None:
-        """
-        Opens a file dialog to select the path to a TOML configuration file.
-        """
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
-
-        self.le_config.setText(self.pvs_path)
-    
-    def clear_pv_setup(self) -> None:
-        """
-        Clears line edit that tells image view where the config file is.
-        """
-        self.le_config.clear()
 
     def dialog_accepted(self) -> None:
-        """
-        Handles the final step when the dialog's accept button is pressed.
-        Starts the HKLImageWindow process with filled information.
-        """
+        """Open the HKL viewer with the given input channel; config comes from settings.py."""
         self.input_channel = self.le_input_channel.text()
-        self.config_path = self.le_config.text()
-        if osp.isfile(self.config_path) or (self.config_path == ''):
-            self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel,
-                                            file_path=self.config_path,) 
-        else:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.error(f"File Path {self.config_path} doesn't exist")
-            except Exception:
-                pass
-            #TODO: ADD ERROR Dialog rather than print message so message is clearer
-            self.new_dialog = ConfigDialog()
-            self.new_dialog.show()    
+        self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel)
 
 
 class HKLImageWindow(QMainWindow, LogMixin):
     images_plotted = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
+    def __init__(self, input_channel=None):
         """
         Initializes the main window for real-time image visualization and manipulation.
 
         Args:
             input_channel (str): The PVA input channel for the detector.
-            file_path (str): The file path for loading configuration.
         """
         super(HKLImageWindow, self).__init__()
         uic.loadUi('gui/hkl_viewer_window.ui', self)
@@ -117,9 +77,8 @@ class HKLImageWindow(QMainWindow, LogMixin):
         self.image = None
         self.call_id_plot = 0
         self.image_is_transposed = False
-        self._input_channel = input_channel
+        self._input_channel = input_channel or 'pvapy:image'
         self.pv_prefix.setText(self._input_channel)
-        self._file_path = file_path
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -186,9 +145,8 @@ class HKLImageWindow(QMainWindow, LogMixin):
             self.stop_timers()
             self.plotter.clear()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path,
-                                         viewer_type='rsm') 
+                self.reader = PVAReader(input_channel=self._input_channel,
+                                         viewer_type='rsm')
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:

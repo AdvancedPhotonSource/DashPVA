@@ -399,12 +399,7 @@ class Workspace3D(BaseTab):
                 if not file_name: return
                 file_path = file_name
             conv = RSMConverter()
-            if not conv.hkl_config:
-                from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(self, 'No Configuration', 'No configuration loaded. Please select a profile or TOML in the Workflow dialog.')
-                return
             # 2. Load the raw data
-            # if the data is uncompressed
             data = conv.load_h5_to_3d(file_path)
             points, intensities, num_images, shape = data
 
