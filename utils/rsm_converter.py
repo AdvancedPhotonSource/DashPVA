@@ -89,11 +89,12 @@ class RSMConverter:
     def get_physics_params(self, h5_file: h5py.File):
         """Extract beam directions, UB matrix, and energy from HKL metadata."""
         meta = h5_file["entry/data/metadata/HKL"]
-        primary = [meta[f"PRIMARY_BEAM_DIRECTION/AXIS_NUMBER_{i}"][0] for i in range(1, 4)]
-        inplane = [meta[f"INPLANE_REFERENCE_DIRECITON/AXIS_NUMBER_{i}"][0] for i in range(1, 4)]
-        surface = [meta[f"SAMPLE_SURFACE_NORMAL_DIRECITON/AXIS_NUMBER_{i}"][0] for i in range(1, 4)]
+        # ravel() handles datasets stored as (n_frames, 1) or (n_frames,)
+        primary = [float(np.ravel(meta[f"PRIMARY_BEAM_DIRECTION/AXIS_NUMBER_{i}"])[0]) for i in range(1, 4)]
+        inplane = [float(np.ravel(meta[f"INPLANE_REFERENCE_DIRECITON/AXIS_NUMBER_{i}"])[0]) for i in range(1, 4)]
+        surface = [float(np.ravel(meta[f"SAMPLE_SURFACE_NORMAL_DIRECITON/AXIS_NUMBER_{i}"])[0]) for i in range(1, 4)]
         ub = self.get_ub_matrix_from_file(h5_file)
-        energy = float(meta["SPEC/ENERGY_VALUE"][0]) * 1000.0
+        energy = float(np.ravel(meta["SPEC/ENERGY_VALUE"])[0]) * 1000.0
         return primary, inplane, surface, ub, energy
 
     def get_intensity(self, filename: str) -> np.ndarray:
@@ -108,12 +109,14 @@ class RSMConverter:
         roi = [0, shape[1], 0, shape[2]]
         p_dir1 = self._first_str(det["PIXEL_DIRECTION_1"])
         p_dir2 = self._first_str(det["PIXEL_DIRECTION_2"])
-        cch1 = int(det["CENTER_CHANNEL_PIXEL"][0])
-        cch2 = int(det["CENTER_CHANNEL_PIXEL"][1])
-        size = det["SIZE"][...]
+        # Flatten before indexing — PVs stored per-frame may have shape (n_frames, N)
+        cch = np.ravel(det["CENTER_CHANNEL_PIXEL"][...])
+        cch1 = int(cch[0])
+        cch2 = int(cch[1])
+        size = np.ravel(det["SIZE"][...])
         pw1 = float(size[0]) / float(shape[1])
         pw2 = float(size[1]) / float(shape[2])
-        dist = float(det["DISTANCE"][0])
+        dist = float(np.ravel(det["DISTANCE"][...])[0])
         return p_dir1, p_dir2, cch1, cch2, shape[1], shape[2], pw1, pw2, dist, roi
 
     # Geometry extraction
@@ -132,14 +135,14 @@ class RSMConverter:
                 fallback_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 sc_dir.append(dir_val)
-                sc_pos.append(float(h5_file[f"{path}/POSITION"][frame]))
+                sc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
         if not fallback_found:
             for axis in sample_priority:
                 path = f"{hkl_base}/{axis}"
                 if path in h5_file:
                     dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                     sc_dir.append(dir_val)
-                    sc_pos.append(float(h5_file[f"{path}/POSITION"][frame]))
+                    sc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
 
         # Prefer fallback DETECTOR_CIRCLE_AXIS_1..2 if available, else canonical
         fallback_d_found = False
@@ -149,14 +152,14 @@ class RSMConverter:
                 fallback_d_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 dc_dir.append(dir_val)
-                dc_pos.append(float(h5_file[f"{path}/POSITION"][frame]))
+                dc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
         if not fallback_d_found:
             for axis in detector_priority:
                 path = f"{hkl_base}/{axis}"
                 if path in h5_file:
                     dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                     dc_dir.append(dir_val)
-                    dc_pos.append(float(h5_file[f"{path}/POSITION"][frame]))
+                    dc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
 
         return list(sc_dir), list(sc_pos), list(dc_dir), list(dc_pos)
 
