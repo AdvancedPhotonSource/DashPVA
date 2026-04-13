@@ -7,122 +7,12 @@
     <x>0</x>
     <y>0</y>
     <width>470</width>
-    <height>388</height>
+    <height>200</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QGroupBox" name="gbox_roi_info">
-   <property name="geometry">
-    <rect>
-     <x>10</x>
-     <y>140</y>
-     <width>451</width>
-     <height>161</height>
-    </rect>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
-   <property name="title">
-    <string>Optional Setup</string>
-   </property>
-   <widget class="QLineEdit" name="le_config">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>60</y>
-      <width>431</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">border:1px solid black;
-border-radius:3;
-
-</string>
-    </property>
-    <property name="text">
-     <string>/home/beams18/USER6IDB/DashPVA/pv_configs/6id_config.toml</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="btn_browse">
-    <property name="geometry">
-     <rect>
-      <x>360</x>
-      <y>110</y>
-      <width>80</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-    </property>
-    <property name="text">
-     <string>Browse</string>
-    </property>
-    <property name="default">
-     <bool>false</bool>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="btn_clear">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>110</y>
-      <width>80</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="styleSheet">
-     <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-    </property>
-    <property name="text">
-     <string>Clear</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="lbl_config">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>34</y>
-      <width>161</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Config TOML</string>
-    </property>
-   </widget>
-  </widget>
   <widget class="QGroupBox" name="gb_viewer_setup">
    <property name="geometry">
     <rect>
@@ -186,7 +76,7 @@ border-radius:3;
    <property name="geometry">
     <rect>
      <x>130</x>
-     <y>330</y>
+     <y>140</y>
      <width>181</width>
      <height>51</height>
     </rect>
@@ -203,9 +93,6 @@ border-radius:3;
  </widget>
  <tabstops>
   <tabstop>le_input_channel</tabstop>
-  <tabstop>btn_browse</tabstop>
-  <tabstop>le_config</tabstop>
-  <tabstop>btn_clear</tabstop>
  </tabstops>
  <resources/>
  <connections>

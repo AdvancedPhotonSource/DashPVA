@@ -34,7 +34,6 @@ class ConfigDialog(QDialog):
 
         Attributes:
             input_channel (str): Input channel for PVA.
-            config_path (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
