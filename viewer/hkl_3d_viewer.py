@@ -159,8 +159,7 @@ class HKLImageWindow(QMainWindow, LogMixin):
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path,
+                self.reader = PVAReader(input_channel=self._input_channel,
                                          viewer_type='rsm')
                 self.file_writer.pva_reader = self.reader
             self.btn_save_h5.clicked.connect(self.save_caches_clicked)

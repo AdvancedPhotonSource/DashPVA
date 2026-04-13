@@ -254,8 +254,9 @@ class DiffractionImageWindow(QMainWindow):
             self.image_view.clear()
             self.reset_rsm_vars()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                # print('[start_live_view] reader is None — creating new PVAReader')
+                self.reader = PVAReader(input_channel=self._input_channel)
+                # print(f'[start_live_view] reader created: input_channel={self.reader.input_channel} ROI_IN_CONFIG={self.reader.ROI_IN_CONFIG} HKL_IN_CONFIG={self.reader.HKL_IN_CONFIG} CACHING_MODE={self.reader.CACHING_MODE}')
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
@@ -271,8 +272,8 @@ class DiffractionImageWindow(QMainWindow):
                 # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel)
+                # print(f'[start_live_view] new reader created: input_channel={self.reader.input_channel} ROI_IN_CONFIG={self.reader.ROI_IN_CONFIG} HKL_IN_CONFIG={self.reader.HKL_IN_CONFIG} CACHING_MODE={self.reader.CACHING_MODE}')
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
