@@ -40,35 +40,16 @@ class ConfigDialog(QDialog):
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
         self.input_channel = ''
-        self.config_path = ''
         # class can be prefilled with text
         self.init_ui()
-        
-        # Connecting signasl to 
-        self.btn_clear.clicked.connect(self.clear_pv_setup)
-        self.btn_browse.clicked.connect(self.browse_file_dialog)
-        self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
+
+        self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
         """
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_config.setText(self.le_config.text())
-
-    def browse_file_dialog(self) -> None:
-        """
-        Opens a file dialog to select the path to a TOML configuration file.
-        """
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
-
-        self.le_config.setText(self.pvs_path)
-
-    def clear_pv_setup(self) -> None:
-        """
-        Clears line edit that tells image view where the config file is.
-        """
-        self.le_config.clear()
 
     def dialog_accepted(self) -> None:
         """
@@ -76,30 +57,25 @@ class ConfigDialog(QDialog):
         Starts the DiffractionImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
-        self.config_path = self.le_config.text()
-        if osp.isfile(self.config_path) or (self.config_path == ''):
-            self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel,
-                                            file_path=self.config_path,) 
-        else:
-            print('File Path Doesn\'t Exitst')  
-            #TODO: ADD ERROR Dialog rather than print message so message is clearer
-            self.new_dialog = ConfigDialog()
-            self.new_dialog.show()    
+        self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
-class DiffractionImageWindow(QMainWindow):
+class DiffractionImageWindow(QMainWindow, LogMixin):
     hkl_data_updated = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
+    def __init__(self, input_channel=None):
         """
         Initializes the main window for real-time image visualization and manipulation.
 
         Args:
             input_channel (str): The PVA input channel for the detector.
-            file_path (str): The file path for loading configuration.
         """
         super(DiffractionImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
+        try:
+            self.set_log_manager(viewer_name="AreaDetViewer")
+        except Exception:
+            pass
         self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
@@ -116,7 +92,6 @@ class DiffractionImageWindow(QMainWindow):
         self.stats_data = {}
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
-        self._file_path = file_path
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -315,7 +290,8 @@ class DiffractionImageWindow(QMainWindow):
                     self.add_rois()
                     self.start_timers()
         except Exception as e:
-            print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
+            if hasattr(self, 'logger'):
+                self.logger.exception(f'Error starting image viewer: {e}')
 
     def stop_live_view_clicked(self) -> None:
         """
