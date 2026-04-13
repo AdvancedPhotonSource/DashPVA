@@ -262,9 +262,10 @@ class PVAReader(QObject):
                 self.is_scan_complete = False
                 self.reader_scan_complete.emit()
 
-        except Exception:
-            self.frames_received -= 1
-            self.frames_missed += 1
+        except Exception as e:
+            import traceback
+            print(f'[pva_callback] EXCEPTION frame={self.frames_received}: {e}', flush=True)
+            traceback.print_exc()
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         name_components = pvname.split(":")
