@@ -3,7 +3,6 @@ import sys
 import time
 import subprocess
 import numpy as np
-import os.path as osp
 import pyqtgraph as pg
 import xrayutilities as xu
 from PyQt5 import uic
@@ -11,7 +10,7 @@ from PyQt5 import uic
 from epics import PV, pv
 from epics import camonitor, caget
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QSlider
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
 from analysis_window import AnalysisWindow 
@@ -19,6 +18,8 @@ import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
+from utils.log_manager import LogMixin
+import settings as app_settings
 # from ..utils.size_manager import SizeManager
 
 
