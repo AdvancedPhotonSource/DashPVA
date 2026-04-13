@@ -580,18 +580,6 @@ class Workspace3D(BaseTab):
             except Exception:
                 pass
         
-        # Keep plane widget synchronized to final state
-        try:
-            widgets = getattr(self.plotter, 'plane_widgets', [])
-            if self.plane_widget is not None:
-                self.plane_widget.SetNormal(normal)
-                self.plane_widget.SetOrigin(origin)
-            elif widgets:
-                widgets[0].SetNormal(normal)
-                widgets[0].SetOrigin(origin)
-        except Exception:
-            pass
-            
         self.plotter.render()
         # Respect slice toggle state after update
         try:
