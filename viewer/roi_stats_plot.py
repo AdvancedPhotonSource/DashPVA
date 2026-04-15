@@ -48,6 +48,13 @@ class RoiStatsPlotDialog(QDialog):
         self.prefix = self.parent_viewer.reader.pva_prefix
         self.timer_labels = timer
 
+        # Apply ROI color from shared color map
+        from roi_stats_dialog import ROI_COLORS
+        roi_color = ROI_COLORS.get(stats_text)
+        title_prefix = stats_text
+        if roi_color:
+            title_prefix = f'<span style="color:{roi_color}">{stats_text}</span>'
+            self.setStyleSheet(f'QDialog {{ border: 2px solid {roi_color}; }}')
         self.setWindowTitle(f'{stats_text} - Live Stats Plot')
         self.resize(800, 600)
 
@@ -124,7 +131,7 @@ class RoiStatsPlotDialog(QDialog):
         for col, (label_text, key) in enumerate(headers):
             grid.addWidget(QLabel(f'<b>{label_text}</b>'), 0, col, alignment=Qt.AlignCenter)
             val_label = QLabel('--')
-            val_label.setAlignment(Qt.AlignCenter)
+            val_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self._analysis_labels[key] = val_label
             grid.addWidget(val_label, 1, col)
 

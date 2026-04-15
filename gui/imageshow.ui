@@ -1538,6 +1538,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <property name="text">
                  <string>0.0</string>
                 </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+                <property name="styleSheet">
+                 <string notr="true">color: rgb(255, 0, 0);</string>
+                </property>
                </widget>
               </item>
               <item row="1" column="1">
@@ -1556,6 +1562,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 </property>
                 <property name="text">
                  <string>0.0</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+                <property name="styleSheet">
+                 <string notr="true">color: rgb(0, 0, 255);</string>
                 </property>
                </widget>
               </item>
@@ -1576,6 +1588,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <property name="text">
                  <string>0.0</string>
                 </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+                <property name="styleSheet">
+                 <string notr="true">color: rgb(76, 187, 23);</string>
+                </property>
                </widget>
               </item>
               <item row="3" column="1">
@@ -1595,6 +1613,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <property name="text">
                  <string>0.0</string>
                 </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+                <property name="styleSheet">
+                 <string notr="true">color: rgb(255, 0, 255);</string>
+                </property>
                </widget>
               </item>
               <item row="4" column="1">
@@ -1613,6 +1637,9 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 </property>
                 <property name="text">
                  <string>0.0</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
                 </property>
                </widget>
               </item>
@@ -1651,7 +1678,7 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <item>
                  <widget class="QPushButton" name="btn_Stats1">
                   <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #ff0000; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
                   <property name="text"><string>Stats1</string></property>
                  </widget>
                 </item>
@@ -1670,7 +1697,7 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <item>
                  <widget class="QPushButton" name="btn_Stats2">
                   <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #0000ff; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
                   <property name="text"><string>Stats2</string></property>
                  </widget>
                 </item>
@@ -1689,7 +1716,7 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <item>
                  <widget class="QPushButton" name="btn_Stats3">
                   <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #4CBB17; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
                   <property name="text"><string>Stats3</string></property>
                  </widget>
                 </item>
@@ -1708,7 +1735,7 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <item>
                  <widget class="QPushButton" name="btn_Stats4">
                   <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #ff00ff; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
                   <property name="text"><string>Stats4</string></property>
                  </widget>
                 </item>

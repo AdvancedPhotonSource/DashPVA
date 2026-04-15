@@ -150,12 +150,10 @@ class DiffractionImageWindow(QMainWindow):
         
         # Initialize colormap once for better performance
         try:
-            # Try magma first
-            self.cet_colormap = get_colormap('magma')
+            self.cet_colormap = get_colormap('viridis')
         except Exception:
             try:
-                # Try from colorcet source
-                self.cet_colormap = get_colormap('magma', source='colorcet')
+                self.cet_colormap = get_colormap('viridis', source='colorcet')
             except Exception:
                 self.cet_colormap = get_colormap('magma')  # fallback
         

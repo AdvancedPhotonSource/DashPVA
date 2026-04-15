@@ -1,5 +1,15 @@
 from PyQt5.QtWidgets import QDialog
+from PyQt5.QtCore import Qt
 from PyQt5 import uic
+
+
+# Stats-to-ROI color mapping: Stats1=Red, Stats2=Blue, Stats3=Green, Stats4=Pink
+ROI_COLORS = {
+    'Stats1': '#ff0000',
+    'Stats2': '#0000ff',
+    'Stats3': '#4CBB17',
+    'Stats4': '#ff00ff',
+}
 
 
 class RoiStatsDialog(QDialog):
@@ -18,6 +28,22 @@ class RoiStatsDialog(QDialog):
         self.stats_text = stats_text
         self.parent = parent
         self.prefix = self.parent.reader.pva_prefix
+
+        # Apply ROI color to window title and value labels
+        color = ROI_COLORS.get(stats_text)
+        if color:
+            self.setStyleSheet(f'QDialog {{ color: {color}; }}')
+            for label in [self.stats_total_value, self.stats_min_value,
+                          self.stats_max_value, self.stats_sigma_value,
+                          self.stats_mean_value]:
+                label.setStyleSheet(f'color: {color};')
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        else:
+            for label in [self.stats_total_value, self.stats_min_value,
+                          self.stats_max_value, self.stats_sigma_value,
+                          self.stats_mean_value]:
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         # Setting up clock for updating QDialog Labels
         self.timer_labels = timer
         self.timer_labels.timeout.connect(self.update_stats_labels)
