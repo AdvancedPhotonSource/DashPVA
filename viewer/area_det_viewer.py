@@ -13,15 +13,18 @@ from PyQt5 import uic
 from epics import PV, pv
 from epics import camonitor, caget
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider,
+                             QLabel, QPushButton, QCheckBox, QHBoxLayout, QVBoxLayout)
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
 from roi_stats_plot import RoiStatsPlotDialog
+from mask_viewer import MaskViewerWindow
 from analysis_window import AnalysisWindow
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
+from utils.mask_manager import MaskManager
 # from ..utils.size_manager import SizeManager
 
 
@@ -123,6 +126,13 @@ class DiffractionImageWindow(QMainWindow):
         self.pv_prefix.setText(self._input_channel)
         self._file_path = file_path
 
+        # Mask management
+        self.mask_manager = MaskManager()
+        self.mask_viewer = None
+        self._dead_px_frames = []
+        self._dead_px_collecting = False
+        self._dead_px_target = 50
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
@@ -223,6 +233,186 @@ class DiffractionImageWindow(QMainWindow):
         self.lbl_threshold_range.show()
         
         self.analysis_window = None  # Initialize as None
+        self._build_mask_controls()
+
+    def _build_mask_controls(self):
+        """Build mask management UI programmatically and insert at top of sidebar."""
+        from PyQt5.QtWidgets import QGroupBox, QFormLayout, QSizePolicy
+
+        group = QGroupBox('Mask')
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        form = QFormLayout(group)
+        form.setVerticalSpacing(8)
+
+        # Row 0: mask status
+        self.lbl_mask_info = QLabel('No mask loaded')
+        self.lbl_mask_info.setFrameShape(QLabel.Box)
+        self.lbl_mask_info.setFrameShadow(QLabel.Sunken)
+        self.lbl_mask_info.setWordWrap(True)
+        form.addRow('Mask:', self.lbl_mask_info)
+
+        # Row 1: masked pixel count
+        self.lbl_mask_pixel_count = QLabel('0')
+        self.lbl_mask_pixel_count.setFrameShape(QLabel.Box)
+        self.lbl_mask_pixel_count.setFrameShadow(QLabel.Sunken)
+        form.addRow('Masked pixels:', self.lbl_mask_pixel_count)
+
+        # Row 2: Load / Show buttons
+        btn_row1 = QHBoxLayout()
+        self.btn_load_mask = QPushButton('Load Mask')
+        self.btn_load_mask.setMinimumHeight(35)
+        self.btn_load_mask.clicked.connect(self.load_mask_clicked)
+        btn_row1.addWidget(self.btn_load_mask)
+
+        self.btn_show_mask = QPushButton('Show Mask')
+        self.btn_show_mask.setMinimumHeight(35)
+        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
+        btn_row1.addWidget(self.btn_show_mask)
+        form.addRow(btn_row1)
+
+        # Row 3: Detect Dead Px / Clear buttons
+        btn_row2 = QHBoxLayout()
+        self.btn_detect_dead = QPushButton('Detect Dead Px')
+        self.btn_detect_dead.setMinimumHeight(35)
+        self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
+        btn_row2.addWidget(self.btn_detect_dead)
+
+        self.btn_clear_mask = QPushButton('Clear Mask')
+        self.btn_clear_mask.setMinimumHeight(35)
+        self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
+        btn_row2.addWidget(self.btn_clear_mask)
+        form.addRow(btn_row2)
+
+        # Row 4: Apply mask checkbox
+        self.chk_apply_mask = QCheckBox('Apply mask to display')
+        self.chk_apply_mask.setChecked(True)
+        form.addRow(self.chk_apply_mask)
+
+        # Insert at top of sidebar (index 0 = above stats group box)
+        self.verticalLayout_3.insertWidget(0, group)
+
+        # Update labels if mask was auto-loaded
+        self._update_mask_labels()
+
+    # ---- Mask handler methods ----
+
+    def load_mask_clicked(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, 'Load Mask File', '',
+            'Mask files (*.edf *.npy);;EDF files (*.edf);;NumPy files (*.npy)')
+        if not filepath:
+            return
+
+        try:
+            if filepath.lower().endswith('.edf'):
+                new_mask = self.mask_manager.load_edf(filepath)
+            else:
+                new_mask = self.mask_manager.load_npy(filepath)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to load mask:\n{e}')
+            return
+
+        # Ask whether to add or replace
+        replace = True
+        if self.mask_manager.mask is not None:
+            reply = QMessageBox.question(
+                self, 'Combine Mask',
+                'A mask is already loaded.\n\n'
+                'Click Yes to ADD (OR) with existing mask.\n'
+                'Click No to REPLACE the existing mask.',
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            if reply == QMessageBox.Cancel:
+                return
+            replace = (reply == QMessageBox.No)
+
+        self.mask_manager.combine_masks(new_mask, replace=replace)
+        self.mask_manager.mask_sources.append(filepath)
+        self.mask_manager.save_active_mask()
+        self._update_mask_labels()
+
+    def show_mask_clicked(self):
+        if self.mask_manager.mask is None:
+            QMessageBox.information(self, 'No Mask', 'No mask is loaded.')
+            return
+        if self.mask_viewer is not None:
+            self.mask_viewer.close()
+        self.mask_viewer = MaskViewerWindow(
+            mask=self.mask_manager.mask,
+            mask_path=self.mask_manager.mask_path,
+            parent=self)
+        self.mask_viewer.mask_updated.connect(self._on_mask_edited)
+        self.mask_viewer.show()
+
+    def detect_dead_pixels_clicked(self):
+        if self.reader is None:
+            QMessageBox.warning(self, 'No Reader', 'Start live view first.')
+            return
+        if self._dead_px_collecting:
+            QMessageBox.information(self, 'In Progress',
+                                    'Dead pixel detection is already collecting frames.')
+            return
+
+        self._dead_px_frames = []
+        self._dead_px_collecting = True
+        self.btn_detect_dead.setText(f'Collecting 0/{self._dead_px_target}...')
+        self.btn_detect_dead.setEnabled(False)
+
+    def _collect_dead_pixel_frame(self):
+        """Called from update_image to accumulate frames for dead pixel detection."""
+        if not self._dead_px_collecting or self.reader is None:
+            return
+        if self.reader.image is not None and len(self.reader.shape) >= 2:
+            self._dead_px_frames.append(self.reader.image.copy())
+            self.btn_detect_dead.setText(
+                f'Collecting {len(self._dead_px_frames)}/{self._dead_px_target}...')
+
+            if len(self._dead_px_frames) >= self._dead_px_target:
+                self._dead_px_collecting = False
+                dead_mask = self.mask_manager.detect_dead_pixels(
+                    self._dead_px_frames, variance_threshold=1.0)
+                self._dead_px_frames = []
+                self.btn_detect_dead.setText('Detect Dead Px')
+                self.btn_detect_dead.setEnabled(True)
+
+                if dead_mask is not None:
+                    num_dead = int(np.sum(dead_mask))
+                    self.mask_manager.combine_masks(dead_mask)
+                    self.mask_manager.save_active_mask()
+                    self._update_mask_labels()
+                    QMessageBox.information(
+                        self, 'Dead Pixel Detection',
+                        f'Detected {num_dead} stuck pixels '
+                        f'(from {self._dead_px_target} frames).\n'
+                        f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
+
+    def clear_mask_clicked(self):
+        if self.mask_manager.mask is None:
+            return
+        reply = QMessageBox.question(
+            self, 'Clear Mask',
+            'Remove the active mask?',
+            QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.mask_manager.clear_mask()
+            self._update_mask_labels()
+
+    def _on_mask_edited(self, mask):
+        self.mask_manager.mask = mask.copy()
+        self.mask_manager.save_active_mask()
+        self._update_mask_labels()
+
+    def _update_mask_labels(self):
+        if self.mask_manager.mask is not None:
+            path = self.mask_manager.mask_path or 'In memory'
+            self.lbl_mask_info.setText(os.path.basename(path))
+            self.lbl_mask_info.setToolTip(path)
+            count = self.mask_manager.num_masked_pixels
+            pct = self.mask_manager.mask_fraction * 100
+            self.lbl_mask_pixel_count.setText(f'{count:,} ({pct:.1f}%)')
+        else:
+            self.lbl_mask_info.setText('No mask loaded')
+            self.lbl_mask_info.setToolTip('')
+            self.lbl_mask_pixel_count.setText('0')
 
     def start_timers(self) -> None:
         """
@@ -303,7 +493,11 @@ class DiffractionImageWindow(QMainWindow):
                         # Note: min_thresh is typically 0, so we check max_thresh > 0 to ensure valid thresholds
                         if threshold_enabled and max_thresh > 0:
                             cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
-                        
+
+                        # Pass mask file if active
+                        if self.mask_manager.mask is not None and self.mask_manager.mask_path:
+                            cmd_args.extend(["--mask-file", self.mask_manager.mask_path])
+
                         # Don't redirect stderr so errors are visible in terminal for debugging
                         # Redirect stdout to avoid clutter, but keep stderr visible
                         process = subprocess.Popen(
@@ -1042,9 +1236,14 @@ class DiffractionImageWindow(QMainWindow):
                 self.image = np.reshape(np.mean(np.stack(self.reader.cached_images[index]), axis=0), self.reader.shape) # (self.reader.shape)
 
             if self.image is not None:
+                # Collect frame for dead pixel detection if active
+                self._collect_dead_pixel_frame()
                 # Apply vectorized thresholding if enabled
                 if self.chk_threshold.isChecked():
                     self.image = self.apply_threshold(self.image)
+                # Apply mask if enabled (before transpose/rotation)
+                if self.chk_apply_mask.isChecked() and self.mask_manager.mask is not None:
+                    self.image = self.mask_manager.apply_to_image(self.image)
                 self.image = np.transpose(self.image) if self.image_is_transposed else self.image
                 self.image = np.rot90(m=self.image, k=self.rot_num)
                 if len(self.image.shape) == 2:
@@ -1202,6 +1401,8 @@ class DiffractionImageWindow(QMainWindow):
         """
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
+        if self.mask_viewer is not None:
+            self.mask_viewer.close()
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread

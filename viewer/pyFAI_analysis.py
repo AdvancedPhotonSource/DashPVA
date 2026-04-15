@@ -237,8 +237,8 @@ class PyFAIAnalysisWindow(QMainWindow):
     image_received = pyqtSignal(object)  # Signal emitted when image is received (np.ndarray)
     error_occurred = pyqtSignal(str)  # Signal emitted when error occurs
     
-    def __init__(self, expected_image_shape=(2048, 2048), parent=None, pv_address=None, 
-                 threshold_min=None, threshold_max=None):
+    def __init__(self, expected_image_shape=(2048, 2048), parent=None, pv_address=None,
+                 threshold_min=None, threshold_max=None, mask_file=None):
         try:
             super(PyFAIAnalysisWindow, self).__init__(parent)
             self.setWindowTitle("pyFAI Diffraction Integration - Interactive PyQt")
@@ -297,6 +297,22 @@ class PyFAIAnalysisWindow(QMainWindow):
                 logger.warning(f"Threshold initialized: min={self.threshold_min}, max={self.threshold_max}")
             else:
                 logger.debug(f"Threshold not enabled. Received: min={threshold_min}, max={threshold_max}")
+
+            # Load mask if provided
+            if mask_file is not None and os.path.exists(mask_file):
+                try:
+                    if mask_file.lower().endswith('.edf'):
+                        self.mask = fabio.open(mask_file).data.astype(bool)
+                    elif mask_file.lower().endswith('.npy'):
+                        self.mask = np.load(mask_file).astype(bool)
+                    else:
+                        logger.warning(f"Unknown mask format: {mask_file}")
+                    if self.mask is not None:
+                        logger.warning(f"Mask loaded: {mask_file}, shape={self.mask.shape}, "
+                                       f"masked={np.sum(self.mask)}/{self.mask.size}")
+                except Exception as e:
+                    logger.error(f"Failed to load mask file '{mask_file}': {e}")
+                    self.mask = None
 
             # IMPORTANT: Build the UI first so that all UI elements (metadata_panel, status bar, etc.) are available.
             self.initUI()
@@ -961,7 +977,11 @@ class PyFAIAnalysisWindow(QMainWindow):
             # If a mask is provided, ensure its shape matches
             if self.mask is not None:
                 if self.mask.shape != image.shape:
-                    logger.warning(f"Mask shape {self.mask.shape} does not match image shape {image.shape}. Resizing mask.")
+                    msg = (f"WARNING: Mask shape {self.mask.shape} does not match "
+                           f"image shape {image.shape}. Resizing mask with nearest-neighbor. "
+                           f"This is unusual — check your mask/detector configuration.")
+                    logger.warning(msg)
+                    print(msg)
                     image_height, image_width = image.shape
                     # Use skimage.transform.resize for mask resizing
                     resized_mask = resize(self.mask.astype(np.uint8),
@@ -1315,15 +1335,19 @@ if __name__ == "__main__":
                             help='Minimum threshold value (values below this are set to this value)')
         parser.add_argument('--threshold-max', type=float, default=None,
                             help='Maximum threshold value (values above this are set to 0)')
+        parser.add_argument('--mask-file', type=str, default=None,
+                            help='Path to mask file (.npy or .edf)')
         args, unknown = parser.parse_known_args()
         pv_address = args.pv_address
         threshold_min = args.threshold_min
         threshold_max = args.threshold_max
+        mask_file = args.mask_file
     except Exception as e:
         # If argument parsing fails, use default
         pv_address = 'pvapy:image'
         threshold_min = None
         threshold_max = None
+        mask_file = None
         unknown = []
         print(f"Warning: Failed to parse arguments: {e}, using default PV address")
     
@@ -1341,9 +1365,10 @@ if __name__ == "__main__":
     # Now try to create the window
     window = None
     try:
-        window = PyFAIAnalysisWindow(pv_address=pv_address, 
-                                     threshold_min=threshold_min, 
-                                     threshold_max=threshold_max)
+        window = PyFAIAnalysisWindow(pv_address=pv_address,
+                                     threshold_min=threshold_min,
+                                     threshold_max=threshold_max,
+                                     mask_file=mask_file)
         # Make sure window is visible
         window.setVisible(True)
         window.show()
