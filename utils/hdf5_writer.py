@@ -183,7 +183,7 @@ class HDF5Writer(QObject, LogMixin):
             except Exception:
                 pass
             if custom_ca:
-                ca_custom_grp = metadata_grp.create_group('ca_custom')
+                ca_custom_grp = metadata_grp.create_group('ca')
                 for friendly_name, pv_name in custom_ca.items():
                     try:
                         values = merged_metadata.get(pv_name)

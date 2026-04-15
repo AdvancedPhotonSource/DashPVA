@@ -168,7 +168,7 @@ class ROIPlotDock(QDockWidget):
         # Storage for single-frame projections
         self.proj_x = np.array([0.0], dtype=float)
         self.proj_y = np.array([0.0], dtype=float)
-        self._last_motor_dict: dict = {}
+        self._last_custom_ca_dict: dict = {}
 
         # Compute initial series and wire interactions
         self._compute_time_series()
@@ -282,35 +282,32 @@ class ROIPlotDock(QDockWidget):
                 'comy': np.array([cy], dtype=float),
             }
             self.slider.setEnabled(False)
-        # Load motor positions and extend dropdowns/series
-        motor_dict = self._load_motor_positions()
-        self._last_motor_dict = motor_dict
-        self.series.update(motor_dict)
-        self._refresh_motor_position_options(motor_dict)
+        # Load custom CA metadata and extend dropdowns/series
+        custom_ca_dict = self._load_custom_ca_metadata()
+        self._last_custom_ca_dict = custom_ca_dict
+        self.series.update(custom_ca_dict)
+        self._refresh_extra_options(custom_ca_dict)
         self._update_plot()
 
-    def _load_motor_positions(self) -> dict:
-        """Read axis-labeled motor position arrays from the loaded HDF5 file.
+    def _load_custom_ca_metadata(self) -> dict:
+        """Read custom CA metadata arrays from entry/data/metadata/ca_custom/ in the HDF5 file.
 
-        Returns {axis_name: np.ndarray} for datasets whose names contain no ':'
-        (i.e. already converted from PV names to human-readable labels like ETA, MU).
+        Returns {friendly_name: np.ndarray} for each dataset found in that group.
         """
         result = {}
         try:
             fp = getattr(self.main, 'current_file_path', None)
             if not fp or not os.path.exists(fp):
                 return result
-            motor_group_path = 'entry/data/metadata/motor_positions'
+            ca_custom_path = 'entry/data/metadata/ca'
             with h5py.File(fp, 'r') as h5f:
-                if motor_group_path not in h5f:
+                if ca_custom_path not in h5f:
                     return result
-                grp = h5f[motor_group_path]
+                grp = h5f[ca_custom_path]
                 for key in grp.keys():
-                    if ':' in key:
-                        continue  # skip unconverted PV-named datasets
                     try:
                         arr = np.asarray(grp[key], dtype=float).ravel()
-                        if arr.size > 1:  # skip scalars — constant across frames, useless as plot axis
+                        if arr.size > 1:
                             result[key] = arr
                     except Exception:
                         pass
@@ -318,19 +315,18 @@ class ROIPlotDock(QDockWidget):
             pass
         return result
 
-    def _refresh_motor_position_options(self, motor_dict: dict):
-        """Sync X/Y combo boxes: keep base metrics, append sorted motor position names."""
+    def _refresh_extra_options(self, custom_ca_dict: dict):
+        """Sync X/Y combo boxes: keep base metrics, then custom CA metadata names."""
         # Don't touch Y combo in single-frame mode — it uses proj options only
         if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
             return
-        motor_names = sorted(motor_dict.keys())
         for combo in (self.x_select, self.y_select):
             cur_key = _combo_key(combo)
             combo.blockSignals(True)
-            # Trim any previously added motor options (beyond the base metrics)
+            # Trim any previously added extra options (beyond the base metrics)
             while combo.count() > len(METRIC_OPTIONS):
                 combo.removeItem(combo.count() - 1)
-            for name in motor_names:
+            for name in sorted(custom_ca_dict.keys()):
                 combo.addItem(name, name)  # userData=name for consistent key lookup
             # Restore selection; fall back to first item if gone
             _set_combo_key(combo, cur_key)
@@ -358,7 +354,7 @@ class ROIPlotDock(QDockWidget):
         else:
             for key in METRIC_OPTIONS:
                 _add_metric_item(self.y_select, key)
-            for name in sorted(self._last_motor_dict.keys()):
+            for name in sorted(self._last_custom_ca_dict.keys()):
                 self.y_select.addItem(name, name)
             _set_combo_key(self.y_select, "sum")
         self.y_select.blockSignals(False)
@@ -576,6 +572,19 @@ class ROIPlotDock(QDockWidget):
         try:
             self.x_select.currentIndexChanged.connect(lambda _: self._update_plot())
             self.y_select.currentIndexChanged.connect(lambda _: self._update_plot())
+        except Exception:
+            pass
+
+    def refresh_for_dataset_change(self):
+        """Called by the workbench when a new dataset/file is loaded.
+        Re-reads custom CA metadata from the new file and recomputes the plot.
+        """
+        try:
+            if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+                self._compute_and_plot_single_frame()
+            else:
+                self._compute_time_series()
+            self._update_stats_label()
         except Exception:
             pass
 

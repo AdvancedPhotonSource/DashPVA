@@ -120,6 +120,41 @@ class RSMConverter:
         return p_dir1, p_dir2, cch1, cch2, shape[1], shape[2], pw1, pw2, dist, roi
 
     # Geometry extraction
+    def _collect_hkl_positions(self, h5_file: h5py.File) -> list:
+        """Walk entry/data/metadata/HKL/** and return all POSITION datasets in order.
+
+        Returns a list of (full_path, np.ndarray) for every dataset whose name
+        is 'POSITION' found anywhere under the HKL group.
+        """
+        results = []
+        hkl_root = "entry/data/metadata/HKL"
+        if hkl_root not in h5_file:
+            return results
+
+        def _visitor(name, obj):
+            if isinstance(obj, h5py.Dataset) and name.split("/")[-1] == "POSITION":
+                results.append((f"{hkl_root}/{name}", np.ravel(obj[...])))
+
+        h5_file[hkl_root].visititems(_visitor)
+        return results
+
+    def _read_position(self, h5_file: h5py.File, axis_path: str, frame: int) -> float:
+        """Read the per-frame position for a circle axis.
+
+        Looks first at the dedicated POSITION dataset under the axis group
+        (entry/data/metadata/HKL/<axis>/POSITION).  If that dataset is absent,
+        falls back to searching all POSITION datasets anywhere under
+        entry/data/metadata/HKL/** and returns the first one found.
+        """
+        pos_path = f"{axis_path}/POSITION"
+        if pos_path in h5_file:
+            return float(np.ravel(h5_file[pos_path][...])[frame])
+        all_positions = self._collect_hkl_positions(h5_file)
+        if all_positions:
+            _, arr = all_positions[0]
+            return float(arr[min(frame, len(arr) - 1)])
+        raise KeyError(f"No POSITION dataset found at {pos_path} or under entry/data/metadata/HKL/**")
+
     def get_sample_and_detector_circles(self, h5_file: h5py.File, frame: int):
         """Return lists of direction strings and positions for sample and detector circles."""
         sc_dir, sc_pos, dc_dir, dc_pos = [], [], [], []
@@ -135,14 +170,14 @@ class RSMConverter:
                 fallback_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 sc_dir.append(dir_val)
-                sc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
+                sc_pos.append(self._read_position(h5_file, path, frame))
         if not fallback_found:
             for axis in sample_priority:
                 path = f"{hkl_base}/{axis}"
                 if path in h5_file:
                     dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                     sc_dir.append(dir_val)
-                    sc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
+                    sc_pos.append(self._read_position(h5_file, path, frame))
 
         # Prefer fallback DETECTOR_CIRCLE_AXIS_1..2 if available, else canonical
         fallback_d_found = False
@@ -152,14 +187,14 @@ class RSMConverter:
                 fallback_d_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 dc_dir.append(dir_val)
-                dc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
+                dc_pos.append(self._read_position(h5_file, path, frame))
         if not fallback_d_found:
             for axis in detector_priority:
                 path = f"{hkl_base}/{axis}"
                 if path in h5_file:
                     dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                     dc_dir.append(dir_val)
-                    dc_pos.append(float(np.ravel(h5_file[f"{path}/POSITION"][...])[frame]))
+                    dc_pos.append(self._read_position(h5_file, path, frame))
 
         return list(sc_dir), list(sc_pos), list(dc_dir), list(dc_pos)
 

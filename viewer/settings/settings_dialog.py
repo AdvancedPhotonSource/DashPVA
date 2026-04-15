@@ -121,13 +121,16 @@ class SettingsDialog(QDialog):
         row3.addWidget(self.btn_browse_toml)
         form.addRow("TOML Config", row3)
 
-        # Apply / Cancel buttons
+        # Apply / Cancel / Reseed buttons
         self.btn_apply = QPushButton("Apply / Save", self)
         self.btn_apply.setDefault(True)
         self.btn_cancel = QPushButton("Cancel", self)
+        self.btn_reseed = QPushButton("Re-seed", self)
+        self.btn_reseed.setToolTip("Re-seed missing default values for the currently selected profile")
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
+        btn_row.addWidget(self.btn_reseed)
         btn_row.addWidget(self.btn_cancel)
         btn_row.addWidget(self.btn_apply)
 
@@ -146,6 +149,7 @@ class SettingsDialog(QDialog):
         self.btn_browse_toml.clicked.connect(self._pick_toml)
         self.btn_apply.clicked.connect(self._on_apply)
         self.btn_cancel.clicked.connect(self.reject)
+        self.btn_reseed.clicked.connect(self._on_reseed)
 
     # ── Prepopulate from current settings ────────────────────────────────────
 
@@ -230,6 +234,17 @@ class SettingsDialog(QDialog):
     def _save(self):
         # Saving is not yet implemented — closes the dialog only.
         self.accept()
+
+    # ── Re-seed ───────────────────────────────────────────────────────────────
+
+    def _on_reseed(self):
+        """Add any missing default settings — never overwrites existing values."""
+        try:
+            from scripts.seed_settings_defaults_sql import seed_defaults
+            seed_defaults()
+            QMessageBox.information(self, "Re-seed", "Missing defaults added. No existing values were changed.")
+        except Exception as e:
+            QMessageBox.critical(self, "Re-seed", f"Re-seeding failed:\n{e}")
 
 
 if __name__ == '__main__':
