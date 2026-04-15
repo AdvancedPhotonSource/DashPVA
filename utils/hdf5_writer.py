@@ -175,21 +175,25 @@ class HDF5Writer(QObject, LogMixin):
                                     **ds_kwargs)
 
             metadata_grp = data_grp.create_group('metadata')
-            motor_pos_grp = metadata_grp.create_group('motor_positions')
 
-            for key, values in merged_metadata.items():
-                try:
-                    if not is_position_pv(key):
-                        continue
-                    axis_label = _derive_axis_from_pv(key, axis_lookup) if axis_lookup else None
-                    if not axis_label:
-                        continue
-                    arr = np.array(values)
-                    if arr.dtype.kind in ('i', 'u', 'f'):
-                        ds = motor_pos_grp.create_dataset(axis_label, data=arr)
-                        ds.attrs['units'] = 'deg'
-                except Exception:
-                    pass
+            # Write custom CA metadata to entry/data/metadata/ca_custom/
+            custom_ca = {}
+            try:
+                custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}
+            except Exception:
+                pass
+            if custom_ca:
+                ca_custom_grp = metadata_grp.create_group('ca_custom')
+                for friendly_name, pv_name in custom_ca.items():
+                    try:
+                        values = merged_metadata.get(pv_name)
+                        if values is None:
+                            continue
+                        arr = np.array(values)
+                        if arr.dtype.kind in ('i', 'u', 'f') and arr.size > 0:
+                            ca_custom_grp.create_dataset(friendly_name, data=arr)
+                    except Exception:
+                        pass
 
             # Build axis-label -> per-frame values for HKL POSITION lookup
             motor_pos_values = {}

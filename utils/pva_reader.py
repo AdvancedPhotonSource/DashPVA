@@ -19,7 +19,7 @@ class PVAReader(QObject):
     scan_state_changed = pyqtSignal(bool)
     
     def __init__(self,
-                 input_channel='s6lambda1:Pva1:Image',
+                 input_channel=None,
                  provider=pva.PVA,
                  viewer_type:str='image'):
         """
@@ -84,7 +84,7 @@ class PVAReader(QObject):
         self.input_channel = input_channel        
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = input_channel.split(":")[0]
+        self.pva_prefix = self.input_channel.split(":")[0]
 
         # variables setup using config
         self.config = {}
@@ -264,7 +264,6 @@ class PVAReader(QObject):
 
         except Exception as e:
             import traceback
-            print(f'[pva_callback] EXCEPTION frame={self.frames_received}: {e}', flush=True)
             traceback.print_exc()
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:

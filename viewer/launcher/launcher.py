@@ -16,6 +16,15 @@ class LauncherDialog(QDialog):
         super(LauncherDialog, self).__init__()
         uic.loadUi('gui/launcher/launcher.ui', self)
 
+        try:
+            import settings as _settings
+            beamline = _settings.BEAMLINE_NAME
+            if beamline:
+                self.lbl_header.setText(f'DashPVA: {beamline}')
+                self.setWindowTitle(f'DashPVA Launcher — {beamline}')
+        except Exception:
+            pass
+
         self.processes = {}
         self._timer = QTimer(self)
         self._timer.setInterval(500)
@@ -269,49 +278,32 @@ class LauncherDialog(QDialog):
         if resp == QMessageBox.Yes:
             self.shutdown_all()
 
+    def _confirm_exit(self):
+        """Show exit confirmation dialog. Returns True if the user confirmed."""
+        running_list = self._format_running_modules_list()
+        text = f"{running_list}\n\nShutdown all running processes and exit?\n\nData might be lost."
+        resp = QMessageBox.question(
+            self,
+            'Exit Launcher',
+            text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        return resp == QMessageBox.Yes
+
     def request_close(self):
-        """Prompt to force stop modules before exiting if any are running."""
-        try:
-            any_running = any(entry['popen'].poll() is None for entry in self.processes.values())
-        except Exception:
-            any_running = False
-        if any_running:
-            text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
-            resp = QMessageBox.question(
-                self,
-                'Exit Launcher',
-                text,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if resp == QMessageBox.Yes:
-                self.shutdown_all()
-                self.close()
-        else:
+        """Always ask for confirmation, shut down all processes, then close."""
+        if self._confirm_exit():
+            self.shutdown_all()
             self.close()
 
     def closeEvent(self, event):
-        """On close, prompt to force-stop modules if any are running."""
-        try:
-            any_running = any(entry['popen'].poll() is None for entry in self.processes.values())
-        except Exception:
-            any_running = False
-        if any_running:
-            text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
-            resp = QMessageBox.question(
-                self,
-                'Exit Launcher',
-                text,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if resp == QMessageBox.Yes:
-                self.shutdown_all()
-                event.accept()
-            else:
-                event.ignore()
-        else:
+        """Always ask for confirmation, shut down all processes, then accept close."""
+        if self._confirm_exit():
+            self.shutdown_all()
             event.accept()
+        else:
+            event.ignore()
 
 
 def main():
