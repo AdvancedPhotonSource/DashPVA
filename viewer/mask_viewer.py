@@ -2,7 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QCheckBox, QSpinBox
+    QLabel, QCheckBox, QSpinBox, QSlider
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -11,19 +11,21 @@ class MaskViewerWindow(QDialog):
     """
     Displays and optionally edits a boolean detector mask.
 
-    Shows the mask as a binary image (black=good, white=masked) using
-    pyqtgraph ImageView. Supports pixel toggling in edit mode with
-    configurable brush size.
+    Shows the mask as a binary image with optional diffraction image
+    overlay. Supports pixel toggling in edit mode with configurable
+    brush size.
     """
 
     mask_updated = pyqtSignal(object)
 
     def __init__(self, mask, mask_path=None, parent=None):
         super().__init__(parent)
+        self.parent_viewer = parent
         self.mask = mask.copy().astype(bool)
         self.mask_path = mask_path
         self._editing = False
-        self._mouse_pressed = False
+        self._show_image = False
+        self._alpha = 0.5
 
         num_masked = int(np.sum(self.mask))
         h, w = self.mask.shape
@@ -32,6 +34,7 @@ class MaskViewerWindow(QDialog):
         self.resize(800, 700)
 
         self._build_ui()
+        self._refresh_display()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -41,13 +44,6 @@ class MaskViewerWindow(QDialog):
         self.plot_item.setLabel('bottom', 'X [pixels]')
         self.plot_item.setLabel('left', 'Y [pixels]')
         self.image_view = pg.ImageView(view=self.plot_item)
-        # Binary colormap: black (good) / red (masked)
-        cmap = pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 50, 50)])
-        self.image_view.setColorMap(cmap)
-        self.image_view.setImage(self.mask.astype(np.float32).T,
-                                 autoRange=True, autoLevels=False,
-                                 levels=(0, 1))
-        # Hide histogram for binary image
         self.image_view.ui.histogram.hide()
         self.image_view.ui.roiBtn.hide()
         self.image_view.ui.menuBtn.hide()
@@ -58,7 +54,28 @@ class MaskViewerWindow(QDialog):
         self.lbl_info.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_info)
 
-        # Controls row
+        # Controls row 1: overlay + alpha
+        overlay_row = QHBoxLayout()
+
+        self.chk_show_image = QCheckBox('Show Diffraction Image')
+        self.chk_show_image.stateChanged.connect(self._toggle_image_overlay)
+        overlay_row.addWidget(self.chk_show_image)
+
+        overlay_row.addWidget(QLabel('Mask opacity:'))
+        self.sld_alpha = QSlider(Qt.Horizontal)
+        self.sld_alpha.setRange(0, 100)
+        self.sld_alpha.setValue(50)
+        self.sld_alpha.setMaximumWidth(120)
+        self.sld_alpha.valueChanged.connect(self._alpha_changed)
+        overlay_row.addWidget(self.sld_alpha)
+        self.lbl_alpha = QLabel('50%')
+        self.lbl_alpha.setMinimumWidth(35)
+        overlay_row.addWidget(self.lbl_alpha)
+
+        overlay_row.addStretch()
+        layout.addLayout(overlay_row)
+
+        # Controls row 2: actions
         ctrl = QHBoxLayout()
 
         self.btn_save = QPushButton('Save Mask')
@@ -89,11 +106,70 @@ class MaskViewerWindow(QDialog):
         pct = 100 * num_masked / total if total > 0 else 0
         return f"Masked: {num_masked:,} / {total:,} pixels ({pct:.1f}%)"
 
+    def _get_current_image(self):
+        """Get current diffraction image from parent viewer if available."""
+        if self.parent_viewer is not None and hasattr(self.parent_viewer, 'reader'):
+            reader = self.parent_viewer.reader
+            if reader is not None and reader.image is not None:
+                return reader.image.copy()
+        return None
+
     def _refresh_display(self):
-        self.image_view.setImage(self.mask.astype(np.float32).T,
+        if self._show_image:
+            img = self._get_current_image()
+            if img is not None:
+                # Normalize image to 0-1 range for blending
+                img_float = img.astype(np.float64)
+                img_min, img_max = img_float.min(), img_float.max()
+                if img_max > img_min:
+                    img_norm = (img_float - img_min) / (img_max - img_min)
+                else:
+                    img_norm = np.zeros_like(img_float)
+                # Create RGBA overlay: image in grayscale + mask in red with alpha
+                h, w = img_norm.shape[:2]
+                rgba = np.zeros((h, w, 4), dtype=np.float32)
+                # Grayscale image as base
+                rgba[..., 0] = img_norm
+                rgba[..., 1] = img_norm
+                rgba[..., 2] = img_norm
+                rgba[..., 3] = 1.0
+                # Overlay mask in red with alpha
+                mask_resized = self.mask
+                if mask_resized.shape != img_norm.shape[:2]:
+                    from skimage.transform import resize
+                    mask_resized = resize(self.mask.astype(np.uint8),
+                                          img_norm.shape[:2], order=0,
+                                          preserve_range=True).astype(bool)
+                rgba[mask_resized, 0] = 1.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
+                rgba[mask_resized, 1] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
+                rgba[mask_resized, 2] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
+
+                self.image_view.setImage(rgba, autoRange=False, autoLevels=False,
+                                         levels=(0, 1))
+            else:
+                # No image available, show mask only
+                self._show_mask_only()
+        else:
+            self._show_mask_only()
+        self.lbl_info.setText(self._info_text())
+
+    def _show_mask_only(self):
+        """Display mask without image overlay, matching main viewer orientation."""
+        cmap = pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 50, 50)])
+        self.image_view.setColorMap(cmap)
+        self.image_view.setImage(self.mask.astype(np.float32),
                                  autoRange=False, autoLevels=False,
                                  levels=(0, 1))
-        self.lbl_info.setText(self._info_text())
+
+    def _toggle_image_overlay(self, state):
+        self._show_image = (state == Qt.Checked)
+        self._refresh_display()
+
+    def _alpha_changed(self, value):
+        self._alpha = value / 100.0
+        self.lbl_alpha.setText(f'{value}%')
+        if self._show_image:
+            self._refresh_display()
 
     def _save_mask(self):
         if self.mask_path:
@@ -126,7 +202,6 @@ class MaskViewerWindow(QDialog):
         x = int(round(mouse_point.x()))
         y = int(round(mouse_point.y()))
         h, w = self.mask.shape
-        # Note: image is displayed transposed, so x maps to col, y maps to row
         if 0 <= x < w and 0 <= y < h:
             radius = self.spn_brush.value()
             self._toggle_region(y, x, radius)
@@ -136,7 +211,6 @@ class MaskViewerWindow(QDialog):
     def _toggle_region(self, row, col, radius):
         """Toggle a circular region of pixels."""
         h, w = self.mask.shape
-        # Determine new value from center pixel
         new_val = not self.mask[row, col]
         for dr in range(-radius + 1, radius):
             for dc in range(-radius + 1, radius):
