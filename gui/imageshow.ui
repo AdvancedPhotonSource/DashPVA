@@ -1647,145 +1647,99 @@ font: 12pt &quot;Sans Serif&quot;;</string>
              </property>
              <layout class="QVBoxLayout" name="verticalLayout">
               <item>
-               <widget class="QPushButton" name="btn_Stats1">
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>45</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <family>Sans Serif</family>
-                  <pointsize>12</pointsize>
-                  <weight>50</weight>
-                  <italic>false</italic>
-                  <bold>false</bold>
-                 </font>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 12pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-                </property>
-                <property name="text">
-                 <string>Stats1</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout">
+                <item>
+                 <widget class="QPushButton" name="btn_Stats1">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="text"><string>Stats1</string></property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btn_PlotStats1">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="maximumSize"><size><width>60</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 10pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
+                  <property name="text"><string>Plot Stats1</string></property>
+                 </widget>
+                </item>
+               </layout>
               </item>
               <item>
-               <widget class="QPushButton" name="btn_Stats2">
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>45</height>
-                 </size>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 12pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius:3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}
-</string>
-                </property>
-                <property name="text">
-                 <string>Stats2</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout">
+                <item>
+                 <widget class="QPushButton" name="btn_Stats2">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="text"><string>Stats2</string></property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btn_PlotStats2">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="maximumSize"><size><width>60</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 10pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
+                  <property name="text"><string>Plot Stats2</string></property>
+                 </widget>
+                </item>
+               </layout>
               </item>
               <item>
-               <widget class="QPushButton" name="btn_Stats3">
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>45</height>
-                 </size>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 12pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius:3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}
-</string>
-                </property>
-                <property name="text">
-                 <string>Stats3</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout">
+                <item>
+                 <widget class="QPushButton" name="btn_Stats3">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="text"><string>Stats3</string></property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btn_PlotStats3">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="maximumSize"><size><width>60</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 10pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
+                  <property name="text"><string>Plot Stats3</string></property>
+                 </widget>
+                </item>
+               </layout>
               </item>
               <item>
-               <widget class="QPushButton" name="btn_Stats4">
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>45</height>
-                 </size>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 12pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius:3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-                </property>
-                <property name="text">
-                 <string>Stats4</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout">
+                <item>
+                 <widget class="QPushButton" name="btn_Stats4">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="text"><string>Stats4</string></property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btn_PlotStats4">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="maximumSize"><size><width>60</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 10pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
+                  <property name="text"><string>Plot Stats4</string></property>
+                 </widget>
+                </item>
+               </layout>
               </item>
               <item>
-               <widget class="QPushButton" name="btn_Stats5">
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>45</height>
-                 </size>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">QPushButton{
-font: 12pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius:3px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
-                </property>
-                <property name="text">
-                 <string>Stats5</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout">
+                <item>
+                 <widget class="QPushButton" name="btn_Stats5">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
+                  <property name="text"><string>Stats5</string></property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btn_PlotStats5">
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
+                  <property name="maximumSize"><size><width>60</width><height>45</height></size></property>
+                  <property name="styleSheet"><string notr="true">QPushButton{ font: 10pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
+                  <property name="text"><string>Plot Stats5</string></property>
+                 </widget>
+                </item>
+               </layout>
               </item>
              </layout>
             </widget>

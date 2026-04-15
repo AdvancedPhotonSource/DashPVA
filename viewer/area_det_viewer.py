@@ -16,7 +16,8 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
-from analysis_window import AnalysisWindow 
+from roi_stats_plot import RoiStatsPlotDialog
+from analysis_window import AnalysisWindow
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
@@ -116,6 +117,7 @@ class DiffractionImageWindow(QMainWindow):
         self.mouse_y = 0
         self.rois: list[pg.ROI] = []
         self.stats_dialogs = {}
+        self.stats_plot_dialogs = {}
         self.stats_data = {}
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
@@ -191,6 +193,11 @@ class DiffractionImageWindow(QMainWindow):
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
         self.btn_Stats4.clicked.connect(self.stats_button_clicked)
         self.btn_Stats5.clicked.connect(self.stats_button_clicked)
+        self.btn_PlotStats1.clicked.connect(self.stats_plot_button_clicked)
+        self.btn_PlotStats2.clicked.connect(self.stats_plot_button_clicked)
+        self.btn_PlotStats3.clicked.connect(self.stats_plot_button_clicked)
+        self.btn_PlotStats4.clicked.connect(self.stats_plot_button_clicked)
+        self.btn_PlotStats5.clicked.connect(self.stats_plot_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
@@ -464,10 +471,30 @@ class DiffractionImageWindow(QMainWindow):
         if self.reader is not None:
             sending_button = self.sender()
             text = sending_button.text()
-            self.stats_dialogs[text] = RoiStatsDialog(parent=self, 
-                                                     stats_text=text, 
+            self.stats_dialogs[text] = RoiStatsDialog(parent=self,
+                                                     stats_text=text,
                                                      timer=self.timer_labels)
             self.stats_dialogs[text].show()
+
+    def stats_plot_button_clicked(self) -> None:
+        """
+        Creates a live-updating plot dialog for the corresponding Stats device.
+        Button text format: 'Plot Stats1' -> stats_text = 'Stats1'
+        """
+        if self.reader is not None:
+            sending_button = self.sender()
+            # Extract stats name: 'Plot Stats1' -> 'Stats1'
+            stats_text = sending_button.text().replace('Plot ', '')
+            # Close existing plot dialog for this stats if open
+            existing = self.stats_plot_dialogs.get(stats_text)
+            if existing is not None:
+                existing.close()
+            self.stats_plot_dialogs[stats_text] = RoiStatsPlotDialog(
+                parent=self,
+                stats_text=stats_text,
+                timer=self.timer_labels
+            )
+            self.stats_plot_dialogs[stats_text].show()
 
     def start_stats_monitors(self)  -> None:
         """
@@ -1176,6 +1203,7 @@ class DiffractionImageWindow(QMainWindow):
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
         del self.stats_dialogs # otherwise dialogs stay in memory
+        del self.stats_plot_dialogs
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread
