@@ -61,6 +61,7 @@ class RoiStatsPlotDialog(QDialog):
         self._paused = False
         self._tick_count = 0
         self._frame_index = 0
+        self._last_frames_received = getattr(self.parent_viewer.reader, 'frames_received', 0)
         self._max_points = self.MAX_POINTS_DEFAULT
 
         # Data storage — one deque per stat
@@ -142,22 +143,24 @@ class RoiStatsPlotDialog(QDialog):
         if self._paused:
             return
 
-        # Read latest values from parent
-        has_new = False
+        # Only append data when a new PVA frame has arrived
+        current_frames = getattr(self.parent_viewer.reader, 'frames_received', 0)
+        if current_frames <= self._last_frames_received:
+            return
+        self._last_frames_received = current_frames
+
+        # Read latest stats values (from CA monitors) for this frame
         for key in self.STAT_KEYS:
             suffix = self.STAT_SUFFIXES[key]
             pv_name = f'{self.prefix}:{self.stats_text}:{suffix}'
             value = self.parent_viewer.stats_data.get(pv_name, None)
             if value is not None:
                 self._data[key].append(float(value))
-                has_new = True
             elif len(self._data[key]) > 0:
-                # Repeat last value to keep curves aligned
                 self._data[key].append(self._data[key][-1])
 
-        if has_new:
-            self._frames.append(self._frame_index)
-            self._frame_index += 1
+        self._frames.append(self._frame_index)
+        self._frame_index += 1
 
         # Update curves
         frames = list(self._frames)
@@ -196,6 +199,7 @@ class RoiStatsPlotDialog(QDialog):
 
     def clear_data(self):
         self._frame_index = 0
+        self._last_frames_received = getattr(self.parent_viewer.reader, 'frames_received', 0)
         self._frames.clear()
         for key in self.STAT_KEYS:
             self._data[key].clear()
