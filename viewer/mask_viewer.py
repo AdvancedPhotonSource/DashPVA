@@ -114,6 +114,37 @@ class MaskViewerWindow(QDialog):
                 return reader.image.copy()
         return None
 
+    def _transform_for_display(self, data):
+        """Apply parent viewer's transpose/rotation for consistent display."""
+        if self.parent_viewer is not None:
+            if getattr(self.parent_viewer, 'image_is_transposed', False):
+                if data.ndim == 2:
+                    data = np.transpose(data)
+                else:
+                    data = np.transpose(data, axes=(1, 0, 2))
+            rot = getattr(self.parent_viewer, 'rot_num', 0)
+            if rot:
+                data = np.rot90(data, k=rot)
+        return data
+
+    def _inverse_transform_coords(self, x, y, shape):
+        """Map display coordinates back to raw mask coordinates.
+
+        shape is the display image shape (h, w) after transforms.
+        """
+        h, w = shape
+        rot = getattr(self.parent_viewer, 'rot_num', 0) if self.parent_viewer else 0
+        transposed = getattr(self.parent_viewer, 'image_is_transposed', False) if self.parent_viewer else False
+        # Undo rot90 (reverse: rot90 by -k)
+        if rot:
+            for _ in range(rot):
+                x, y = y, w - 1 - x
+                h, w = w, h
+        # Undo transpose
+        if transposed:
+            x, y = y, x
+        return x, y
+
     def _refresh_display(self):
         if self._show_image:
             img = self._get_current_image()
@@ -144,6 +175,8 @@ class MaskViewerWindow(QDialog):
                 rgba[mask_resized, 1] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
                 rgba[mask_resized, 2] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
 
+                # Apply same transform as main viewer for consistent orientation
+                rgba = self._transform_for_display(rgba)
                 self.image_view.setImage(rgba, autoRange=False, autoLevels=False,
                                          levels=(0, 1))
             else:
@@ -157,7 +190,8 @@ class MaskViewerWindow(QDialog):
         """Display mask without image overlay, matching main viewer orientation."""
         cmap = pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 50, 50)])
         self.image_view.setColorMap(cmap)
-        self.image_view.setImage(self.mask.astype(np.float32),
+        display_mask = self._transform_for_display(self.mask.astype(np.float32))
+        self.image_view.setImage(display_mask,
                                  autoRange=False, autoLevels=False,
                                  levels=(0, 1))
 
@@ -199,14 +233,20 @@ class MaskViewerWindow(QDialog):
             return
         pos = event.scenePos()
         mouse_point = self.plot_item.vb.mapSceneToView(pos)
-        x = int(round(mouse_point.x()))
-        y = int(round(mouse_point.y()))
-        h, w = self.mask.shape
-        if 0 <= x < w and 0 <= y < h:
-            radius = self.spn_brush.value()
-            self._toggle_region(y, x, radius)
-            self._refresh_display()
-            self.mask_updated.emit(self.mask)
+        disp_x = int(round(mouse_point.x()))
+        disp_y = int(round(mouse_point.y()))
+        # Get displayed image shape to determine bounds and inverse mapping
+        display_mask = self._transform_for_display(self.mask.astype(np.float32))
+        disp_h, disp_w = display_mask.shape[:2]
+        if 0 <= disp_x < disp_w and 0 <= disp_y < disp_h:
+            # Map display coords back to raw mask coords
+            raw_x, raw_y = self._inverse_transform_coords(disp_x, disp_y, (disp_h, disp_w))
+            h, w = self.mask.shape
+            if 0 <= raw_x < w and 0 <= raw_y < h:
+                radius = self.spn_brush.value()
+                self._toggle_region(raw_y, raw_x, radius)
+                self._refresh_display()
+                self.mask_updated.emit(self.mask)
 
     def _toggle_region(self, row, col, radius):
         """Toggle a circular region of pixels."""

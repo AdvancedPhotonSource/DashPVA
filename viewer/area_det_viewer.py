@@ -167,14 +167,18 @@ class DiffractionImageWindow(QMainWindow):
             except Exception:
                 self.cet_colormap = get_colormap('magma')  # fallback
         
-        plot = pg.PlotItem()        
+        plot = pg.PlotItem()
         self.image_view = pg.ImageView(view=plot)
         # Set the default colormap when ImageView is created
         self.image_view.setColorMap(self.cet_colormap)
+        # Remove ImageView's internal widgets to eliminate vertical margin mismatch
+        self.image_view.ui.histogram.setParent(None)
+        self.image_view.ui.roiBtn.setParent(None)
+        self.image_view.ui.menuBtn.setParent(None)
         self.viewer_layout.addWidget(self.image_view,0,1)
         self.image_view.view.getAxis('left').setLabel(text='SizeY [pixels]')
         self.image_view.view.getAxis('bottom').setLabel(text='SizeX [pixels]')
-        
+
         # Initialize crosshair lines (hidden initially)
         self.crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('red', width=2))
         self.crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('red', width=2))
@@ -187,7 +191,12 @@ class DiffractionImageWindow(QMainWindow):
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(200)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
+        self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
+        # Sync horizontal avg y-range to image view — use sigYRangeChanged
+        # with padding=0 for precise alignment
+        self.horizontal_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
+        self.image_view.getView().getViewBox().sigYRangeChanged.connect(self._sync_havg_yrange)
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -240,9 +249,10 @@ class DiffractionImageWindow(QMainWindow):
         from PyQt5.QtWidgets import QGroupBox, QFormLayout, QSizePolicy
 
         group = QGroupBox('Mask')
-        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         form = QFormLayout(group)
-        form.setVerticalSpacing(8)
+        form.setContentsMargins(6, 6, 6, 6)
+        form.setVerticalSpacing(4)
 
         # Row 0: mask status
         self.lbl_mask_info = QLabel('No mask loaded')
@@ -1162,6 +1172,11 @@ class DiffractionImageWindow(QMainWindow):
             
             print(f"Crosshairs placed at: ({view_pos.x():.1f}, {view_pos.y():.1f})")
     
+    def _sync_havg_yrange(self, vb, y_range):
+        """Keep horizontal avg plot y-range in sync with the image view."""
+        self.horizontal_avg_plot.getPlotItem().getViewBox().setYRange(
+            y_range[0], y_range[1], padding=0)
+
     def update_mouse_pos(self, pos) -> None:
         """
         Maps the mouse position in the Image Viewer to the corresponding pixel value.
