@@ -309,15 +309,14 @@ class DiffractionImageWindow(QMainWindow):
     def load_mask_clicked(self):
         filepath, _ = QFileDialog.getOpenFileName(
             self, 'Load Mask File', '',
-            'Mask files (*.edf *.npy);;EDF files (*.edf);;NumPy files (*.npy)')
+            'Mask files (*.edf *.npy *.tif *.tiff);;'
+            'EDF files (*.edf);;NumPy files (*.npy);;'
+            'TIFF files (*.tif *.tiff);;All files (*)')
         if not filepath:
             return
 
         try:
-            if filepath.lower().endswith('.edf'):
-                new_mask = self.mask_manager.load_edf(filepath)
-            else:
-                new_mask = self.mask_manager.load_npy(filepath)
+            new_mask = self.mask_manager.load_mask(filepath)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load mask:\n{e}')
             return
@@ -1231,6 +1230,14 @@ class DiffractionImageWindow(QMainWindow):
                 # Apply mask if enabled (before transpose/rotation)
                 if self.chk_apply_mask.isChecked() and self.mask_manager.mask is not None:
                     self.image = self.mask_manager.apply_to_image(self.image)
+                    if self.mask_manager.shape_mismatch_info is not None:
+                        mask_shape, img_shape = self.mask_manager.shape_mismatch_info
+                        self.mask_manager.shape_mismatch_info = None
+                        QMessageBox.warning(self, 'Mask Shape Mismatch',
+                            f'Mask shape {mask_shape} does not match image shape {img_shape}.\n'
+                            f'The mask is being resized automatically.\n\n'
+                            f'Consider rotating/transposing the mask in the Mask Viewer\n'
+                            f'to match your detector orientation, then save.')
                 self.image = np.transpose(self.image) if self.image_is_transposed else self.image
                 self.image = np.rot90(m=self.image, k=self.rot_num)
                 if len(self.image.shape) == 2:

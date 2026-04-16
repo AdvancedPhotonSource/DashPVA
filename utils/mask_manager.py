@@ -10,7 +10,7 @@ class MaskManager:
     """
     Manages detector pixel masks for DashPVA.
 
-    Handles loading (.edf, .npy), combining (OR), saving, and applying masks.
+    Handles loading (.edf, .npy, .tif/.tiff), combining (OR), saving, and applying masks.
     Also provides temporal-variance-based dead pixel detection.
 
     Convention: True = masked pixel, False = good pixel (matches pyFAI).
@@ -27,6 +27,7 @@ class MaskManager:
         self.mask_path = None
         self.mask_sources = []
         self._shape_mismatch_warned = False
+        self.shape_mismatch_info = None  # Set to (mask_shape, image_shape) on first mismatch
 
         # Auto-load existing active mask
         default_path = os.path.join(self.masks_dir, self.DEFAULT_MASK_FILENAME)
@@ -40,28 +41,43 @@ class MaskManager:
             except Exception as e:
                 logger.error(f"Failed to load active mask: {e}")
 
-    def load_edf(self, filepath):
-        """Load a mask from a pyFAI .edf file. Returns boolean array."""
-        import fabio
-        data = fabio.open(filepath).data
-        mask = data.astype(bool)
-        logger.info(f"Loaded EDF mask: {filepath}, shape={mask.shape}, "
-                    f"masked={np.sum(mask)}/{mask.size}")
-        return mask
+    def load_mask(self, filepath):
+        """
+        Load a mask from file. Supports .edf, .npy, .tif/.tiff.
 
-    def load_npy(self, filepath):
-        """Load a mask from a .npy file. Returns boolean array."""
-        data = np.load(filepath)
+        Any 2D array with two unique values is treated as a binary mask.
+        Convention: nonzero = masked (True), zero = good (False).
+        This matches pyFAI where 1=masked, 0=good.
+
+        Returns boolean array.
+        """
+        ext = os.path.splitext(filepath)[1].lower()
+
+        if ext == '.npy':
+            data = np.load(filepath)
+        elif ext in ('.tif', '.tiff'):
+            from PIL import Image
+            data = np.array(Image.open(filepath))
+        elif ext == '.edf':
+            import fabio
+            data = fabio.open(filepath).data
+        else:
+            # Try fabio as fallback for other detector formats
+            import fabio
+            data = fabio.open(filepath).data
+
+        if data.ndim != 2:
+            raise ValueError(f"Expected 2D array, got shape {data.shape}")
+
         mask = data.astype(bool)
-        logger.info(f"Loaded NPY mask: {filepath}, shape={mask.shape}, "
+        logger.info(f"Loaded mask: {filepath}, shape={mask.shape}, "
                     f"masked={np.sum(mask)}/{mask.size}")
         return mask
 
     def _resize_mask(self, mask, target_shape):
         """Resize mask to target shape using nearest-neighbor interpolation."""
         from skimage.transform import resize
-        logger.warning(f"MASK SHAPE MISMATCH: mask {mask.shape} != target {target_shape}. "
-                       f"Resizing mask — this is unusual and may indicate a configuration issue.")
+        logger.debug(f"Resizing mask {mask.shape} → {target_shape}")
         resized = resize(mask.astype(np.uint8), target_shape,
                          order=0, preserve_range=True, anti_aliasing=False)
         return resized.astype(bool)
@@ -77,8 +93,6 @@ class MaskManager:
             self.mask = new_mask.astype(bool)
         else:
             if new_mask.shape != self.mask.shape:
-                logger.warning(f"Shape mismatch during combine: existing {self.mask.shape} "
-                               f"vs new {new_mask.shape}. Resizing new mask.")
                 new_mask = self._resize_mask(new_mask, self.mask.shape)
             self.mask = self.mask | new_mask.astype(bool)
 
@@ -122,7 +136,7 @@ class MaskManager:
     def apply_to_image(self, image):
         """
         Apply mask to image for display. Returns a copy with masked pixels set to 0.
-        Handles shape mismatch with resize (warning logged once).
+        Sets shape_mismatch_info on first mismatch for caller to show a dialog.
         """
         if self.mask is None:
             return image
@@ -130,9 +144,8 @@ class MaskManager:
         mask = self.mask
         if mask.shape != image.shape:
             if not self._shape_mismatch_warned:
-                logger.warning(f"MASK SHAPE MISMATCH: mask {mask.shape} != "
-                               f"image {image.shape}. Resizing mask for display.")
                 self._shape_mismatch_warned = True
+                self.shape_mismatch_info = (mask.shape, image.shape)
             mask = self._resize_mask(mask, image.shape)
 
         result = image.copy()
