@@ -335,6 +335,17 @@ class DiffractionImageWindow(QMainWindow):
                 return
             replace = (reply == QMessageBox.No)
 
+        # Warn if mask shape doesn't match current image
+        if self.reader is not None and hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2:
+            img_shape = self.reader.shape[:2]
+            if new_mask.shape != img_shape:
+                QMessageBox.warning(
+                    self, 'Shape Mismatch',
+                    f'Mask shape {new_mask.shape} does not match '
+                    f'image shape {img_shape}.\n\n'
+                    f'The mask will be resized automatically, but this '
+                    f'may indicate a configuration issue.')
+
         self.mask_manager.combine_masks(new_mask, replace=replace)
         self.mask_manager.mask_sources.append(filepath)
         self.mask_manager.save_active_mask()

@@ -26,6 +26,7 @@ class MaskManager:
         self.mask = None
         self.mask_path = None
         self.mask_sources = []
+        self._shape_mismatch_warned = False
 
         # Auto-load existing active mask
         default_path = os.path.join(self.masks_dir, self.DEFAULT_MASK_FILENAME)
@@ -71,6 +72,7 @@ class MaskManager:
         If replace=True or no existing mask, sets mask directly.
         Handles shape mismatch with resize + warning.
         """
+        self._shape_mismatch_warned = False
         if replace or self.mask is None:
             self.mask = new_mask.astype(bool)
         else:
@@ -120,15 +122,17 @@ class MaskManager:
     def apply_to_image(self, image):
         """
         Apply mask to image for display. Returns a copy with masked pixels set to 0.
-        Handles shape mismatch with resize + warning.
+        Handles shape mismatch with resize (warning logged once).
         """
         if self.mask is None:
             return image
 
         mask = self.mask
         if mask.shape != image.shape:
-            logger.warning(f"MASK SHAPE MISMATCH in display: mask {mask.shape} != "
-                           f"image {image.shape}. Resizing mask for display.")
+            if not self._shape_mismatch_warned:
+                logger.warning(f"MASK SHAPE MISMATCH: mask {mask.shape} != "
+                               f"image {image.shape}. Resizing mask for display.")
+                self._shape_mismatch_warned = True
             mask = self._resize_mask(mask, image.shape)
 
         result = image.copy()
