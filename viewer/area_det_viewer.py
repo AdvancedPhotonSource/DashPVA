@@ -132,6 +132,7 @@ class DiffractionImageWindow(QMainWindow):
         self._dead_px_frames = []
         self._dead_px_collecting = False
         self._dead_px_target = 50
+        self._dead_px_last_frame = 0
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -363,36 +364,56 @@ class DiffractionImageWindow(QMainWindow):
 
         self._dead_px_frames = []
         self._dead_px_collecting = True
+        self._dead_px_last_frame = getattr(self.reader, 'frames_received', 0)
         self.btn_detect_dead.setText(f'Collecting 0/{self._dead_px_target}...')
         self.btn_detect_dead.setEnabled(False)
 
     def _collect_dead_pixel_frame(self):
-        """Called from update_image to accumulate frames for dead pixel detection."""
+        """Called from update_image to accumulate frames for dead pixel detection.
+        Only collects on new PVA frames to avoid duplicate data."""
         if not self._dead_px_collecting or self.reader is None:
             return
-        if self.reader.image is not None and len(self.reader.shape) >= 2:
-            self._dead_px_frames.append(self.reader.image.copy())
-            self.btn_detect_dead.setText(
-                f'Collecting {len(self._dead_px_frames)}/{self._dead_px_target}...')
+        if self.reader.image is None or len(self.reader.shape) < 2:
+            return
+        # Only collect on new frames (avoid duplicates from timer ticks)
+        current_frames = getattr(self.reader, 'frames_received', 0)
+        if current_frames <= self._dead_px_last_frame:
+            return
+        self._dead_px_last_frame = current_frames
 
-            if len(self._dead_px_frames) >= self._dead_px_target:
-                self._dead_px_collecting = False
-                dead_mask = self.mask_manager.detect_dead_pixels(
-                    self._dead_px_frames, variance_threshold=1.0)
-                self._dead_px_frames = []
-                self.btn_detect_dead.setText('Detect Dead Px')
-                self.btn_detect_dead.setEnabled(True)
+        self._dead_px_frames.append(self.reader.image.copy())
+        self.btn_detect_dead.setText(
+            f'Collecting {len(self._dead_px_frames)}/{self._dead_px_target}...')
 
-                if dead_mask is not None:
-                    num_dead = int(np.sum(dead_mask))
-                    self.mask_manager.combine_masks(dead_mask)
-                    self.mask_manager.save_active_mask()
-                    self._update_mask_labels()
-                    QMessageBox.information(
+        if len(self._dead_px_frames) >= self._dead_px_target:
+            self._dead_px_collecting = False
+            dead_mask = self.mask_manager.detect_dead_pixels(
+                self._dead_px_frames, variance_threshold=1.0)
+            self._dead_px_frames = []
+            self.btn_detect_dead.setText('Detect Dead Px')
+            self.btn_detect_dead.setEnabled(True)
+
+            if dead_mask is not None:
+                num_dead = int(np.sum(dead_mask))
+                if num_dead == dead_mask.size:
+                    QMessageBox.warning(
                         self, 'Dead Pixel Detection',
-                        f'Detected {num_dead} stuck pixels '
-                        f'(from {self._dead_px_target} frames).\n'
-                        f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
+                        f'All {num_dead} pixels flagged as dead.\n'
+                        f'This usually means the image is static (no illumination change).\n'
+                        f'Mask NOT updated — try with varying illumination.')
+                    return
+                self.mask_manager.combine_masks(dead_mask)
+                self.mask_manager.save_active_mask()
+                self._update_mask_labels()
+                # Refresh mask viewer if open
+                if self.mask_viewer is not None and self.mask_viewer.isVisible():
+                    self.mask_viewer.mask = self.mask_manager.mask.copy()
+                    self.mask_viewer._refresh_display()
+                QMessageBox.information(
+                    self, 'Dead Pixel Detection',
+                    f'Detected {num_dead} stuck pixels '
+                    f'(from {self._dead_px_target} frames).\n'
+                    f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
 
     def clear_mask_clicked(self):
         if self.mask_manager.mask is None:
@@ -825,54 +846,19 @@ class DiffractionImageWindow(QMainWindow):
                 roi_index = max(0, min(roi_index, len(roi_colors) - 1))
                 roi_color = roi_colors[roi_index]
                 
-                # Check if ROI is unreasonably large (> 10000 pixels) - always resize these
-                MAX_REASONABLE_SIZE = 10000
+                # Flag ROIs larger than the actual image
                 roi_too_big = False
-                original_width = width
-                original_height = height
-                
-                if width > MAX_REASONABLE_SIZE or height > MAX_REASONABLE_SIZE:
-                    roi_too_big = True
-                    # Get image dimensions if available, otherwise use default
-                    image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
-                    if image_shape:
-                        img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
-                        img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
-                    else:
-                        # Fallback: use reasonable default size
-                        img_width = 2000
-                        img_height = 2000
-                    # Force resize: Draw ROI just slightly bigger than image (100 pixels bigger)
-                    x = -50
-                    y = -50
-                    width = img_width + 100  # Force resize to image + 100px
-                    height = img_height + 100  # Force resize to image + 100px
-                else:
-                    # Check if ROI is larger than image (for smaller but still too large ROIs)
-                    image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
-                    if image_shape:
-                        img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
-                        img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
-                        if width > img_width or height > img_height:
-                            roi_too_big = True
-                            # Draw ROI just slightly bigger than image (100 pixels bigger)
-                            x = -50
-                            y = -50
-                            width = img_width + 100  # Always image + 100px when too large
-                            height = img_height + 100  # Always image + 100px when too large
-                
-                # Final safety check: if still too large, force resize to reasonable size
-                if width > MAX_REASONABLE_SIZE:
-                    width = 2100
-                    roi_too_big = True
-                if height > MAX_REASONABLE_SIZE:
-                    height = 2100
-                    roi_too_big = True
-                if roi_too_big:
-                    # Add horizontal offset so multiple "too large" ROIs don't overlay
-                    x = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
-                    y = -50
-                    too_big_count += 1
+                image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
+                if image_shape:
+                    img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                    img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                    if width > img_width or height > img_height:
+                        roi_too_big = True
+                        x = -50 + (too_big_count * 250)
+                        y = -50
+                        width = img_width + 100
+                        height = img_height + 100
+                        too_big_count += 1
                 
                 # Create ROI with final dimensions (ensured to be reasonable)
                 roi = pg.ROI(pos=[x,y],
@@ -1090,32 +1076,24 @@ class DiffractionImageWindow(QMainWindow):
         Updates the positions and sizes of ROIs based on changes from the EPICS software.
         Loops through the cached ROIs and adjusts their parameters accordingly.
         """
-        MAX_REASONABLE_SIZE = 3000
         too_big_count = 0
+        image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
             x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
             y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
             width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
             height = roi_dict.get("SizeY",0) if not(self.image_is_transposed) else roi_dict.get('SizeX',0)
-            
-            # Enforce size limits when updating from callback
-            if width > MAX_REASONABLE_SIZE or height > MAX_REASONABLE_SIZE:
-                image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
-                if image_shape:
-                    img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
-                    img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+
+            if image_shape:
+                img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
+                img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
+                if width > img_width or height > img_height:
                     width = img_width + 100
                     height = img_height + 100
-                    x_pos = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
+                    x_pos = -50 + (too_big_count * 250)
                     y_pos = -50
                     too_big_count += 1
-                else:
-                    width = 2100
-                    height = 2100
-                    x_pos = -50 + (too_big_count * 250)  # Offset by 250px per too-big ROI
-                    y_pos = -50
-                    too_big_count += 1
-            
+
             roi.setPos(pos=x_pos, y=y_pos)
             roi.setSize(size=(width, height))
         self.image_view.update()
@@ -1123,23 +1101,7 @@ class DiffractionImageWindow(QMainWindow):
     def update_roi_region(self) -> None:
         """
         Forces the image viewer to refresh when an ROI region changes.
-        Also ensures ROIs don't exceed reasonable size limits.
         """
-        # Ensure ROIs don't get resized to unreasonable sizes by callbacks
-        MAX_REASONABLE_SIZE = 10000
-        for roi in self.rois:
-            current_size = roi.size()
-            if current_size[0] > MAX_REASONABLE_SIZE or current_size[1] > MAX_REASONABLE_SIZE:
-                # Get image dimensions if available
-                image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
-                if image_shape:
-                    img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
-                    img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
-                    roi.setSize([img_width + 100, img_height + 100])
-                    roi.setPos([-50, -50])
-                else:
-                    roi.setSize([2100, 2100])
-                    roi.setPos([-50, -50])
         self.image_view.update()
 
     def update_pv_prefix(self) -> None:
