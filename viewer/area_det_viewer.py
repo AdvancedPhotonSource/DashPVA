@@ -171,8 +171,7 @@ class DiffractionImageWindow(QMainWindow):
         self.image_view = pg.ImageView(view=plot)
         # Set the default colormap when ImageView is created
         self.image_view.setColorMap(self.cet_colormap)
-        # Remove ImageView's internal widgets to eliminate vertical margin mismatch
-        self.image_view.ui.histogram.setParent(None)
+        # Remove ImageView's internal buttons to reduce vertical margin mismatch
         self.image_view.ui.roiBtn.setParent(None)
         self.image_view.ui.menuBtn.setParent(None)
         self.viewer_layout.addWidget(self.image_view,0,1)
@@ -235,7 +234,7 @@ class DiffractionImageWindow(QMainWindow):
         
         # Set checkboxes to checked by default
         self.chk_autoscale.setChecked(True)
-        self.chk_threshold.setChecked(True)
+        self.chk_threshold.setChecked(False)
         
         # Initialize threshold label - show it since threshold is checked by default
         self.update_threshold_label()
