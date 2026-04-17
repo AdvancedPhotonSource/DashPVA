@@ -1226,11 +1226,18 @@ Current Status:
             X, Y = np.meshgrid(self.q_values, frame_numbers)
             
             # Create contour plot with log scale for better visualization
+            # Guard against invalid LogNorm: vmin must be > 0 and < vmax
+            dmin = float(data_array.min())
+            dmax = float(data_array.max())
+            if dmin <= 0 or not np.isfinite(dmin):
+                dmin = 1e-10
+            if dmax <= dmin or not np.isfinite(dmax):
+                dmax = dmin * 10
             self.waterfall_image = self.waterfall_ax.pcolormesh(
-                X, Y, data_array, 
+                X, Y, data_array,
                 shading='auto',
                 cmap='magma',
-                norm=LogNorm(vmin=data_array.min(), vmax=data_array.max())
+                norm=LogNorm(vmin=dmin, vmax=dmax)
             )
             
             # Set labels and title

@@ -12,10 +12,15 @@ class MaskViewerWindow(QDialog):
     """
     Displays and optionally edits a boolean detector mask.
 
-    Shows the mask as a binary image with optional diffraction image
-    overlay. Supports pixel toggling in edit mode with configurable
-    brush size. Has own rotate/transpose controls initialized from
-    the parent viewer's settings.
+    self.mask starts in detector-native orientation (matching raw frames,
+    EDF masks, and PONI geometry). The Transpose/Rotate buttons modify
+    self.mask directly — this is intentional so users can correct a mask
+    that was loaded in the wrong orientation.
+
+    Display transforms (_is_transposed, _rot_num) are set once from the
+    parent viewer on open so the mask visually matches the diffraction
+    pattern. These flags are NOT changed by the Transpose/Rotate buttons;
+    they only affect rendering via _get_display_mask().
     """
 
     mask_updated = pyqtSignal(object)
@@ -23,13 +28,15 @@ class MaskViewerWindow(QDialog):
     def __init__(self, mask, mask_path=None, parent=None):
         super().__init__(parent)
         self.parent_viewer = parent
+        # ALWAYS detector-native orientation
         self.mask = mask.copy().astype(bool)
         self.mask_path = mask_path
         self._editing = False
         self._show_image = False
         self._alpha = 0.5
 
-        # Local orientation controls, initialized from parent viewer
+        # Display-only orientation — initialized from parent viewer
+        # so the mask appears the same way as the diffraction pattern
         self._is_transposed = getattr(parent, 'image_is_transposed', False) if parent else False
         self._rot_num = getattr(parent, 'rot_num', 0) if parent else 0
 
@@ -120,16 +127,21 @@ class MaskViewerWindow(QDialog):
         pct = 100 * num_masked / total if total > 0 else 0
         return f"Masked: {num_masked:,} / {total:,} pixels ({pct:.1f}%)"
 
-    def _get_current_image(self):
-        """Get current diffraction image from parent viewer if available."""
-        if self.parent_viewer is not None and hasattr(self.parent_viewer, 'reader'):
-            reader = self.parent_viewer.reader
-            if reader is not None and reader.image is not None:
-                return reader.image.copy()
-        return None
+    # ------------------------------------------------------------------
+    # Display transform helpers
+    # ------------------------------------------------------------------
 
-    def _transform_image_to_match_mask(self, data):
-        """Transform the raw diffraction image to match the mask's current orientation."""
+    def _get_display_mask(self):
+        """Apply display-only transforms to a COPY of the native mask."""
+        display = self.mask.copy()
+        if self._is_transposed:
+            display = display.T
+        if self._rot_num:
+            display = np.rot90(display, k=self._rot_num)
+        return display
+
+    def _transform_data_for_display(self, data):
+        """Apply the same display transforms to any 2D data (e.g. diffraction image)."""
         if self._is_transposed:
             if data.ndim == 2:
                 data = np.transpose(data)
@@ -139,28 +151,55 @@ class MaskViewerWindow(QDialog):
             data = np.rot90(data, k=self._rot_num)
         return data
 
-    def _click_to_mask(self, view_x, view_y):
-        """Map view click coordinates to mask indices.
+    def _display_to_native(self, disp_i, disp_j):
+        """Reverse-map display coordinates back to detector-native indices.
 
-        Transpose/rotate modify self.mask directly, so the displayed
-        array IS self.mask. pyqtgraph renders data[i,j] at (x=i, y=j),
-        so click (vx, vy) → mask[vx, vy].
+        Uses a probe array to exactly invert the forward transform chain
+        (transpose then rot90) so edit-mode clicks modify the correct pixel.
         """
-        if 0 <= view_x < self.mask.shape[0] and 0 <= view_y < self.mask.shape[1]:
-            return view_x, view_y
+        display_mask = self._get_display_mask()
+        probe = np.zeros(display_mask.shape, dtype=bool)
+        probe[disp_i, disp_j] = True
+
+        # Undo rot90(k) = apply rot90(4-k)
+        if self._rot_num:
+            probe = np.rot90(probe, k=(4 - self._rot_num))
+        # Undo transpose
+        if self._is_transposed:
+            probe = probe.T
+
+        idx = np.argwhere(probe)
+        if len(idx) == 0:
+            return -1, -1
+        return int(idx[0, 0]), int(idx[0, 1])
+
+    def _get_current_image(self):
+        """Get current diffraction image from parent viewer if available."""
+        if self.parent_viewer is not None and hasattr(self.parent_viewer, 'reader'):
+            reader = self.parent_viewer.reader
+            if reader is not None and reader.image is not None:
+                return reader.image.copy()
         return None
+
+    # ------------------------------------------------------------------
+    # Orientation controls — modify self.mask data directly.
+    # Display flags (_is_transposed, _rot_num) stay fixed from parent
+    # so the auto-display-matching on open is preserved.
+    # ------------------------------------------------------------------
 
     def _toggle_transpose(self):
         self.mask = self.mask.T.copy()
-        self._is_transposed = not self._is_transposed
         self._refresh_display()
         self.mask_updated.emit(self.mask)
 
     def _rotate(self):
         self.mask = np.rot90(self.mask, k=1).copy()
-        self._rot_num = (self._rot_num + 1) % 4
         self._refresh_display()
         self.mask_updated.emit(self.mask)
+
+    # ------------------------------------------------------------------
+    # Display rendering
+    # ------------------------------------------------------------------
 
     def _get_parent_display_settings(self):
         """Get display settings (log, levels, colormap) from parent viewer."""
@@ -180,13 +219,15 @@ class MaskViewerWindow(QDialog):
         return log_on, levels, colormap
 
     def _refresh_display(self):
+        display_mask = self._get_display_mask()
+
         if self._show_image:
             img = self._get_current_image()
             if img is not None:
                 log_on, parent_levels, colormap = self._get_parent_display_settings()
 
-                # Transform raw diffraction image to match mask orientation
-                img = self._transform_image_to_match_mask(img)
+                # Transform raw image with same display transforms
+                img = self._transform_data_for_display(img)
 
                 img_float = img.astype(np.float64)
                 if log_on:
@@ -212,29 +253,29 @@ class MaskViewerWindow(QDialog):
                 rgba[..., 2] = img_norm
                 rgba[..., 3] = 1.0
 
-                mask_resized = self.mask
-                if mask_resized.shape != img_norm.shape[:2]:
+                mask_for_overlay = display_mask
+                if mask_for_overlay.shape != img_norm.shape[:2]:
                     from skimage.transform import resize
-                    mask_resized = resize(self.mask.astype(np.uint8),
-                                          img_norm.shape[:2], order=0,
-                                          preserve_range=True).astype(bool)
-                rgba[mask_resized, 0] = 1.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
-                rgba[mask_resized, 1] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
-                rgba[mask_resized, 2] = 0.0 * self._alpha + img_norm[mask_resized] * (1 - self._alpha)
+                    mask_for_overlay = resize(display_mask.astype(np.uint8),
+                                              img_norm.shape[:2], order=0,
+                                              preserve_range=True).astype(bool)
+                rgba[mask_for_overlay, 0] = 1.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
+                rgba[mask_for_overlay, 1] = 0.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
+                rgba[mask_for_overlay, 2] = 0.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
 
                 self.image_view.setImage(rgba, autoRange=False, autoLevels=False,
                                          levels=(0, 1))
             else:
-                self._show_mask_only()
+                self._show_mask_only(display_mask)
         else:
-            self._show_mask_only()
+            self._show_mask_only(display_mask)
         self.lbl_info.setText(self._info_text())
 
-    def _show_mask_only(self):
-        """Display mask directly — transpose/rotate already modify self.mask."""
+    def _show_mask_only(self, display_mask):
+        """Display mask — uses pre-transformed display copy."""
         cmap = pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 50, 50)])
         self.image_view.setColorMap(cmap)
-        self.image_view.setImage(self.mask.astype(np.float32),
+        self.image_view.setImage(display_mask.astype(np.float32),
                                  autoRange=False, autoLevels=False,
                                  levels=(0, 1))
 
@@ -248,6 +289,10 @@ class MaskViewerWindow(QDialog):
         if self._show_image:
             self._refresh_display()
 
+    # ------------------------------------------------------------------
+    # Mask operations (always in detector-native orientation)
+    # ------------------------------------------------------------------
+
     def _save_mask(self):
         # If no path set, get default from parent's mask_manager
         if not self.mask_path:
@@ -258,6 +303,7 @@ class MaskViewerWindow(QDialog):
                 self.lbl_info.setText("Error: No save path available")
                 return
 
+        # self.mask is always detector-native — safe to save directly
         np.save(self.mask_path, self.mask)
         self.mask_updated.emit(self.mask)
         num_masked = int(np.sum(self.mask))
@@ -269,6 +315,10 @@ class MaskViewerWindow(QDialog):
         self.mask = ~self.mask
         self._refresh_display()
         self.mask_updated.emit(self.mask)
+
+    # ------------------------------------------------------------------
+    # Edit mode — clicks in display coords, edits in native coords
+    # ------------------------------------------------------------------
 
     def _toggle_edit(self, state):
         self._editing = (state == Qt.Checked)
@@ -288,16 +338,19 @@ class MaskViewerWindow(QDialog):
         vx = int(round(mouse_point.x()))
         vy = int(round(mouse_point.y()))
 
-        result = self._click_to_mask(vx, vy)
-        if result is not None:
-            raw_row, raw_col = result
-            radius = self.spn_brush.value()
-            self._toggle_region(raw_row, raw_col, radius)
-            self._refresh_display()
-            self.mask_updated.emit(self.mask)
+        # pyqtgraph renders data[i,j] at (x=i, y=j)
+        # vx, vy are display coordinates — reverse-map to native
+        display_mask = self._get_display_mask()
+        if 0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]:
+            native_i, native_j = self._display_to_native(vx, vy)
+            if 0 <= native_i < self.mask.shape[0] and 0 <= native_j < self.mask.shape[1]:
+                radius = self.spn_brush.value()
+                self._toggle_region(native_i, native_j, radius)
+                self._refresh_display()
+                self.mask_updated.emit(self.mask)
 
     def _toggle_region(self, row, col, radius):
-        """Toggle a circular region of pixels."""
+        """Toggle a circular region of pixels in native coordinates."""
         h, w = self.mask.shape
         new_val = not self.mask[row, col]
         for dr in range(-radius + 1, radius):
