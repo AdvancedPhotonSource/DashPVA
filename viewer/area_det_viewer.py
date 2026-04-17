@@ -534,9 +534,10 @@ class DiffractionImageWindow(QMainWindow):
                         if threshold_enabled and max_thresh > 0:
                             cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
 
-                        # Pass mask file if active
-                        if self.mask_manager.mask is not None and self.mask_manager.mask_path:
-                            cmd_args.extend(["--mask-file", self.mask_manager.mask_path])
+                        # Always pass mask file path so pyFAI can detect new masks
+                        mask_path = self.mask_manager.mask_path or os.path.join(
+                            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
+                        cmd_args.extend(["--mask-file", mask_path])
 
                         # Don't redirect stderr so errors are visible in terminal for debugging
                         # Redirect stdout to avoid clutter, but keep stderr visible

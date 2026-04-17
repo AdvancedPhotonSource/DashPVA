@@ -298,21 +298,11 @@ class PyFAIAnalysisWindow(QMainWindow):
             else:
                 logger.debug(f"Threshold not enabled. Received: min={threshold_min}, max={threshold_max}")
 
-            # Load mask if provided
-            if mask_file is not None and os.path.exists(mask_file):
-                try:
-                    if mask_file.lower().endswith('.edf'):
-                        self.mask = fabio.open(mask_file).data.astype(bool)
-                    elif mask_file.lower().endswith('.npy'):
-                        self.mask = np.load(mask_file).astype(bool)
-                    else:
-                        logger.warning(f"Unknown mask format: {mask_file}")
-                    if self.mask is not None:
-                        logger.warning(f"Mask loaded: {mask_file}, shape={self.mask.shape}, "
-                                       f"masked={np.sum(self.mask)}/{self.mask.size}")
-                except Exception as e:
-                    logger.error(f"Failed to load mask file '{mask_file}': {e}")
-                    self.mask = None
+            # Load mask if provided — also watch for changes
+            self._mask_file = mask_file
+            self._mask_mtime = None
+            if mask_file is not None:
+                self._load_mask_file()
 
             # IMPORTANT: Build the UI first so that all UI elements (metadata_panel, status bar, etc.) are available.
             self.initUI()
@@ -379,6 +369,39 @@ class PyFAIAnalysisWindow(QMainWindow):
             logger.error(error_msg)
             self.statusBar().showMessage(f"ERROR: {error_msg}", 10000)  # Show for 10 seconds
             self._show_error_in_metadata(error_msg)
+
+    def _load_mask_file(self):
+        """Load mask from self._mask_file. Supports .npy, .edf, .tif/.tiff."""
+        if self._mask_file is None or not os.path.exists(self._mask_file):
+            return
+        try:
+            ext = os.path.splitext(self._mask_file)[1].lower()
+            if ext == '.npy':
+                self.mask = np.load(self._mask_file).astype(bool)
+            elif ext == '.edf':
+                self.mask = fabio.open(self._mask_file).data.astype(bool)
+            elif ext in ('.tif', '.tiff'):
+                from PIL import Image
+                self.mask = np.array(Image.open(self._mask_file)).astype(bool)
+            else:
+                self.mask = np.load(self._mask_file).astype(bool)
+            self._mask_mtime = os.path.getmtime(self._mask_file)
+            logger.warning(f"Mask loaded: {self._mask_file}, shape={self.mask.shape}, "
+                           f"masked={np.sum(self.mask)}/{self.mask.size}")
+        except Exception as e:
+            logger.error(f"Failed to load mask file '{self._mask_file}': {e}")
+            self.mask = None
+
+    def _check_mask_update(self):
+        """Reload mask file if it has been modified on disk."""
+        if self._mask_file is None or not os.path.exists(self._mask_file):
+            return
+        try:
+            current_mtime = os.path.getmtime(self._mask_file)
+            if self._mask_mtime is None or current_mtime > self._mask_mtime:
+                self._load_mask_file()
+        except OSError:
+            pass
 
     def initUI(self):
         """Initializes the UI with a top waterfall plot and the existing components."""
@@ -973,6 +996,9 @@ class PyFAIAnalysisWindow(QMainWindow):
                               f"Range: [{original_min:.1f}, {original_max:.1f}] -> [{new_min:.1f}, {new_max:.1f}]")
             else:
                 logger.debug("Threshold not enabled or not configured")
+
+            # Check if mask file was updated on disk (e.g., user changed mask in main viewer)
+            self._check_mask_update()
 
             # If a mask is provided, ensure its shape matches
             if self.mask is not None:
