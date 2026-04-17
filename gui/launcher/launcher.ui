@@ -19,6 +19,123 @@
   <property name="windowTitle">
    <string>DashPVA Launcher</string>
   </property>
+  <property name="styleSheet">
+   <string notr="true">
+QDialog {
+    background-color: #F5F6F8;
+}
+
+QLabel#lbl_header {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1B2333;
+}
+
+QLabel#lbl_subtitle {
+    font-size: 12px;
+    color: #7A8394;
+}
+
+QLabel#lbl_status {
+    font-size: 11px;
+    color: #7A8394;
+}
+
+QLabel#lbl_info {
+    background-color: #FFF8E1;
+    color: #8B6914;
+    border: 1px solid #FFE08A;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 11px;
+}
+
+QPushButton {
+    background-color: #FFFFFF;
+    color: #1B2333;
+    border: 1px solid #E0E4EB;
+    border-radius: 7px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+}
+
+QPushButton:hover {
+    background-color: #EBF0FF;
+    border-color: #4B6EF5;
+    color: #2E52D5;
+}
+
+QPushButton:pressed {
+    background-color: #D6E2FF;
+    border-color: #3A5EE5;
+}
+
+QPushButton:disabled {
+    background-color: #EBF0FF;
+    border-color: #A8C0F0;
+    color: #4B6EF5;
+}
+
+QPushButton#btn_settings {
+    background: transparent;
+    color: #5B6474;
+    border: 1px solid #D8DCE5;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: normal;
+    text-align: center;
+}
+
+QPushButton#btn_settings:hover {
+    background-color: #ECEEF2;
+    color: #1B2333;
+    border-color: #B8BDC8;
+}
+
+QPushButton#btn_shutdown_all {
+    background: transparent;
+    color: #C2550A;
+    border: 1px solid #FBCFB0;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: normal;
+    text-align: center;
+}
+
+QPushButton#btn_shutdown_all:hover {
+    background-color: #FFF4EE;
+    border-color: #F5A77A;
+}
+
+QPushButton#btn_shutdown_all:disabled {
+    color: #C4C9D2;
+    border-color: #E8ECF0;
+}
+
+QPushButton#btn_exit {
+    background-color: #E83535;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+QPushButton#btn_exit:hover {
+    background-color: #D12B2B;
+}
+
+QPushButton#btn_exit:pressed {
+    background-color: #B82020;
+}
+   </string>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="spacing">
     <number>6</number>
@@ -36,11 +153,9 @@
     <number>12</number>
    </property>
 
+   <!-- App title -->
    <item>
     <widget class="QLabel" name="lbl_header">
-     <property name="styleSheet">
-      <string notr="true">font-size: 22px; font-weight: 700; color: #1B2333; padding: 2px 0 0 0;</string>
-     </property>
      <property name="text">
       <string>DashPVA</string>
      </property>
@@ -50,11 +165,9 @@
     </widget>
    </item>
 
+   <!-- Subtitle -->
    <item>
     <widget class="QLabel" name="lbl_subtitle">
-     <property name="styleSheet">
-      <string notr="true">font-size: 12px; color: #7A8394; padding: 0 0 6px 0;</string>
-     </property>
      <property name="text">
       <string>Select a module to launch</string>
      </property>
@@ -64,13 +177,11 @@
     </widget>
    </item>
 
-   <!-- Dynamic sections inserted here by _insert_registry_sections() -->
+   <!-- Dynamic registry sections are inserted here by _insert_registry_sections() -->
 
+   <!-- Running-modules status -->
    <item>
     <widget class="QLabel" name="lbl_status">
-     <property name="styleSheet">
-      <string notr="true">font-size: 11px; color: #7A8394;</string>
-     </property>
      <property name="text">
       <string>No modules running</string>
      </property>
@@ -80,11 +191,9 @@
     </widget>
    </item>
 
+   <!-- First-time-use info banner -->
    <item>
     <widget class="QLabel" name="lbl_info">
-     <property name="styleSheet">
-      <string notr="true">background-color: #FFF8E1; color: #8B6914; border: 1px solid #FFE08A; padding: 7px 10px; border-radius: 6px; font-size: 11px;</string>
-     </property>
      <property name="text">
       <string></string>
      </property>
@@ -94,11 +203,28 @@
     </widget>
    </item>
 
+   <!-- Bottom action bar -->
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <property name="spacing">
       <number>6</number>
      </property>
+
+     <!-- Logs link (leftmost, before the spacer) -->
+     <item>
+      <widget class="QLabel" name="lbl_logs">
+       <property name="text">
+        <string>&lt;a href="#" style="color: #9BA5B5; text-decoration: none; font-size: 11px;"&gt;View Logs&lt;/a&gt;</string>
+       </property>
+       <property name="toolTip">
+        <string>View application logs</string>
+       </property>
+       <property name="openExternalLinks">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">
@@ -112,6 +238,7 @@
        </property>
       </spacer>
      </item>
+
      <item>
       <widget class="QPushButton" name="btn_settings">
        <property name="text">
@@ -119,6 +246,7 @@
        </property>
       </widget>
      </item>
+
      <item>
       <widget class="QPushButton" name="btn_shutdown_all">
        <property name="toolTip">
@@ -129,6 +257,7 @@
        </property>
       </widget>
      </item>
+
      <item>
       <widget class="QPushButton" name="btn_exit">
        <property name="text">
@@ -136,6 +265,7 @@
        </property>
       </widget>
      </item>
+
     </layout>
    </item>
 

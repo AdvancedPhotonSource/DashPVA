@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>PVASetupDialog</class>
- <widget class="QDialog" name="PVASetupDialog">
+ <class>Workflow</class>
+ <widget class="QDialog" name="Workflow">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -21,6 +21,10 @@
        <pointsize>12</pointsize>
       </font>
      </property>
+     <property name="styleSheet">
+      <string notr="true">QTabBar::tab:first { background-color: #BDE0F7; }
+QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
+     </property>
      <property name="currentIndex">
       <number>1</number>
      </property>
@@ -28,6 +32,9 @@
       <attribute name="title">
        <string>Sim Server Processor</string>
       </attribute>
+      <property name="styleSheet">
+       <string notr="true">background-color: #D6EEF8;</string>
+      </property>
       <layout class="QVBoxLayout" name="verticalLayoutSimServer">
        <item>
         <layout class="QGridLayout" name="gridLayout_2">
@@ -226,7 +233,7 @@
          <item>
           <widget class="QPushButton" name="buttonRunSimServer">
            <property name="text">
-            <string>Run</string>
+            <string>Generate</string>
            </property>
           </widget>
          </item>
@@ -266,15 +273,124 @@
      </widget>
      <widget class="QWidget" name="configUploadTab">
       <attribute name="title">
-       <string>Config Upload</string>
+       <string>Config</string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_3">
+
+       <!-- Config Source: inline radio row -->
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutConfigSource">
+         <item>
+          <widget class="QLabel" name="labelConfigSourceTitle">
+           <property name="text">
+            <string>Source:</string>
+           </property>
+           <property name="styleSheet">
+            <string>QLabel { font-weight: bold; color: #555; }</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QRadioButton" name="radioLegacyToml">
+           <property name="text">
+            <string>Legacy TOML</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+           <property name="styleSheet">
+            <string>QRadioButton { color: #E67E22; font-weight: bold; }</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QRadioButton" name="radioDatabase">
+           <property name="text">
+            <string>Database</string>
+           </property>
+           <property name="styleSheet">
+            <string>QRadioButton { color: #2980B9; font-weight: bold; }</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelDbStatus">
+           <property name="text">
+            <string>● Checking…</string>
+           </property>
+           <property name="styleSheet">
+            <string>QLabel { color: #999999; font-size: 10px; }</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignLeft|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonInitDb">
+           <property name="text">
+            <string>Initialize DB</string>
+           </property>
+           <property name="toolTip">
+            <string>Attempt to create the database file and tables</string>
+           </property>
+           <property name="styleSheet">
+            <string>QPushButton { font-size: 10px; padding: 1px 6px; }</string>
+           </property>
+           <property name="visible">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonRefreshDb">
+           <property name="text">
+            <string>↻ Refresh</string>
+           </property>
+           <property name="toolTip">
+            <string>Reload the database and refresh the current view</string>
+           </property>
+           <property name="styleSheet">
+            <string>QPushButton { font-size: 10px; padding: 1px 6px; }</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerConfigSource">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+
+       <!-- TOML section header -->
+       <item>
+        <widget class="QLabel" name="labelTomlHeader">
+         <property name="text">
+          <string>Legacy TOML</string>
+         </property>
+         <property name="styleSheet">
+          <string>QLabel {
+  color: #E67E22;
+  font-weight: bold;
+  font-size: 11px;
+  background-color: #FDF2E9;
+  border-left: 3px solid #E67E22;
+  padding: 2px 6px;
+}</string>
+         </property>
+        </widget>
+       </item>
+
+       <!-- TOML section fields -->
        <item>
         <layout class="QFormLayout" name="configUploadFormLayout">
          <item row="0" column="0">
           <widget class="QLabel" name="label">
            <property name="text">
-            <string>Config Directory Path</string>
+            <string>Config File Path</string>
            </property>
           </widget>
          </item>
@@ -308,6 +424,383 @@
          </item>
         </layout>
        </item>
+
+       <!-- Horizontal separator -->
+       <item>
+        <widget class="QFrame" name="separatorLine">
+         <property name="frameShape">
+          <enum>QFrame::HLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Sunken</enum>
+         </property>
+         <property name="styleSheet">
+          <string>QFrame { color: #BDC3C7; }</string>
+         </property>
+        </widget>
+       </item>
+
+       <!-- View toggle column + content area -->
+       <item>
+        <layout class="QHBoxLayout" name="viewContentSplitLayout">
+
+         <!-- Left column: Profile / Settings toggle -->
+         <item>
+          <layout class="QVBoxLayout" name="viewModeLayout">
+           <item>
+            <widget class="QRadioButton" name="radioViewProfile">
+             <property name="text">
+              <string>Profile</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QRadioButton" name="radioViewSettings">
+             <property name="text">
+              <string>Settings</string>
+             </property>
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="verticalSpacerViewMode">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </item>
+
+         <!-- Right column: database content + search + tree -->
+         <item>
+          <layout class="QVBoxLayout" name="treeContentLayout">
+
+           <!-- Database section header -->
+           <item>
+            <widget class="QLabel" name="labelDatabaseHeader">
+             <property name="text">
+              <string>Database</string>
+             </property>
+             <property name="styleSheet">
+              <string>QLabel {
+  color: #2980B9;
+  font-weight: bold;
+  font-size: 11px;
+  background-color: #EBF5FB;
+  border-left: 3px solid #2980B9;
+  padding: 2px 6px;
+}</string>
+             </property>
+            </widget>
+           </item>
+
+           <!-- Database Profile row -->
+           <item>
+            <layout class="QHBoxLayout" name="dbProfileLayout">
+             <item>
+              <widget class="QLabel" name="labelProfile">
+               <property name="text">
+                <string>Profile:</string>
+               </property>
+               <property name="styleSheet">
+                <string>QLabel { color: #2980B9; font-weight: bold; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="comboBoxProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="minimumWidth">
+                <number>220</number>
+               </property>
+               <property name="styleSheet">
+                <string>QComboBox { border: 1px solid #2980B9; border-radius: 3px; padding: 2px 6px; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacerDB">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBoxDefaultProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Default</string>
+               </property>
+               <property name="styleSheet">
+                <string>QCheckBox { color: #E67E22; font-size: 11px; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBoxSelectedProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Selected</string>
+               </property>
+               <property name="styleSheet">
+                <string>QCheckBox { color: #27AE60; font-size: 11px; }</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+
+           <!-- Profile description row -->
+           <item>
+            <layout class="QHBoxLayout" name="dbDescriptionLayout">
+             <item>
+              <widget class="QLabel" name="labelProfileDescription">
+               <property name="text">
+                <string>Description:</string>
+               </property>
+               <property name="styleSheet">
+                <string>QLabel { color: #2980B9; font-weight: bold; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="lineEditProfileDescription">
+               <property name="readOnly">
+                <bool>true</bool>
+               </property>
+               <property name="placeholderText">
+                <string>No description</string>
+               </property>
+               <property name="styleSheet">
+                <string>QLineEdit { color: #555; background: transparent; border: none; }</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+
+           <!-- Profile management buttons -->
+           <item>
+            <layout class="QHBoxLayout" name="profileManagementLayout">
+             <item>
+              <widget class="QPushButton" name="buttonAddProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Add Profile</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
+QPushButton:hover { background-color: #D6EAF8; }
+QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonDeleteProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Delete Profile</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { color: #E74C3C; border: 1px solid #E74C3C; border-radius: 3px; padding: 3px 8px; }
+QPushButton:hover { background-color: #FADBD8; }
+QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonRenameProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Edit Profile</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
+QPushButton:hover { background-color: #D6EAF8; }
+QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonDuplicateProfile">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>Duplicate Profile</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
+QPushButton:hover { background-color: #D6EAF8; }
+QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacerProfileMgmt">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+
+           <!-- Action Buttons -->
+           <item>
+            <layout class="QHBoxLayout" name="configActionButtonLayout">
+             <item>
+              <widget class="QPushButton" name="buttonImportToml">
+               <property name="text">
+                <string>Import TOML</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { color: #E67E22; border: 1px solid #E67E22; border-radius: 3px; padding: 3px 8px; }
+QPushButton:hover { background-color: #FDEBD0; }
+QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonExportConfigToFile">
+               <property name="text">
+                <string>Export to File</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacerApplySave">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonApplySave">
+               <property name="text">
+                <string>Apply / Save</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { background-color: #2980B9; color: white; border-radius: 3px; padding: 3px 14px; font-weight: bold; }
+QPushButton:hover { background-color: #3498DB; }
+QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; }</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+
+           <!-- Search box -->
+           <item>
+            <layout class="QHBoxLayout" name="treeSearchLayout">
+             <item>
+              <widget class="QLabel" name="labelTreeSearch">
+               <property name="text">
+                <string>Search:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="lineEditTreeSearch">
+               <property name="placeholderText">
+                <string>Search keys or values...</string>
+               </property>
+               <property name="clearButtonEnabled">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonCollapseAll">
+               <property name="text">
+                <string>⊟</string>
+               </property>
+               <property name="toolTip">
+                <string>Collapse all</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { font-size: 12px; padding: 1px 6px; }</string>
+               </property>
+               <property name="maximumWidth">
+                <number>32</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonExpandAll">
+               <property name="text">
+                <string>⊞</string>
+               </property>
+               <property name="toolTip">
+                <string>Expand all</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { font-size: 12px; padding: 1px 6px; }</string>
+               </property>
+               <property name="maximumWidth">
+                <number>32</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="buttonAddTopLevel">
+               <property name="text">
+                <string>+ Key</string>
+               </property>
+               <property name="toolTip">
+                <string>Add a top-level key to the config tree</string>
+               </property>
+               <property name="styleSheet">
+                <string>QPushButton { font-size: 10px; padding: 1px 8px; }</string>
+               </property>
+               <property name="maximumWidth">
+                <number>60</number>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QTreeWidget" name="treeWidgetConfig">
+             <property name="alternatingRowColors">
+              <bool>true</bool>
+             </property>
+             <column>
+              <property name="text">
+               <string>Setting</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Value</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+          </layout>
+         </item>
+
+        </layout>
+       </item>
+
       </layout>
      </widget>
      <widget class="QWidget" name="associatorConsumersTab">
@@ -331,9 +824,9 @@
           </widget>
          </item>
          <item row="4" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileAssociator">
-           <property name="text">
-            <string>consumers/hpc_metadata_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileAssociator">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -509,6 +1002,39 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonSaveConfigMeta">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigMeta">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerAssoc">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
           <widget class="QLabel" name="labelStatusAssociatorConsumers">
            <property name="text">
             <string>Process ID: Not running</string>
@@ -581,9 +1107,9 @@
           </widget>
          </item>
          <item row="6" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileCollector">
-           <property name="text">
-            <string>consumers/hpc_metadata_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileCollector">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -739,6 +1265,39 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonSaveConfigCollector">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigCollector">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerCollector">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
           <widget class="QLabel" name="labelStatusCollector">
            <property name="text">
             <string>Process ID: Not running</string>
@@ -770,9 +1329,9 @@
        <item>
         <layout class="QGridLayout" name="gridLayout_4">
          <item row="4" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileAnalysis">
-           <property name="text">
-            <string>consumers/hpc_rsm_consumer.py</string>
+          <widget class="QComboBox" name="comboBoxProcessorFileAnalysis">
+           <property name="editable">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -944,6 +1503,39 @@
             <string>Stop</string>
            </property>
           </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonSaveConfigAnalysis">
+           <property name="text">
+            <string>Save Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Save current configuration with a name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonLoadConfigAnalysis">
+           <property name="text">
+            <string>Load Config</string>
+           </property>
+           <property name="toolTip">
+            <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerAnalysis">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
          </item>
          <item>
           <widget class="QLabel" name="labelStatusAnalysisConsumer">

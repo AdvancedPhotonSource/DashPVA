@@ -172,11 +172,15 @@ def setup_ca_ioc(records_dict) -> pva.CaIoc:
     """
     if not os.environ.get('EPICS_DB_INCLUDE_PATH'):
         pvDataLib = ctypes.util.find_library('pvData')
-        if not pvDataLib:
-            raise Exception('Cannot find dbd directory. Please set EPICS_DB_INCLUDE_PATH.')
-        pvDataLib = os.path.realpath(pvDataLib)
-        epicsLibDir = os.path.dirname(pvDataLib)
-        dbdDir = os.path.realpath('%s/../../dbd' % epicsLibDir)
+        if pvDataLib:
+            pvDataLib = os.path.realpath(pvDataLib)
+            epicsLibDir = os.path.dirname(pvDataLib)
+            dbdDir = os.path.realpath('%s/../../dbd' % epicsLibDir)
+        else:
+            # Fallback: use dbd directory bundled with the pvaccess Python package
+            dbdDir = os.path.join(os.path.dirname(pva.__file__), 'dbd')
+            if not os.path.isdir(dbdDir):
+                raise Exception('Cannot find dbd directory. Please set EPICS_DB_INCLUDE_PATH.')
         os.environ['EPICS_DB_INCLUDE_PATH'] = dbdDir
         
     # Create a temporary database file
@@ -261,6 +265,16 @@ def main() -> None:
     for rec_name, rec_data in all_records.items():
         update_full_record(caIoc, rec_name, rec_data)
 
+    # Static records that must be re-put each loop to keep their CA timestamps current
+    static_records = {
+        "PrimaryBeamDirection": primary_beam_direction_record,
+        "InplaneReferenceDirection": inplane_reference_direction_record,
+        "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
+        "6idb:spec:UB_matrix": ub_matrix_record,
+        "DetectorSetup": detector_setup_record,
+        "ScanOn": scan_on_record,
+    }
+
     # For dynamic axis records, store their base positions
     base_positions = {name: rec['Position'] for name, rec in axis_records.items()}
     dynamic_records = {**axis_records, '6idb:spec:Energy':13.0,} #'6idb:spec:UB_matrix': caget('6idb:spec:UB_matrix')}
@@ -272,6 +286,11 @@ def main() -> None:
     try:
         while True:
             elapsed = time.time() - start_time
+
+            # Re-put static records every loop so their timestamps stay current
+            for rec_name, rec_data in static_records.items():
+                update_full_record(caIoc, rec_name, rec_data)
+
             for name, rec in dynamic_records.items():
                 # Update the Position field with a sine offset
                 new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)

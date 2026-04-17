@@ -25,8 +25,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             pass
 
         # Config Variables
-        self.path = None
-        self.hkl_config = None
+        self.hkl_config = {}
         
         # Statistics
         self.nFramesProcessed = 0
@@ -129,18 +128,29 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.configure(configDict)
         
     def configure(self, configDict):
-        """Configure processor settings and initialize HKL parameters"""
+        """Configure processor settings and initialize HKL parameters from TOML config."""
         self.logger.debug(f'Configuration update: {configDict}')
 
         if 'path' in configDict:
-            self.path = configDict["path"]
-            with open(self.path, "r") as config_file:
-                self.config = toml.load(config_file)
-                
-            if 'HKL' in self.config:
-                self.hkl_config : dict = self.config['HKL']
-                for section in self.hkl_config.values(): # every section holds a dict
-                    for channel in section.values(): # the values of each seciton is the pv name string
+            self.path = configDict['path']
+        else:
+            import settings as _settings
+            self.path = _settings.TOML_FILE
+            if self.path is None:
+                raise RuntimeError(
+                    "HpcRsmProcessor: no 'path' in configDict and "
+                    "settings.TOML_FILE is not set — configure a TOML config first."
+                )
+
+        with open(self.path, 'r') as f:
+            self.config = toml.load(f)
+
+        self.hkl_config = self.config.get('HKL', {})
+        self.hkl_pv_channels = set()
+        for section in self.hkl_config.values():
+            if isinstance(section, dict):
+                for channel in section.values():
+                    if channel:
                         self.hkl_pv_channels.add(channel)
 
     def parse_hkl_ndattributes(self, pva_object):

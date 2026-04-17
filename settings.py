@@ -39,6 +39,114 @@ except Exception:
     ConfigSource = None  # type: ignore[assignment]
 
 
+# NeXus / HDF5 structure definition (static — not config-driven)
+HDF5_STRUCTURE = {
+    "nexus": {
+        "default": {
+            "NX_class": "NXroot",
+            "default": "entry",
+            "entry": {
+                "NX_class": "NXentry",
+                "default": "data",
+
+                # --- INSTRUMENT: The 'How' (Source + Detector) ---
+                "instrument": {
+                    "NX_class": "NXinstrument",
+                    "source": {
+                        "NX_class": "NXsource",
+                        "target": "HKL/SPEC/ENERGY_VALUE",
+                        "units": "keV"
+                    },
+                    "detector": {
+                        "NX_class": "NXdetector",
+                        "target": "HKL/DETECTOR_SETUP",
+                        "data_link": "/entry/data/data"
+                    }
+                },
+
+                # --- SAMPLE: The 'What' (Motor Stacks + Environment) ---
+                "sample": {
+                    "NX_class": "NXsample",
+                    "ub_matrix": {
+                        "NX_class": "NXcollection",
+                        "target": "HKL/SPEC/UB_MATRIX_VALUE"
+                    },
+                    "geometry": {
+                        "NX_class": "NXtransformations",
+                        "sample_phi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_4", "type": "rotation"},
+                        "sample_chi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_3", "type": "rotation"},
+                        "sample_eta": {"target": "HKL/SAMPLE_CIRCLE_AXIS_2", "type": "rotation"},
+                        "sample_mu":  {"target": "HKL/SAMPLE_CIRCLE_AXIS_1", "type": "rotation"}
+                    }
+                },
+
+                # --- DATA: The 'View' (Plotting Entry Point) ---
+                "data": {
+                    "NX_class": "NXdata",
+                    "signal": "data",
+                    "data": {"link": "/entry/data/data"}
+                }
+            }
+        },
+        "scans": {
+            "NX_class": "NXroot",
+            "default": "entry",
+            "entry": {
+                "name": "entry",
+                "NX_class": "NXentry",
+                "default": "data",
+                "instrument": {
+                    "name": "instrument",
+                    "NX_class": "NXinstrument",
+                    "detector": {
+                        "name": "detector",
+                        "NX_class": "NXdetector",
+                        "field": "data",
+                        "distance": {"value": None, "units": "mm"},
+                        "beam_center_x": {"value": None, "units": "pixel"},
+                        "beam_center_y": {"value": None, "units": "pixel"},
+                        "pixel_size": {"value": None, "units": "m"},
+                        "transformations": {
+                            "NX_class": "NXtransformations",
+                            "axis_2": {"value": None, "type": "rotation", "vector": [0, 1, 0]}
+                        }
+                    },
+                    "source": {
+                        "name": "source",
+                        "NX_class": "NXsource",
+                        "energy": {"value": None, "units": "keV"}
+                    },
+                },
+                "sample": {
+                    "name": "sample",
+                    "NX_class": "NXsample",
+                    "field": "rotation_angle",
+                    "ub_matrix": {"value": None, "units": "1/angstrom"},
+                    "orientation_matrix": {"value": None},
+                    "surface_normal": {"vector": [0, 0, 1]},
+                    "inplane_reference": {"vector": [1, 0, 0]}
+                },
+                "data": {
+                    "name": "data",
+                    "NX_class": "NXdata",
+                    "signal": "data",
+                    "axes": "rotation_angle"
+                }
+            }
+        },
+        "format": {
+            "name": "nexus",
+            "links": {
+                "Nexus": "",
+                "Scan Standard": "",
+                "DashPVA": ""
+            }
+        }
+    }
+}
+
+__VERSION__ = 2.1
+
 # User variables
 BEAMLINE_NAME: Optional[str] = None
 
@@ -80,7 +188,7 @@ SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
 
 # Active TOML config path — set by the Settings dialog or resolved from the locator.
-# Used by RSMConverter and other components that need a direct TOML file path.
+# Resolved TOML path for components that need a direct file path.
 TOML_FILE: Optional[str] = None
 
 # Internal state

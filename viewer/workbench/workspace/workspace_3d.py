@@ -20,7 +20,6 @@ except ImportError:
 # Worker for off-UI-thread 3D prep
 from viewer.workbench.workers import Render3D
 from utils.hdf5_loader import HDF5Loader, discover_hkl_axis_labels
-import settings
 from utils.rsm_converter import RSMConverter
 
 class Workspace3D(BaseTab):
@@ -399,19 +398,18 @@ class Workspace3D(BaseTab):
                 )
                 if not file_name: return
                 file_path = file_name
-            toml_path = getattr(settings, 'TOML_FILE', None)
-            if not toml_path:
-                toml_path, _ = QFileDialog.getOpenFileName(
-                    self, 'Select TOML Config File', '', 'TOML Files (*.toml);;All Files (*)'
-                )
-                if not toml_path:
-                    return
-                settings.set_locator(toml_path)
-                settings.reload()
-            conv = RSMConverter(toml_path)
+            conv = RSMConverter()
             # 2. Load the raw data
-            # if the data is uncompressed
-            data = conv.load_h5_to_3d(file_path)
+            try:
+                data = conv.load_h5_to_3d(file_path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, '3D Load Failed',
+                    f'Could not load 3D data from:\n{file_path}\n\n'
+                    f'The file may not contain HKL metadata or precomputed Q-space data.\n\n'
+                    f'Error: {e}'
+                )
+                return
             points, intensities, num_images, shape = data
 
             # 3. Define what happens when the worker finishes processing
@@ -591,18 +589,6 @@ class Workspace3D(BaseTab):
             except Exception:
                 pass
         
-        # Keep plane widget synchronized to final state
-        try:
-            widgets = getattr(self.plotter, 'plane_widgets', [])
-            if self.plane_widget is not None:
-                self.plane_widget.SetNormal(normal)
-                self.plane_widget.SetOrigin(origin)
-            elif widgets:
-                widgets[0].SetNormal(normal)
-                widgets[0].SetOrigin(origin)
-        except Exception:
-            pass
-            
         self.plotter.render()
         # Respect slice toggle state after update
         try:

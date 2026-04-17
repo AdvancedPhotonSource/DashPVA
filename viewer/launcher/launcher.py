@@ -2,26 +2,38 @@ import sys
 import os, subprocess
 from collections import OrderedDict
 from PyQt5 import uic
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QLabel, QPushButton, QHBoxLayout
+from PyQt5.QtWidgets import (
+    QApplication, QDialog, QMessageBox, QLabel, QPushButton,
+    QHBoxLayout, QWidget, QGridLayout, QFrame
+)
 from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QCursor
 from .registry import VIEWS
 
 
 class LauncherDialog(QDialog):
     def __init__(self):
         super(LauncherDialog, self).__init__()
-        uic.loadUi('gui/dashpva.ui', self)
+        uic.loadUi('gui/launcher/launcher.ui', self)
+
+        try:
+            import settings as _settings
+            beamline = _settings.BEAMLINE_NAME
+            if beamline:
+                self.lbl_header.setText(f'DashPVA: {beamline}')
+                self.setWindowTitle(f'DashPVA Launcher — {beamline}')
+        except Exception:
+            pass
+
         self.processes = {}
         self._timer = QTimer(self)
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._poll_processes)
         self._timer.start()
 
-        # Build all sections and buttons dynamically from the registry
         self._insert_registry_sections()
 
         if hasattr(self, 'btn_settings'):
-            # Open settings dialog in-process so fields are prefilled from current global settings
             self.btn_settings.clicked.connect(self._open_settings)
         if hasattr(self, 'btn_exit'):
             self.btn_exit.clicked.connect(self.request_close)
@@ -30,66 +42,82 @@ class LauncherDialog(QDialog):
 
         self._update_status()
 
-        # Static tip in the info footer, if present
         try:
             if hasattr(self, 'lbl_info') and self.lbl_info is not None:
                 self.lbl_info.setText("Note: On first time use loading may take a while")
         except Exception:
             pass
 
-    def _insert_registry_sections(self):
-        """Build all section headers and buttons from the VIEWS registry.
+        # Wire up the logs link defined in launcher.ui
+        if hasattr(self, 'lbl_logs'):
+            self.lbl_logs.setCursor(QCursor(Qt.PointingHandCursor))
+            self.lbl_logs.linkActivated.connect(self._open_logs)
 
-        Entries are grouped by their 'section' key.  Sections appear in the
-        order they are first encountered in the registry list.  Each section
-        gets a bold header label followed by its buttons, inserted just above
-        the status label / bottom bar.
-        """
+        self.adjustSize()
+
+    def _insert_registry_sections(self):
+        """Build section dividers and button grids from the VIEWS registry."""
         layout = self.layout()
         if layout is None:
             return
 
-        # Determine insertion point — just above the status label or bottom bar
+        # Insert above status label
         insert_at = -1
-        target_status = getattr(self, 'lbl_status', None)
-        if target_status is not None:
-            idx = layout.indexOf(target_status)
+        target = getattr(self, 'lbl_status', None)
+        if target is not None:
+            idx = layout.indexOf(target)
             if idx >= 0:
                 insert_at = idx
         if insert_at < 0:
-            target_bar = getattr(self, 'horizontalLayout', None)
-            if target_bar is not None:
-                idx = layout.indexOf(target_bar)
+            target = getattr(self, 'horizontalLayout', None)
+            if target is not None:
+                idx = layout.indexOf(target)
                 if idx >= 0:
                     insert_at = idx
         if insert_at < 0:
             insert_at = layout.count()
 
-        # Group entries by section, preserving first-seen order
         sections: OrderedDict[str, list] = OrderedDict()
         for entry in VIEWS:
-            section = entry.get('section', 'Other')
-            sections.setdefault(section, []).append(entry)
+            sections.setdefault(entry.get('section', 'Other'), []).append(entry)
 
-        # Render each section
         for section_name, entries in sections.items():
-            # Section header
-            header = QLabel(section_name, self)
-            header.setStyleSheet("font-weight: bold; color: #34495e; font-size: 12px;")
-            header.setAlignment(Qt.AlignCenter)
-            layout.insertWidget(insert_at, header)
+            # Divider row: SECTION NAME ————
+            divider = QWidget(self)
+            divider_row = QHBoxLayout(divider)
+            divider_row.setContentsMargins(0, 8, 0, 2)
+            divider_row.setSpacing(6)
+
+            sec_lbl = QLabel(section_name.upper(), divider)
+            sec_lbl.setStyleSheet(
+                "font-size: 10px; font-weight: 600; color: #9BA5B5; letter-spacing: 0.5px;"
+            )
+            line = QFrame(divider)
+            line.setFrameShape(QFrame.HLine)
+            line.setFrameShadow(QFrame.Plain)
+            line.setStyleSheet("background-color: #E0E4EB; max-height: 1px; border: none;")
+
+            divider_row.addWidget(sec_lbl)
+            divider_row.addWidget(line, 1)
+
+            layout.insertWidget(insert_at, divider)
             insert_at += 1
 
-            # Buttons
-            for entry in entries:
+            # 2-column grid of buttons
+            grid_widget = QWidget(self)
+            grid = QGridLayout(grid_widget)
+            grid.setSpacing(6)
+            grid.setContentsMargins(0, 0, 0, 2)
+
+            for i, entry in enumerate(entries):
                 try:
                     label = entry.get('label', entry.get('key', ''))
                     tooltip = entry.get('tooltip', '')
-                    btn = QPushButton(label, self)
+                    btn = QPushButton(label, grid_widget)
                     if tooltip:
                         btn.setToolTip(tooltip)
-                    layout.insertWidget(insert_at, btn)
-                    insert_at += 1
+                    row, col = divmod(i, 2)
+                    grid.addWidget(btn, row, col)
                     btn.clicked.connect(
                         lambda _=False, e=entry, b=btn: self.launch(
                             e['key'], e['cmd'], b, e['running_text']
@@ -98,10 +126,12 @@ class LauncherDialog(QDialog):
                 except Exception:
                     pass
 
+            layout.insertWidget(insert_at, grid_widget)
+            insert_at += 1
+
     def launch(self, key, cmd, button, running_text, quiet=False):
         """Start a child process and update UI indicators."""
         if key in self.processes and self.processes[key]['popen'].poll() is None:
-            # Already running
             return
         original_text = button.text()
         button.setEnabled(False)
@@ -138,7 +168,6 @@ class LauncherDialog(QDialog):
         for key, entry in self.processes.items():
             p = entry['popen']
             if p.poll() is not None:
-                # Process ended
                 entry['button'].setText(entry['original_text'])
                 entry['button'].setEnabled(True)
                 finished.append(key)
@@ -150,21 +179,34 @@ class LauncherDialog(QDialog):
         """Update status label and button states."""
         count = len(self.processes)
         if hasattr(self, 'lbl_status'):
-            self.lbl_status.setText('No modules running' if count == 0 else f'{count} module(s) running')
+            if count == 0:
+                self.lbl_status.setStyleSheet("font-size: 11px; color: #7A8394;")
+                self.lbl_status.setText('No modules running')
+            else:
+                self.lbl_status.setStyleSheet("font-size: 11px; color: #15803D; font-weight: 500;")
+                noun = 'module' if count == 1 else 'modules'
+                self.lbl_status.setText(f'● {count} {noun} running')
         if hasattr(self, 'btn_exit'):
             self.btn_exit.setEnabled(True)
         if hasattr(self, 'btn_shutdown_all'):
             self.btn_shutdown_all.setEnabled(count > 0)
 
+    def _open_logs(self, _=None):
+        """Open the log viewer dialog."""
+        try:
+            from .log_viewer_dialog import LogViewerDialog
+            dlg = LogViewerDialog(self)
+            dlg.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, 'Logs', f'Failed to open log viewer:\n{e}')
+
     def _open_settings(self):
         """Open the Settings dialog modally and prefilled from current global settings."""
         try:
-            # Prefer in-process dialog so it uses current global settings values
             from viewer.settings.settings_dialog import SettingsDialog as _SettingsDialog
             dlg = _SettingsDialog(self)
             dlg.exec_()
         except Exception as e:
-            # Fallback: launch as a separate process if import or dialog fails
             try:
                 if hasattr(self, 'btn_settings'):
                     self.launch(
@@ -196,8 +238,6 @@ class LauncherDialog(QDialog):
         if not lines:
             return "Running modules:\nNone"
         return "Running modules:\n" + "\n".join(lines)
-
-    
 
     def _terminate_proc(self, p, timeout=3.0):
         """Attempt graceful terminate, then force kill if still alive."""
@@ -238,53 +278,41 @@ class LauncherDialog(QDialog):
         if resp == QMessageBox.Yes:
             self.shutdown_all()
 
+    def _confirm_exit(self):
+        """Show exit confirmation dialog. Returns True if the user confirmed."""
+        running_list = self._format_running_modules_list()
+        text = f"{running_list}\n\nShutdown all running processes and exit?\n\nData might be lost."
+        resp = QMessageBox.question(
+            self,
+            'Exit Launcher',
+            text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        return resp == QMessageBox.Yes
+
     def request_close(self):
-        """Prompt to force stop modules before exiting if any are running."""
-        try:
-            any_running = any(entry['popen'].poll() is None for entry in self.processes.values())
-        except Exception:
-            any_running = False
-        if any_running:
-            text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
-            resp = QMessageBox.question(
-                self,
-                'Exit Launcher',
-                text,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if resp == QMessageBox.Yes:
-                self.shutdown_all()
-                self.close()
-        else:
+        """Always ask for confirmation, shut down all processes, then close."""
+        if self._confirm_exit():
+            self.shutdown_all()
             self.close()
 
     def closeEvent(self, event):
-        """On close, prompt to force-stop modules if any are running."""
-        try:
-            any_running = any(entry['popen'].poll() is None for entry in self.processes.values())
-        except Exception:
-            any_running = False
-        if any_running:
-            text = f"{self._format_running_modules_list()}\n\nForce stop all and exit?\n\nData might be lost."
-            resp = QMessageBox.question(
-                self,
-                'Exit Launcher',
-                text,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if resp == QMessageBox.Yes:
-                self.shutdown_all()
-                event.accept()
-            else:
-                event.ignore()
-        else:
+        """Always ask for confirmation, shut down all processes, then accept close."""
+        if self._confirm_exit():
+            self.shutdown_all()
             event.accept()
+        else:
+            event.ignore()
 
 
 def main():
     app = QApplication(sys.argv)
+    try:
+        from utils import SizeManager
+        _size_manager = SizeManager(app)  # noqa: F841 — kept alive on stack during exec_
+    except Exception:
+        pass
     dlg = LauncherDialog()
     dlg.show()
     app.exec_()

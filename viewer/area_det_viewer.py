@@ -3,7 +3,6 @@ import sys
 import time
 import subprocess
 import numpy as np
-import os.path as osp
 import pyqtgraph as pg
 import xrayutilities as xu
 from PyQt5 import uic
@@ -11,7 +10,7 @@ from PyQt5 import uic
 from epics import PV, pv
 from epics import camonitor, caget
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QFileDialog, QSlider
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QDialog, QSlider
 # Custom imported classes
 from roi_stats_dialog import RoiStatsDialog
 from analysis_window import AnalysisWindow 
@@ -19,6 +18,8 @@ import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
+from utils.log_manager import LogMixin
+import settings as app_settings
 # from ..utils.size_manager import SizeManager
 
 
@@ -34,42 +35,22 @@ class ConfigDialog(QDialog):
 
         Attributes:
             input_channel (str): Input channel for PVA.
-            config_path (str): Path to the ROI configuration file.
         """
         super(ConfigDialog,self).__init__()
         uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         # initializing variables to pass to Image Viewer
         self.input_channel = ''
-        self.config_path = ''
         # class can be prefilled with text
         self.init_ui()
-        
-        # Connecting signasl to 
-        self.btn_clear.clicked.connect(self.clear_pv_setup)
-        self.btn_browse.clicked.connect(self.browse_file_dialog)
-        self.btn_accept_reject.accepted.connect(self.dialog_accepted) 
+
+        self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
         """
         Prefills text in the Line Editors for the user.
         """
         self.le_input_channel.setText(self.le_input_channel.text())
-        self.le_config.setText(self.le_config.text())
-
-    def browse_file_dialog(self) -> None:
-        """
-        Opens a file dialog to select the path to a TOML configuration file.
-        """
-        self.pvs_path, _ = QFileDialog.getOpenFileName(self, 'Select TOML Config', 'pv_configs', '*.toml (*.toml)')
-
-        self.le_config.setText(self.pvs_path)
-
-    def clear_pv_setup(self) -> None:
-        """
-        Clears line edit that tells image view where the config file is.
-        """
-        self.le_config.clear()
 
     def dialog_accepted(self) -> None:
         """
@@ -77,30 +58,25 @@ class ConfigDialog(QDialog):
         Starts the DiffractionImageWindow process with filled information.
         """
         self.input_channel = self.le_input_channel.text()
-        self.config_path = self.le_config.text()
-        if osp.isfile(self.config_path) or (self.config_path == ''):
-            self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel,
-                                            file_path=self.config_path,) 
-        else:
-            print('File Path Doesn\'t Exitst')  
-            #TODO: ADD ERROR Dialog rather than print message so message is clearer
-            self.new_dialog = ConfigDialog()
-            self.new_dialog.show()    
+        self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
-class DiffractionImageWindow(QMainWindow):
+class DiffractionImageWindow(QMainWindow, LogMixin):
     hkl_data_updated = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image', file_path=''): 
+    def __init__(self, input_channel=None):
         """
         Initializes the main window for real-time image visualization and manipulation.
 
         Args:
             input_channel (str): The PVA input channel for the detector.
-            file_path (str): The file path for loading configuration.
         """
         super(DiffractionImageWindow, self).__init__()
         uic.loadUi('gui/imageshow.ui', self)
+        try:
+            self.set_log_manager(viewer_name="AreaDetViewer")
+        except Exception:
+            pass
         self.setWindowTitle('DashPVA')
         self.show()
         # Initializing important variables
@@ -117,7 +93,6 @@ class DiffractionImageWindow(QMainWindow):
         self.stats_data = {}
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
-        self._file_path = file_path
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -254,8 +229,9 @@ class DiffractionImageWindow(QMainWindow):
             self.image_view.clear()
             self.reset_rsm_vars()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                # print('[start_live_view] reader is None — creating new PVAReader')
+                self.reader = PVAReader(input_channel=self._input_channel)
+                # print(f'[start_live_view] reader created: input_channel={self.reader.input_channel} ROI_IN_CONFIG={self.reader.ROI_IN_CONFIG} HKL_IN_CONFIG={self.reader.HKL_IN_CONFIG} CACHING_MODE={self.reader.CACHING_MODE}')
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
@@ -271,8 +247,8 @@ class DiffractionImageWindow(QMainWindow):
                 # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel)
+                # print(f'[start_live_view] new reader created: input_channel={self.reader.input_channel} ROI_IN_CONFIG={self.reader.ROI_IN_CONFIG} HKL_IN_CONFIG={self.reader.HKL_IN_CONFIG} CACHING_MODE={self.reader.CACHING_MODE}')
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
@@ -315,7 +291,8 @@ class DiffractionImageWindow(QMainWindow):
                     self.add_rois()
                     self.start_timers()
         except Exception as e:
-            print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
+            if hasattr(self, 'logger'):
+                self.logger.exception(f'Error starting image viewer: {e}')
 
     def stop_live_view_clicked(self) -> None:
         """

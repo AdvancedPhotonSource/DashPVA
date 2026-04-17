@@ -5,129 +5,388 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Workbench Documentation</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 24px; line-height: 1.6; font-size: 18px; }
-    h1, h2, h3 { color: #2c3e50; }
-    h1 { font-size: 34px; margin-top: 20px; }
-    h2 { font-size: 28px; margin-top: 18px; }
-    h3 { font-size: 22px; margin-top: 16px; }
-    .subtitle { color: #555; margin-bottom: 12px; font-size: 1.1em; }
-    code { background: #f5f5f5; padding: 2px 4px; border-radius: 4px; }
-    pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow: auto; }
-    ul { margin: 10px 0 10px 24px; }
-    .note { font-size: 14px; color: #777; margin-top: 16px; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    /* ─── Sidebar ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0;
+      width: 216px;
+      height: 100%;
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      padding: 24px 0 40px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .nav-group {
+      padding: 14px 16px 3px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #9ca3af;
+    }
+    nav a {
+      display: block;
+      padding: 5px 16px;
+      font-size: 13px;
+      color: #6b7280;
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    nav a:hover  { color: #111827; }
+    nav a.active { color: #2563eb; border-left-color: #2563eb; font-weight: 500; }
+    nav a.sub    { padding-left: 26px; font-size: 12.5px; }
+
+    /* ─── Main ─── */
+    main {
+      margin-left: 216px;
+      margin-top: 0;
+      padding: 36px 48px 80px;
+      max-width: 760px;
+    }
+
+    .page-title {
+      margin-bottom: 28px;
+    }
+    .page-title h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 5px;
+    }
+    .page-title p { font-size: 14px; color: #6b7280; }
+
+    /* ─── Sections as cards ─── */
+    section {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 16px;
+      scroll-margin-top: 68px;
+    }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    h3 {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 18px 0 6px;
+    }
+    h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin: 14px 0 5px;
+    }
+
+    p  { font-size: 13.5px; line-height: 1.8; color: #374151; margin-bottom: 8px; }
+    ul { margin: 5px 0 8px 16px; }
+    li { font-size: 13px; line-height: 1.75; color: #374151; margin-bottom: 3px; }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11.5px;
+      background: #f3f4f6;
+      color: #1d4ed8;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    pre {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      line-height: 1.6;
+      margin: 8px 0 10px;
+      color: #374151;
+    }
+
+    /* ─── Mode blocks inside ROI Plot section ─── */
+    .mode-block {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 10px 0;
+    }
+    .mode-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .badge.green { background: #d1fae5; color: #065f46; }
+
+    /* ─── Equation blocks ─── */
+    .eq {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 11px 14px;
+      margin: 8px 0 12px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12.5px;
+    }
+    .eq-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #9ca3af;
+      margin-bottom: 5px;
+    }
+    .eq-line { color: #111827; line-height: 2; }
+    .eq-note { font-size: 11px; color: #6b7280; margin-top: 3px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+    /* ─── Use cases ─── */
+    .use-cases { list-style: none; margin: 8px 0 0; }
+    .use-cases li {
+      padding: 6px 10px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 5px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: #374151;
+    }
+    .use-cases li::before { content: "— "; color: #9ca3af; }
+
+    .note { font-size: 11.5px; color: #9ca3af; margin-top: 24px; }
   </style>
 </head>
 <body>
-  <h1>Workbench Viewer Documentation</h1>
-  <div class="subtitle">Overview and usage notes for the Workbench.</div>
 
-  <p>The Workbench viewer provides 2D, 3D, and 1D visualization of HDF5 datasets along with tools for ROI and speckle analysis.</p>
+  <!-- ─── Sidebar ─── -->
+  <nav>
+    <div style="padding: 0 16px 18px; font-size: 12px; font-weight: 700; color: #111827; border-bottom: 1px solid #e5e7eb; margin-bottom: 8px;">DashPVA <span style="color:#9ca3af;font-weight:400;">· Workbench</span></div>
+    <div class="nav-group">Overview</div>
+    <a href="#overview">Introduction</a>
+    <a href="#features">Features</a>
+    <a href="#open-docs">Opening Docs</a>
 
-  <h2>Features</h2>
-  <ul>
-    <li>Load single HDF5 files or entire folders</li>
-    <li>Visualize datasets in 2D and 3D (when PyVista is available)</li>
-    <li>ROI creation and statistics</li>
-    <li>ROI Calculator (A − B), ROI Plot, and ROI Math tools</li>
-    <li>Playback of 3D stacks with FPS control</li>
-  </ul>
+    <div class="nav-group">Viewers</div>
+    <a href="#viewer-2d">2D Viewer</a>
+    <a href="#viewer-3d">3D Viewer</a>
 
-  <h2>How to open this documentation</h2>
-  <p>Use the menu <code>Documentation → Open Documentation</code> or press <code>F1</code> within the Workbench window.</p>
+    <div class="nav-group">Regions of Interest</div>
+    <a href="#roi-basics">ROI Basics</a>
+    <a href="#roi-sources">ROI Sources</a>
+    <a href="#roi-calculator">ROI Calculator</a>
+    <a href="#roi-alignment">Matching &amp; Alignment</a>
+    <a href="#roi-results">Results</a>
+    <a href="#roi-plot">ROI Plot</a>
+    <a class="sub" href="#roi-plot-stack">Stack Mode</a>
+    <a class="sub" href="#roi-plot-single">Single Frame Mode</a>
+    <a href="#roi-save">Saving ROIs</a>
+    <a href="#roi-technical">Technical Details</a>
+    <a href="#roi-tips">Tips &amp; Notes</a>
+  </nav>
 
-  <h2>Directory structure</h2>
-  <pre>
-viewer/
-  workbench/
-    workbench.py
-    doc/
-      index.html   ← you are here
-      README.md    ← optional alternative
-  </pre>
-  <section>
-    <h1>2D Viewer</h1>
-    <p>
-        Opening files
-        You can choose to open a file or a folder using the file button (h5 formats only)
-        Once selected selectable datasets will be highlighted in blue
-        You can edit the file however you want by right clicking on that file
+  <!-- ─── Content ─── -->
+  <main>
 
-    </p>
-    <p>ROI
-        You can select to draw as many ROI's as you want by clicking draw ROI
-        You will be able to see it docked on the right or left side this can be docked anywhere on the right or left window
-    </p>
+    <div class="page-title">
+      <h1>Workbench Documentation</h1>
+      <p>Overview and usage notes for the DashPVA Workbench viewer.</p>
+    </div>
 
-    <p>Player</p>
-  </section>
-  <section id="rois">
-    <h1>Regions of Interest (ROIs)</h1>
-    <h3>ROI Basics</h3>
-    <ul>
-      <li>Draw ROIs using the Draw ROI action in the 2D viewer. Drag to move; drag handles to resize. A rotate handle allows rotation about the center.</li>
-      <li>ROI statistics (sum, min, max, mean, std, count, x, y, w, h) appear in the ROI dock. Right-click an ROI for actions such as Show Stats, Rename, Set Active, Open ROI Plot, Delete, and Save ROI.</li>
-      <li>Use the checkbox in the ROI stats table to show/hide the ROI name label over the image.</li>
-    </ul>
+    <section id="overview">
+      <h2>Introduction</h2>
+      <p>The Workbench viewer provides 2D, 3D, and 1D visualization of HDF5 datasets along with tools for ROI and speckle analysis.</p>
+    </section>
 
-    <h3>ROI Sources</h3>
-    <ul>
-      <li>Memory: ROIs drawn in the current session and associated with the currently viewed dataset.</li>
-      <li>File: ROIs loaded from HDF5 metadata. The ROI Calculator UI shows options to select from file and to import ROIs; these file-based features are placeholders and not wired yet. Current calculations use in-memory ROIs only.</li>
-    </ul>
+    <section id="features">
+      <h2>Features</h2>
+      <ul>
+        <li>Load single HDF5 files or entire folders</li>
+        <li>Visualize datasets in 2D and 3D (when PyVista is available)</li>
+        <li>ROI creation and statistics</li>
+        <li>ROI Calculator (A − B), ROI Plot, and ROI Math tools</li>
+        <li>Playback of 3D stacks with FPS control</li>
+      </ul>
+    </section>
 
-    <h3>ROI Calculator Operations</h3>
-    <ul>
-      <li><strong>Average Series: A − B</strong>: Produces a 2D mean-difference image: mean(A) − mean(B) over frames. Also computes and plots a per-frame series diff = mean(A<sub>frame</sub>) − mean(B<sub>frame</sub>). On a single-image dataset, this produces a single value.</li>
-      <li><strong>Pixel-wise: A − B</strong>: Produces a 2D image or a 3D stack where each frame is A − B, aligned frame-by-frame.</li>
-      <li><strong>Custom Expression</strong>: UI placeholder; currently disabled.</li>
-    </ul>
+    <section id="open-docs">
+      <h2>Opening This Documentation</h2>
+      <p>Use the menu <code>Documentation → Open Documentation</code> or press <code>F1</code> within the Workbench window.</p>
+      <pre>viewer/workbench/doc/index.html   ← you are here</pre>
+    </section>
 
-    <h3>Matching & Alignment</h3>
-    <ul>
-      <li><strong>Strict Match on</strong>: A and B must have identical shapes (including frame count). If shapes differ, computation is aborted with a clear message.</li>
-      <li><strong>Strict Match off + Auto-Intersect on</strong>: A and B are truncated/cropped to the common overlapping region: T = min(frames), H = min(height), W = min(width). Notes about cropping/truncation appear in the status bar.</li>
-      <li><strong>Strict Match off + Auto-Intersect off</strong>: Shapes must still match; otherwise, computation is aborted.</li>
-    </ul>
+    <section id="viewer-2d">
+      <h2>2D Viewer</h2>
+      <h3>Opening Files</h3>
+      <p>Use the file button to open an HDF5 file or folder. Selectable datasets are highlighted in blue. Right-click any file in the tree to edit or inspect it.</p>
+      <h3>ROI</h3>
+      <p>Click <strong>Draw ROI</strong> to place an ROI on the image. The dock can be positioned on either side of the window.</p>
+      <h3>Player</h3>
+      <p>Use the frame slider or spinbox to scrub through 3D stacks. FPS playback is controlled from the player bar.</p>
+    </section>
 
-    <h3>Time Axis and Include ROI Frames</h3>
-    <p>These controls are present for future functionality and are not currently applied to computations.</p>
+    <section id="viewer-3d">
+      <h2>3D Viewer</h2>
+      <p>Available when PyVista is installed. Dataset stacks can be rendered as volumes or isosurfaces.</p>
+    </section>
 
-    <h3>Results</h3>
-    <ul>
-      <li><strong>Series tab</strong>: Plots per-frame mean(A) − mean(B) and shows a metrics table: frames, ROI pixel count, mean(A), mean(B), mean/min/max/std of the diff. For single-image data, the plot shows a single point.</li>
-      <li><strong>Image tab</strong>: Shows the computed image/stack result depending on the selected operation (Average Series image or Pixel-wise stack).</li>
-      <li><strong>Send to 2D Workspace</strong>: Sends the current result image/stack to the main 2D workspace for further analysis.</li>
-      <li><strong>Save As HDF5</strong>: Saves the result as <code>/entry/data/result</code> in the chosen .h5/.hdf5 file. Dataset attributes include: <code>operation</code>, <code>roiA_name</code>, <code>roiB_name</code>, <code>strict</code>, <code>auto_intersect</code>, and <code>notes</code> (if any).</li>
-    </ul>
+    <section id="roi-basics">
+      <h2>ROI Basics</h2>
+      <ul>
+        <li>Draw ROIs via <strong>Draw ROI</strong>. Drag to move; handles to resize; rotate handle to rotate about the center.</li>
+        <li>Statistics (sum, min, max, mean, std, count, x, y, w, h) appear in the ROI dock. Right-click for: <em>Show Stats, Rename, Set Active, Open ROI Plot, Delete, Save ROI</em>.</li>
+        <li>The checkbox in the stats table toggles the ROI name label on the image.</li>
+      </ul>
+    </section>
 
-    <h3>ROI Plot and ROI Math</h3>
-    <ul>
-      <li><strong>ROI Plot</strong> (dock/window): Flattens the ROI sub-image to a 1D vector and plots Index vs Value. Supports adding a docked view or a modeless window.</li>
-      <li><strong>ROI Math</strong> dock: Define expressions over the flattened ROI data (<code>x</code>: indices, <code>y</code>: ROI values, <code>np</code>: numpy). Multiple expressions render as separate curves.</li>
-    </ul>
+    <section id="roi-sources">
+      <h2>ROI Sources</h2>
+      <ul>
+        <li><strong>Memory</strong> — ROIs drawn in the current session.</li>
+        <li><strong>File</strong> — ROIs from HDF5 metadata. File-based import is planned; calculations currently use in-memory ROIs only.</li>
+      </ul>
+    </section>
 
-    <h3>Saving ROIs to HDF5</h3>
-    <p>ROIs can be saved under <code>/entry/data/rois/&lt;name&gt;</code> with attributes <code>x</code>, <code>y</code>, <code>w</code>, <code>h</code>, and <code>source_path</code>. The dataset contains either a 2D ROI image or a 3D stack of ROI frames when the source is a time series.</p>
+    <section id="roi-calculator">
+      <h2>ROI Calculator Operations</h2>
+      <ul>
+        <li><strong>Average Series: A − B</strong> — 2D mean-difference image mean(A) − mean(B) over frames, plus a per-frame series diff.</li>
+        <li><strong>Pixel-wise: A − B</strong> — 2D image or 3D stack where each frame is A − B aligned frame-by-frame.</li>
+        <li><strong>Custom Expression</strong> — Planned; currently disabled.</li>
+      </ul>
+    </section>
 
-    <h3>Technical details (advanced)</h3>
-    <ul>
-      <li><code>extract_roi_stack(main_window, roi)</code> (utils/roi_ops.py): For 3D data, returns a stack with shape (T, H, W). For a single 2D frame, returns (H, W). Uses transform-aware extraction via <code>roi.getArrayRegion(frame, image_item)</code> when available, falling back to integer pixel slicing via <code>roi.pos()</code>/<code>roi.size()</code>. If an extraction yields an empty area, falls back to zeros of the current ROI box size for consistency. Across frames, trims to the smallest extracted height/width to ensure a stackable array. Returns <code>np.float32</code> arrays.</li>
-      <li><code>align_stacks(A, B, strict=True, auto_intersect=False)</code> (utils/roi_ops.py): Normalizes inputs so 2D becomes (1, H, W). With <code>strict=True</code>, shapes must match exactly. With <code>auto_intersect</code>, crops/truncates both A and B to their common (T, H, W) and records notes. Otherwise requires shapes to match. Returns (A_aligned, B_aligned, info) where <code>info.ok</code> indicates success and <code>info.notes</code> lists alignment actions.</li>
-      <li><code>per_frame_mean(stack)</code> (utils/roi_ops.py): Returns a 1D <code>np.float32</code> array of per-frame means (length T). For a single 2D image, returns length 1.</li>
-    </ul>
+    <section id="roi-alignment">
+      <h2>Matching &amp; Alignment</h2>
+      <ul>
+        <li><strong>Strict Match on</strong> — A and B must have identical shapes including frame count.</li>
+        <li><strong>Strict Match off + Auto-Intersect on</strong> — Truncated/cropped to the common region: T = min(frames), H = min(height), W = min(width).</li>
+        <li><strong>Strict Match off + Auto-Intersect off</strong> — Shapes must still match; otherwise aborted.</li>
+      </ul>
+      <p><em>Time Axis and Include ROI Frames are present for future use and not currently applied.</em></p>
+    </section>
 
-    <h3>Tips & Notes</h3>
-    <ul>
-      <li>For each frame, the value in the Average Series plot equals the average of the pixel-wise A − B within that frame.</li>
-      <li>If either ROI is partially outside the image, empty regions are filled with zeros for the purposes of series computation.</li>
-      <li>File-based ROI selection and the ROI Calculator "Custom Expression" operation are planned features and currently disabled.</li>
-    </ul>
-  </section>
-  <section>
-    <h1>3D Viewer</h1>
-  </section>
-  <div class="note">
-    File edits at <code>viewer/workbench/doc/index.html</code>.
-  </div>
+    <section id="roi-results">
+      <h2>Results</h2>
+      <ul>
+        <li><strong>Series tab</strong> — Per-frame mean(A) − mean(B) plot with metrics table.</li>
+        <li><strong>Image tab</strong> — Computed image or stack result.</li>
+        <li><strong>Send to 2D Workspace</strong> — Pushes the result to the main viewer.</li>
+        <li><strong>Save As HDF5</strong> — Saves to <code>/entry/data/result</code> with attributes <code>operation</code>, <code>roiA_name</code>, <code>roiB_name</code>, <code>strict</code>, <code>auto_intersect</code>, <code>notes</code>.</li>
+      </ul>
+    </section>
+
+    <section id="roi-plot">
+      <h2>ROI Plot</h2>
+      <p>Open via <strong>right-click → Open ROI Plot</strong>. Two radio buttons at the top of the dock switch between modes.</p>
+
+      <div class="mode-block" id="roi-plot-stack">
+        <div class="mode-title"><span class="badge">Stack</span> Mode</div>
+        <p>Plots a metric over every frame in the loaded stack. Both X and Y dropdowns are active — mix any two metrics, e.g. Sum vs Time or CoM X vs a motor angle. Options: <code>Time</code>, <code>Sum</code>, <code>Min</code>, <code>Max</code>, <code>CoM X</code>, <code>CoM Y</code>, and any motor position from the file. A frame line and slider stay in sync with the main viewer.</p>
+      </div>
+
+      <div class="mode-block" id="roi-plot-single">
+        <div class="mode-title"><span class="badge green">Single Frame</span> Mode</div>
+        <p>Projects the current frame's ROI onto one axis — a 1D count profile. The X dropdown is hidden; pixel index is used automatically. Updates on every frame change or ROI move.</p>
+
+        <h4>Projection equations</h4>
+        <p>Let <code>ROI(i, j)</code> be the count at row <em>i</em>, column <em>j</em> in the ROI subarray of shape H × W.</p>
+
+        <div class="eq">
+          <div class="eq-title">Proj X — sub.sum(axis=0)</div>
+          <div class="eq-line">P<sub>x</sub>(j) &nbsp;=&nbsp; &sum;<sub>i=0</sub><sup>H−1</sup> ROI(i, j) &nbsp;&nbsp; j = 0 … W−1</div>
+          <div class="eq-note">Collapses rows → 1D array indexed by column (horizontal profile)</div>
+        </div>
+
+        <div class="eq">
+          <div class="eq-title">Proj Y — sub.sum(axis=1)</div>
+          <div class="eq-line">P<sub>y</sub>(i) &nbsp;=&nbsp; &sum;<sub>j=0</sub><sup>W−1</sup> ROI(i, j) &nbsp;&nbsp; i = 0 … H−1</div>
+          <div class="eq-note">Collapses columns → 1D array indexed by row (vertical profile)</div>
+        </div>
+
+        <h4>Example use cases</h4>
+        <ul class="use-cases">
+          <li>Calculate the sum of fringes along an axis to measure fringe period or visibility</li>
+          <li>Inspect a diffraction peak profile along detector rows or columns</li>
+          <li>Check whether a beam or feature is centered within the ROI</li>
+          <li>Compare count distribution across one dimension before and after an experimental change</li>
+        </ul>
+      </div>
+
+      <p style="margin-top:12px">The <strong>ROI Math</strong> dock accepts expressions over flattened ROI data (<code>x</code>: indices, <code>y</code>: values, <code>np</code>: numpy) and renders multiple curves.</p>
+    </section>
+
+    <section id="roi-save">
+      <h2>Saving ROIs to HDF5</h2>
+      <p>Saved under <code>/entry/data/rois/&lt;name&gt;</code> with attributes <code>x</code>, <code>y</code>, <code>w</code>, <code>h</code>, <code>source_path</code>. Dataset is a 2D image or 3D stack depending on source.</p>
+    </section>
+
+    <section id="roi-technical">
+      <h2>Technical Details</h2>
+      <ul>
+        <li><code>extract_roi_stack(main_window, roi)</code> — 3D source → (T, H, W); 2D → (H, W). Transform-aware via <code>roi.getArrayRegion</code>, fallback to pixel slicing. Returns <code>np.float32</code>.</li>
+        <li><code>align_stacks(A, B, strict, auto_intersect)</code> — Normalizes 2D → (1, H, W). Strict: identical shapes required. Auto-intersect: crops to common (T, H, W). Returns <code>(A_aligned, B_aligned, info)</code>.</li>
+        <li><code>per_frame_mean(stack)</code> — 1D <code>np.float32</code> of per-frame means, length T (length 1 for a single frame).</li>
+      </ul>
+    </section>
+
+    <section id="roi-tips">
+      <h2>Tips &amp; Notes</h2>
+      <ul>
+        <li>The Average Series plot value per frame equals the average of pixel-wise A − B within that frame.</li>
+        <li>ROI areas outside the image are filled with zeros for series computation.</li>
+        <li>File-based ROI selection and Custom Expression are planned and currently disabled.</li>
+      </ul>
+      <p class="note">File: <code>viewer/workbench/doc/index.html</code></p>
+    </section>
+
+  </main>
+
+  <script>
+    const links = document.querySelectorAll('nav a[href^="#"]');
+    const targets = Array.from(links).map(l => document.querySelector(l.getAttribute('href'))).filter(Boolean);
+
+    function highlight() {
+      const y = (document.documentElement.scrollTop || document.body.scrollTop) + 80;
+      let cur = targets[0];
+      for (const t of targets) { if (t.offsetTop <= y) cur = t; }
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + cur.id));
+    }
+
+    window.addEventListener('scroll', highlight, { passive: true });
+    document.addEventListener('scroll', highlight, { passive: true });
+    highlight();
+  </script>
 </body>
 </html>

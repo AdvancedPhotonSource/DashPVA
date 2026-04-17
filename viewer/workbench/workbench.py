@@ -1524,6 +1524,23 @@ class WorkbenchWindow(BaseWindow):
             parent_item: QTreeWidgetItem to add children to
         """
         for key in h5_group.keys():
+            # Detect soft links before h5py dereferences them
+            try:
+                link = h5_group.get(key, getlink=True)
+            except Exception:
+                link = None
+
+            if isinstance(link, h5py.SoftLink):
+                tree_item = QTreeWidgetItem([key])
+                parent_item.addChild(tree_item)
+                tree_item.setText(0, f"{key} (SoftLink -> {link.path})")
+                try:
+                    full_path = h5_group[key].name
+                except Exception:
+                    full_path = None
+                tree_item.setData(0, 32, full_path)
+                continue
+
             item = h5_group[key]
 
             # Create tree item
@@ -2130,6 +2147,31 @@ class WorkbenchWindow(BaseWindow):
                 self.image_info_label.setText(text)
         except Exception as e:
             self.update_status(f"Error updating image info label: {e}")
+
+    def _find_motor_positions(self, h5f, num_frames: int):
+        """Return a 1-D array of motor positions whose length matches num_frames.
+
+        Searches entry/data/metadata/motor_positions for axis-labeled datasets
+        (no ':' in name). Returns the first one whose length equals num_frames,
+        or None if none is found.
+        """
+        try:
+            motor_group_path = 'entry/data/metadata/motor_positions'
+            if motor_group_path not in h5f:
+                return None
+            grp = h5f[motor_group_path]
+            for key in grp.keys():
+                if ':' in key:
+                    continue
+                try:
+                    arr = np.asarray(grp[key], dtype=float).ravel()
+                    if arr.size == num_frames:
+                        return arr
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return None
 
     # === Display transform and levels helpers ===
     def _get_histogram_widget(self):

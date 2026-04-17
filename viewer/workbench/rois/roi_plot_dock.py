@@ -4,25 +4,68 @@ ROI Plot Dock for Workbench (Configurable X/Y Metrics)
 
 Provides a QDockWidget that displays a 1D plot of an ROI metric across frames.
 You can choose what the X and Y axes represent via dropdowns: time, sum, min,
-max, std. Includes a slider and an interactive vertical line to scrub frames;
+max, com. Includes a slider and an interactive vertical line to scrub frames;
 stays in sync with the Workbench's frame spinbox.
 """
 
-from PyQt5.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSlider, QLabel, QComboBox
-)
-from PyQt5.QtCore import Qt
+import os
+
+import h5py
 import numpy as np
 import pyqtgraph as pg
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
+    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QSlider, QLabel, QComboBox,
+    QRadioButton, QButtonGroup
+)
 
-METRIC_OPTIONS = ["time", "sum", "min", "max", "std"]
-AXIS_LABELS = {
-    "time": "Time (Frame Index)",
-    "sum": "ROI Sum",
-    "min": "ROI Min",
-    "max": "ROI Max",
-    "std": "ROI Std",
+METRIC_OPTIONS = ["time", "sum", "min", "max", "comx", "comy"]
+SINGLE_FRAME_Y_OPTIONS = ["proj_x", "proj_y"]
+# Human-readable display names shown in dropdowns (key → label)
+DISPLAY_NAMES = {
+    "time":   "Time",
+    "sum":    "Sum",
+    "min":    "Min",
+    "max":    "Max",
+    "comx":   "CoM X",
+    "comy":   "CoM Y",
+    "proj_x": "Proj X (sum↓cols)",
+    "proj_y": "Proj Y (sum→rows)",
 }
+AXIS_LABELS = {
+    "time":   "Time (Frame Index)",
+    "sum":    "ROI Sum",
+    "min":    "ROI Min",
+    "max":    "ROI Max",
+    "comx":   "ROI CoM X",
+    "comy":   "ROI CoM Y",
+    "proj_x": "Projection onto X (sum along Y)",
+    "proj_y": "Projection onto Y (sum along X)",
+    "pixel":  "Pixel Index",
+}
+
+
+def _add_metric_item(combo, key: str):
+    """Add a metric key to a combo box using its display name, storing key as userData."""
+    combo.addItem(DISPLAY_NAMES.get(key, key), key)
+
+
+def _combo_key(combo, default: str = 'time') -> str:
+    """Return the internal key for the combo's current selection (userData if set, else text)."""
+    data = combo.currentData()
+    if data is not None:
+        return str(data)
+    txt = combo.currentText()
+    return txt if txt else default
+
+
+def _set_combo_key(combo, key: str):
+    """Select the item whose userData equals key; fall back to text match."""
+    idx = combo.findData(key)
+    if idx < 0:
+        idx = combo.findText(key)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
 
 class ROIPlotDock(QDockWidget):
     def __init__(self, parent, title: str, main_window, roi):
@@ -51,21 +94,46 @@ class ROIPlotDock(QDockWidget):
             pass
         layout.addWidget(self.stats_label)
 
+        # Mode selection: Stack vs Single Frame
+        mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 2, 0, 2)
+        mode_lbl = QLabel("Mode:")
+        try:
+            mode_lbl.setStyleSheet("color: #7f8c8d; font-size: 10px; font-weight: bold;")
+        except Exception:
+            pass
+        self.radio_stack = QRadioButton("Stack")
+        self.radio_single = QRadioButton("Single Frame")
+        self.radio_stack.setChecked(True)
+        try:
+            _radio_style = "font-size: 11px;"
+            self.radio_stack.setStyleSheet(_radio_style)
+            self.radio_single.setStyleSheet(_radio_style)
+        except Exception:
+            pass
+        self._mode_group = QButtonGroup(container)
+        self._mode_group.addButton(self.radio_stack, 0)
+        self._mode_group.addButton(self.radio_single, 1)
+        mode_row.addWidget(mode_lbl)
+        mode_row.addSpacing(4)
+        mode_row.addWidget(self.radio_stack)
+        mode_row.addSpacing(8)
+        mode_row.addWidget(self.radio_single)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
+
         # Axis selection controls
         controls_row = QHBoxLayout()
-        lbl_x = QLabel("X:"); lbl_y = QLabel("Y:")
-        self.x_select = QComboBox(); self.x_select.addItems(METRIC_OPTIONS)
-        self.y_select = QComboBox(); self.y_select.addItems(METRIC_OPTIONS)
-        # Defaults
-        try:
-            self.x_select.setCurrentText("time")
-        except Exception:
-            pass
-        try:
-            self.y_select.setCurrentText("sum")
-        except Exception:
-            pass
-        controls_row.addWidget(lbl_x)
+        self._lbl_x = QLabel("X:"); lbl_y = QLabel("Y:")
+        self.x_select = QComboBox()
+        self.y_select = QComboBox()
+        for key in METRIC_OPTIONS:
+            _add_metric_item(self.x_select, key)
+            _add_metric_item(self.y_select, key)
+        # Defaults: X=time, Y=sum
+        self.x_select.setCurrentIndex(METRIC_OPTIONS.index("time"))
+        self.y_select.setCurrentIndex(METRIC_OPTIONS.index("sum"))
+        controls_row.addWidget(self._lbl_x)
         controls_row.addWidget(self.x_select)
         controls_row.addSpacing(12)
         controls_row.addWidget(lbl_y)
@@ -94,6 +162,13 @@ class ROIPlotDock(QDockWidget):
 
         # Storage for series metrics
         self.series = {m: np.array([0.0], dtype=float) for m in METRIC_OPTIONS}
+        self.series['time'] = np.array([0], dtype=int)
+        self.series['comx'] = np.array([0.0], dtype=float)
+        self.series['comy'] = np.array([0.0], dtype=float)
+        # Storage for single-frame projections
+        self.proj_x = np.array([0.0], dtype=float)
+        self.proj_y = np.array([0.0], dtype=float)
+        self._last_custom_ca_dict: dict = {}
 
         # Compute initial series and wire interactions
         self._compute_time_series()
@@ -149,7 +224,7 @@ class ROIPlotDock(QDockWidget):
 
         if data.ndim == 3:
             num_frames = data.shape[0]
-            sums, mins, maxs, stds = [], [], [], []
+            sums, mins, maxs, comxs, comys = [], [], [], [], []
             for i in range(num_frames):
                 frame = np.asarray(data[i], dtype=np.float32)
                 sub = self._extract_roi_sub(frame, image_item)
@@ -157,16 +232,20 @@ class ROIPlotDock(QDockWidget):
                     s = float(np.sum(sub))
                     mn = float(np.min(sub))
                     mx = float(np.max(sub))
-                    sd = float(np.std(sub))
+                    total = s if s != 0.0 else 1.0
+                    cy = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
+                    cx = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
                 else:
-                    s = 0.0; mn = 0.0; mx = 0.0; sd = 0.0
-                sums.append(s); mins.append(mn); maxs.append(mx); stds.append(sd)
+                    s = 0.0; mn = 0.0; mx = 0.0; cx = 0.0; cy = 0.0
+                sums.append(s); mins.append(mn); maxs.append(mx)
+                comxs.append(cx); comys.append(cy)
             self.series = {
                 'time': np.arange(num_frames, dtype=int),
                 'sum': np.asarray(sums, dtype=float),
                 'min': np.asarray(mins, dtype=float),
                 'max': np.asarray(maxs, dtype=float),
-                'std': np.asarray(stds, dtype=float),
+                'comx': np.asarray(comxs, dtype=float),
+                'comy': np.asarray(comys, dtype=float),
             }
             self.slider.setEnabled(True)
             try:
@@ -189,26 +268,139 @@ class ROIPlotDock(QDockWidget):
                 s = float(np.sum(sub))
                 mn = float(np.min(sub))
                 mx = float(np.max(sub))
-                sd = float(np.std(sub))
+                total = s if s != 0.0 else 1.0
+                cx = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
+                cy = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
             else:
-                s = 0.0; mn = 0.0; mx = 0.0; sd = 0.0
+                s = 0.0; mn = 0.0; mx = 0.0; cx = 0.0; cy = 0.0
             self.series = {
                 'time': np.array([0], dtype=int),
                 'sum': np.array([s], dtype=float),
                 'min': np.array([mn], dtype=float),
                 'max': np.array([mx], dtype=float),
-                'std': np.array([sd], dtype=float),
+                'comx': np.array([cx], dtype=float),
+                'comy': np.array([cy], dtype=float),
             }
             self.slider.setEnabled(False)
+        # Load custom CA metadata and extend dropdowns/series
+        custom_ca_dict = self._load_custom_ca_metadata()
+        self._last_custom_ca_dict = custom_ca_dict
+        self.series.update(custom_ca_dict)
+        self._refresh_extra_options(custom_ca_dict)
+        self._update_plot()
+
+    def _load_custom_ca_metadata(self) -> dict:
+        """Read custom CA metadata arrays from entry/data/metadata/ca_custom/ in the HDF5 file.
+
+        Returns {friendly_name: np.ndarray} for each dataset found in that group.
+        """
+        result = {}
+        try:
+            fp = getattr(self.main, 'current_file_path', None)
+            if not fp or not os.path.exists(fp):
+                return result
+            ca_custom_path = 'entry/data/metadata/ca'
+            with h5py.File(fp, 'r') as h5f:
+                if ca_custom_path not in h5f:
+                    return result
+                grp = h5f[ca_custom_path]
+                for key in grp.keys():
+                    try:
+                        arr = np.asarray(grp[key], dtype=float).ravel()
+                        if arr.size > 1:
+                            result[key] = arr
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return result
+
+    def _refresh_extra_options(self, custom_ca_dict: dict):
+        """Sync X/Y combo boxes: keep base metrics, then custom CA metadata names."""
+        # Don't touch Y combo in single-frame mode — it uses proj options only
+        if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+            return
+        for combo in (self.x_select, self.y_select):
+            cur_key = _combo_key(combo)
+            combo.blockSignals(True)
+            # Trim any previously added extra options (beyond the base metrics)
+            while combo.count() > len(METRIC_OPTIONS):
+                combo.removeItem(combo.count() - 1)
+            for name in sorted(custom_ca_dict.keys()):
+                combo.addItem(name, name)  # userData=name for consistent key lookup
+            # Restore selection; fall back to first item if gone
+            _set_combo_key(combo, cur_key)
+            if combo.currentIndex() < 0:
+                combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+
+    def _on_mode_changed(self):
+        single = self.radio_single.isChecked()
+        # Toggle X controls and slider visibility
+        self._lbl_x.setVisible(not single)
+        self.x_select.setVisible(not single)
+        self.slider.setVisible(not single)
+        try:
+            self.frame_line.setVisible(not single)
+        except Exception:
+            pass
+        # Swap Y dropdown options
+        self.y_select.blockSignals(True)
+        self.y_select.clear()
+        if single:
+            for key in SINGLE_FRAME_Y_OPTIONS:
+                _add_metric_item(self.y_select, key)
+            self.y_select.setCurrentIndex(0)
+        else:
+            for key in METRIC_OPTIONS:
+                _add_metric_item(self.y_select, key)
+            for name in sorted(self._last_custom_ca_dict.keys()):
+                self.y_select.addItem(name, name)
+            _set_combo_key(self.y_select, "sum")
+        self.y_select.blockSignals(False)
+        # Recompute and replot for new mode
+        if single:
+            self._compute_and_plot_single_frame()
+        else:
+            self._compute_time_series()
+
+    def _compute_and_plot_single_frame(self):
+        """Sum ROI along each axis for the current frame and replot."""
+        data = getattr(self.main, 'current_2d_data', None)
+        if data is None:
+            self.proj_x = np.array([0.0])
+            self.proj_y = np.array([0.0])
+            self._update_plot()
+            return
+        frame_idx = 0
+        if data.ndim == 3 and hasattr(self.main, 'frame_spinbox'):
+            try:
+                frame_idx = int(self.main.frame_spinbox.value())
+                frame_idx = int(np.clip(frame_idx, 0, data.shape[0] - 1))
+            except Exception:
+                frame_idx = 0
+            frame = np.asarray(data[frame_idx], dtype=np.float32)
+        else:
+            frame = np.asarray(data, dtype=np.float32)
+        image_item = getattr(self.main.image_view, 'imageItem', None) if hasattr(self.main, 'image_view') else None
+        sub = self._extract_roi_sub(frame, image_item)
+        if sub is not None and int(getattr(sub, 'size', 0)) > 0:
+            # proj_x: sum along rows (axis=0) → 1D array over columns (X pixel)
+            self.proj_x = sub.sum(axis=0).astype(float)
+            # proj_y: sum along columns (axis=1) → 1D array over rows (Y pixel)
+            self.proj_y = sub.sum(axis=1).astype(float)
+        else:
+            self.proj_x = np.array([0.0])
+            self.proj_y = np.array([0.0])
         self._update_plot()
 
     def _update_axis_labels(self):
         try:
-            x_name = self.x_select.currentText()
+            x_name = _combo_key(self.x_select, 'time')
         except Exception:
             x_name = 'time'
         try:
-            y_name = self.y_select.currentText()
+            y_name = _combo_key(self.y_select, 'sum')
         except Exception:
             y_name = 'sum'
         try:
@@ -256,18 +448,49 @@ class ROIPlotDock(QDockWidget):
             pass
 
     def _update_plot(self):
+        # Single-frame projection mode
+        if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+            try:
+                y_sel = _combo_key(self.y_select, 'proj_x')
+                if y_sel == 'proj_x':
+                    y_data = self.proj_x
+                    x_label = "Column (X Pixel)"
+                    y_label = AXIS_LABELS['proj_x']
+                else:
+                    y_data = self.proj_y
+                    x_label = "Row (Y Pixel)"
+                    y_label = AXIS_LABELS['proj_y']
+                x_data = np.arange(len(y_data), dtype=float)
+                self.plot_item.setLabel('bottom', x_label)
+                self.plot_item.setLabel('left', y_label)
+                self.plot_item.clear()
+                self.plot_item.plot(x_data, y_data, pen='y')
+            except Exception:
+                pass
+            return
+
         try:
-            # Choose data by selection
-            try:
-                x_sel = self.x_select.currentText()
-            except Exception:
-                x_sel = 'time'
-            try:
-                y_sel = self.y_select.currentText()
-            except Exception:
-                y_sel = 'sum'
+            x_sel = _combo_key(self.x_select, 'time')
+        except Exception:
+            x_sel = 'time'
+        try:
+            y_sel = _combo_key(self.y_select, 'sum')
+        except Exception:
+            y_sel = 'sum'
+
+        # Always update axis labels first so they reflect the current selection
+        # even if plotting subsequently fails
+        self._update_axis_labels()
+
+        try:
             x_data = np.asarray(self.series.get(x_sel, self.series.get('time')), dtype=float)
             y_data = np.asarray(self.series.get(y_sel, self.series.get('sum')), dtype=float)
+
+            # Trim to matching length so mismatched motor/metric arrays never crash plot()
+            min_len = min(len(x_data), len(y_data))
+            if min_len > 0:
+                x_data = x_data[:min_len]
+                y_data = y_data[:min_len]
 
             self.plot_item.clear()
             self.plot_item.plot(x_data, y_data, pen='y')
@@ -287,15 +510,11 @@ class ROIPlotDock(QDockWidget):
                 if x_sel == 'time':
                     self.frame_line.setPos(cur)
                 else:
-                    # Guard against index out of bounds
                     idx = np.clip(cur, 0, len(x_data) - 1)
                     self.frame_line.setPos(float(x_data[idx]))
             except Exception:
                 pass
-            # Update axis labels
-            self._update_axis_labels()
         except Exception:
-            # Fallback: simple plot call
             try:
                 self.plot_widget.plot(self.series.get('time'), self.series.get('sum'), pen='y', clear=True)
             except Exception:
@@ -330,12 +549,18 @@ class ROIPlotDock(QDockWidget):
                 self.main.frame_spinbox.valueChanged.connect(self._on_frame_spinbox_changed)
         except Exception:
             pass
-        # ROI changes -> recompute series
+        # Mode radio buttons
+        try:
+            self.radio_stack.toggled.connect(lambda _: self._on_mode_changed())
+            self.radio_single.toggled.connect(lambda _: self._on_mode_changed())
+        except Exception:
+            pass
+        # ROI changes -> recompute series (mode-aware)
         try:
             if hasattr(self.roi, 'sigRegionChanged'):
-                self.roi.sigRegionChanged.connect(lambda: (self._compute_time_series(), self._update_stats_label()))
+                self.roi.sigRegionChanged.connect(self._on_roi_changed)
             if hasattr(self.roi, 'sigRegionChangeFinished'):
-                self.roi.sigRegionChangeFinished.connect(lambda: (self._compute_time_series(), self._update_stats_label()))
+                self.roi.sigRegionChangeFinished.connect(self._on_roi_changed)
         except Exception:
             pass
         # Dragging the vertical line should also update frame
@@ -345,10 +570,30 @@ class ROIPlotDock(QDockWidget):
             pass
         # Axis selection changes -> replot
         try:
-            self.x_select.currentTextChanged.connect(lambda _: self._update_plot())
-            self.y_select.currentTextChanged.connect(lambda _: self._update_plot())
+            self.x_select.currentIndexChanged.connect(lambda _: self._update_plot())
+            self.y_select.currentIndexChanged.connect(lambda _: self._update_plot())
         except Exception:
             pass
+
+    def refresh_for_dataset_change(self):
+        """Called by the workbench when a new dataset/file is loaded.
+        Re-reads custom CA metadata from the new file and recomputes the plot.
+        """
+        try:
+            if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+                self._compute_and_plot_single_frame()
+            else:
+                self._compute_time_series()
+            self._update_stats_label()
+        except Exception:
+            pass
+
+    def _on_roi_changed(self):
+        if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+            self._compute_and_plot_single_frame()
+        else:
+            self._compute_time_series()
+        self._update_stats_label()
 
     def _on_slider_changed(self, value):
         # Update Workbench frame and vertical line
@@ -359,7 +604,7 @@ class ROIPlotDock(QDockWidget):
             pass
         try:
             # Update line position in current x-space
-            x_sel = self.x_select.currentText() if hasattr(self, 'x_select') else 'time'
+            x_sel = _combo_key(self.x_select, 'time') if hasattr(self, 'x_select') else 'time'
             if x_sel == 'time':
                 self.frame_line.setPos(int(value))
             else:
@@ -374,6 +619,10 @@ class ROIPlotDock(QDockWidget):
             pass
 
     def _on_frame_spinbox_changed(self, value):
+        # In single-frame mode, recompute projection for new frame
+        if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+            self._compute_and_plot_single_frame()
+            return
         # Keep slider and line in sync with Workbench
         try:
             self.slider.blockSignals(True)
@@ -382,7 +631,7 @@ class ROIPlotDock(QDockWidget):
             pass
         try:
             # Update line position in current x-space
-            x_sel = self.x_select.currentText() if hasattr(self, 'x_select') else 'time'
+            x_sel = _combo_key(self.x_select, 'time') if hasattr(self, 'x_select') else 'time'
             if x_sel == 'time':
                 self.frame_line.setPos(int(value))
             else:
@@ -408,7 +657,7 @@ class ROIPlotDock(QDockWidget):
             pos_val = 0.0
         # Determine new frame index from x-space
         try:
-            x_sel = self.x_select.currentText() if hasattr(self, 'x_select') else 'time'
+            x_sel = _combo_key(self.x_select, 'time') if hasattr(self, 'x_select') else 'time'
         except Exception:
             x_sel = 'time'
         try:
@@ -430,7 +679,7 @@ class ROIPlotDock(QDockWidget):
         try:
             self.frame_line.blockSignals(True)
             # Reposition line to exact x-space of selected frame
-            x_sel = self.x_select.currentText() if hasattr(self, 'x_select') else 'time'
+            x_sel = _combo_key(self.x_select, 'time') if hasattr(self, 'x_select') else 'time'
             if x_sel == 'time':
                 self.frame_line.setPos(int(pos))
             else:

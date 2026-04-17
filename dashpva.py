@@ -90,11 +90,11 @@ def setup(ioc):
     """Sets up the PVA workflow or the simulator."""
     if ioc:
         click.echo('Running simulator setup...')
-        subprocess.Popen([sys.executable, 'consumers/sim_rsm_data.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen([sys.executable, 'consumers/caIOC_servers/sim_rsm_data.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
 
     click.echo('Running standard PVA setup...')
-    exit_code = subprocess.run([sys.executable, 'pva_setup/pva_workflow_setup_dialog.py']).returncode
+    exit_code = subprocess.run([sys.executable, 'workflow/workflow.py']).returncode
     sys.exit(exit_code)
 
 @cli.command()
@@ -115,16 +115,13 @@ def workbench():
 @cli.command()
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
-@click.option('--config', 'config_path', default='', help='Path to TOML config file (optional).')
-def monitor(name, channel, config_path):
+def monitor(name, channel):
     """Open a specific monitor by name. Supported: scan (alias: scan-monitors)."""
     click.echo(f'Opening monitor: {name}')
     if name in ('scan', 'scan-monitors'):
         command = [sys.executable, 'viewer/scan_view.py']
     else:
         raise click.BadParameter(f'Unknown view name: {name}')
-    if config_path:
-        command.extend(['--config', config_path])
     if channel:
         command.extend(['--channel', channel])
     exit_code = subprocess.run(command).returncode
