@@ -186,6 +186,7 @@ class DiffractionImageWindow(QMainWindow):
         self.image_view.addItem(self.crosshair_h, ignoreBounds=True)
         self.crosshair_v.hide()
         self.crosshair_h.hide()
+        self.crosshair_visible = False
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
@@ -860,7 +861,7 @@ class DiffractionImageWindow(QMainWindow):
                 # Flag ROIs larger than the actual image
                 roi_too_big = False
                 image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
-                if image_shape:
+                if image_shape and image_shape[0] > 0 and image_shape[1] > 0:
                     img_width = image_shape[1] if not self.image_is_transposed else image_shape[0]
                     img_height = image_shape[0] if not self.image_is_transposed else image_shape[1]
                     if width > img_width or height > img_height:
@@ -1123,26 +1124,25 @@ class DiffractionImageWindow(QMainWindow):
     
     def on_double_click(self, event) -> None:
         """
-        Handle double-click events on the image view to place crosshairs.
-        
-        Args:
-            event: Mouse event containing position information
+        Handle double-click on the image view to place crosshairs.
+        Double-click to show/move crosshairs, triple-click to hide them.
         """
-        if self.reader is not None and self.reader.image is not None:
-            # Get the position in scene coordinates, then map to view coordinates
+        if self.reader is None or self.reader.image is None:
+            return
+        if self.crosshair_visible:
+            # Already showing — hide on next double-click (acts as toggle)
+            self.crosshair_v.hide()
+            self.crosshair_h.hide()
+            self.crosshair_visible = False
+        else:
             scene_pos = event.scenePos()
             view_box = self.image_view.getView().getViewBox()
             view_pos = view_box.mapSceneToView(scene_pos)
-            
-            # Set crosshair positions
             self.crosshair_v.setPos(view_pos.x())
             self.crosshair_h.setPos(view_pos.y())
-            
-            # Show crosshairs
             self.crosshair_v.show()
             self.crosshair_h.show()
-            
-            print(f"Crosshairs placed at: ({view_pos.x():.1f}, {view_pos.y():.1f})")
+            self.crosshair_visible = True
     
     def _sync_havg_yrange(self, vb, y_range):
         """Keep horizontal avg plot y-range in sync with the image view."""
