@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import pyqtSignal, QObject, Qt
 from datetime import datetime
 import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+if __name__ == '__main__':
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import PVAReader
 from utils.log_manager import LogMixin
 from database.interface import DatabaseInterface
@@ -1241,7 +1242,7 @@ class Workflow(QDialog, LogMixin):
             QMessageBox.warning(self, 'Cannot Add Section', 'Select a section to nest under.')
             return
         try:
-            existing_types = self._db._settings_mgr.get_distinct_types()
+            existing_types = self._db.get_distinct_setting_types()
         except Exception:
             existing_types = []
         setting_types = sorted({'custom', 'path', 'root'} | set(existing_types))
@@ -1270,7 +1271,7 @@ class Workflow(QDialog, LogMixin):
         current_name = item.text(0)
         current_type = item.text(2)
         try:
-            existing_types = self._db._settings_mgr.get_distinct_types()
+            existing_types = self._db.get_distinct_setting_types()
         except Exception:
             existing_types = []
         setting_types = sorted({'custom', 'path', 'root'} | set(existing_types))

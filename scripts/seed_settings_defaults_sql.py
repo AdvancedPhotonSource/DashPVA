@@ -117,41 +117,6 @@ def seed_defaults() -> None:
         raise
     finally:
         conn.close()
-            metadata_ca = cfg.get("METADATA", {}).get("CA") or {}
-            if "FLAG_PV" in metadata_ca:
-                metadata_ca["FLAG_PV"] = f"{prefix}:ScanOn:Value"
-            if "FilePath" in metadata_ca:
-                metadata_ca["FILE_PATH"] = metadata_ca.pop("FilePath")
-            if "FileName" in metadata_ca:
-                metadata_ca["FILE_NAME"] = metadata_ca.pop("FileName")
-            if "FILE_PATH" in metadata_ca:
-                metadata_ca["FILE_PATH"] = f"{prefix}:FILE_PATH:Value"
-            if "FILE_NAME" in metadata_ca:
-                metadata_ca["FILE_NAME"] = f"{prefix}:FILE_NAME:Value"
-            metadata_ca.setdefault("CUSTOM", {})
-            cfg.setdefault("METADATA", {})["CA"] = metadata_ca
-
-            roi = cfg.get("ROI", {})
-            for roi_key in list(roi.keys()):
-                roi[roi_key] = {
-                    "MIN_X":  f"{roi_key}:MinX",
-                    "MIN_Y":  f"{roi_key}:MinY",
-                    "SIZE_X": f"{roi_key}:SizeX",
-                    "SIZE_Y": f"{roi_key}:SizeY",
-                }
-            cfg["ROI"] = roi
-
-            stats = cfg.get("STATS", {})
-            for stats_key in list(stats.keys()):
-                stats_num = stats_key.replace("STATS", "Stats")
-                stats[stats_key] = {
-                    "TOTAL": f"{stats_num}:Total_RBV",
-                    "MIN":   f"{stats_num}:MinValue_RBV",
-                    "MAX":   f"{stats_num}:MaxValue_RBV",
-                    "SIGMA": f"{stats_num}:Sigma_RBV",
-                    "MEAN":  f"{stats_num}:MeanValue_RBV",
-                }
-            cfg["STATS"] = stats
 
 
 if __name__ == "__main__":

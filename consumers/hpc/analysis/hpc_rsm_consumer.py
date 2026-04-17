@@ -1,5 +1,6 @@
 import time
 import copy
+import toml
 import bitshuffle
 import blosc2
 import lz4.block
@@ -127,15 +128,24 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.configure(configDict)
         
     def configure(self, configDict):
-        """Configure processor settings and initialize HKL parameters from the active settings profile."""
+        """Configure processor settings and initialize HKL parameters from TOML config."""
         self.logger.debug(f'Configuration update: {configDict}')
-        try:
-            import settings as app_settings
-            app_settings.reload()
-            self.hkl_config = dict(app_settings.HKL) or {}
-        except Exception as e:
-            self.logger.warning(f'Failed to load HKL config from settings: {e}')
-            self.hkl_config = {}
+
+        if 'path' in configDict:
+            self.path = configDict['path']
+        else:
+            import settings as _settings
+            self.path = _settings.TOML_FILE
+            if self.path is None:
+                raise RuntimeError(
+                    "HpcRsmProcessor: no 'path' in configDict and "
+                    "settings.TOML_FILE is not set — configure a TOML config first."
+                )
+
+        with open(self.path, 'r') as f:
+            self.config = toml.load(f)
+
+        self.hkl_config = self.config.get('HKL', {})
         self.hkl_pv_channels = set()
         for section in self.hkl_config.values():
             if isinstance(section, dict):
