@@ -133,6 +133,7 @@ class DiffractionImageWindow(QMainWindow):
         self._dead_px_collecting = False
         self._dead_px_target = 50
         self._dead_px_last_frame = 0
+        self._dead_px_mode = 'illuminated'
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
@@ -373,6 +374,28 @@ class DiffractionImageWindow(QMainWindow):
                                     'Dead pixel detection is already collecting frames.')
             return
 
+        # Ask user which detection mode to use
+        msg = QMessageBox(self)
+        msg.setWindowTitle('Dead/Hot Pixel Detection')
+        msg.setText('Select detection mode:')
+        msg.setInformativeText(
+            'Illuminated: mask pixels with zero variance\n'
+            '(use with X-ray beam on, varying scattering)\n\n'
+            'Dark: mask persistently bright pixels\n'
+            '(use with beam off, rejects cosmic rays via median)')
+        btn_light = msg.addButton('Illuminated', QMessageBox.AcceptRole)
+        btn_dark = msg.addButton('Dark', QMessageBox.AcceptRole)
+        msg.addButton(QMessageBox.Cancel)
+        msg.exec_()
+
+        clicked = msg.clickedButton()
+        if clicked == btn_light:
+            self._dead_px_mode = 'illuminated'
+        elif clicked == btn_dark:
+            self._dead_px_mode = 'dark'
+        else:
+            return
+
         self._dead_px_frames = []
         self._dead_px_collecting = True
         self._dead_px_last_frame = getattr(self.reader, 'frames_received', 0)
@@ -398,22 +421,32 @@ class DiffractionImageWindow(QMainWindow):
 
         if len(self._dead_px_frames) >= self._dead_px_target:
             self._dead_px_collecting = False
-            dead_mask = self.mask_manager.detect_dead_pixels(
-                self._dead_px_frames, variance_threshold=1.0)
+            mode = getattr(self, '_dead_px_mode', 'illuminated')
+
+            if mode == 'dark':
+                result_mask = self.mask_manager.detect_hot_pixels(
+                    self._dead_px_frames, sigma=5.0)
+                label = 'hot'
+            else:
+                result_mask = self.mask_manager.detect_dead_pixels(
+                    self._dead_px_frames, variance_threshold=1.0)
+                label = 'stuck'
+
             self._dead_px_frames = []
             self.btn_detect_dead.setText('Detect Dead Px')
             self.btn_detect_dead.setEnabled(True)
 
-            if dead_mask is not None:
-                num_dead = int(np.sum(dead_mask))
-                if num_dead == dead_mask.size:
+            if result_mask is not None:
+                num_flagged = int(np.sum(result_mask))
+                if num_flagged == result_mask.size:
                     QMessageBox.warning(
                         self, 'Dead Pixel Detection',
-                        f'All {num_dead} pixels flagged as dead.\n'
-                        f'This usually means the image is static (no illumination change).\n'
-                        f'Mask NOT updated — try with varying illumination.')
+                        f'All {num_flagged} pixels flagged.\n'
+                        f'This usually means the detection mode does not match '
+                        f'the current imaging conditions.\n'
+                        f'Mask NOT updated.')
                     return
-                self.mask_manager.combine_masks(dead_mask)
+                self.mask_manager.combine_masks(result_mask)
                 self.mask_manager.save_active_mask()
                 self._update_mask_labels()
                 # Refresh mask viewer if open
@@ -422,8 +455,8 @@ class DiffractionImageWindow(QMainWindow):
                     self.mask_viewer._refresh_display()
                 QMessageBox.information(
                     self, 'Dead Pixel Detection',
-                    f'Detected {num_dead} stuck pixels '
-                    f'(from {self._dead_px_target} frames).\n'
+                    f'Detected {num_flagged} {label} pixels '
+                    f'({mode} mode, {self._dead_px_target} frames).\n'
                     f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
 
     def clear_mask_clicked(self):

@@ -335,8 +335,9 @@ class MaskViewerWindow(QDialog):
             return
         pos = event.scenePos()
         mouse_point = self.plot_item.vb.mapSceneToView(pos)
-        vx = int(round(mouse_point.x()))
-        vy = int(round(mouse_point.y()))
+        # pyqtgraph pixel (i,j) occupies [i, i+1) x [j, j+1) — use floor
+        vx = int(np.floor(mouse_point.x()))
+        vy = int(np.floor(mouse_point.y()))
 
         # pyqtgraph renders data[i,j] at (x=i, y=j)
         # vx, vy are display coordinates — reverse-map to native

@@ -109,7 +109,7 @@ class MaskManager:
 
     def detect_dead_pixels(self, frames, variance_threshold=1.0):
         """
-        Detect stuck/dead pixels using temporal variance.
+        Detect stuck/dead pixels using temporal variance (illuminated mode).
 
         Pixels with variance below threshold across N frames are flagged.
         These are pixels that don't respond to changing illumination.
@@ -129,9 +129,60 @@ class MaskManager:
         pixel_variance = np.var(stack, axis=0)
         dead_mask = pixel_variance < variance_threshold
         num_dead = np.sum(dead_mask)
-        logger.info(f"Dead pixel detection: {num_dead} pixels with variance < {variance_threshold} "
-                    f"(from {len(frames)} frames)")
+        logger.info(f"Dead pixel detection (illuminated): {num_dead} pixels with "
+                    f"variance < {variance_threshold} (from {len(frames)} frames)")
         return dead_mask
+
+    def detect_hot_pixels(self, frames, sigma=5.0):
+        """
+        Detect hot/stuck pixels from dark frames (no X-ray beam).
+
+        Uses median stacking to reject cosmic rays — a cosmic ray only
+        hits a pixel in 1-2 out of N frames, so the median ignores it.
+        Then flags pixels where the median is significantly above zero
+        using MAD (Median Absolute Deviation) robust statistics.
+
+        A pixel is flagged as hot if:
+            median_value > global_median + sigma * MAD
+
+        This avoids flagging normal read-noise pixels while catching
+        genuinely stuck/hot pixels.
+
+        Args:
+            frames: list of 2D numpy arrays (N dark frames)
+            sigma: number of MAD above global median to flag (default: 5)
+
+        Returns:
+            boolean mask (True = hot pixel)
+        """
+        if len(frames) < 3:
+            logger.warning("Need at least 3 frames for hot pixel detection")
+            return None
+
+        stack = np.stack(frames, axis=0).astype(np.float64)
+
+        # Median across frames — rejects cosmic rays
+        pixel_median = np.median(stack, axis=0)
+
+        # Robust threshold using MAD (Median Absolute Deviation)
+        global_median = np.median(pixel_median)
+        mad = np.median(np.abs(pixel_median - global_median))
+        # Scale MAD to equivalent std dev (for normal distribution, std ≈ 1.4826 * MAD)
+        mad_std = 1.4826 * mad
+
+        if mad_std < 1e-10:
+            # All pixels have the same median — use simple > 0 threshold
+            threshold = 0
+            hot_mask = pixel_median > threshold
+        else:
+            threshold = global_median + sigma * mad_std
+            hot_mask = pixel_median > threshold
+
+        num_hot = int(np.sum(hot_mask))
+        logger.info(f"Hot pixel detection (dark): {num_hot} pixels above threshold "
+                    f"{threshold:.1f} (median={global_median:.1f}, MAD_std={mad_std:.1f}, "
+                    f"sigma={sigma}, from {len(frames)} frames)")
+        return hot_mask
 
     def apply_to_image(self, image):
         """
