@@ -260,22 +260,32 @@ the most mature branches. The merge order matters.
 ```
 main  (current dead baseline)
   |
-  +-- Merge PR #65 (dev -> main)          # Database layer, launcher, workflow
-  |     Review first. Request changes to align with this plan.
+  +-- Merge PR #65 (dev -> main)          # DONE (2026-04-17)
+  |     Database layer, launcher, workflow. All 8 review items fixed.
   |
-  +-- Merge dev_SSRL17-2 features         # Advanced viewer, masking, stats
-  |     Cherry-pick or rebase the viewer/ and utils/ changes.
-  |     Resolve conflicts with PR #65's viewer changes.
-  |
-  +-- Integrate dash-ai unique features   # ROI calc, config source, log manager
+  +-- Cherry-pick dash-ai unique features # ROI calc, config source, log manager
   |     Cherry-pick: utils/roi_ops.py, viewer/workbench/docks/roi_calc.py,
   |     utils/log_manager.py, utils/config/source.py
+  |     Then delete dash-ai branch.
   |
   +-- Extract beamline configs            # TOML files from beamline branches
   |     See Section 4.2
   |
+  +-- Merge dev_SSRL17-2 features  (LAST) # Advanced viewer, masking, stats, pyFAI
+  |     Cherry-pick or rebase the viewer/ and utils/ changes.
+  |     Resolve conflicts with PR #65's viewer changes.
+  |     DO NOT touch dev_SSRL17-2 until everything else is on main.
+  |
   = New unified main
 ```
+
+**Branch protection rules:**
+- `dev_SSRL17-2` — DO NOT MODIFY. Active development branch with beamline-tested
+  features (mask system, pyFAI, stats plot). Merged LAST after all other cleanup
+  is on main, so conflicts are resolved on main's side.
+- `dev` — Leave as-is. Already merged to main via PR #65.
+- `dev-osayi` — Leave as-is.
+- `dash-ai` — Cherry-pick unique features, then delete.
 
 ### 4.2 Branch-by-Branch Extraction & Archival
 
@@ -288,9 +298,9 @@ main  (current dead baseline)
 | `dev_12ID` | `viewer/pyFAI_analysis.py`, `viewer/pyFAI_analysis_matplot.py`, `pyFAI/` calibration files (if not already from dev_11ID) | Archive |
 | `dev_19ID` | `pv_configs/19ID_pvs.toml`, `consumers/19id_sim_rsm_data.py` | Archive |
 | `dev_26ID` | Nothing unique (VIT stitch already on `dev`) | Archive |
-| `dev-osayi` | Nothing unique (subset of `dev`) | Delete |
+| `dev-osayi` | Nothing unique (subset of `dev`) | Leave as-is |
 | `dev-jrodriguez` | Nothing unique (merged dev-osayi + fixes) | Archive |
-| `dash-ai` | `utils/roi_ops.py`, `viewer/workbench/docks/roi_calc.py`, `utils/log_manager.py`, `utils/config/source.py`, `viewer/tools/file_convert.py` | Archive |
+| `dash-ai` | `utils/roi_ops.py`, `viewer/workbench/docks/roi_calc.py`, `utils/log_manager.py`, `utils/config/source.py`, `viewer/tools/file_convert.py` | Cherry-pick then delete |
 
 **Archive procedure:**
 ```bash
@@ -365,28 +375,36 @@ no PONI file is configured, the pyFAI module prompts the user.
 
 ## 6. Execution Roadmap
 
-### Phase 0: PR #65 Resolution (Week 1)
+### Phase 0: PR #65 Resolution — DONE (2026-04-17)
 
 **Goal:** Decide on the database layer before building on top of it.
 
-- [ ] Review PR #65 in detail (see Section 7 for review notes)
-- [ ] Request changes to align with this architecture plan
-- [ ] Merge PR #65 into main (or reject and document why)
-- [ ] Verify main builds and launches after merge
+- [x] Review PR #65 in detail (see Section 7 for review notes)
+- [x] Request changes to align with this architecture plan
+- [x] Fix all 8 review items (commit 01c20d0 on dev)
+- [x] Merge PR #65 into main
 
 ### Phase 1: Trunk Establishment (Weeks 2-3)
 
-**Goal:** A single `main` branch that contains the best of all development lines.
+**Goal:** Build up main with cherry-picks from other branches. Do NOT touch dev_SSRL17-2.
 
-- [ ] Create `cleanup/consolidation` branch from main (post-PR #65)
-- [ ] Merge dev_SSRL17-2 viewer/masking features (resolve conflicts)
-- [ ] Cherry-pick dash-ai unique features (roi_ops, log_manager, config source)
+- [ ] Cherry-pick dash-ai unique features into main (roi_ops, log_manager, config source)
+- [ ] Delete dash-ai branch after cherry-pick
 - [ ] Extract beamline TOML configs from branch audit (Section 4.2)
+- [ ] Archive beamline branches (dev_4ID, dev_8ID, dev_9ID, dev_11ID, dev_12ID, dev_19ID, dev_26ID)
 - [ ] Add HDFviewer to launcher registry and dashpva.py CLI
 - [ ] Move `HDFviewer/interactive.py` to `viewer/hdfviewer/`
 - [ ] Run full test suite, manual smoke test of each module
-- [ ] Merge `cleanup/consolidation` into `main`
-- [ ] Archive old branches (Section 4.2 procedure)
+- [ ] Verify main builds and launches after all cherry-picks
+
+### Phase 1.5: Merge dev_SSRL17-2 (LAST)
+
+**Goal:** Bring the most advanced viewer features onto the unified main.
+
+- [ ] Merge dev_SSRL17-2 into main (or cherry-pick viewer/utils changes)
+- [ ] Resolve conflicts with PR #65's viewer changes (DiffractionImageWindow, PVAReader, ConfigDialog, roi_manager)
+- [ ] Verify mask system, pyFAI, stats plot all work on main
+- [ ] dev_SSRL17-2 becomes the active development branch only after successful merge
 
 ### Phase 2: Config-Driven Deployment (Weeks 3-4)
 
