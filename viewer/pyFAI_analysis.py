@@ -114,16 +114,19 @@ class SaveWorker(QThread):
             # Convert image cache to numpy array
             images_array = np.array(self.image_cache)
             
-            # Extract q and intensity arrays from integration_data
+            # Extract q, intensity, and sigma arrays from integration_data
             q_arrays = []
             intensity_arrays = []
-            for q, intensity in self.integration_data:
-                q_arrays.append(q)
-                intensity_arrays.append(intensity)
-            
-            # Convert to numpy arrays
+            sigma_arrays = []
+            for entry in self.integration_data:
+                q_arrays.append(entry[0])
+                intensity_arrays.append(entry[1])
+                if len(entry) > 2 and entry[2] is not None:
+                    sigma_arrays.append(entry[2])
+
             q_array = np.array(q_arrays) if q_arrays else None
             intensity_array = np.array(intensity_arrays) if intensity_arrays else None
+            sigma_array = np.array(sigma_arrays) if sigma_arrays else None
             
             # Get waterfall data as 2D array
             waterfall_array = np.array(self.waterfall_data) if self.waterfall_data else None
@@ -167,7 +170,10 @@ class SaveWorker(QThread):
                 if intensity_array is not None:
                     analysis_grp.create_dataset("intensity", data=intensity_array, compression='gzip', compression_opts=4)
                     analysis_grp["intensity"].attrs['description'] = 'Integrated intensity for each frame'
-                
+                if sigma_array is not None:
+                    analysis_grp.create_dataset("sigma", data=sigma_array, compression='gzip', compression_opts=4)
+                    analysis_grp["sigma"].attrs['description'] = 'Poisson uncertainty for each frame'
+
                 # Save waterfall plot as 2D array
                 if waterfall_array is not None:
                     analysis_grp.create_dataset("waterfall", data=waterfall_array, compression='gzip', compression_opts=4)
@@ -500,6 +506,11 @@ class PyFAIAnalysisWindow(QMainWindow):
         self.save_all_button.clicked.connect(self.save_all)
         sidebar_layout.addWidget(self.save_all_button)
 
+        # Button to launch Phase Fitter
+        self.phase_fitter_button = QPushButton("Phase Fitter", self)
+        self.phase_fitter_button.clicked.connect(self._launch_phase_fitter)
+        sidebar_layout.addWidget(self.phase_fitter_button)
+
         # Text area for metadata
         self.metadata_panel = QTextEdit(self)
         self.metadata_panel.setReadOnly(True)
@@ -583,6 +594,18 @@ class PyFAIAnalysisWindow(QMainWindow):
             except Exception as e:
                 logger.error(f"Error saving plot: {e}")
                 QMessageBox.critical(self, "Error", f"Failed to save plot:\n{e}")
+
+    def _launch_phase_fitter(self):
+        import subprocess
+        cmd = [sys.executable, os.path.join(os.path.dirname(__file__), 'phase_fitter.py'),
+               '--pv-address', self.output_pv_address]
+        if self.ai:
+            wl_A = self.ai.wavelength * 1e10
+            cmd.extend(['--wavelength', str(wl_A)])
+        subprocess.Popen(cmd, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.statusBar().showMessage(
+            f"Launched Phase Fitter → {self.output_pv_address}", 5000)
 
     def save_all(self):
         """
@@ -1049,13 +1072,15 @@ class PyFAIAnalysisWindow(QMainWindow):
             # =================================================================
 
             # Perform azimuthal integration with pyFAI
-            q, intensity = self.ai.integrate1d(image, 1000, mask=mask, unit="q_A^-1", method='bbox')
+            result = self.ai.integrate1d(image, 1000, mask=mask, unit="q_A^-1",
+                                         method='bbox', error_model='poisson')
+            q, intensity, sigma = result.radial, result.intensity, result.sigma
             logger.debug(f"Azimuthal integration successful. Q range: {q.min()} to {q.max()}, "
                          f"Intensity range: {intensity.min()} to {intensity.max()}")
 
             # Cache the raw image and integration data
             self.image_cache.append(image.copy())
-            self.integration_data.append((q.copy(), intensity.copy()))
+            self.integration_data.append((q.copy(), intensity.copy(), sigma.copy()))
             
             # Keep only the last max_frames in cache
             if len(self.image_cache) > self.max_frames:
@@ -1086,7 +1111,8 @@ class PyFAIAnalysisWindow(QMainWindow):
             self.statusBar().showMessage(f"Processing frame {self.frame_count} - Connected to {self.pv_address}", 2000)
 
             # Publish pyFAI results to output PV
-            self._publish_pyfai_results(q, intensity)
+            wavelength_A = self.ai.wavelength * 1e10 if self.ai else 0.0
+            self._publish_pyfai_results(q, intensity, sigma, wavelength_A=wavelength_A)
 
             self.canvas.draw_idle()
             logger.debug("Plot updated with new azimuthal integration data.")
@@ -1301,6 +1327,8 @@ Current Status:
             pyfai_type_dict = {
                 'q_values': [pva.DOUBLE],
                 'intensity': [pva.DOUBLE],
+                'sigma': [pva.DOUBLE],
+                'wavelength': pva.DOUBLE,
                 'timeStamp': pva.PvTimeStamp(),
                 'frame_number': pva.INT
             }
@@ -1320,38 +1348,33 @@ Current Status:
             self.pv_server = None
             self.pyfai_type_dict = None
     
-    def _publish_pyfai_results(self, q, intensity):
+    def _publish_pyfai_results(self, q, intensity, sigma=None, wavelength_A=0.0):
         """
-        Publishes pyFAI integration results (q and intensity arrays) to the output PV.
-        
-        Args:
-            q: Q values array (1D numpy array)
-            intensity: Intensity values array (1D numpy array)
+        Publishes pyFAI integration results (q, intensity, sigma, wavelength) to the output PV.
         """
         if self.pv_server is None or self.pyfai_type_dict is None:
             return
-        
+
         try:
-            # Convert numpy arrays to lists for PV transmission
             q_list = q.tolist() if isinstance(q, np.ndarray) else list(q)
             intensity_list = intensity.tolist() if isinstance(intensity, np.ndarray) else list(intensity)
-            
-            # Create timestamp
+            sigma_list = sigma.tolist() if isinstance(sigma, np.ndarray) else list(sigma) if sigma is not None else []
+
             current_time = time.time()
             timestamp = pva.PvTimeStamp(current_time)
-            
-            # Create PV object with the integration results
+
             pv_object = pva.PvObject(self.pyfai_type_dict, {
                 'q_values': q_list,
                 'intensity': intensity_list,
+                'sigma': sigma_list,
+                'wavelength': float(wavelength_A),
                 'timeStamp': timestamp,
                 'frame_number': self.frame_count
             })
-            
-            # Publish the data using updateUnchecked for better performance
+
             self.pv_server.updateUnchecked(self.output_pv_address, pv_object)
             logger.debug(f"Published pyFAI results to {self.output_pv_address} (frame {self.frame_count}, {len(q_list)} points)")
-            
+
         except Exception as e:
             logger.error(f"Failed to publish pyFAI results: {e}")
 
