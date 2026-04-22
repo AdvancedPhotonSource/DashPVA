@@ -439,6 +439,16 @@ class PhaseFitApp(QMainWindow):
 
         self._pending_integration = None
 
+        # Watch mode state
+        self._watch_timer = QTimer(self)
+        self._watch_timer.setInterval(60_000)
+        self._watch_timer.timeout.connect(self._watch_tick)
+        self._watch_seen_files = set()
+        self._watch_fitting = False
+        self._watch_integration_info = None
+        self._watch_index_offset = 0
+        self._watch_worker = None
+
         # Auto-load phases if CIF dir + wavelength provided (live mode launch)
         if self._init_cif_dir and self.wavelength_A and self.wavelength_A > 0:
             if Path(self._init_cif_dir).exists():
@@ -573,6 +583,13 @@ class PhaseFitApp(QMainWindow):
             "Use this to pre-load phases before connecting to live stream.")
         self.btn_load_cifs.clicked.connect(self._load_cifs_only)
         file_form.addRow(self.btn_load_cifs)
+
+        self.chk_watch = QCheckBox("Watch for new data")
+        self.chk_watch.setToolTip(
+            "Check every 60s for new TIF files and integrate them.\n"
+            "When active, Fit All will continuously fit new data.")
+        self.chk_watch.stateChanged.connect(self._toggle_watch_mode)
+        file_form.addRow(self.chk_watch)
 
         file_group.setLayout(file_form)
 
@@ -1132,6 +1149,188 @@ class PhaseFitApp(QMainWindow):
         self.btn_load.setText("Load && Integrate")
         QMessageBox.critical(self, "Integration Error", msg)
         self.statusBar().showMessage("Integration failed.")
+
+    # -----------------------------------------------------------------
+    # Watch Mode — periodic scan for new TIF files
+    # -----------------------------------------------------------------
+
+    def _toggle_watch_mode(self, state):
+        if state == Qt.Checked:
+            data_dir = self.txt_data_dir.text().strip()
+            poni_file = self.txt_poni.text().strip()
+            if not data_dir or not Path(data_dir).exists():
+                QMessageBox.warning(self, "Watch Mode",
+                    "Set a valid Data Dir before enabling watch mode.")
+                self.chk_watch.setChecked(False)
+                return
+            if not poni_file or not Path(poni_file).exists():
+                QMessageBox.warning(self, "Watch Mode",
+                    "Set a valid PONI file before enabling watch mode.")
+                self.chk_watch.setChecked(False)
+                return
+
+            reply = QMessageBox.information(self, "Watch Mode",
+                "Watch mode will check for new TIF files every 60 seconds.\n\n"
+                "When Fit All is active, new files will be automatically\n"
+                "integrated and fitted as they appear.\n\n"
+                "Memory usage will grow over time with accumulated data.",
+                QMessageBox.Ok | QMessageBox.Cancel)
+            if reply == QMessageBox.Cancel:
+                self.chk_watch.setChecked(False)
+                return
+
+            # Snapshot current files so we only process new ones
+            tif_pattern = self.txt_tif_pattern.text() or '*.tif'
+            self._watch_seen_files = {
+                str(f) for f in Path(data_dir).glob(tif_pattern)}
+
+            self._watch_integration_info = {
+                'data_dir': data_dir,
+                'poni_file': poni_file,
+                'mask_file': self.txt_mask.text().strip(),
+                'tif_pattern': tif_pattern,
+                'substrate_dir': self.txt_substrate.text().strip(),
+            }
+
+            self._watch_timer.start()
+            self.statusBar().showMessage(
+                f"Watch mode ON — monitoring {data_dir} "
+                f"({len(self._watch_seen_files)} existing files)")
+        else:
+            self._watch_timer.stop()
+            self._watch_fitting = False
+            self.btn_fit_all.setText("Fit All")
+            self.statusBar().showMessage("Watch mode OFF")
+
+    def _watch_tick(self):
+        info = self._watch_integration_info
+        if info is None:
+            return
+
+        data_dir = Path(info['data_dir'])
+        tif_pattern = info['tif_pattern']
+        all_files = {str(f) for f in data_dir.glob(tif_pattern)}
+        new_files = sorted(all_files - self._watch_seen_files)
+
+        if not new_files:
+            self.statusBar().showMessage(
+                f"Watch: no new files ({len(self._watch_seen_files)} total)")
+            return
+
+        self._watch_seen_files.update(new_files)
+        print(f"[Watch] Found {len(new_files)} new TIF files")
+        self.statusBar().showMessage(
+            f"Watch: integrating {len(new_files)} new files...")
+
+        # Integrate new files in a worker
+        worker = IntegrationWorker()
+        worker.poni_file = info['poni_file']
+        worker.mask_file = info['mask_file']
+        worker.tif_pattern = tif_pattern
+        worker.substrate_dir = ''
+        # Override data_dir with a temp dir containing only new files —
+        # instead, we set data_dir and filter in done handler.
+        # Actually, IntegrationWorker globs data_dir, so we pass the real
+        # dir but track which results are new via label count.
+        worker.data_dir = info['data_dir']
+
+        worker.done.connect(self._on_watch_integration_done)
+        worker.error.connect(self._on_watch_integration_error)
+        worker.progress.connect(self._on_integration_progress)
+        self._watch_worker = worker
+        worker.start()
+
+    def _on_watch_integration_done(self, patterns, labels, template):
+        # Only append patterns we haven't seen yet
+        existing_labels = set(self.labels)
+        new_count = 0
+        for pat, lab in zip(patterns, labels):
+            if lab not in existing_labels:
+                self.patterns.append(pat)
+                self.labels.append(lab)
+                idx = len(self.patterns) - 1
+                self.cmb_pattern.addItem(f"[{idx}] {lab}")
+                new_count += 1
+
+        if template and self.fit_background_template is None:
+            self.fit_background_template = template
+
+        msg = f"Watch: added {new_count} new patterns ({len(self.patterns)} total)"
+        print(f"[Watch] {msg}")
+        self.statusBar().showMessage(msg)
+
+        # Auto-fit new patterns if watch fitting is active
+        if self._watch_fitting and new_count > 0:
+            self._watch_fit_new()
+
+    def _on_watch_integration_error(self, msg):
+        print(f"[Watch] Integration error: {msg}")
+        self.statusBar().showMessage(f"Watch: integration error — {msg[:60]}")
+
+    def _watch_fit_new(self):
+        """Fit any patterns that don't have cached results yet."""
+        unfitted = [i for i in range(len(self.patterns))
+                    if i not in self.results_cache]
+        if not unfitted or not self.phases:
+            return
+
+        config = self._build_config()
+        patterns_to_fit = [self.patterns[i] for i in unfitted]
+        labels_to_fit = [self.labels[i] for i in unfitted]
+
+        self._watch_index_offset = unfitted[0]
+        self.btn_fit_all.setText("Stop")
+        self.progress_bar.setValue(0)
+
+        self.fit_worker = FitWorker(self)
+        self.fit_worker.configure_batch(
+            patterns_to_fit, self.phases, config,
+            sequential=self.chk_sequential.isChecked(),
+            labels=labels_to_fit,
+            fit_background_template=self.fit_background_template,
+            use_fast_fit=self.chk_fast_fit.isChecked(),
+        )
+        self.fit_worker.single_done.connect(self._on_watch_single_done)
+        self.fit_worker.batch_progress.connect(self._on_batch_progress)
+        self.fit_worker.batch_done.connect(self._on_watch_batch_done)
+        self.fit_worker.error.connect(self._on_fit_error)
+        self.fit_worker.start()
+
+    def _on_watch_single_done(self, idx, result, elapsed):
+        real_idx = idx + self._watch_index_offset
+        self.results_cache[real_idx] = (result, elapsed)
+        if self.cmb_pattern.currentIndex() == real_idx:
+            self._update_fit_plot(real_idx, result)
+            self._update_results_table(result)
+
+    def _on_watch_batch_done(self, store):
+        offset = self._watch_index_offset
+        for entry in store:
+            idx = entry['index'] + offset
+            result = entry['result']
+            elapsed = entry['elapsed']
+            self.results_cache[idx] = (result, elapsed)
+
+        self._update_trend_plot()
+
+        n_ok = sum(1 for e in store if e['success'])
+        self.statusBar().showMessage(
+            f"Watch fit: {n_ok}/{len(store)} converged "
+            f"({len(self.results_cache)}/{len(self.patterns)} total)")
+
+        if self._watch_fitting:
+            self.btn_fit_all.setText("Stop")
+        else:
+            self.btn_fit_all.setText("Fit All")
+        self.btn_fit_all.setEnabled(True)
+        self.btn_fit_current.setEnabled(True)
+
+        idx = self.cmb_pattern.currentIndex()
+        if idx in self.results_cache:
+            result, elapsed = self.results_cache[idx]
+            if result is not None:
+                self._update_fit_plot(idx, result)
+                self._update_results_table(result)
 
     # -----------------------------------------------------------------
     # Live / File Mode switching
@@ -1800,11 +1999,23 @@ class PhaseFitApp(QMainWindow):
         self.fit_worker.start()
 
     def fit_all(self):
+        # In watch mode, Fit All / Stop is a toggle
+        if self.chk_watch.isChecked() and self._watch_fitting:
+            self._watch_fitting = False
+            self.btn_fit_all.setText("Fit All")
+            self.statusBar().showMessage("Watch fitting stopped.")
+            return
+
         if not self.patterns:
             self.statusBar().showMessage("No patterns loaded.")
             return
         if not self.phases:
             self.statusBar().showMessage("No phases loaded.")
+            return
+
+        if self.chk_watch.isChecked():
+            self._watch_fitting = True
+            self._watch_fit_new()
             return
 
         config = self._build_config()
@@ -1859,7 +2070,10 @@ class PhaseFitApp(QMainWindow):
     def _on_batch_done(self, store):
         self.store = store
         self.btn_fit_all.setEnabled(True)
-        self.btn_fit_all.setText("Fit All")
+        if self._watch_fitting:
+            self.btn_fit_all.setText("Stop")
+        else:
+            self.btn_fit_all.setText("Fit All")
         self.btn_fit_current.setEnabled(True)
         self.progress_bar.setValue(100)
 
@@ -1886,7 +2100,10 @@ class PhaseFitApp(QMainWindow):
         self.btn_fit_current.setEnabled(True)
         self.btn_fit_current.setText("Fit Current")
         self.btn_fit_all.setEnabled(True)
-        self.btn_fit_all.setText("Fit All")
+        if self._watch_fitting:
+            self.btn_fit_all.setText("Stop")
+        else:
+            self.btn_fit_all.setText("Fit All")
         QMessageBox.critical(self, "Fit Error", msg)
         self.statusBar().showMessage(f"Fit error: {msg[:80]}")
 
