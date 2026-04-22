@@ -1539,6 +1539,12 @@ class Workflow(QDialog, LogMixin):
             self._db.import_toml_to_profile(profile_id, data)
         except Exception as e:
             QMessageBox.critical(self, 'Save Error', f'Failed to save to profile:\n{e}')
+            return
+        try:
+            app_settings.set_locator(profile_id)
+            app_settings.reload()
+        except Exception:
+            pass
 
     def _extract_tree_to_dict(self, parent=None) -> dict:
         result = {}

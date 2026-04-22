@@ -31,7 +31,6 @@ class BaseDock(QDockWidget):
         self.action_window_dock = self.main_window.add_dock_toggle_action(
             self, self.title, segment_name=self.segment_name
         )
-        self.visibilityChanged.connect(lambda visible: self.action_window_dock.setChecked(bool(visible)))
 
     def _current_host(self):
         """Return the QMainWindow currently hosting this dock."""

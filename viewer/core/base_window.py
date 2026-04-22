@@ -250,7 +250,11 @@ class BaseWindow(QMainWindow):
         action.setCheckable(True)
         action.setChecked(dock.isVisible())
         action.toggled.connect(lambda checked: dock.setVisible(bool(checked)))
-        dock.visibilityChanged.connect(lambda visible: action.setChecked(bool(visible)))
+        def _sync_check(visible, act=action):
+            act.blockSignals(True)
+            act.setChecked(bool(visible))
+            act.blockSignals(False)
+        dock.visibilityChanged.connect(_sync_check)
         submenu.addAction(action)
         return action
 
