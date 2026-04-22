@@ -19,29 +19,39 @@ from utils.log_manager import get_default_manager, LogManager
 #di = DatabaseInterface()
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+# viewer/core/base_window.py → .parent = core/, .parent.parent = viewer/, .parent.parent.parent = project root
+project_root = Path(__file__).parent.parent.parent
+
+_SHOW_ALL = object()  # sentinel: visible_actions not passed → show all menus
 
 class BaseWindow(QMainWindow):
     """
     Base class for all main windows in the DashPVA application.
     Provides common functionality like file operations, UI loading, and standard menu actions.
     """
-    
+
     # Signals
     file_opened = pyqtSignal(str)  # Emitted when a file is opened
     file_saved = pyqtSignal(str)   # Emitted when a file is saved
-    
-    def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None):
+
+    def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
+                 visible_actions=_SHOW_ALL, size_policy: dict = None):
         """
         Initialize the base window.
-        
+
         Args:
             ui_file_name (str): Name of the UI file to load (without path)
             viewer_name (str, optional): Human-friendly name of the viewer for status messages
             log_manager (LogManager, optional): Injected LogManager to use for logging
+            visible_actions (list[str] | None): Top-level menu titles to show, e.g.
+                ['File', 'Windows', 'Documentation']. Not passing shows all menus;
+                passing None hides all menus.
+            size_policy (dict, optional): Window size constraints, e.g.
+                {'min_height': 400, 'max_height': 800, 'min_width': 600, 'max_width': 1200}
         """
         super().__init__()
         self.ui_file_name = ui_file_name
+        self._visible_actions = visible_actions
         self.current_file_path = None
         self.viewer_name = viewer_name
         # Obtain the logging manager and a per-viewer logger
@@ -59,27 +69,33 @@ class BaseWindow(QMainWindow):
         except Exception:
             import logging as _logging
             self.logger = _logging.getLogger(f"{self.__module__}.{self.__class__.__name__}")
-        
+
         if ui_file_name:
             self.load_ui()
-        
+
         self.setup_base_connections()
-        
+
+        if visible_actions is not _SHOW_ALL:
+            self._apply_visible_actions()
+
+        if size_policy:
+            self._apply_size_policy(size_policy)
+
         # CPU, GPU, runtime in status bar
         self.init_perf_statusbar()
-        
+
     def load_ui(self):
         """Load the UI file for this window."""
         if not self.ui_file_name:
             return
-            
+
         ui_file = project_root / "gui" / self.ui_file_name
         if ui_file.exists():
             uic.loadUi(str(ui_file), self)
         else:
             QMessageBox.critical(self, "Error", f"UI file not found: {ui_file}")
             sys.exit(1)
-            
+
     def setup_base_connections(self):
         """Set up connections for standard menu actions."""
         # Only connect if the actions exist (they should from base_mainwindow.ui)
@@ -91,13 +107,58 @@ class BaseWindow(QMainWindow):
             self.actionSave.triggered.connect(self.save_file)
         if hasattr(self, 'actionExit'):
             self.actionExit.triggered.connect(self.close)
-        # Documentation menu (wired here; content discovery handled by DocumentationDialog)
+        # Documentation menu — wire existing UI action and always ensure the menu exists
         if hasattr(self, 'actionOpenDocumentation'):
             self.actionOpenDocumentation.triggered.connect(self.open_documentation)
+        try:
+            self.ensure_documentation_menu()
+        except Exception:
+            pass
 
         # Ensure a 'Windows' menu exists globally for docks to use
         try:
             self.ensure_windows_menu()
+        except Exception:
+            pass
+
+    def ensure_documentation_menu(self):
+        """Create a 'Documentation' menu on the menu bar if one doesn't already exist."""
+        try:
+            from PyQt5.QtWidgets import QMenu
+            mbar = QMainWindow.menuBar(self)
+            for act in mbar.actions():
+                m = act.menu()
+                if m is not None and m.title() == "Documentation":
+                    return m
+            doc_menu = QMenu("Documentation", self)
+            open_action = QAction("Open", self)
+            open_action.triggered.connect(self.open_documentation)
+            doc_menu.addAction(open_action)
+            mbar.addMenu(doc_menu)
+            return doc_menu
+        except Exception:
+            return None
+
+    def _apply_size_policy(self, size_policy: dict):
+        from PyQt5.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().size()
+        screen_w, screen_h = screen.width(), screen.height()
+        if 'min_height' in size_policy:
+            self.setMinimumHeight(size_policy['min_height'])
+        self.setMaximumHeight(size_policy.get('max_height', screen_h))
+        if 'min_width' in size_policy:
+            self.setMinimumWidth(size_policy['min_width'])
+        self.setMaximumWidth(size_policy.get('max_width', screen_w))
+
+    def _apply_visible_actions(self):
+        """Hide top-level menus whose title is not in self._visible_actions (case-insensitive)."""
+        allowed = {a.lower() for a in (self._visible_actions or [])}
+        try:
+            mbar = QMainWindow.menuBar(self)
+            for action in mbar.actions():
+                menu = action.menu()
+                if menu is not None:
+                    action.setVisible(menu.title().lower() in allowed)
         except Exception:
             pass
 
@@ -199,7 +260,7 @@ class BaseWindow(QMainWindow):
         if submenu is not None and action is not None:
             submenu.addAction(action)
         return action
-            
+
     def open_file(self):
         """
         Handle File -> Open action.
@@ -215,7 +276,7 @@ class BaseWindow(QMainWindow):
             self.current_file_path = file_path
             self.load_file_content(file_path)
             self.file_opened.emit(file_path)
-            
+
     def save_file(self):
         """
         Handle File -> Save action.
@@ -231,28 +292,28 @@ class BaseWindow(QMainWindow):
             self.current_file_path = file_path
             self.save_file_content(file_path)
             self.file_saved.emit(file_path)
-            
+
     def get_file_filters(self):
         """
         Get file filters for open/save dialogs.
         Override in subclasses to provide specific file types.
-        
+
         Returns:
             str: File filter string for QFileDialog
         """
         return "All Files (*)"
-        
+
     def load_file_content(self, file_path):
         """
         Load content from the specified file.
         Override in subclasses to implement specific loading logic.
-        
+
         Args:
             file_path (str): Path to the file to load
         """
         # Base implementation - override in subclasses
         self.update_status(f"Loaded: {os.path.basename(file_path)}")
-        
+
     def open_folder(self):
         """
         Handle File -> Open Folder action.
@@ -266,23 +327,23 @@ class BaseWindow(QMainWindow):
         )
         if folder_path:
             self.load_folder_content(folder_path)
-    
+
     def load_folder_content(self, folder_path):
         """
         Load content from the specified folder.
         Override in subclasses to implement specific folder loading logic.
-        
+
         Args:
             folder_path (str): Path to the folder to load
         """
         # Base implementation - override in subclasses
         self.update_status(f"Opened folder: {os.path.basename(folder_path)}")
-        
+
     def save_file_content(self, file_path):
         """
         Save content to the specified file.
         Override in subclasses to implement specific saving logic.
-        
+
         Args:
             file_path (str): Path to save the file to
         """
@@ -308,7 +369,7 @@ class BaseWindow(QMainWindow):
             dlg.show()
         except Exception as e:
             self.update_status(f"Failed to open documentation: {e}", level='error')
-        
+
     def update_status(self, message, level: str = 'info', source: str = None):
         """
         Update the status label with a message and include the viewer name.
@@ -323,7 +384,7 @@ class BaseWindow(QMainWindow):
         src = source or getattr(self, 'viewer_name', None) or self.__class__.__name__
         prefix = f"[{src}] "
         full_msg = f"{prefix}{message}" if isinstance(message, str) else message
-        
+
         # Update status label if it exists
         if hasattr(self, 'label_status'):
             try:
@@ -331,7 +392,7 @@ class BaseWindow(QMainWindow):
             except Exception:
                 # Fallback to plain message if label does not accept complex types
                 self.label_status.setText(str(message))
-        
+
         # Log via LogManager at the requested level. If source override differs from logger name,
         # include the source prefix to disambiguate in the log message.
         try:
@@ -360,7 +421,7 @@ class BaseWindow(QMainWindow):
                     self.logger.info(log_text)
         except Exception:
             pass
-            
+
     def init_perf_statusbar(self):
         sb = QMainWindow.statusBar(self)
         self._cpu_label = QLabel("CPU: -%")
@@ -411,7 +472,7 @@ class BaseWindow(QMainWindow):
     def setup_window_properties(self, title, width=800, height=600):
         """
         Set up basic window properties.
-        
+
         Args:
             title (str): Window title
             width (int): Window width
@@ -423,7 +484,7 @@ class BaseWindow(QMainWindow):
             # Use the segment before the first ' - ' as the viewer name
             self.viewer_name = title.split(' - ')[0].strip() or self.__class__.__name__
         self.resize(width, height)
-        
+
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -431,7 +492,7 @@ class BaseWindow(QMainWindow):
         """
         # Base implementation - just accept the close event
         event.accept()
-        
+
     def set_viewer_name(self, name: str) -> None:
         """Set or update the viewer name used in status messages."""
         try:

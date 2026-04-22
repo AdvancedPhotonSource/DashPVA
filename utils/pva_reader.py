@@ -4,7 +4,7 @@ import bitshuffle
 import numpy as np
 import pvaccess as pva
 from collections import deque
-from epics import camonitor, caget
+from epics import camonitor, camonitor_clear, caget
 from PyQt5.QtCore import QObject, pyqtSignal
 import settings as app_settings
 
@@ -15,8 +15,9 @@ class PVAReader(QObject):
     # signal_roi_updated = pyqtSignal(dict)
     # signal_rsm_updated = pyqtSignal(dict)
     # signal_analysis_updated = pyqtSignal(dict)
-    reader_scan_complete = pyqtSignal()  
+    reader_scan_complete = pyqtSignal()
     scan_state_changed = pyqtSignal(bool)
+    reader_new_frame = pyqtSignal()
     
     def __init__(self,
                  input_channel=None,
@@ -175,8 +176,7 @@ class PVAReader(QObject):
             if self.CACHING_MODE == 'alignment':
                 self.MAX_CACHE_SIZE = app_settings.ALIGNMENT_MAX_CACHE_SIZE or 100
             elif self.CACHING_MODE == 'scan':
-                scan = app_settings.CACHE_OPTIONS.get('SCAN', {})
-                self.FLAG_PV = scan.get('FLAG_PV', '')
+                self.FLAG_PV = app_settings.SCAN_FLAG_PV or ''
                 self.START_SCAN = app_settings.SCAN_START_SCAN if app_settings.SCAN_START_SCAN is not None else True
                 self.STOP_SCAN = app_settings.SCAN_STOP_SCAN if app_settings.SCAN_STOP_SCAN is not None else False
                 self.MAX_CACHE_SIZE = app_settings.SCAN_MAX_CACHE_SIZE or 100
@@ -188,7 +188,7 @@ class PVAReader(QObject):
         if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
             self.cached_images = deque(maxlen=self.MAX_CACHE_SIZE)
             self.cached_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
-            if self.HKL_IN_CONFIG:
+            if self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 self.cached_qx = deque(maxlen=self.MAX_CACHE_SIZE)
                 self.cached_qy = deque(maxlen=self.MAX_CACHE_SIZE)
                 self.cached_qz = deque(maxlen=self.MAX_CACHE_SIZE)
@@ -197,7 +197,7 @@ class PVAReader(QObject):
             # and then an entry for each bin that lines up with the attributes and rsm attributes
             self.cached_images = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
             self.cached_attributes = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
-            if self.HKL_IN_CONFIG:
+            if self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 self.cached_qx = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
                 self.cached_qy = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
                 self.cached_qz = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]               
@@ -231,15 +231,19 @@ class PVAReader(QObject):
                 self.parse_roi_pvs(self.pv_attributes) 
 
             # Check for rsm attributes in metadata
-            if self.HKL_IN_CONFIG and 'RSM' in self.pv_attributes:
+            if (self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']) and 'RSM' in self.pv_attributes:
                 self.parse_rsm_attributes(self.pv_attributes)
 
             if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
                 self.parse_analysis_attributes()
             
             if self.caches_initialized:
-                self.cache_attributes(self.pv_attributes, self.rsm_attributes)
-                self.cache_image(np.ravel(self.image))
+                try:
+                    if self.cache_attributes(self.pv_attributes, self.rsm_attributes):
+                        self.cache_image(np.ravel(self.image))
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
 
             #TODO: depreciated change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
             if self.ANALYSIS_IN_CONFIG:
@@ -257,6 +261,8 @@ class PVAReader(QObject):
                         self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
                         # double storing of the postion, will find out if needed
                         self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
+
+            self.reader_new_frame.emit()
 
             if self.is_scan_complete and not self.is_caching:
                 self.is_scan_complete = False
@@ -416,44 +422,48 @@ class PVAReader(QObject):
             return np.frombuffer(decompressed_bytes, dtype=dtype)
 
 ################################## Caching ####################################
-    def cache_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> None:
-        if self.CACHING_MODE == 'alignment': 
+    def cache_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> bool:
+        """Returns True if this frame was cached (caller should also cache the image)."""
+        if self.CACHING_MODE == 'alignment':
             self.cached_attributes.append(pv_attributes)
             if rsm_attributes:
                 self.cached_qx.append(rsm_attributes['qx'])
                 self.cached_qy.append(rsm_attributes['qy'])
                 self.cached_qz.append(rsm_attributes['qz'])
-            elif not self.rsm_attributes and self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
-                raise AttributeError('[Caching Attributes] Could not find \'RSM\' attribute')
-            return
+            return True
         elif self.CACHING_MODE == 'scan':
-            # TODO: create different scan functions for if a flag pv is bool/binary vs not
-            # currently only works with binary/boolean flag pvs
-            if self.FLAG_PV in pv_attributes:
-                flag_value = pv_attributes[self.FLAG_PV]
-                if flag_value == self.START_SCAN:
-                    if not self.is_caching:
-                        self.is_caching = True
-                        self.is_scan_complete = False
-                        self.scan_state_changed.emit(True)
-                elif (flag_value == self.STOP_SCAN) and self.is_caching == True:
-                    self.is_caching = False
-                    self.is_scan_complete = True
-                    self.scan_state_changed.emit(False)
-                    
-                if self.is_caching:
-                    self.cached_attributes.append(pv_attributes)
-                    if rsm_attributes:
-                        self.cached_qx.append(rsm_attributes['qx'])
-                        self.cached_qy.append(rsm_attributes['qy'])
-                        self.cached_qz.append(rsm_attributes['qz'])
-                    elif not rsm_attributes and self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
-                        raise AttributeError('[Caching Attributes] Could not find \'RSM\' attribute')
-            else:
-                raise AttributeError('[Caching Attributes] Flag_PV not found') 
+            flag_found = self.FLAG_PV in pv_attributes
+            if not flag_found:
+                return False
+
+            flag_value = pv_attributes[self.FLAG_PV]
+            if flag_value == self.START_SCAN:
+                if not self.is_caching:
+                    self.is_caching = True
+                    self.is_scan_complete = False
+                    self.scan_state_changed.emit(True)
+            elif flag_value == self.STOP_SCAN and self.is_caching:
+                self.is_caching = False
+                self.is_scan_complete = True
+                self.scan_state_changed.emit(False)
+
+            if not self.is_caching:
+                return False
+
+            if not rsm_attributes and self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
+                return False
+
+            self.cached_attributes.append(pv_attributes)
+            if rsm_attributes:
+                self.cached_qx.append(rsm_attributes['qx'])
+                self.cached_qy.append(rsm_attributes['qy'])
+                self.cached_qz.append(rsm_attributes['qz'])
+            return True
         elif self.CACHING_MODE == 'bin':
             bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
-            self.cached_attributes[bin_index].append(pv_attributes) 
+            self.cached_attributes[bin_index].append(pv_attributes)
+            return True
+        return False
 
     def cache_image(self, image) -> None:
         if self.CACHING_MODE == 'alignment':
@@ -477,16 +487,32 @@ class PVAReader(QObject):
         self.cached_qz.clear()
 
 ########################### Start and Stop Channel Monitors ##########################    
+    def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:
+        """CA monitor callback for FLAG_PV — detects scan stop even when PVA frames stop arriving."""
+        print(f'[DEBUG] CA flag callback: {pvname}={value!r}  is_caching={self.is_caching}')
+        if value == self.STOP_SCAN and self.is_caching:
+            self.is_caching = False
+            self.scan_state_changed.emit(False)
+            self.reader_scan_complete.emit()
+            print(f'[DEBUG] CA flag: Scan STOPPED — emitting reader_scan_complete')
+        elif value == self.START_SCAN and not self.is_caching:
+            self.is_caching = True
+            self.is_scan_complete = False
+            self.scan_state_changed.emit(True)
+            print(f'[DEBUG] CA flag: Scan STARTED')
+
     def start_channel_monitor(self, callback=None) -> None:
         """
         Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
         Args:
-            callback (function, optional): A custom callback to use for the monitor. 
+            callback (function, optional): A custom callback to use for the monitor.
                                            If None, defaults to self.pva_callbackSuccess.
         """
         monitor_callback = callback if callback is not None else self.pva_callbackSuccess
         self.channel.subscribe('pva_monitor', monitor_callback)
         self.channel.startMonitor()
+        if self.CACHING_MODE == 'scan' and self.FLAG_PV:
+            camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
 
     def stop_channel_monitor(self) -> None:
         """
@@ -494,6 +520,11 @@ class PVAReader(QObject):
         """
         self.channel.unsubscribe('pva_monitor')
         self.channel.stopMonitor()
+        if self.CACHING_MODE == 'scan' and self.FLAG_PV:
+            try:
+                camonitor_clear(self.FLAG_PV)
+            except Exception:
+                pass
 
     def start_roi_backup_monitor(self) -> None:
         try:
@@ -532,8 +563,8 @@ class PVAReader(QObject):
         images =  self.get_cached_images()
         attributes = self.get_cached_attributes()
         
-        # Only get RSM data if HKL is configured and viewer type supports it
-        if self.HKL_IN_CONFIG and self.viewer_type != 'i':
+        # Only get RSM data if HKL is configured or viewer is RSM type
+        if (self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']) and self.viewer_type != 'i':
             rsm = self.get_cached_rsm()
             # Check lengths including RSM data
             if len(images) == len(attributes) == len(rsm[0]) == len(rsm[1]) == len(rsm[2]):

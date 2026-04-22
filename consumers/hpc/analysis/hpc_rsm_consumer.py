@@ -25,7 +25,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         # Config Variables
         self.hkl_config = {}
-        
+
         # Statistics
         self.nFramesProcessed = 0
         self.nFrameErrors = 0
@@ -80,7 +80,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.shape : tuple = (0,0)
         self.type_dict = {
             'codec':{
-                'name': pva.STRING, 
+                'name': pva.STRING,
                 'parameters': pva.INT},
             'qx': {
                 'compressedSize': pva.LONG,
@@ -95,10 +95,10 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 'uncompressedSize': pva.LONG,
                 'value':[pva.DOUBLE]}
             }
-        
+
         self.type_dict_compressed = {
             'codec':{
-                'name': pva.STRING, 
+                'name': pva.STRING,
                 'parameters': pva.INT},
             'qx': {
                 'compressedSize': pva.LONG,
@@ -112,8 +112,8 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 'compressedSize': pva.LONG,
                 'uncompressedSize': pva.LONG,
                 'value':[pva.UBYTE,]}
-            }                   
-        
+            }
+
         # HKL parameters
         self.all_attributes = {}
         self.hkl_pv_channels = set()
@@ -122,20 +122,27 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.q_conv = None
         self.qx = None
         self.qy = None
-        self.qz = None   
+        self.qz = None
 
         self.configure(configDict)
-        
+
     def configure(self, configDict):
-        """Configure processor settings and initialize HKL parameters from the active settings profile."""
+        """Configure processor settings and initialize HKL parameters from DB config."""
         self.logger.debug(f'Configuration update: {configDict}')
-        try:
-            import settings as app_settings
-            app_settings.reload()
-            self.hkl_config = dict(app_settings.HKL) or {}
-        except Exception as e:
-            self.logger.warning(f'Failed to load HKL config from settings: {e}')
-            self.hkl_config = {}
+
+        from utils.config.source import ConfigSource
+        # Accept profile_id (int) or path (str) in configDict; default to selected DB profile
+        locator = configDict.get('profile_id') or configDict.get('path') or None
+        config = ConfigSource(locator).load()
+
+        if not config:
+            raise RuntimeError(
+                "HpcRsmProcessor: no configuration found — ensure a profile is selected "
+                "in the DB or pass 'profile_id' or 'path' in configDict."
+            )
+
+        self.config = config
+        self.hkl_config = self.config.get('HKL', {})
         self.hkl_pv_channels = set()
         for section in self.hkl_config.values():
             if isinstance(section, dict):
@@ -153,14 +160,17 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         # obj_dict : dict = pva_object.get()
         attributes : list = pva_object['attribute']
         hkl_attributes = {}
-        for attr in attributes: # list of attribute dictionaries
-            name = attr['name']
-            value = attr['value'][0]['value']
-            self.all_attributes[name] = value
-            if name in self.hkl_pv_channels:
-                hkl_attributes[name] = value
+        for attr in attributes:
+            try:
+                name = attr['name']
+                value = attr['value'][0]['value']
+                self.all_attributes[name] = value
+                if name in self.hkl_pv_channels:
+                    hkl_attributes[name] = value
+            except Exception:
+                pass
         return hkl_attributes
-    
+
     def get_sample_and_detector_circles(self, hkl_attr: dict):
         # lists for sample circle parameters
         sample_circle_directions = []
@@ -186,7 +196,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                             det_circle_positions.append(hkl_attr[pv_name])
 
         return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
-    
+
     def get_axis_directions(self, hkl_attr: dict):
          # Get beam and reference directions
         if len(hkl_attr) == len(self.hkl_pv_channels):
@@ -197,16 +207,16 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
         else:
             return None, None, None
-        
+
     def get_ub_matrix(self, hkl_attr: dict):
         ub_matrix_key = self.hkl_config['SPEC'].get('UB_MATRIX_VALUE', '')
 
         return hkl_attr[ub_matrix_key]
-    
+
     def get_energy(self, hkl_attr: dict):
         energy_key = self.hkl_config['SPEC'].get('ENERGY_VALUE', '')
 
-        return hkl_attr[energy_key]  
+        return hkl_attr[energy_key]
 
     def create_rsm(self, hkl_attr: dict, shape: tuple):
         """Calculate reciprocal space mapping"""
@@ -227,11 +237,11 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 primary_beam_directions
             )
             # Initialize HXRD
-            hxrd = xu.HXRD(inplane_beam_direction, 
-                        sample_surface_normal_direction, 
-                        en=energy, 
+            hxrd = xu.HXRD(inplane_beam_direction,
+                        sample_surface_normal_direction,
+                        en=energy,
                         qconv=q_conv)
-            
+
             # Set up detector parameters
             roi = [0, shape[0], 0, shape[1]]
             pixel_dir1 = hkl_attr['DetectorSetup:PixelDirection1']
@@ -263,11 +273,11 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             except Exception:
                 pass
             return None, None, None
-        
+
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
         # if len(previous_data) != len(metadata):
         #         dicts_equal = False
-        #     else:   
+        #     else:
         for key, value in hkl_attr.items():
             if isinstance(value, np.ndarray):
                 arrs_equal = np.array_equal(value, old_attr[key])
@@ -277,7 +287,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 return True
         else:
             return False
-        
+
     def decompress_image(self, pvObject):
         """Return image pixels as a NumPy array, handling compressed (lz4) and uncompressed payloads.
         Kept intentionally simple: no dict.get usage on PvObject, no reshaping.
@@ -294,11 +304,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             params = pvObject['codec']['parameters']
             enum = params[0]['value'] if (isinstance(params, tuple) and len(params) > 0) else pva.UBYTE
             dtype = self.PVA_TO_NUMPY_DTYPE_MAP.get(enum, np.uint8)
-            # DEBUG
-            # uncompressed_size = pvObject['uncompressedSize']
-            # compressed_size = len(comp_bytes)
-            # msg = f'Decompressing [lz4]: Compressed Size: {compressed_size}, Uncompressed Size: {uncompressed_size}'*10
-            # print(msg)
             return np.frombuffer(out_bytes, dtype=dtype)
         # Non-compressed path: convert the active union field to NumPy
         union_dict = pvObject['value'][0]
@@ -306,11 +311,9 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         pv_arr = union_dict[field_name]
         data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
         dtype = self.UNION_FIELD_TO_DTYPE.get(field_name, None)
-        # msg = f"Handling [uncompressed]: Field: {field_name}, Array Length: {len(data_list)} Compressed Size" *10
-        # print(msg)
         return np.asarray(data_list, dtype=dtype) if dtype is not None else np.asarray(data_list)
-        
-    
+
+
     def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
         if not isinstance(hkl_array, np.ndarray):
             raise TypeError("hkl_array must be a numpy array")
@@ -346,17 +349,17 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         if 'timeStamp' not in pvObject:
             # No timestamp, just return the object
             return pvObject
-        
+
         if 'attribute' not in pvObject:
             print('attributes not in pvObject')
             return pvObject
-        
+
         # Optionally decode image data for local use, but do not modify pvObject['value']
         _ = self.decompress_image(pvObject)
-                
+
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
         self.shape = tuple([dim['size'] for dim in dims])
-    
+
         if self.old_attrbutes is not None:
             attributes_diff = self.attributes_diff(self.hkl_attributes, self.old_attrbutes)
         else:
@@ -376,7 +379,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             self.compressed_size_qx = self.uncompressed_size
             self.compressed_size_qy = self.uncompressed_size
             self.compressed_size_qz = self.uncompressed_size
-            
+
             if self.codec_name != '':
                 self.qx = self.compress_array(self.qx, self.codec_name)
                 self.qy = self.compress_array(self.qy, self.codec_name)
@@ -389,7 +392,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             # Create RSM data structure
             rsm_data = {
                         'codec':{
-                            'name': self.codec_name, 
+                            'name': self.codec_name,
                             'parameters': self.codec_parameters},
                         'qx': {
                             'compressedSize': int(self.compressed_size_qx),
@@ -403,24 +406,39 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                             'compressedSize': int(self.compressed_size_qz),
                             'uncompressedSize': int(self.uncompressed_size),
                             'value':self.qz},
-                        } 
-            
+                        }
+
             # Create PV object to hold RSM attributes
             if self.codec_name != '':
                 rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict_compressed}, {'value': rsm_data})}
             else:
                 rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
 
-            # append the new attributes
-            frameAttributes = pvObject['attribute']
+            # Rebuild attribute list: all parsed metadata + RSM
+            frameAttributes = []
+            for name, value in self.all_attributes.items():
+                try:
+                    if isinstance(value, bool):
+                        attr = {'name': name, 'value': pva.PvBoolean(value)}
+                    elif isinstance(value, (int, float)):
+                        attr = {'name': name, 'value': pva.PvFloat(float(value))}
+                    elif isinstance(value, str):
+                        attr = {'name': name, 'value': pva.PvString(value)}
+                    elif isinstance(value, np.ndarray):
+                        pv = pva.PvScalarArray(pva.DOUBLE)
+                        pv.set(value.tolist())
+                        attr = {'name': name, 'value': pv}
+                    else:
+                        continue
+                    frameAttributes.append(attr)
+                except Exception:
+                    pass
             frameAttributes.append(rsm_object)
-            #pvObject['attribute'] = frameAttributes
 
             # Update stats
             frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
             self.lastFrameTimestamp = frameTimestamp
             self.nFramesProcessed += 1
-            procTimes = {}
 
             proc_time_start = pva.PvObject({'value': pva.DOUBLE})
             proc_time_start['value'] = t0  # seconds, or multiply by 1000.0 for ms
@@ -442,7 +460,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             })
 
             pvObject['attribute'] = frameAttributes
-            
+
             self.updateOutputChannel(pvObject)
 
             # Update processing time
@@ -464,10 +482,10 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         """
         Reset processor statistics.
         """
-        self.nFramesProcessed = 0 
-        self.nFrameErrors = 0 
-        self.nMetadataProcessed = 0 
-        self.nMetadataDiscarded = 0 
+        self.nFramesProcessed = 0
+        self.nFrameErrors = 0
+        self.nMetadataProcessed = 0
+        self.nMetadataDiscarded = 0
         self.processingTime = 0
 
     def getStats(self):
@@ -479,7 +497,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         if self.processingTime > 0:
             processedFrameRate = self.nFramesProcessed / self.processingTime
             frameErrorRate = self.nFrameErrors / self.processingTime
-        return { 
+        return {
             'nFramesProcessed' : self.nFramesProcessed,
             'nFrameErrors' : self.nFrameErrors,
             'nMetadataProcessed' : self.nMetadataProcessed,
@@ -493,7 +511,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         """
         Define PVA types for different stats variables.
         """
-        return { 
+        return {
             'nFramesProcessed' : pva.UINT,
             'nFrameErrors' : pva.UINT,
             'nMetadataProcessed' : pva.UINT,

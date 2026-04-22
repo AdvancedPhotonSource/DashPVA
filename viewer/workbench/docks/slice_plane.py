@@ -2,7 +2,7 @@ from PyQt5 import uic
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget
 
-from viewer.workbench.docks.base_dock import BaseDock
+from viewer.core.docks.base_dock import BaseDock
 
 
 class SlicePlaneDock(BaseDock):

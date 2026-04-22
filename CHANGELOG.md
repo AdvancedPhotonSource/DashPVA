@@ -1,8 +1,22 @@
 # What's New in DashPVA
 
-This file tracks the latest changes, features, and improvements in DashPVA.
+This file tracks the latest changes, features, and improvements in DashPVA monthly.
 
 ---
+
+## Latest Changes (April 2026)
+### New Feature
+- Plot modes in the Live 3D View. View your 
+  - Post-scan: View 3D data after a scan
+  - Realtime: Plot cached images in realtime
+  - Realtime Per Frame: Plot cached images 1 frame at a time
+
+# Added
+- Docks to the hkl3d
+
+# Fix 
+- The HKL 3d inherits from base_window.py
+
 
 ## Latest Changes (March 2026)
 ### New Features

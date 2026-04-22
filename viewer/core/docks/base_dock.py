@@ -13,6 +13,9 @@ class BaseDock(QDockWidget):
         self.setup()
 
     def setup(self):
+        self.setStyleSheet(
+            "QDockWidget::pane { border: 1px solid palette(mid); }"
+        )
         # Dock
         self.setWindowTitle(self.title)
         self.setAllowedAreas(Qt.AllDockWidgetAreas)

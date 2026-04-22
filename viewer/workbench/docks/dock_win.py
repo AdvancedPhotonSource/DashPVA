@@ -9,7 +9,7 @@ title, a push button, and a segmented Windows menu action.
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox, QAction
 from PyQt5.QtCore import Qt, QTimer
 
-from viewer.workbench.docks.base_dock import BaseDock
+from viewer.core.docks.base_dock import BaseDock
 
 
 class DockWinDock(BaseDock):

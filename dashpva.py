@@ -64,7 +64,7 @@ def run():
 def hkl3d():
     """Launch HKL 3D Viewer"""
     click.echo('Running HKL 3D Viewer')
-    exit_code = subprocess.run([sys.executable, 'viewer/hkl_3d_viewer.py']).returncode
+    exit_code = subprocess.run([sys.executable, 'viewer/hkl3d/hkl_3d_viewer.py']).returncode
     sys.exit(exit_code)
 
 

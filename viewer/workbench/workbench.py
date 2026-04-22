@@ -37,7 +37,7 @@ from viewer.workbench.workspace.workspace_3d import Workspace3D
 # project_root = Path(__file__).resolve().parents[2]
 # sys.path.insert(0, str(project_root))
 
-from viewer.base_window import BaseWindow
+from viewer.core.base_window import BaseWindow
 from utils.log_manager import get_default_manager
 from utils.hdf5_loader import HDF5Loader
 
