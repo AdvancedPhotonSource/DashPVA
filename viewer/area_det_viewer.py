@@ -295,6 +295,13 @@ class DiffractionImageWindow(QMainWindow):
         btn_row2.addWidget(self.btn_clear_mask)
         form.addRow(btn_row2)
 
+        # Row 3b: Export JSON button
+        self.btn_export_json = QPushButton('Export JSON')
+        self.btn_export_json.setMinimumHeight(35)
+        self.btn_export_json.setToolTip('Export mask as EPICS NDPluginBadPixel JSON')
+        self.btn_export_json.clicked.connect(self.export_json_clicked)
+        form.addRow(self.btn_export_json)
+
         # Row 4: Apply mask checkbox
         self.chk_apply_mask = QCheckBox('Apply mask to display')
         self.chk_apply_mask.setChecked(True)
@@ -311,14 +318,26 @@ class DiffractionImageWindow(QMainWindow):
     def load_mask_clicked(self):
         filepath, _ = QFileDialog.getOpenFileName(
             self, 'Load Mask File', '',
-            'Mask files (*.edf *.npy *.tif *.tiff);;'
+            'Mask files (*.edf *.npy *.tif *.tiff *.json);;'
             'EDF files (*.edf);;NumPy files (*.npy);;'
-            'TIFF files (*.tif *.tiff);;All files (*)')
+            'TIFF files (*.tif *.tiff);;'
+            'JSON BadPixel (*.json);;All files (*)')
         if not filepath:
             return
 
         try:
-            new_mask = self.mask_manager.load_mask(filepath)
+            det_shape = None
+            if filepath.lower().endswith('.json'):
+                if self.reader is not None and hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2:
+                    det_shape = self.reader.shape[:2]
+                elif self.mask_manager.mask is not None:
+                    det_shape = self.mask_manager.mask.shape
+                else:
+                    QMessageBox.warning(self, 'No Image',
+                        'JSON mask requires a detector image to determine dimensions.\n'
+                        'Start streaming first, then load the JSON mask.')
+                    return
+            new_mask = self.mask_manager.load_mask(filepath, detector_shape=det_shape)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load mask:\n{e}')
             return
@@ -458,6 +477,24 @@ class DiffractionImageWindow(QMainWindow):
                     f'Detected {num_flagged} {label} pixels '
                     f'({mode} mode, {self._dead_px_target} frames).\n'
                     f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
+
+    def export_json_clicked(self):
+        if self.mask_manager.mask is None:
+            QMessageBox.information(self, 'No Mask', 'No mask to export.')
+            return
+        default_path = os.path.join(self.mask_manager.masks_dir, 'bad_pixels.json')
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, 'Export JSON BadPixel File', default_path,
+            'JSON files (*.json);;All files (*)')
+        if not filepath:
+            return
+        try:
+            self.mask_manager.export_json_mask(filepath)
+            QMessageBox.information(
+                self, 'Export Complete',
+                f'Exported {self.mask_manager.num_masked_pixels} bad pixels to:\n{filepath}')
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to export JSON mask:\n{e}')
 
     def clear_mask_clicked(self):
         if self.mask_manager.mask is None:

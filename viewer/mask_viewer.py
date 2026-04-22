@@ -3,7 +3,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QCheckBox, QSpinBox, QSlider
+    QLabel, QCheckBox, QSpinBox, QSlider, QFileDialog, QMessageBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -98,6 +98,11 @@ class MaskViewerWindow(QDialog):
         self.btn_invert = QPushButton('Invert Mask')
         self.btn_invert.clicked.connect(self._invert_mask)
         ctrl.addWidget(self.btn_invert)
+
+        self.btn_export_json = QPushButton('Export JSON')
+        self.btn_export_json.setToolTip('Export as EPICS NDPluginBadPixel JSON')
+        self.btn_export_json.clicked.connect(self._export_json)
+        ctrl.addWidget(self.btn_export_json)
 
         self.btn_transpose = QPushButton('Transpose')
         self.btn_transpose.clicked.connect(self._toggle_transpose)
@@ -315,6 +320,29 @@ class MaskViewerWindow(QDialog):
         self.mask = ~self.mask
         self._refresh_display()
         self.mask_updated.emit(self.mask)
+
+    def _export_json(self):
+        default_dir = ''
+        if self.parent_viewer and hasattr(self.parent_viewer, 'mask_manager'):
+            default_dir = self.parent_viewer.mask_manager.masks_dir
+        default_path = os.path.join(default_dir, 'bad_pixels.json')
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, 'Export JSON BadPixel File', default_path,
+            'JSON files (*.json);;All files (*)')
+        if not filepath:
+            return
+        try:
+            import json
+            bad_pixels = []
+            rows, cols = np.where(self.mask)
+            for row, col in zip(rows, cols):
+                bad_pixels.append({"Pixel": [int(col), int(row)], "Set": 0})
+            with open(filepath, 'w') as f:
+                json.dump({"Bad pixels": bad_pixels}, f, indent=2)
+            num = len(bad_pixels)
+            self.lbl_info.setText(f"Exported {num} bad pixels to JSON")
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to export JSON:\n{e}')
 
     # ------------------------------------------------------------------
     # Edit mode — clicks in display coords, edits in native coords

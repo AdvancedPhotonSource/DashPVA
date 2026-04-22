@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import numpy as np
 import pathlib
@@ -10,7 +11,7 @@ class MaskManager:
     """
     Manages detector pixel masks for DashPVA.
 
-    Handles loading (.edf, .npy, .tif/.tiff), combining (OR), saving, and applying masks.
+    Handles loading (.edf, .npy, .tif/.tiff, .json), combining (OR), saving, and applying masks.
     Also provides temporal-variance-based dead pixel detection.
 
     Convention: True = masked pixel, False = good pixel (matches pyFAI).
@@ -41,11 +42,13 @@ class MaskManager:
             except Exception as e:
                 logger.error(f"Failed to load active mask: {e}")
 
-    def load_mask(self, filepath):
+    def load_mask(self, filepath, detector_shape=None):
         """
-        Load a mask from file. Supports .edf, .npy, .tif/.tiff.
+        Load a mask from file. Supports .edf, .npy, .tif/.tiff, .json.
 
-        Any 2D array with two unique values is treated as a binary mask.
+        For .json: expects EPICS NDPluginBadPixel format with [X,Y] = [col,row]
+        in raw detector coordinates. Requires detector_shape=(rows, cols).
+
         Convention: nonzero = masked (True), zero = good (False).
         This matches pyFAI where 1=masked, 0=good.
 
@@ -53,7 +56,9 @@ class MaskManager:
         """
         ext = os.path.splitext(filepath)[1].lower()
 
-        if ext == '.npy':
+        if ext == '.json':
+            return self._load_json_mask(filepath, detector_shape)
+        elif ext == '.npy':
             data = np.load(filepath)
         elif ext in ('.tif', '.tiff'):
             from PIL import Image
@@ -62,7 +67,6 @@ class MaskManager:
             import fabio
             data = fabio.open(filepath).data
         else:
-            # Try fabio as fallback for other detector formats
             import fabio
             data = fabio.open(filepath).data
 
@@ -73,6 +77,64 @@ class MaskManager:
         logger.info(f"Loaded mask: {filepath}, shape={mask.shape}, "
                     f"masked={np.sum(mask)}/{mask.size}")
         return mask
+
+    def _load_json_mask(self, filepath, detector_shape=None):
+        """
+        Load mask from EPICS NDPluginBadPixel JSON format.
+
+        JSON [X,Y] = [col, row] in raw detector coordinates.
+        Our mask is mask[row, col], so Pixel [X,Y] → mask[Y, X] = True.
+        """
+        if detector_shape is None:
+            raise ValueError(
+                "detector_shape=(rows, cols) required for JSON mask loading")
+
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+
+        bad_pixels = data.get('Bad pixels', [])
+        mask = np.zeros(detector_shape, dtype=bool)
+        skipped = 0
+
+        for entry in bad_pixels:
+            pixel = entry.get('Pixel')
+            if pixel is None or len(pixel) < 2:
+                skipped += 1
+                continue
+            x, y = int(pixel[0]), int(pixel[1])
+            if 0 <= y < detector_shape[0] and 0 <= x < detector_shape[1]:
+                mask[y, x] = True
+            else:
+                skipped += 1
+
+        logger.info(f"Loaded JSON mask: {filepath}, shape={detector_shape}, "
+                    f"masked={np.sum(mask)}, skipped={skipped}")
+        return mask
+
+    def export_json_mask(self, filepath, set_value=0):
+        """
+        Export current mask as EPICS NDPluginBadPixel JSON format.
+
+        Mask is in detector-native orientation: mask[row, col].
+        JSON uses [X, Y] = [col, row] in raw detector coordinates.
+        All bad pixels use "Set" mode with the given replacement value.
+        """
+        if self.mask is None:
+            logger.warning("No mask to export")
+            return None
+
+        bad_pixels = []
+        rows, cols = np.where(self.mask)
+        for row, col in zip(rows, cols):
+            bad_pixels.append({"Pixel": [int(col), int(row)], "Set": set_value})
+
+        data = {"Bad pixels": bad_pixels}
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"Exported JSON mask: {filepath}, "
+                    f"{len(bad_pixels)} bad pixels")
+        return filepath
 
     def _resize_mask(self, mask, target_shape):
         """Resize mask to target shape using nearest-neighbor interpolation."""
