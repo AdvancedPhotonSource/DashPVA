@@ -1272,6 +1272,9 @@ class PhaseFitApp(QMainWindow):
         unfitted = [i for i in range(len(self.patterns))
                     if i not in self.results_cache]
         if not unfitted or not self.phases:
+            self.statusBar().showMessage(
+                f"Watch: all {len(self.patterns)} patterns fitted "
+                f"— waiting for new data")
             return
 
         config = self._build_config()
@@ -1279,8 +1282,9 @@ class PhaseFitApp(QMainWindow):
         labels_to_fit = [self.labels[i] for i in unfitted]
 
         self._watch_index_offset = unfitted[0]
-        self.btn_fit_all.setText("Stop")
         self.progress_bar.setValue(0)
+        self.statusBar().showMessage(
+            f"Watch: fitting {len(unfitted)} new patterns...")
 
         self.fit_worker = FitWorker(self)
         self.fit_worker.configure_batch(
@@ -2015,7 +2019,14 @@ class PhaseFitApp(QMainWindow):
 
         if self.chk_watch.isChecked():
             self._watch_fitting = True
+            self.btn_fit_all.setText("Stop")
             self._watch_fit_new()
+            if not self._watch_fitting:
+                self.btn_fit_all.setText("Fit All")
+            else:
+                self.statusBar().showMessage(
+                    f"Watch fitting ON — {len(self.results_cache)}/{len(self.patterns)} "
+                    f"fitted, watching for new data every 60s")
             return
 
         config = self._build_config()
