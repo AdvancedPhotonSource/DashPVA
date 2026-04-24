@@ -51,14 +51,6 @@ VIEWS = [
     },
     # post analysis
     {
-        'key': 'slice3d',
-        'label': 'HKL 3D Slicer',
-        'section': 'Post Analysis',
-        'cmd': [sys.executable, 'dashpva.py', 'slice3d'],
-        'running_text': 'HKL 3D Slicer — Running…',
-        'tooltip': 'Open HKL 3D Slicer (CLI: dashpva.py slice3d)'
-    },
-    {
         'key': 'workbench',
         'label': 'Workbench',
         'section': 'Post Analysis',

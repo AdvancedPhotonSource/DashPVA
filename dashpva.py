@@ -15,12 +15,11 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.option('-d', '--detector', 'help_detector', is_flag=True, help='Show help for detector')
 @click.option('-r', '--run', 'help_run', is_flag=True, help='Show help for run')
 @click.option('-k', '--hkl3d', 'help_hkl3d', is_flag=True, help='Show help for hkl3d')
-@click.option('-l', '--slice3d', 'help_slice3d', is_flag=True, help='Show help for slice3d')
 @click.option('-S', '--setup', 'help_setup', is_flag=True, help='Show help for setup')
 @click.option('-w', '--workbench', 'help_workbench', is_flag=True, help='Show help for workbench')
 @click.option('-m', '--monitor', 'help_monitor', is_flag=True, help='Show help for monitor')
 @click.pass_context
-def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help_workbench, help_monitor):
+def cli(ctx, help_detector, help_run, help_hkl3d, help_setup, help_workbench, help_monitor):
     """
     DashPVA: High-Performance X-ray Visualization & Analysis Tool.
     
@@ -32,14 +31,13 @@ def cli(ctx, help_detector, help_run, help_hkl3d, help_slice3d, help_setup, help
         ('detector', help_detector),
         ('run', help_run),
         ('hkl3d', help_hkl3d),
-        ('slice3d', help_slice3d),
         ('setup', help_setup),
         ('workbench', help_workbench),
         ('monitor', help_monitor),
     ] if flag]
 
     if len(selected) > 1:
-        raise click.UsageError('Please pick only one global help flag (e.g., -d/--detector, -r/--run, -k/--hkl3d, -l/--slice3d, -S/--setup, -w/--workbench, -v/--view).')
+        raise click.UsageError('Please pick only one global help flag (e.g., -d/--detector, -r/--run, -k/--hkl3d, -S/--setup, -w/--workbench, -m/--monitor).')
 
     if len(selected) == 1:
         sub_name = selected[0]
@@ -67,13 +65,6 @@ def hkl3d():
     exit_code = subprocess.run([sys.executable, 'viewer/hkl3d/hkl_3d_viewer.py']).returncode
     sys.exit(exit_code)
 
-
-@cli.command()
-def slice3d():
-    """(Standalone Mode) Launch HKL 3D Slicer"""
-    click.echo('Running HKL 3D Slicer -- Standalone')
-    exit_code = subprocess.run([sys.executable, 'viewer/hkl_3d_slice_window.py']).returncode
-    sys.exit(exit_code)
 
 
 @cli.command()
