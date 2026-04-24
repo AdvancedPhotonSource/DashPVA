@@ -42,6 +42,14 @@ VIEWS = [
         'tooltip': 'Open HKL 3D (CLI: dashpva.py hkl3d)'
     },
     {
+        'key': 'ioc_rsm_parameter',
+        'label': 'IOC RSM Parameter',
+        'section': 'Streaming',
+        'cmd': [sys.executable, 'consumers/ioc_rsm_parameter.py'],
+        'running_text': 'IOC RSM Parameter — Running…',
+        'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)'
+    },
+    {
         'key': 'monitor_scan',
         'label': 'Scan',
         'section': 'Monitor',
