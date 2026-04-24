@@ -929,6 +929,7 @@ class Workflow(QDialog, LogMixin):
             self.treeWidgetConfig.clear()
             self.lineEditProfileDescription.clear()
             self._refresh_profile_combo()
+            self.load_profile_to_tree()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to delete profile:\n{e}')
 
