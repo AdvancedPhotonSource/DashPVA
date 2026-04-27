@@ -11,7 +11,42 @@ DashPVA enables distributed analysis and real-time image streaming using PvaPy a
 - **Integration with PvaPy**: Leverages PvaPy to access process variables efficiently.
 
 ## Getting Started
-Follow the instructions in the [RUN_INSTRUCTIONS.md](RUN_INSTRUCTIONS.md) for setup and usage.
+
+### Installation
+
+```sh
+git clone https://github.com/AdvancedPhotonSource/DashPVA.git
+cd DashPVA
+python install.py
+```
+
+The installer will ask which edition to set up:
+
+| Edition | What's included | Requirements |
+| --- | --- | --- |
+| **Full** | All tools — live streaming, Area Detector, HKL 3D, Scan Monitor | Linux only, pvaccess/EPICS |
+| **Standalone** | Post-analysis tools — Workbench, File Convert, Metadata Converter, Bayesian Scan | Any OS |
+
+You can also skip the prompt with a flag:
+
+```sh
+python install.py --full        # Full edition
+python install.py --standalone  # Standalone edition
+```
+
+### Launching
+
+```sh
+python dashpva.py run
+```
+
+### Updating
+
+```sh
+python install.py --update
+```
+
+Or use the **Updates** button inside the launcher to pull the latest release.
 
 ## What's New
 Check out [CHANGELOG.md](CHANGELOG.md) for the latest features, improvements, and changes in DashPVA.

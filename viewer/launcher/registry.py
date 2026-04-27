@@ -11,6 +11,7 @@ Fields per entry:
   - cmd: list command to execute
   - running_text: button text while running
   - tooltip: short help text
+  - edition: 'full' | 'standalone' | 'both'
 """
 # Sections are rendered in the order they first appear in this list.
 # To add a new view, append another dict with the same keys.
@@ -22,7 +23,8 @@ VIEWS = [
         'section': 'Setup',
         'cmd': [sys.executable, 'dashpva.py', 'setup'],
         'running_text': 'Setup — Running…',
-        'tooltip': 'Open Setup (CLI: dashpva.py setup)'
+        'tooltip': 'Open Setup (CLI: dashpva.py setup)',
+        'edition': 'full',
     },
     # streaming
     {
@@ -31,7 +33,8 @@ VIEWS = [
         'section': 'Streaming',
         'cmd': [sys.executable, 'dashpva.py', 'detector'],
         'running_text': 'Area Detector — Running…',
-        'tooltip': 'Open Area detector (CLI: dashpva.py detector)'
+        'tooltip': 'Open Area detector (CLI: dashpva.py detector)',
+        'edition': 'full',
     },
     {
         'key': 'hkl3d',
@@ -39,7 +42,8 @@ VIEWS = [
         'section': 'Streaming',
         'cmd': [sys.executable, 'dashpva.py', 'hkl3d'],
         'running_text': 'HKL 3D — Running…',
-        'tooltip': 'Open HKL 3D (CLI: dashpva.py hkl3d)'
+        'tooltip': 'Open HKL 3D (CLI: dashpva.py hkl3d)',
+        'edition': 'full',
     },
     {
         'key': 'ioc_rsm_parameter',
@@ -47,7 +51,8 @@ VIEWS = [
         'section': 'Streaming',
         'cmd': [sys.executable, 'consumers/ioc_rsm_parameter.py'],
         'running_text': 'IOC RSM Parameter — Running…',
-        'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)'
+        'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)',
+        'edition': 'full',
     },
     {
         'key': 'monitor_scan',
@@ -55,7 +60,8 @@ VIEWS = [
         'section': 'Monitor',
         'cmd': [sys.executable, 'dashpva.py', 'monitor', 'scan'],
         'running_text': 'Scan Monitors — Running…',
-        'tooltip': 'Open Scan monitor (CLI: dashpva.py monitor scan)'
+        'tooltip': 'Open Scan monitor (CLI: dashpva.py monitor scan)',
+        'edition': 'full',
     },
     # post analysis
     {
@@ -64,7 +70,8 @@ VIEWS = [
         'section': 'Post Analysis',
         'cmd': [sys.executable, 'dashpva.py', 'workbench'],
         'running_text': 'Workbench — Running…',
-        'tooltip': 'Open Workbench (CLI: dashpva.py workbench)'
+        'tooltip': 'Open Workbench (CLI: dashpva.py workbench)',
+        'edition': 'both',
     },
     {
         'key': 'metadata_converter',
@@ -72,7 +79,8 @@ VIEWS = [
         'section': 'Tools',
         'cmd': [sys.executable, 'viewer/tools/metadata_converter_gui.py'],
         'running_text': 'Metadata Converter — Running…',
-        'tooltip': 'Open the Metadata Converter tool'
+        'tooltip': 'Open the Metadata Converter tool',
+        'edition': 'both',
     },
     {
         'key': 'file_convert',
@@ -80,7 +88,8 @@ VIEWS = [
         'section': 'Tools',
         'cmd': [sys.executable, 'viewer/tools/file_convert.py'],
         'running_text': 'File Convert — Running…',
-        'tooltip': 'Convert folder(s) to HDF5 in standard structure'
+        'tooltip': 'Convert folder(s) to HDF5 in standard structure',
+        'edition': 'both',
     },
     # bayesian
     {
@@ -89,6 +98,21 @@ VIEWS = [
         'section': 'Bayesian',
         'cmd': [sys.executable, 'dashpva.py', 'bayesian'],
         'running_text': 'Bayesian Scan — Running…',
-        'tooltip': 'Open Bayesian 2-D Scan Viewer (CLI: dashpva.py bayesian)'
+        'tooltip': 'Open Bayesian 2-D Scan Viewer (CLI: dashpva.py bayesian)',
+        'edition': 'both',
     },
 ]
+
+
+def get_views() -> list:
+    """Return VIEWS filtered to the installed edition."""
+    try:
+        import settings
+        edition_file = settings.PROJECT_ROOT / '.dashpva_edition'
+        edition = edition_file.read_text().strip() if edition_file.exists() else 'full'
+    except Exception:
+        edition = 'both'
+
+    if edition == 'full':
+        return VIEWS
+    return [v for v in VIEWS if v.get('edition', 'both') in ('standalone', 'both')]
