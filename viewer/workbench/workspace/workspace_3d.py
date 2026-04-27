@@ -400,7 +400,16 @@ class Workspace3D(BaseTab):
                 file_path = file_name
             conv = RSMConverter()
             # 2. Load the raw data
-            data = conv.load_h5_to_3d(file_path)
+            try:
+                data = conv.load_h5_to_3d(file_path)
+            except Exception as e:
+                QMessageBox.warning(
+                    self, '3D Load Failed',
+                    f'Could not load 3D data from:\n{file_path}\n\n'
+                    f'The file may not contain HKL metadata or precomputed Q-space data.\n\n'
+                    f'Error: {e}'
+                )
+                return
             points, intensities, num_images, shape = data
 
             # 3. Define what happens when the worker finishes processing

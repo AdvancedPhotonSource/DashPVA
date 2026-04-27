@@ -1,5 +1,6 @@
 import time
 import copy
+import toml
 import bitshuffle
 import blosc2
 import lz4.block

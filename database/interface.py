@@ -40,12 +40,6 @@ class DatabaseInterface:
         # Internal manager implementation
         self._mgr = ProfileManager()
         self._settings_mgr = SettingsManager()
-        # Ensure default settings structure exists (idempotent — safe to run every time)
-        try:
-            from scripts.seed_settings_defaults_sql import seed_defaults
-            seed_defaults()
-        except Exception as exc:
-            _log.warning("seed_defaults() failed: %s", exc)
 
     # Profiles CRUD
 

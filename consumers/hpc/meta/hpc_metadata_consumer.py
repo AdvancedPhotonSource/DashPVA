@@ -133,11 +133,13 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         with open(self.path, "r") as config_file:
             self.config = toml.load(config_file)
 
-        if 'HKL' in self.config:
-            self.hkl_config : dict = self.config['HKL']
-            for section in self.hkl_config.values(): # every section holds a dict
-                for channel in section.values(): # the values of each seciton is the pv name string
-                    self.hkl_pv_channels.add(channel)
+        self.hkl_config = self.config.get('HKL', {})
+        self.hkl_pv_channels = set()
+        for section in self.hkl_config.values():
+            if isinstance(section, dict):
+                for channel in section.values():
+                    if channel:
+                        self.hkl_pv_channels.add(channel)
         
         # Log configuration via central logger instead of writing to a file
         try:

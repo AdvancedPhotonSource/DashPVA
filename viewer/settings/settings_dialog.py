@@ -232,7 +232,26 @@ class SettingsDialog(QDialog):
             self._save()
 
     def _save(self):
-        # Saving is not yet implemented — closes the dialog only.
+        # Write values back to the settings module globals
+        output = self.edit_output.text().strip()
+        log = self.edit_log.text().strip()
+        toml = self.edit_toml.text().strip()
+
+        if output:
+            settings.OUTPUT_PATH = output
+        if log:
+            settings.LOG_PATH = log
+        settings.TOML_FILE = toml or None
+
+        # Reload config from TOML if path changed
+        if toml:
+            try:
+                settings.set_locator(toml)
+                settings.reload()
+            except Exception as e:
+                QMessageBox.warning(self, "Config Reload", f"Settings saved but TOML reload failed:\n{e}")
+
+        QMessageBox.information(self, "Settings", "Settings saved for this session.")
         self.accept()
 
     # ── Re-seed ───────────────────────────────────────────────────────────────
