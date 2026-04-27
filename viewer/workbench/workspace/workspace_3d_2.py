@@ -1,12 +1,8 @@
 from typing import Optional
 import os
-from PyQt5.QtWidgets import (QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
-                              QLabel, QMessageBox, QFileDialog, QSizePolicy,
-                              QPushButton, QTabWidget, QFormLayout, QDoubleSpinBox)
+from PyQt5.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QLabel, QMessageBox, QFileDialog, QSizePolicy
 from PyQt5.QtCore import Qt, QThread
 import numpy as np
-
-from .range_slider import RangeSlider
 
 # Import BaseTab using existing tabs package alias
 from .base_tab import BaseTab
@@ -54,11 +50,12 @@ class Workspace3D(BaseTab):
             self.cb_show_slice.toggled.connect(self.toggle_3d_slice)
             self.sb_min_intensity_3d.editingFinished.connect(self.update_intensity)
             self.sb_max_intensity_3d.editingFinished.connect(self.update_intensity)
-            for sl, da, db, lbl, sp_lo, sp_hi, btn in self._hkl_widgets():
-                sl.range_changed.connect(self._make_slider_cb(sl, da, db, lbl, sp_lo, sp_hi))
-                sp_lo.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
-                sp_hi.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
-                btn.clicked.connect(sl.setFullRange)
+            self.dsb_h_min.editingFinished.connect(self.update_hkl_range)
+            self.dsb_h_max.editingFinished.connect(self.update_hkl_range)
+            self.dsb_k_min.editingFinished.connect(self.update_hkl_range)
+            self.dsb_k_max.editingFinished.connect(self.update_hkl_range)
+            self.dsb_l_min.editingFinished.connect(self.update_hkl_range)
+            self.dsb_l_max.editingFinished.connect(self.update_hkl_range)
             self.rb_downsample_on.toggled.connect(self._on_downsample_changed)
         except Exception as e:
             try:
@@ -106,15 +103,6 @@ class Workspace3D(BaseTab):
             self.plane_widget = None
             self.lut = None
             self.lut2 = None
-            self._h_min_data = self._h_max_data = None
-            self._k_min_data = self._k_max_data = None
-            self._l_min_data = self._l_max_data = None
-            self._h_slider = RangeSlider(); self._k_slider = RangeSlider(); self._l_slider = RangeSlider()
-            self._btn_reset_h = QPushButton(); self._btn_reset_k = QPushButton(); self._btn_reset_l = QPushButton()
-            self._h_val_lbl = QLabel(); self._k_val_lbl = QLabel(); self._l_val_lbl = QLabel()
-            self._h_min_spin = QDoubleSpinBox(); self._h_max_spin = QDoubleSpinBox()
-            self._k_min_spin = QDoubleSpinBox(); self._k_max_spin = QDoubleSpinBox()
-            self._l_min_spin = QDoubleSpinBox(); self._l_max_spin = QDoubleSpinBox()
             # Default target raster shape (HxW) for slice rasterization
             self.orig_shape = (0, 0)
             self.curr_shape = (0, 0)
@@ -123,6 +111,10 @@ class Workspace3D(BaseTab):
             self._slice_rotate_step_deg = 1.0
             self._custom_normal = np.array([0.0, 0.0, 1.0], dtype=float)
             self._zoom_step = 1.5
+            self._display_points = None
+            self._display_intensities = None
+            self._raw_points = None
+            self._raw_intensities = None
             return
 
         # If plotter exists, proceed to embed and configure
@@ -179,139 +171,14 @@ class Workspace3D(BaseTab):
         # Cached true data intensity bounds (set on data load)
         self._data_intensity_min = None
         self._data_intensity_max = None
-        # Full point cloud — source of truth for downsample toggle and HKL range filter
+        # Full point cloud from rsm_converter (never downsampled) — source of truth for toggle
         self._raw_points = None
         self._raw_intensities = None
-        # Point cloud passed to the renderer (strided or full)
+        # Point cloud passed to the renderer (strided or full depending on toggle)
         self._display_points = None
         self._display_intensities = None
-        # Data extents for mapping slider 0-1000 to actual HKL float values
-        self._h_min_data = self._h_max_data = None
-        self._k_min_data = self._k_max_data = None
-        self._l_min_data = self._l_max_data = None
 
-        # Build the HKL Range tab widget (Slider tab + Manual tab)
-        self._build_hkl_range_section()
-
-    def _build_hkl_range_section(self):
-        """Populate layout_hkl_range with a two-tab widget: Slider and Manual."""
-        tab = QTabWidget()
-        tab.setTabPosition(QTabWidget.North)
-
-        # ── Slider tab ──────────────────────────────────────────────────────
-        s_widget = QWidget()
-        s_layout = QVBoxLayout(s_widget)
-        s_layout.setSpacing(4)
-        s_layout.setContentsMargins(4, 4, 4, 4)
-
-        self._h_slider = RangeSlider(); self._k_slider = RangeSlider(); self._l_slider = RangeSlider()
-        self._btn_reset_h = QPushButton('↺'); self._btn_reset_k = QPushButton('↺'); self._btn_reset_l = QPushButton('↺')
-        self._h_val_lbl = QLabel('—'); self._k_val_lbl = QLabel('—'); self._l_val_lbl = QLabel('—')
-
-        for axis, sl, val_lbl, btn in (
-            ('H', self._h_slider, self._h_val_lbl, self._btn_reset_h),
-            ('K', self._k_slider, self._k_val_lbl, self._btn_reset_k),
-            ('L', self._l_slider, self._l_val_lbl, self._btn_reset_l),
-        ):
-            btn.setFixedWidth(26)
-            btn.setToolTip(f'Reset {axis} to full data range')
-            val_lbl.setAlignment(Qt.AlignCenter)
-            val_lbl.setStyleSheet('font-size: 10px; color: #aaa;')
-
-            sl_col = QVBoxLayout()
-            sl_col.setSpacing(0)
-            sl_col.addWidget(sl)
-            sl_col.addWidget(val_lbl)
-
-            row = QHBoxLayout()
-            row.setSpacing(4)
-            lbl = QLabel(axis)
-            lbl.setFixedWidth(14)
-            row.addWidget(lbl)
-            row.addLayout(sl_col, 1)
-            row.addWidget(btn)
-            s_layout.addLayout(row)
-
-        tab.addTab(s_widget, 'Slider')
-
-        # ── Manual tab ──────────────────────────────────────────────────────
-        m_widget = QWidget()
-        m_layout = QFormLayout(m_widget)
-        m_layout.setSpacing(4)
-        m_layout.setContentsMargins(4, 4, 4, 4)
-
-        self._h_min_spin = QDoubleSpinBox(); self._h_max_spin = QDoubleSpinBox()
-        self._k_min_spin = QDoubleSpinBox(); self._k_max_spin = QDoubleSpinBox()
-        self._l_min_spin = QDoubleSpinBox(); self._l_max_spin = QDoubleSpinBox()
-
-        for axis, sp_lo, sp_hi in (
-            ('H', self._h_min_spin, self._h_max_spin),
-            ('K', self._k_min_spin, self._k_max_spin),
-            ('L', self._l_min_spin, self._l_max_spin),
-        ):
-            for sp in (sp_lo, sp_hi):
-                sp.setRange(-9999.0, 9999.0)
-                sp.setDecimals(3)
-                sp.setSingleStep(0.01)
-            pair = QHBoxLayout()
-            pair.setSpacing(2)
-            pair.addWidget(sp_lo)
-            pair.addWidget(QLabel('→'))
-            pair.addWidget(sp_hi)
-            m_layout.addRow(f'{axis}:', pair)
-
-        tab.addTab(m_widget, 'Manual')
-
-        try:
-            self.layout_hkl_range.addWidget(tab)
-        except Exception:
-            pass
-
-    # ── HKL range helpers ───────────────────────────────────────────────────
-    def _hkl_widgets(self):
-        """Yield (slider, d_min_attr, d_max_attr, val_lbl, sp_lo, sp_hi, btn) for H, K, L."""
-        return [
-            (self._h_slider, '_h_min_data', '_h_max_data', self._h_val_lbl, self._h_min_spin, self._h_max_spin, self._btn_reset_h),
-            (self._k_slider, '_k_min_data', '_k_max_data', self._k_val_lbl, self._k_min_spin, self._k_max_spin, self._btn_reset_k),
-            (self._l_slider, '_l_min_data', '_l_max_data', self._l_val_lbl, self._l_min_spin, self._l_max_spin, self._btn_reset_l),
-        ]
-
-    def _hkl_from_slider(self, sl_low, sl_high, d_min, d_max):
-        if d_min is None or d_max is None:
-            return 0.0, 0.0
-        span = d_max - d_min
-        return d_min + sl_low / 1000.0 * span, d_min + sl_high / 1000.0 * span
-
-    def _slider_int(self, hkl_val, d_min, d_max):
-        if d_min is None or d_max is None:
-            return 0
-        span = d_max - d_min
-        if span == 0:
-            return 0
-        return max(0, min(1000, int(round((hkl_val - d_min) / span * 1000))))
-
-    def _make_slider_cb(self, sl, da, db, lbl, sp_lo, sp_hi):
-        def cb(low, high):
-            f0, f1 = self._hkl_from_slider(low, high, getattr(self, da), getattr(self, db))
-            lbl.setText(f'{f0:.3f} → {f1:.3f}')
-            for sp, v in ((sp_lo, f0), (sp_hi, f1)):
-                sp.blockSignals(True); sp.setValue(v); sp.blockSignals(False)
-            self.update_hkl_range()
-        return cb
-
-    def _make_spin_cb(self, sl, da, db, lbl, sp_lo, sp_hi):
-        def cb():
-            d_min, d_max = getattr(self, da), getattr(self, db)
-            f0, f1 = sp_lo.value(), sp_hi.value()
-            sl.blockSignals(True)
-            sl.setLow(self._slider_int(f0, d_min, d_max), emit=False)
-            sl.setHigh(self._slider_int(f1, d_min, d_max), emit=False)
-            sl.blockSignals(False)
-            sl.update()
-            lbl.setText(f'{f0:.3f} → {f1:.3f}')
-            self.update_hkl_range()
-        return cb
-
+        
     def setup_plot_viewer(self):
         """
         Create and embed a PyVista QtInteractor into the 3D tab container.
@@ -517,6 +384,10 @@ class Workspace3D(BaseTab):
     # === Clear ===
     def clear_plot(self):
         try:
+            self._remove_plane_widget()
+        except Exception:
+            pass
+        try:
             if hasattr(self, 'plotter') and self.plotter is not None:
                 self.plotter.clear()
                 self.current_3d_data = None
@@ -653,23 +524,17 @@ class Workspace3D(BaseTab):
                     except Exception:
                         pass
 
-                    # Store display arrays and seed HKL range sliders + spinboxes
+                    # Store display-layer arrays and seed HKL range spinboxes
                     try:
                         self._display_points = points
                         self._display_intensities = intensities
                         if points is not None and len(points) > 0:
-                            self._h_min_data = float(np.min(points[:, 0]))
-                            self._h_max_data = float(np.max(points[:, 0]))
-                            self._k_min_data = float(np.min(points[:, 1]))
-                            self._k_max_data = float(np.max(points[:, 1]))
-                            self._l_min_data = float(np.min(points[:, 2]))
-                            self._l_max_data = float(np.max(points[:, 2]))
-                            for sl, da, db, lbl, sp_lo, sp_hi, _btn in self._hkl_widgets():
-                                d_min, d_max = getattr(self, da), getattr(self, db)
-                                sl.blockSignals(True); sl.setFullRange(); sl.blockSignals(False)
-                                for sp, v in ((sp_lo, d_min), (sp_hi, d_max)):
-                                    sp.blockSignals(True); sp.setValue(v); sp.blockSignals(False)
-                                lbl.setText(f'{d_min:.3f} → {d_max:.3f}')
+                            self.dsb_h_min.setValue(float(np.min(points[:, 0])))
+                            self.dsb_h_max.setValue(float(np.max(points[:, 0])))
+                            self.dsb_k_min.setValue(float(np.min(points[:, 1])))
+                            self.dsb_k_max.setValue(float(np.max(points[:, 1])))
+                            self.dsb_l_min.setValue(float(np.min(points[:, 2])))
+                            self.dsb_l_max.setValue(float(np.max(points[:, 2])))
                     except Exception:
                         pass
 
@@ -905,16 +770,16 @@ class Workspace3D(BaseTab):
             pass
 
     def update_hkl_range(self):
-        """Filter the displayed cloud to the H/K/L min/max range and re-render."""
+        """Filter the displayed cloud to the H/K/L min/max range and reset axes."""
         if self._display_points is None or self.plotter is None:
             return
         try:
-            h_min = self._h_min_spin.value()
-            h_max = self._h_max_spin.value()
-            k_min = self._k_min_spin.value()
-            k_max = self._k_max_spin.value()
-            l_min = self._l_min_spin.value()
-            l_max = self._l_max_spin.value()
+            h_min = self.dsb_h_min.value()
+            h_max = self.dsb_h_max.value()
+            k_min = self.dsb_k_min.value()
+            k_max = self.dsb_k_max.value()
+            l_min = self.dsb_l_min.value()
+            l_max = self.dsb_l_max.value()
 
             pts = self._display_points
             mask = (
@@ -928,6 +793,7 @@ class Workspace3D(BaseTab):
             if filtered_pts.shape[0] == 0:
                 return
 
+            # Remove old points actor without touching the rest of the scene
             try:
                 actors = getattr(self.plotter, 'actors', {}) or {}
                 if 'points' in actors:
@@ -956,9 +822,13 @@ class Workspace3D(BaseTab):
             )
             self.plotter.reset_camera()
 
+            # Rebuild the plane widget sized to the new filtered bounds,
+            # preserving the current slice normal and clamping the origin
+            # to the filtered mesh center if it has drifted outside.
             try:
                 current_normal, current_origin = self.get_plane_state()
-                bounds = mesh.bounds
+                bounds = mesh.bounds  # (xmin, xmax, ymin, ymax, zmin, zmax)
+                # Clamp origin to stay inside the new bounds
                 clamped_origin = np.array([
                     np.clip(current_origin[0], bounds[0], bounds[1]),
                     np.clip(current_origin[1], bounds[2], bounds[3]),
@@ -1008,6 +878,7 @@ class Workspace3D(BaseTab):
             else:
                 self._display_points = self._raw_points
                 self._display_intensities = self._raw_intensities
+
             self.update_hkl_range()
         except Exception as e:
             try:
