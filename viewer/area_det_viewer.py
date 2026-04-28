@@ -104,6 +104,15 @@ class DiffractionImageWindow(QMainWindow):
         self.qx = None
         self.qy = None
         self.qz = None
+        self.sample_circle_directions = []
+        self.sample_circle_positions = []
+        self.det_circle_directions = []
+        self.det_circle_positions = []
+        self.primary_beam_directions = []
+        self.inplane_reference_directions = []
+        self.sample_surface_normal_directions = []
+        self.ub_matrix = None
+        self.energy = None
         self.processes = {}
         
         # Initialize colormap once for better performance
@@ -791,10 +800,12 @@ class DiffractionImageWindow(QMainWindow):
         if self.reader is not None:
             if self.display_rois.isChecked():
                 for roi in self.rois:
-                    roi.show()
+                    if roi is not None:
+                        roi.show()
             else:
                 for roi in self.rois:
-                    roi.hide()
+                    if roi is not None:
+                        roi.hide()
 
     def freeze_image_checked(self) -> None:
         """
@@ -938,13 +949,13 @@ class DiffractionImageWindow(QMainWindow):
             self.hkl_data_updated.emit(True)
 
     def handle_hkl_data_update(self):
-        # HKL functionality disabled - return early to prevent errors
-        return
-        # if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
-        #     self.hkl_setup()
-        #     if self.q_conv is None:
-        #         raise ValueError("QConversion object is not initialized.")
-        #     self.update_rsm()
+        if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
+            try:
+                self.hkl_setup()
+                if self.q_conv is not None:
+                    self.update_rsm()
+            except Exception as e:
+                print(f'[DashPVA] HKL update failed (will retry next frame): {e}')
   
                 
     def hkl_setup(self) -> None:
@@ -1060,9 +1071,15 @@ class DiffractionImageWindow(QMainWindow):
         """
         if self.reader is not None and self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
+                if (self.q_conv is None or
+                    not self.inplane_reference_directions or
+                    not self.sample_surface_normal_directions or
+                    self.energy is None):
+                    return None
+
                 hxrd = xu.HXRD(self.inplane_reference_directions,
-                            self.sample_surface_normal_directions, 
-                            en=self.energy, 
+                            self.sample_surface_normal_directions,
+                            en=self.energy,
                             qconv=self.q_conv)
 
                 roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
@@ -1105,6 +1122,8 @@ class DiffractionImageWindow(QMainWindow):
         too_big_count = 0
         image_shape = self.reader.shape if hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2 else None
         for roi, roi_dict in zip(self.rois, self.reader.rois.values()):
+            if roi is None:
+                continue
             x_pos = roi_dict.get("MinX",0) if not(self.image_is_transposed) else roi_dict.get('MinY',0)
             y_pos = roi_dict.get("MinY",0) if not(self.image_is_transposed) else roi_dict.get('MinX',0)
             width = roi_dict.get("SizeX",0) if not(self.image_is_transposed) else roi_dict.get('SizeY',0)
