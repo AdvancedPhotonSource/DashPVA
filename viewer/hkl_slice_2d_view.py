@@ -237,7 +237,7 @@ class HKLSlice2DView(QWidget):
         try:
             cmap_name = str(self.parent.cbColorMapSelect.currentText())
         except Exception:
-            cmap_name = "viridis"
+            cmap_name = "magma"
 
         # Check if colormap has changed
         if self._last_synced_colormap == cmap_name:
