@@ -686,7 +686,7 @@ class DiffractionImageWindow(QMainWindow):
     def start_hkl_viewer_clicked(self) -> None:
         try:
             if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                cmd = ['python', 'viewer/hkl_3d_viewer.py',]
+                cmd = ['python', 'viewer/hkl3d/hkl_3d_viewer.py',]
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,

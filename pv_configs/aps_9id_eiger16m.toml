@@ -1,5 +1,6 @@
 # Required Setup
-CONSUMER_TYPE = "spontaneous"
+DETECTOR_PREFIX = "9idEiger16m"
+CONSUMER_MODE = "spontaneous"
 
 # Section used specifically for Metadata Pvs
 [METADATA]

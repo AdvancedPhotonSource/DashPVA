@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QCursor
-from .registry import VIEWS
+from .registry import get_views
 
 
 class LauncherDialog(QDialog):
@@ -22,6 +22,9 @@ class LauncherDialog(QDialog):
             if beamline:
                 self.lbl_header.setText(f'DashPVA: {beamline}')
                 self.setWindowTitle(f'DashPVA Launcher — {beamline}')
+            version = _settings.__VERSION__
+            if hasattr(self, 'lbl_subtitle'):
+                self.lbl_subtitle.setText(f'v{version}  ·  Select a module to launch')
         except Exception:
             pass
 
@@ -32,6 +35,7 @@ class LauncherDialog(QDialog):
         self._timer.start()
 
         self._insert_registry_sections()
+        self._setup_update_check()
 
         if hasattr(self, 'btn_settings'):
             self.btn_settings.clicked.connect(self._open_settings)
@@ -54,6 +58,51 @@ class LauncherDialog(QDialog):
             self.lbl_logs.linkActivated.connect(self._open_logs)
 
         self.adjustSize()
+
+    def _setup_update_check(self):
+        """Insert an update-status row above lbl_status and start a background release check."""
+        from .update_dialog import ReleaseCheckWorker, UpdateDialog
+
+        layout = self.layout()
+        if layout is None:
+            return
+
+        target = getattr(self, 'lbl_status', None)
+        insert_at = layout.indexOf(target) if target is not None else layout.count()
+        if insert_at < 0:
+            insert_at = layout.count()
+
+        row_widget = QWidget(self)
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        self._lbl_update_status = QLabel('Checking for updates…', row_widget)
+        self._lbl_update_status.setStyleSheet('font-size: 11px; color: #9BA5B5;')
+        row.addWidget(self._lbl_update_status)
+        row.addStretch()
+
+        btn_updates = QPushButton('Updates', row_widget)
+        btn_updates.setObjectName('btn_settings')  # reuse the same subtle style
+        btn_updates.clicked.connect(lambda: UpdateDialog(self).exec_())
+        row.addWidget(btn_updates)
+
+        layout.insertWidget(insert_at, row_widget)
+
+        self._release_worker = ReleaseCheckWorker()
+        self._release_worker.result.connect(self._on_release_check)
+        self._release_worker.error.connect(
+            lambda _: self._lbl_update_status.setText('Could not check for updates')
+        )
+        self._release_worker.start()
+
+    def _on_release_check(self, has_update, tag, _notes):
+        if has_update:
+            self._lbl_update_status.setText(f'● Update available: {tag}')
+            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #E67E22; font-weight: 600;')
+        else:
+            self._lbl_update_status.setText('Up to date')
+            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #27AE60;')
 
     def _insert_registry_sections(self):
         """Build section dividers and button grids from the VIEWS registry."""
@@ -78,7 +127,7 @@ class LauncherDialog(QDialog):
             insert_at = layout.count()
 
         sections: OrderedDict[str, list] = OrderedDict()
-        for entry in VIEWS:
+        for entry in get_views():
             sections.setdefault(entry.get('section', 'Other'), []).append(entry)
 
         for section_name, entries in sections.items():

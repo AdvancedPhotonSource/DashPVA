@@ -468,6 +468,19 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="buttonReseed">
+             <property name="text">
+              <string>Reseed</string>
+             </property>
+             <property name="toolTip">
+              <string>Add missing default values to settings and the current profile — never overwrites existing values</string>
+             </property>
+             <property name="styleSheet">
+              <string>QPushButton { background-color: #E67E22; color: white; font-weight: bold; border-radius: 3px; padding: 3px 6px; } QPushButton:hover { background-color: #D35400; }</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <spacer name="verticalSpacerViewMode">
              <property name="orientation">
               <enum>Qt::Vertical</enum>

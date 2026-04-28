@@ -37,7 +37,7 @@ from viewer.workbench.workspace.workspace_3d import Workspace3D
 # project_root = Path(__file__).resolve().parents[2]
 # sys.path.insert(0, str(project_root))
 
-from viewer.base_window import BaseWindow
+from viewer.core.base_window import BaseWindow
 from utils.log_manager import get_default_manager
 from utils.hdf5_loader import HDF5Loader
 
@@ -80,10 +80,10 @@ class WorkbenchWindow(BaseWindow):
         # info dock (2D)
         self.info_2d_dock = Info2DDock(main_window=self, title="2D Info", segment_name="2d", dock_area=Qt.RightDockWidgetArea)
         # info dock (3D)
-        self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea)
-        # Add Window control dock (right side under 'other')
+        self.info_3d_dock = Info3DDock(main_window=self, title="3D Info", segment_name="3d", dock_area=Qt.RightDockWidgetArea, show=False)
+        # Add Window control dock — hidden by default
         try:
-            self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
+            self.add_window_dock = DockWinDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea, show=False)
         except Exception:
             self.add_window_dock = None
         # roi
@@ -105,7 +105,7 @@ class WorkbenchWindow(BaseWindow):
         self.tab_3d = Workspace3D(parent=self, main_window=self)
         # Slice Controls dock (left, under Data Structure)
         try:
-            self.slice_plane_dock = SlicePlaneDock(main_window=self, segment_name="3d", dock_area=Qt.LeftDockWidgetArea)
+            self.slice_plane_dock = SlicePlaneDock(main_window=self, segment_name="3d", dock_area=Qt.LeftDockWidgetArea, show=False)
             # Position below Data Structure dock
             try:
                 self.splitDockWidget(self.data_structure_dock, self.slice_plane_dock, Qt.Vertical)
@@ -271,7 +271,6 @@ class WorkbenchWindow(BaseWindow):
             action_math_dock_window = QAction("Open ROI Math Dock (Window)", self)
             action_math_dock_window.triggered.connect(lambda: self.open_roi_math_dock_in_window(roi))
             menu.addAction(action_math_dock_window)
-            # Potential future actions can be added here
             menu.exec_(self.roi_list.mapToGlobal(position))
         except Exception as e:
             self.update_status(f"Error showing ROI context menu: {e}")
@@ -440,6 +439,40 @@ class WorkbenchWindow(BaseWindow):
                 pass
         except Exception as e:
             self.update_status(f"Error opening ROI plot dock: {e}")
+
+    def open_roi_2d_plot_dock(self, roi):
+        """Open a dockable 2D scatter plot of ROI metrics with color scale."""
+        try:
+            frame_data = self.get_current_frame_data()
+            if frame_data is None:
+                QMessageBox.information(self, "ROI 2D Plot", "No image data available.")
+                return
+            try:
+                from viewer.workbench.docks.rois.roi_2d_plot_dock import ROI2DPlotDock
+            except Exception:
+                ROI2DPlotDock = None
+            if ROI2DPlotDock is None:
+                QMessageBox.warning(self, "ROI 2D Plot", "ROI2DPlotDock not available.")
+                return
+            dock_title = f"ROI 2D: {self.get_roi_name(roi)}"
+            dock = ROI2DPlotDock(self, dock_title, self, roi)
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            try:
+                self.add_dock_toggle_action(dock, dock_title, segment_name="2d")
+            except Exception:
+                pass
+            dock.show()
+            if not hasattr(self, '_roi_2d_plot_dock_widgets'):
+                self._roi_2d_plot_dock_widgets = []
+            self._roi_2d_plot_dock_widgets.append(dock)
+            try:
+                if not hasattr(self, 'roi_2d_plot_docks_by_roi_id') or self.roi_2d_plot_docks_by_roi_id is None:
+                    self.roi_2d_plot_docks_by_roi_id = {}
+                self.roi_2d_plot_docks_by_roi_id.setdefault(id(roi), []).append(dock)
+            except Exception:
+                pass
+        except Exception as e:
+            self.update_status(f"Error opening ROI 2D plot dock: {e}")
 
     def create_dock_window_and_show(self):
         """Create a new modeless empty window to host dockables later."""

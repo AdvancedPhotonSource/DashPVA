@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>IocParamWindow</class>
+ <widget class="QMainWindow" name="IocParamWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>780</width>
+    <height>820</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>IOC for RSM conversion parameter</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="contentsMargins">
+     <number>0</number>
+     <number>0</number>
+     <number>0</number>
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QScrollArea" name="scrollArea">
+      <property name="widgetResizable">
+       <bool>true</bool>
+      </property>
+      <widget class="QWidget" name="scrollContents">
+       <layout class="QVBoxLayout" name="scrollLayout">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <property name="contentsMargins">
+         <number>10</number>
+         <number>10</number>
+         <number>10</number>
+         <number>10</number>
+        </property>
+
+        <!-- Source PV Inputs group -->
+        <item>
+         <widget class="QGroupBox" name="groupBoxInputs">
+          <property name="title">
+           <string>Source PV Inputs  —  enter a PV name or a static number</string>
+          </property>
+          <layout class="QGridLayout" name="gridInputs">
+           <property name="spacing">
+            <number>6</number>
+           </property>
+
+           <!-- Header row -->
+           <item row="0" column="0">
+            <widget class="QLabel" name="labelHeaderAxis">
+             <property name="text"><string>Axis / Channel</string></property>
+             <property name="styleSheet"><string>font-weight: bold;</string></property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLabel" name="labelHeaderSource">
+             <property name="text"><string>Source PV or static value (editable)</string></property>
+             <property name="styleSheet"><string>font-weight: bold;</string></property>
+            </widget>
+           </item>
+
+           <!-- Mu -->
+           <item row="1" column="0">
+            <widget class="QLabel" name="labelMu">
+             <property name="text"><string>Mu</string></property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLineEdit" name="lineEditMu">
+             <property name="text"><string>6idb1:m28.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Eta -->
+           <item row="2" column="0">
+            <widget class="QLabel" name="labelEta">
+             <property name="text"><string>Eta</string></property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QLineEdit" name="lineEditEta">
+             <property name="text"><string>6idb1:m17.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Chi -->
+           <item row="3" column="0">
+            <widget class="QLabel" name="labelChi">
+             <property name="text"><string>Chi</string></property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QLineEdit" name="lineEditChi">
+             <property name="text"><string>6idb1:m19.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Phi -->
+           <item row="4" column="0">
+            <widget class="QLabel" name="labelPhi">
+             <property name="text"><string>Phi</string></property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QLineEdit" name="lineEditPhi">
+             <property name="text"><string>6idb1:m20.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Nu -->
+           <item row="5" column="0">
+            <widget class="QLabel" name="labelNu">
+             <property name="text"><string>Nu</string></property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QLineEdit" name="lineEditNu">
+             <property name="text"><string>6idb1:m29.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Delta -->
+           <item row="6" column="0">
+            <widget class="QLabel" name="labelDelta">
+             <property name="text"><string>Delta</string></property>
+            </widget>
+           </item>
+           <item row="6" column="1">
+            <widget class="QLineEdit" name="lineEditDelta">
+             <property name="text"><string>6idb1:m18.RBV</string></property>
+            </widget>
+           </item>
+
+           <!-- Energy -->
+           <item row="7" column="0">
+            <widget class="QLabel" name="labelEnergy">
+             <property name="text"><string>X-ray Energy</string></property>
+            </widget>
+           </item>
+           <item row="7" column="1">
+            <widget class="QLineEdit" name="lineEditEnergy">
+             <property name="text"><string>6idb:spec:Energy</string></property>
+            </widget>
+           </item>
+
+          </layout>
+         </widget>
+        </item>
+
+        <!-- All IOC Records group -->
+        <item>
+         <widget class="QGroupBox" name="groupBoxPvTable">
+          <property name="title">
+           <string>All IOC Records</string>
+          </property>
+          <layout class="QVBoxLayout" name="pvTableLayout">
+           <item>
+            <widget class="QTableWidget" name="pvTable">
+             <property name="editTriggers">
+              <set>QAbstractItemView::NoEditTriggers</set>
+             </property>
+             <property name="selectionMode">
+              <enum>QAbstractItemView::SingleSelection</enum>
+             </property>
+             <property name="showGrid">
+              <bool>true</bool>
+             </property>
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+             <attribute name="verticalHeaderVisible">
+              <bool>false</bool>
+             </attribute>
+             <column>
+              <property name="text"><string>PV Name</string></property>
+             </column>
+             <column>
+              <property name="text"><string>Value</string></property>
+             </column>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- Bottom spacer -->
+        <item>
+         <spacer name="verticalSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+ </widget>
+</ui>

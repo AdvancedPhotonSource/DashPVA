@@ -171,6 +171,38 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="gb_hkl_range">
+         <property name="title">
+          <string>HKL Range</string>
+         </property>
+         <layout class="QVBoxLayout" name="layout_hkl_range">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="gb_downsample">
+         <property name="title">
+          <string>Downsampling</string>
+         </property>
+         <layout class="QHBoxLayout" name="layout_downsample">
+          <item>
+           <widget class="QRadioButton" name="rb_downsample_on">
+            <property name="text"><string>On</string></property>
+            <property name="checked"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="rb_downsample_off">
+            <property name="text"><string>Off</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <spacer name="verticalSpacer_3d">
          <property name="orientation">
           <enum>Qt::Vertical</enum>

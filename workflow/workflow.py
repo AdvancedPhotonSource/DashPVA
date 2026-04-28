@@ -348,8 +348,9 @@ class Workflow(QDialog, LogMixin):
         self.buttonExportConfigToFile.clicked.connect(self.export_config_to_file)
         self.lineEditTreeSearch.textChanged.connect(self._filter_tree)
 
-        # Config Tab — apply/save
+        # Config Tab — apply/save / reseed
         self.buttonApplySave.clicked.connect(self._on_apply_save)
+        self.buttonReseed.clicked.connect(self._on_reseed)
 
         self.treeWidgetConfig.itemChanged.connect(self._on_tree_item_changed)
         self.treeWidgetConfig.itemDoubleClicked.connect(self._on_tree_item_double_clicked)
@@ -930,6 +931,7 @@ class Workflow(QDialog, LogMixin):
             self.treeWidgetConfig.clear()
             self.lineEditProfileDescription.clear()
             self._refresh_profile_combo()
+            self.load_profile_to_tree()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to delete profile:\n{e}')
 
@@ -1436,6 +1438,50 @@ class Workflow(QDialog, LogMixin):
         else:
             self._save_tree_to_active_profile()
 
+    def _on_reseed(self):
+        reply = QMessageBox.question(
+            self, 'Reseed', 'Add missing default values to settings and the current profile?',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        added = [0]
+        try:
+            from scripts.seed_settings_defaults_sql import seed_defaults
+            seed_defaults()
+        except Exception as e:
+            QMessageBox.critical(self, 'Reseed', f'Settings reseed failed:\n{e}')
+            return
+        if self.radioDatabase.isChecked() and self._db_available and not self.radioViewSettings.isChecked():
+            _sample = pathlib.Path(__file__).resolve().parents[1] / 'pv_configs' / 'sample_config.toml'
+            if _sample.exists():
+                try:
+                    defaults = self.parse_toml(str(_sample))
+                    current = self._extract_tree_to_dict()
+                    merged = self._deep_merge(defaults, current, added)
+                    self.treeWidgetConfig.blockSignals(True)
+                    self.treeWidgetConfig.clear()
+                    self._populate_tree_node(merged, parent=None)
+                    self.treeWidgetConfig.blockSignals(False)
+                    self._save_tree_to_active_profile()
+                except Exception as e:
+                    QMessageBox.critical(self, 'Reseed', f'Profile reseed failed:\n{e}')
+                    return
+        elif self.radioViewSettings.isChecked():
+            self.load_profile_to_tree()
+        msg = f'{added[0]} missing profile value(s) added.' if added[0] else 'No missing profile values found.'
+        QMessageBox.information(self, 'Reseed', f'Settings defaults restored.\n{msg}')
+
+    def _deep_merge(self, defaults: dict, current: dict, added: list) -> dict:
+        result = dict(current)
+        for key, val in defaults.items():
+            if key not in result:
+                result[key] = val
+                added[0] += 1
+            elif isinstance(val, dict) and isinstance(result[key], dict):
+                result[key] = self._deep_merge(val, result[key], added)
+        return result
+
     def _save_settings_from_tree(self):
         """Persist all edited setting values from the Settings tree back to the DB."""
         if not self._db_available:
@@ -1540,6 +1586,12 @@ class Workflow(QDialog, LogMixin):
             self._db.import_toml_to_profile(profile_id, data)
         except Exception as e:
             QMessageBox.critical(self, 'Save Error', f'Failed to save to profile:\n{e}')
+            return
+        try:
+            app_settings.set_locator(profile_id)
+            app_settings.reload()
+        except Exception:
+            pass
 
     def _extract_tree_to_dict(self, parent=None) -> dict:
         result = {}

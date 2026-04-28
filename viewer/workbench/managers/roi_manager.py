@@ -65,12 +65,15 @@ class ContextRectROI(pg.RectROI):
                 action_plot.triggered.connect(lambda: self.parent_window.open_roi_plot_dock(self))
                 action_hide.triggered.connect(lambda: self.parent_window.roi_manager.set_roi_visibility(self, False))
                 action_delete.triggered.connect(lambda: self.parent_window.roi_manager.delete_roi(self))
+                action_2d_plot = QAction("Open ROI 2D Plot", menu)
+                action_2d_plot.triggered.connect(lambda: self.parent_window.open_roi_2d_plot_dock(self))
 
                 # Add actions and separator before Save
                 menu.addAction(action_stats)
                 menu.addAction(action_rename)
                 menu.addAction(action_set_active)
                 menu.addAction(action_plot)
+                menu.addAction(action_2d_plot)
                 menu.addAction(action_hide)
                 menu.addAction(action_delete)
                 menu.addSeparator()

@@ -1,5 +1,6 @@
 # Required Setup
-CONSUMER_TYPE = "spontaneous"
+DETECTOR_PREFIX = "PILATUS_1MF"
+CONSUMER_MODE = "spontaneous"
 
 # Section used specifically for Metadata Pvs
 [METADATA]

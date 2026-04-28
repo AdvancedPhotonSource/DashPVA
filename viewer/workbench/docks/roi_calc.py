@@ -34,7 +34,7 @@ import qtawesome as qta
 
 from utils.roi_ops import extract_roi_stack, align_stacks, per_frame_mean
 
-from .base_dock import BaseDock
+from viewer.core.docks.base_dock import BaseDock
 import os
 
 
