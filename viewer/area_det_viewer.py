@@ -25,6 +25,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import rotation_cycle
 from utils import PVAReader, HDF5Writer
 from utils.mask_manager import MaskManager
+import settings as app_settings
 # from ..utils.size_manager import SizeManager
 
 
@@ -649,9 +650,11 @@ class DiffractionImageWindow(QMainWindow):
             self.stop_timers()
             self.image_view.clear()
             self.reset_rsm_vars()
+            if self._file_path:
+                app_settings.set_locator(self._file_path)
+                app_settings.reload()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
@@ -667,8 +670,7 @@ class DiffractionImageWindow(QMainWindow):
                 # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel, 
-                                         config_filepath=self._file_path)
+                self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)

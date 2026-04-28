@@ -3,7 +3,7 @@ import os
 os.environ.pop('QT_PLUGIN_PATH', None)  # Unset QT_PLUGIN_PATH to prevent conflicts
 
 import sys
-# Fix namespace conflict: local pyFAI/ directory shadows the installed package
+# Fix namespace conflict: project root in sys.path can shadow installed packages
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_current_dir)
 if _project_root in sys.path:
