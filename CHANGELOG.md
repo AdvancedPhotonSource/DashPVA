@@ -10,12 +10,16 @@ This file tracks the latest changes, features, and improvements in DashPVA month
   - Post-scan: View 3D data after a scan
   - Realtime: Plot cached images in realtime
   - Realtime Per Frame: Plot cached images 1 frame at a time
+- Installation wizard compatible with any OS
 
-# Added
+### Added
 - Docks to the hkl3d
 
-# Fix 
+### Fix 
 - The HKL 3d inherits from base_window.py
+
+### Remove
+- Unnessacary torch packages
 
 
 ## Latest Changes (March 2026)

@@ -56,6 +56,11 @@ def _write_edition(edition: str):
 def _prompt_edition() -> str:
     if sys.platform != 'linux':
         print('  Only Standalone edition is available on this platform.\n')
+        print('    Standalone  — post-analysis tools only (any OS)\n')
+        confirm = input('  Proceed with Standalone installation? [Y/n]: ').strip().lower() or 'y'
+        if confirm != 'y':
+            print('  Installation cancelled.')
+            sys.exit(0)
         return 'standalone'
     print('  Which edition would you like to install?\n')
     print('    [1] Full        — live streaming + pvaccess/EPICS (Linux only) (recommended)')
@@ -77,16 +82,30 @@ def _require_linux_for_full():
         sys.exit(1)
 
 
-def _print_next_steps():
+def _print_next_steps(has_uv: bool):
+    activate = (
+        REPO / '.venv' / 'Scripts' / 'activate'
+        if sys.platform == 'win32'
+        else REPO / '.venv' / 'bin' / 'activate'
+    )
     print()
     print('  ─────────────────────────────────────────────')
-    print('  Setup complete!  Launch DashPVA with:')
+    print('  Setup complete!  How would you like to launch DashPVA?\n')
+    print(f'    [1] Activate .venv  →  source {activate} && python dashpva.py run')
+    if has_uv:
+        print('    [2] Use uv run      →  uv run python dashpva.py run')
+    print('    [3] Skip — launch manually later\n')
+    choice = input('  Enter choice [default: 1]: ').strip() or '1'
     print()
-    print('    python dashpva.py run')
+    if choice == '1':
+        print('  Run these commands to launch:\n')
+        print(f'    source {activate}')
+        print('    python dashpva.py run')
+    elif choice == '2' and has_uv:
+        print('  Run this command to launch:\n')
+        print('    uv run python dashpva.py run')
     print()
-    print('  To update later:')
-    print()
-    print('    python install.py --update')
+    print('  To update later:  python install.py --update')
     print('  ─────────────────────────────────────────────')
     print()
 
@@ -139,7 +158,7 @@ def main():
             _run([sys.executable, '-m', 'pip', 'install', '-e', '.'])
 
     _write_edition(edition)
-    _print_next_steps()
+    _print_next_steps(has_uv)
 
 
 if __name__ == '__main__':
