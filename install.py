@@ -14,11 +14,13 @@ EDITION_FILE = REPO / '.dashpva_edition'
 def _version():
     try:
         result = subprocess.run(
-            ['git', 'describe', '--tags', '--abbrev=0'],
+            ['git', 'tag', '--list', 'v*', '--sort=-version:refname'],
             cwd=str(REPO), capture_output=True, text=True
         )
         if result.returncode == 0:
-            return result.stdout.strip().lstrip('v')
+            latest = result.stdout.strip().splitlines()
+            if latest:
+                return latest[0].lstrip('v')
     except Exception:
         pass
     return '?'
