@@ -1,6 +1,6 @@
 [project]
 name = "DashPVA"
-dynamic = ["version"]
+version = "1.0"
 description = "Distributed Analysis and Streaming Hub with Process Variable Access"
 requires-python = ">=3.11,<3.12"
 dependencies = [
