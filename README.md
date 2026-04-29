@@ -48,9 +48,6 @@ python install.py --update
 
 Or use the **Updates** button inside the launcher to pull the latest release.
 
-## What's New
-Check out [CHANGELOG.md](CHANGELOG.md) for the latest features, improvements, and changes in DashPVA.
-
 # **FAQ: Area Detector and Data Analysis System**
 
 ### _What is the primary function of the software described in the provided sources?_
