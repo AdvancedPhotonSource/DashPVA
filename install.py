@@ -48,11 +48,14 @@ def _write_edition(edition: str):
 
 
 def _prompt_edition() -> str:
+    if sys.platform != 'linux':
+        print('  Only Standalone edition is available on this platform.\n')
+        return 'standalone'
     print('  Which edition would you like to install?\n')
-    print('    [1] Full        — live streaming + pvaccess/EPICS (Linux only)')
+    print('    [1] Full        — live streaming + pvaccess/EPICS (Linux only) (recommended)')
     print('    [2] Standalone  — post-analysis tools only (any OS)\n')
     while True:
-        choice = input('  Enter 1 or 2: ').strip()
+        choice = input('  Enter 1 or 2 [default: 1]: ').strip() or '1'
         if choice == '1':
             return 'full'
         if choice == '2':
@@ -60,12 +63,12 @@ def _prompt_edition() -> str:
         print('  Please enter 1 or 2.')
 
 
-def _warn_windows_full():
+def _require_linux_for_full():
     if sys.platform != 'linux':
-        print()
-        print('  WARNING: Full edition (pvaccess/pyepics) is only supported on Linux.')
-        print('           Installation may fail. Consider Standalone instead.')
-        print()
+        print('  ERROR: Full edition (pvaccess/pyepics) is only supported on Linux.')
+        print(f'         Detected platform: {sys.platform}')
+        print('         Use --standalone or run on Linux.')
+        sys.exit(1)
 
 
 def _print_next_steps():
@@ -96,6 +99,7 @@ def main():
         edition = EDITION_FILE.read_text().strip()
         print(f'  Updating existing {edition} installation…\n')
     elif args.full:
+        _require_linux_for_full()
         edition = 'full'
     elif args.standalone:
         edition = 'standalone'
@@ -115,7 +119,7 @@ def main():
     if has_uv:
         print(f'  Using uv  ({shutil.which("uv")})\n')
         if edition == 'full':
-            _warn_windows_full()
+            _require_linux_for_full()
             _run(['uv', 'sync', '--extra', 'full'])
         else:
             _run(['uv', 'sync'])
@@ -123,7 +127,7 @@ def main():
         print('  uv not found on PATH.  Falling back to pip.')
         print('  (For faster installs, run:  pip install uv)\n')
         if edition == 'full':
-            _warn_windows_full()
+            _require_linux_for_full()
             _run([sys.executable, '-m', 'pip', 'install', '-e', '.[full]'])
         else:
             _run([sys.executable, '-m', 'pip', 'install', '-e', '.'])

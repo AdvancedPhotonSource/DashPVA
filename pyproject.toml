@@ -1,6 +1,6 @@
 [project]
 name = "DashPVA"
-version = "0.1.0"
+version = "1.0"
 description = "Distributed Analysis and Streaming Hub with Process Variable Access"
 requires-python = ">=3.11,<3.12"
 dependencies = [
@@ -52,9 +52,6 @@ dependencies = [
     "markdown>=3.10",
     "jupyter>=1.1.1",
     "qtawesome>=1.4.0",
-    "torch>=2.9.1",
-    "torchvision>=0.24.1",
-    "deepinv>=0.3.7",
     "click>=8.1.7",
     "pyfiglet>=1.0.0",
     "xrayutilities==1.7.10",
