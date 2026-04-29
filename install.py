@@ -13,11 +13,15 @@ EDITION_FILE = REPO / '.dashpva_edition'
 
 def _version():
     try:
-        sys.path.insert(0, str(REPO))
-        import settings
-        return settings.__VERSION__
+        result = subprocess.run(
+            ['git', 'describe', '--tags', '--abbrev=0'],
+            cwd=str(REPO), capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return result.stdout.strip().lstrip('v')
     except Exception:
-        return '?'
+        pass
+    return '?'
 
 
 def _print_banner():
