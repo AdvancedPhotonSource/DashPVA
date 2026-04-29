@@ -37,3 +37,8 @@ try:
     from utils.rsm_converter import RSMConverter
 except Exception:
     pass
+
+try:
+    from utils.mask_manager import MaskManager
+except Exception:
+    pass

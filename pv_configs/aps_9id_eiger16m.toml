@@ -1,0 +1,72 @@
+# Required Setup
+DETECTOR_PREFIX = "9idEiger16m"
+CONSUMER_MODE = "spontaneous"
+
+# Section used specifically for Metadata Pvs
+[METADATA]
+
+    [METADATA.CA]
+    X = "x"
+    Y = "y"
+
+    [METADATA.PVA]
+
+# Section specifically for ROI PVs
+[ROI]
+
+    [ROI.ROI1]
+    MIN_X = "9idEiger16m:ROI1:MinX"
+    MIN_Y = "9idEiger16m:ROI1:MinY"
+    SIZE_X = "9idEiger16m:ROI1:SizeX"
+    SIZE_Y = "9idEiger16m:ROI1:SizeY"
+
+    [ROI.ROI2]
+    MIN_X = "9idEiger16m:ROI2:MinX"
+    MIN_Y = "9idEiger16m:ROI2:MinY"
+    SIZE_X = "9idEiger16m:ROI2:SizeX"
+    SIZE_Y = "9idEiger16m:ROI2:SizeY"
+
+    [ROI.ROI3]
+    MIN_X = "9idEiger16m:ROI3:MinX"
+    MIN_Y = "9idEiger16m:ROI3:MinY"
+    SIZE_X = "9idEiger16m:ROI3:SizeX"
+    SIZE_Y = "9idEiger16m:ROI3:SizeY"
+
+    [ROI.ROI4]
+    MIN_X = "9idEiger16m:ROI4:MinX"
+    MIN_Y = "9idEiger16m:ROI4:MinY"
+    SIZE_X = "9idEiger16m:ROI4:SizeX"
+    SIZE_Y = "9idEiger16m:ROI4:SizeY"
+
+[STATS]
+
+    [STATS.STATS1]
+    TOTAL = "9idEiger16m:Stats1:Total_RBV"
+    MIN = "9idEiger16m:Stats1:MinValue_RBV"
+    MAX = "9idEiger16m:Stats1:MaxValue_RBV"
+    SIGMA = "9idEiger16m:Stats1:Sigma_RBV"
+    MEAN = "9idEiger16m:Stats1:MeanValue_RBV"
+
+    [STATS.STATS2]
+    TOTAL = "9idEiger16m:Stats2:Total_RBV"
+    MIN = "9idEiger16m:Stats2:MinValue_RBV"
+    MAX = "9idEiger16m:Stats2:MaxValue_RBV"
+    SIGMA = "9idEiger16m:Stats2:Sigma_RBV"
+    MEAN = "9idEiger16m:Stats2:MeanValue_RBV"
+
+    [STATS.STATS3]
+    TOTAL = "9idEiger16m:Stats3:Total_RBV"
+    MIN = "9idEiger16m:Stats3:MinValue_RBV"
+    MAX = "9idEiger16m:Stats3:MaxValue_RBV"
+    SIGMA = "9idEiger16m:Stats3:Sigma_RBV"
+    MEAN = "9idEiger16m:Stats3:MeanValue_RBV"
+
+    [STATS.STATS4]
+    TOTAL = "9idEiger16m:Stats4:Total_RBV"
+    MIN = "9idEiger16m:Stats4:MinValue_RBV"
+    MAX = "9idEiger16m:Stats4:MaxValue_RBV"
+    SIGMA = "9idEiger16m:Stats4:Sigma_RBV"
+    MEAN = "9idEiger16m:Stats4:MeanValue_RBV"
+
+
+

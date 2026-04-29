@@ -1,0 +1,72 @@
+# Required Setup
+DETECTOR_PREFIX = "PILATUS_1MF"
+CONSUMER_MODE = "spontaneous"
+
+# Section used specifically for Metadata Pvs
+[METADATA]
+
+    [METADATA.CA]
+    X = "x"
+    Y = "y"
+
+    [METADATA.PVA]
+
+# Section specifically for ROI PVs
+[ROI]
+
+    [ROI.ROI1]
+    MIN_X = "PILATUS_1MF:ROI1:MinX"
+    MIN_Y = "PILATUS_1MF:ROI1:MinY"
+    SIZE_X = "PILATUS_1MF:ROI1:SizeX"
+    SIZE_Y = "PILATUS_1MF:ROI1:SizeY"
+
+    [ROI.ROI2]
+    MIN_X = "PILATUS_1MF:ROI2:MinX"
+    MIN_Y = "PILATUS_1MF:ROI2:MinY"
+    SIZE_X = "PILATUS_1MF:ROI2:SizeX"
+    SIZE_Y = "PILATUS_1MF:ROI2:SizeY"
+
+    [ROI.ROI3]
+    MIN_X = "PILATUS_1MF:ROI3:MinX"
+    MIN_Y = "PILATUS_1MF:ROI3:MinY"
+    SIZE_X = "PILATUS_1MF:ROI3:SizeX"
+    SIZE_Y = "PILATUS_1MF:ROI3:SizeY"
+
+    [ROI.ROI4]
+    MIN_X = "PILATUS_1MF:ROI4:MinX"
+    MIN_Y = "PILATUS_1MF:ROI4:MinY"
+    SIZE_X = "PILATUS_1MF:ROI4:SizeX"
+    SIZE_Y = "PILATUS_1MF:ROI4:SizeY"
+
+[STATS]
+
+    [STATS.STATS1]
+    TOTAL = "PILATUS_1MF:Stats1:Total_RBV"
+    MIN = "PILATUS_1MF:Stats1:MinValue_RBV"
+    MAX = "PILATUS_1MF:Stats1:MaxValue_RBV"
+    SIGMA = "PILATUS_1MF:Stats1:Sigma_RBV"
+    MEAN = "PILATUS_1MF:Stats1:MeanValue_RBV"
+
+    [STATS.STATS2]
+    TOTAL = "PILATUS_1MF:Stats2:Total_RBV"
+    MIN = "PILATUS_1MF:Stats2:MinValue_RBV"
+    MAX = "PILATUS_1MF:Stats2:MaxValue_RBV"
+    SIGMA = "PILATUS_1MF:Stats2:Sigma_RBV"
+    MEAN = "PILATUS_1MF:Stats2:MeanValue_RBV"
+
+    [STATS.STATS3]
+    TOTAL = "PILATUS_1MF:Stats3:Total_RBV"
+    MIN = "PILATUS_1MF:Stats3:MinValue_RBV"
+    MAX = "PILATUS_1MF:Stats3:MaxValue_RBV"
+    SIGMA = "PILATUS_1MF:Stats3:Sigma_RBV"
+    MEAN = "PILATUS_1MF:Stats3:MeanValue_RBV"
+
+    [STATS.STATS4]
+    TOTAL = "PILATUS_1MF:Stats4:Total_RBV"
+    MIN = "PILATUS_1MF:Stats4:MinValue_RBV"
+    MAX = "PILATUS_1MF:Stats4:MaxValue_RBV"
+    SIGMA = "PILATUS_1MF:Stats4:Sigma_RBV"
+    MEAN = "PILATUS_1MF:Stats4:MeanValue_RBV"
+
+
+

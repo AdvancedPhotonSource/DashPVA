@@ -104,6 +104,14 @@ def workbench():
 
 
 @cli.command()
+def phasefitter():
+    """Launch XRD Phase Fitter — fit crystal phases to 1D diffraction patterns."""
+    click.echo('Running XRD Phase Fitter')
+    exit_code = subprocess.run([sys.executable, 'viewer/phase_fitter.py']).returncode
+    sys.exit(exit_code)
+
+
+@cli.command()
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
 def monitor(name, channel):

@@ -1,5 +1,6 @@
 import time
 import copy
+import toml
 import bitshuffle
 import blosc2
 import lz4.block
@@ -131,7 +132,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.logger.debug(f'Configuration update: {configDict}')
 
         from utils.config.source import ConfigSource
-        # Accept profile_id (int) or path (str) in configDict; default to selected DB profile
         locator = configDict.get('profile_id') or configDict.get('path') or None
         config = ConfigSource(locator).load()
 

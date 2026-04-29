@@ -1,0 +1,59 @@
+# Required Setup
+DETECTOR_PREFIX = "dp-ADSim"
+CONSUMER_MODE = "spontaneous"
+
+# Section used specifically for Metadata Pvs
+[METADATA]
+
+    [METADATA.CA]
+    X = "x"
+    Y = "y"
+
+    [METADATA.PVA]
+
+# Section specifically for ROI PVs
+[ROI]
+
+    [ROI.ROI1]
+    MIN_X = "dp-ADSim:ROI1:MinX"
+    MIN_Y = "dp-ADSim:ROI1:MinY"
+    SIZE_X = "dp-ADSim:ROI1:SizeX"
+    SIZE_Y = "dp-ADSim:ROI1:SizeY"
+
+    [ROI.ROI2]
+    MIN_X = "dp-ADSim:ROI2:MinX"
+    MIN_Y = "dp-ADSim:ROI2:MinY"
+    SIZE_X = "dp-ADSim:ROI2:SizeX"
+    SIZE_Y = "dp-ADSim:ROI2:SizeY"
+
+    [ROI.ROI3]
+    MIN_X = "dp-ADSim:ROI3:MinX"
+    MIN_Y = "dp-ADSim:ROI3:MinY"
+    SIZE_X = "dp-ADSim:ROI3:SizeX"
+    SIZE_Y = "dp-ADSim:ROI3:SizeY"
+
+    [ROI.ROI4]
+    MIN_X = "dp-ADSim:ROI4:MinX"
+    MIN_Y = "dp-ADSim:ROI4:MinY"
+    SIZE_X = "dp-ADSim:ROI4:SizeX"
+    SIZE_Y = "dp-ADSim:ROI4:SizeY"
+
+[STATS]
+    # [STATS.STATS1]
+    # TOTAL = "dp-ADSim:Stats1:Total_RBV"
+    # MIN = "dp-ADSim:Stats1:MinValue_RBV"
+    # MAX = "dp-ADSim:Stats1:MaxValue_RBV"
+    # SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
+    # MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
+
+    # [STATS.STATS2]
+    # TOTAL = "dp-ADSim:Stats2:Total_RBV"
+    # MIN = "dp-ADSim:Stats2:MinValue_RBV"
+    # MAX = "dp-ADSim:Stats2:MaxValue_RBV"
+    # SIGMA = "dp-ADSim:Stats2:Sigma_RBV"
+    # MEAN = "dp-ADSim:Stats2:MeanValue_RBV"
+
+[ANALYSIS]
+# For use in the analysis server, not on the client side.
+AXIS1 = "x"
+AXIS2 = "y"

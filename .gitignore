@@ -21,5 +21,6 @@ build/
 .vscode
 *.log
 .continue
+.DS_Store
 .trees
 .venv

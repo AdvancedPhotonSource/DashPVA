@@ -74,6 +74,14 @@ VIEWS = [
         'edition': 'both',
     },
     {
+        'key': 'phase_fitter',
+        'label': 'Phase Fitter',
+        'section': 'Post Analysis',
+        'cmd': [sys.executable, 'dashpva.py', 'phasefitter'],
+        'running_text': 'Phase Fitter — Running…',
+        'tooltip': 'XRD phase fitting — file or live mode (CLI: dashpva.py phasefitter)'
+    },
+    {
         'key': 'metadata_converter',
         'label': 'Metadata Converter',
         'section': 'Tools',

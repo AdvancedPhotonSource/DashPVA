@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import pyqtSignal, QObject, Qt
 from datetime import datetime
 import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+if __name__ == '__main__':
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from utils import PVAReader
 from utils.log_manager import LogMixin
 from database.interface import DatabaseInterface

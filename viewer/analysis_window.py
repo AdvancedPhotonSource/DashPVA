@@ -322,7 +322,7 @@ class AnalysisWindow(QMainWindow):
         norm_comx_colors = (comx_filtered - self.min_comx) / (self.max_comx - self.min_comx)
         norm_comy_colors = (comy_filtered - self.min_comy) / (self.max_comy - self.min_comy)
     
-        cmap = pg.colormap.get("viridis.csv")
+        cmap = pg.colormap.get("magma.csv")
 
         # creating data for intensity plot
         intensity_brushes = [pg.mkBrush(cmap.map(color, mode='qcolor')) for color in norm_intensity_colors]
