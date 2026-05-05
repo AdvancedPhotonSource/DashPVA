@@ -287,11 +287,8 @@ class DiffractionImageWindow(QMainWindow):
                     det_shape = self.reader.shape[:2]
                 elif self.mask_manager.mask is not None:
                     det_shape = self.mask_manager.mask.shape
-                else:
-                    QMessageBox.warning(self, 'No Image',
-                        'JSON mask requires a detector image to determine dimensions.\n'
-                        'Start streaming first, then load the JSON mask.')
-                    return
+                # If det_shape is still None, _load_json_mask will try
+                # to read "Detector size" from the JSON file itself.
             new_mask = self.mask_manager.load_mask(filepath, detector_shape=det_shape)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load mask:\n{e}')
