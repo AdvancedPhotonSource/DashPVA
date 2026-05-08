@@ -337,8 +337,13 @@ class MaskViewerWindow(QDialog):
             rows, cols = np.where(self.mask)
             for row, col in zip(rows, cols):
                 bad_pixels.append({"Pixel": [int(col), int(row)], "Set": 0})
+            mask_rows, mask_cols = self.mask.shape
+            data = {
+                "Detector size": [int(mask_cols), int(mask_rows)],
+                "Bad pixels": bad_pixels
+            }
             with open(filepath, 'w') as f:
-                json.dump({"Bad pixels": bad_pixels}, f, indent=2)
+                json.dump(data, f, indent=2)
             num = len(bad_pixels)
             self.lbl_info.setText(f"Exported {num} bad pixels to JSON")
         except Exception as e:

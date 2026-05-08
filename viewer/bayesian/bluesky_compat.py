@@ -1,20 +1,24 @@
 """
 bluesky_compat.py
 =================
-Compatibility layer for importing Bluesky / Ophyd packages from the
-``6idb-bits`` conda environment into the uv-managed DashPVA venv.
+Compatibility layer for importing Bluesky / Ophyd packages from a
+beamline conda environment into the uv-managed DashPVA venv.
 
 DashPVA uses ``uv`` for dependency management, but Bluesky and Ophyd are
-installed in a separate conda environment (``6idb-bits``).  This module
-injects the conda env's ``site-packages`` into ``sys.path`` so that
+installed in the beamline's conda environment.  This module injects the
+conda env's ``site-packages`` into ``sys.path`` so that
 ``import bluesky`` and ``import ophyd`` resolve correctly.
+
+Configuration (pick one, in priority order):
+    1. Pass ``root`` directly to ``ensure_bluesky(root="/path/to/conda/env")``
+    2. Set env var ``DASHPVA_BLUESKY_ROOT=/path/to/conda/env``
+    3. Falls back to the APS 6-IDB default
 
 Usage
 -----
     from viewer.bayesian.bluesky_compat import ensure_bluesky
     ensure_bluesky()          # call once, idempotent
     import bluesky            # now works
-    from bluesky import RunEngine
 """
 
 from __future__ import annotations
@@ -26,68 +30,70 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Hardcoded paths — edit these if the environment moves
-# ---------------------------------------------------------------------------
-
-#: Root of the conda environment that contains bluesky / ophyd
-CONDA_ENV_ROOT = "/home/beams/USER6IDB/.conda/envs/6idb-bits"
-
-#: Source tree of the 6idb-bits instrument package (for ``id6_b`` devices)
-BITS_SRC_DIR = "/home/beams/USER6IDB/6idb-bits/src"
+_DEFAULT_CONDA_ENV = "/home/beams/USER6IDB/.conda/envs/6idb-bits"
 
 _already_injected = False
+_configured_root: str | None = None
 
 
 def _find_site_packages(env_root: str) -> str | None:
-    """Auto-detect the ``site-packages`` directory inside a conda env.
-
-    Globs ``lib/python*/site-packages`` so the exact Python version
-    (3.11, 3.12, …) does not need to be hardcoded.
-    """
+    """Auto-detect the ``site-packages`` directory inside a conda env."""
     pattern = os.path.join(env_root, "lib", "python*", "site-packages")
     matches = sorted(glob.glob(pattern))
     if matches:
-        return matches[-1]  # pick the highest Python version if multiple
+        return matches[-1]
     return None
 
 
-def ensure_bluesky() -> None:
-    """Inject ``6idb-bits`` conda site-packages into ``sys.path``.
+def get_bluesky_root() -> str:
+    """Return the currently configured conda env root path."""
+    if _configured_root:
+        return _configured_root
+    return os.getenv("DASHPVA_BLUESKY_ROOT", _DEFAULT_CONDA_ENV)
 
-    Safe to call multiple times — subsequent calls are no-ops.
+
+def ensure_bluesky(root: str | None = None) -> None:
+    """Inject beamline conda site-packages into ``sys.path``.
+
+    Parameters
+    ----------
+    root : str, optional
+        Path to the conda environment containing bluesky/ophyd.
+        If provided on the first call, overrides the env var and default.
+        Subsequent calls are no-ops regardless of the ``root`` argument.
 
     Raises
     ------
     RuntimeError
-        If the conda environment or its ``site-packages`` directory cannot
-        be found on disk.
+        If the conda environment or bluesky cannot be found.
     """
-    global _already_injected
+    global _already_injected, _configured_root
     if _already_injected:
         return
 
-    # --- conda env site-packages ---
-    sp = _find_site_packages(CONDA_ENV_ROOT)
+    env_root = root or os.getenv("DASHPVA_BLUESKY_ROOT") or _DEFAULT_CONDA_ENV
+    _configured_root = env_root
+
+    sp = _find_site_packages(env_root)
     if sp is None or not os.path.isdir(sp):
         raise RuntimeError(
-            f"Cannot find site-packages in conda env: {CONDA_ENV_ROOT}\n"
+            f"Cannot find site-packages in conda env: {env_root}\n"
             "Expected a directory matching lib/python*/site-packages.\n"
-            "Please verify that the 6idb-bits conda environment is installed."
+            "Set DASHPVA_BLUESKY_ROOT or pass the path in the viewer GUI."
         )
 
     if sp not in sys.path:
         sys.path.insert(0, sp)
         logger.info("Injected conda site-packages: %s", sp)
 
-    # --- 6idb-bits instrument source (for id6_b devices) ---
-    if os.path.isdir(BITS_SRC_DIR) and BITS_SRC_DIR not in sys.path:
-        sys.path.insert(0, BITS_SRC_DIR)
-        logger.info("Injected 6idb-bits src: %s", BITS_SRC_DIR)
+    # Auto-discover instrument source (e.g. 6idb-bits/src) next to conda env
+    bits_src = os.getenv("DASHPVA_BLUESKY_BITS_SRC", "")
+    if bits_src and os.path.isdir(bits_src) and bits_src not in sys.path:
+        sys.path.insert(0, bits_src)
+        logger.info("Injected instrument src: %s", bits_src)
 
     _already_injected = True
 
-    # Quick smoke test
     try:
         import bluesky  # noqa: F401
         logger.info("bluesky %s imported successfully", bluesky.__version__)

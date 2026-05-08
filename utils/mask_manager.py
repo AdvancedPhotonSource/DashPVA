@@ -85,12 +85,19 @@ class MaskManager:
         JSON [X,Y] = [col, row] in raw detector coordinates.
         Our mask is mask[row, col], so Pixel [X,Y] → mask[Y, X] = True.
         """
-        if detector_shape is None:
-            raise ValueError(
-                "detector_shape=(rows, cols) required for JSON mask loading")
-
         with open(filepath, 'r') as f:
             data = json.load(f)
+
+        # Fall back to "Detector size" embedded in JSON if caller didn't provide shape
+        if detector_shape is None:
+            det_size = data.get('Detector size')
+            if det_size is not None and len(det_size) >= 2:
+                # JSON stores [X, Y] = [cols, rows]; convert to (rows, cols)
+                detector_shape = (int(det_size[1]), int(det_size[0]))
+            else:
+                raise ValueError(
+                    "detector_shape=(rows, cols) required for JSON mask loading "
+                    "and the JSON file does not contain a 'Detector size' key")
 
         bad_pixels = data.get('Bad pixels', [])
         mask = np.zeros(detector_shape, dtype=bool)
@@ -128,7 +135,11 @@ class MaskManager:
         for row, col in zip(rows, cols):
             bad_pixels.append({"Pixel": [int(col), int(row)], "Set": set_value})
 
-        data = {"Bad pixels": bad_pixels}
+        mask_rows, mask_cols = self.mask.shape
+        data = {
+            "Detector size": [int(mask_cols), int(mask_rows)],
+            "Bad pixels": bad_pixels
+        }
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
 

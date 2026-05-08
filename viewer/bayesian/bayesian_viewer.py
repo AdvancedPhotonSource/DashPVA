@@ -168,6 +168,7 @@ class ScanWorker(QThread):
         maxpts: int,
         n_initial: int,
         scalar_key: Optional[str],
+        bluesky_root: Optional[str] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -183,6 +184,7 @@ class ScanWorker(QThread):
         self.maxpts = maxpts
         self.n_initial = n_initial
         self.scalar_key = scalar_key
+        self.bluesky_root = bluesky_root
         self._abort = False
 
     def request_abort(self) -> None:
@@ -203,12 +205,12 @@ class ScanWorker(QThread):
         # ----------------------------------------------------------------
         try:
             from .bluesky_compat import ensure_bluesky
-            ensure_bluesky()
+            ensure_bluesky(root=self.bluesky_root)
             from bluesky import RunEngine
         except (ImportError, RuntimeError) as exc:
             self.scan_error.emit(
                 f"bluesky import failed: {exc}\n"
-                "Ensure the 6idb-bits conda env is available."
+                "Check the Bluesky Conda Env path in the viewer."
             )
             return
 
@@ -462,6 +464,11 @@ class BayesianViewer(QtWidgets.QMainWindow):
             w.setValue(val)
             return w
 
+        # Bluesky environment
+        from .bluesky_compat import get_bluesky_root
+        self._bluesky_env = _line("path to conda env with bluesky/ophyd")
+        self._bluesky_env.setText(get_bluesky_root())
+
         # PV / device name fields
         self._x_pv = _line("e.g. 6IDA:m1  or  sample_x")
         self._y_pv = _line("e.g. 6IDA:m2  or  sample_y")
@@ -479,6 +486,13 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._n_init = _spin(1, 1000, 10)
         self._grid_nx = _spin(8, 256, 64)
         self._grid_ny = _spin(8, 256, 64)
+
+        form.addRow("Bluesky Conda Env:", self._bluesky_env)
+
+        sep_env = QtWidgets.QFrame()
+        sep_env.setFrameShape(QtWidgets.QFrame.HLine)
+        sep_env.setStyleSheet("color: #45475a;")
+        form.addRow(sep_env)
 
         form.addRow("X Motor PV / Name:", self._x_pv)
         form.addRow("Y Motor PV / Name:", self._y_pv)
@@ -599,6 +613,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._yi = optimizer._yi
 
         # --- Launch worker ---
+        bluesky_root = self._bluesky_env.text().strip() or None
         self._worker = ScanWorker(
             optimizer=optimizer,
             detector=detector,
@@ -611,6 +626,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
             maxpts=self._maxpts.value(),
             n_initial=self._n_init.value(),
             scalar_key=scalar_key,
+            bluesky_root=bluesky_root,
         )
         self._worker.scan_update.connect(self._on_scan_update)
         self._worker.scan_error.connect(self._on_scan_error)
@@ -718,7 +734,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         # --- Try direct EPICS construction ---
         try:
             from .bluesky_compat import ensure_bluesky
-            ensure_bluesky()
+            ensure_bluesky(root=self._bluesky_env.text().strip() or None)
             from ophyd import EpicsMotor, Device
 
             x_motor = EpicsMotor(x_name, name="x_motor")
@@ -741,7 +757,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         # --- Offline / demo mode: ophyd.sim ---
         try:
             from .bluesky_compat import ensure_bluesky
-            ensure_bluesky()
+            ensure_bluesky(root=self._bluesky_env.text().strip() or None)
             from ophyd.sim import SynAxis, SynSignal
 
             x_motor = SynAxis(name=x_name or "sim_x")
