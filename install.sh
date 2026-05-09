@@ -93,6 +93,30 @@ write_edition() {
     info "Edition recorded: $1"
 }
 
+link_cli() {
+    local target="$VENV_DIR/bin/DashPVA"
+    local link_dir="$HOME/.local/bin"
+    local link_path="$link_dir/DashPVA"
+
+    if [[ ! -x "$target" ]]; then
+        err "DashPVA executable not found in .venv — skipping symlink."
+        return
+    fi
+
+    mkdir -p "$link_dir"
+    ln -sf "$target" "$link_path"
+    info "Symlinked: $link_path → $target"
+
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$link_dir"; then
+        echo
+        info "NOTE: $link_dir is not on your PATH."
+        info "Add this line to your ~/.bashrc or ~/.zshrc:"
+        echo
+        info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo
+    fi
+}
+
 print_next_steps() {
     echo
     info "─────────────────────────────────────────────"
@@ -160,6 +184,7 @@ main() {
     cd "$REPO_DIR"
     do_install "$edition"
     write_edition "$edition"
+    link_cli
     print_next_steps
 }
 
