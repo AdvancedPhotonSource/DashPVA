@@ -1,8 +1,8 @@
 [project]
 name = "DashPVA"
-version = "0.1.0"
+version = "1.0.0"
 description = "Distributed Analysis and Streaming Hub with Process Variable Access"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.2.0",
     "scipy>=1.15.0",
@@ -10,18 +10,12 @@ dependencies = [
     "pyqtgraph>=0.13.0",
     "h5py>=3.12.0",
     "toml>=0.10.0",
-    "dash>=2.18.0",
-    "dash-core-components>=2.0.0",
-    "dash-html-components>=2.0.0",
-    "dash-table>=5.0.0",
     "matplotlib>=3.10.0",
     "pandas>=2.2.0",
-    "flask>=3.1.0",
     "requests>=2.32.0",
     "pyyaml>=6.0.0",
     "pyvista[jupyter]>=0.44.0",
     "pyvistaqt>=0.11.0",
-    "open3d>=0.19.0",
     "scikit-learn>=1.6.0",
     "ipython>=9.0.0",
     "ipywidgets>=8.1.0",
@@ -52,15 +46,9 @@ dependencies = [
     "markdown>=3.10",
     "jupyter>=1.1.1",
     "qtawesome>=1.4.0",
-    "torch>=2.9.1",
-    "torchvision>=0.24.1",
-    "deepinv>=0.3.7",
     "click>=8.1.7",
     "pyfiglet>=1.0.0",
     "xrayutilities==1.7.10",
-    "gpytorch>=1.11",
-    "linear-operator>=0.5.0",
-    "botorch>=0.9.0",
     "pyfai>=2025.3.0",
     "natsort>=8.0.0",
     "ssrl-xrd-tools>=0.35.0",
@@ -70,24 +58,39 @@ dependencies = [
 full = [
     "pvapy>=5.5.0",
     "pyepics>=3.5.0",
+    "torch>=2.9.1",
+    "gpytorch>=1.11",
+    "linear-operator>=0.5.0",
 ]
+
+[project.scripts]
+DashPVA = "dashpva.cli:cli"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/dashpva"]
 
 [tool.uv]
 
-[tool.uv.sources]
-# dev-dependencies moved to dependency-groups (see below)
-
-[project.dependency-groups]
+[dependency-groups]
 dev = [
     "pytest>=7.0.0",
-    "black>=23.0.0",
     "ruff>=0.1.0",
 ]
 
-# Note: pvapy is available on PyPI and can be installed via UV
+[tool.ruff]
+src = ["src"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dashpva"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

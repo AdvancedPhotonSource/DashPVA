@@ -22,3 +22,8 @@ build/
 *.log
 .continue
 .DS_Store
+.trees
+masks/
+dashpva.db
+*.egg-info/
+.dashpva_edition
