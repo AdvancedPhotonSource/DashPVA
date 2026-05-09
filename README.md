@@ -76,6 +76,7 @@ DashPVA hkl3d         # Launch HKL 3D Viewer
 DashPVA setup         # Run PVA workflow setup
 DashPVA setup --ioc   # Run simulator setup
 DashPVA workbench     # Launch Workbench data analysis tool
+DashPVA h5viewer      # Launch HDF5 Viewer
 DashPVA bayesian      # Launch Bayesian 2D Scan Viewer
 DashPVA phasefitter   # Launch XRD Phase Fitter
 DashPVA monitor scan  # Open scan monitor

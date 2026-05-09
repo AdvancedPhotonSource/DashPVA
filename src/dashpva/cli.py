@@ -94,6 +94,14 @@ def workbench():
 
 
 @cli.command()
+def h5viewer():
+    """Launch HDF5 Viewer — interactive HDF5 file browser and image viewer."""
+    click.echo('Running HDF5 Viewer')
+    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.hdf_viewer.interactive']).returncode
+    sys.exit(exit_code)
+
+
+@cli.command()
 def phasefitter():
     """Launch XRD Phase Fitter — fit crystal phases to 1D diffraction patterns."""
     click.echo('Running XRD Phase Fitter')

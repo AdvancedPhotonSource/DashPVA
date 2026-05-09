@@ -74,6 +74,15 @@ VIEWS = [
         'edition': 'both',
     },
     {
+        'key': 'h5viewer',
+        'label': 'HDF5 Viewer',
+        'section': 'Post Analysis',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'h5viewer'],
+        'running_text': 'HDF5 Viewer — Running…',
+        'tooltip': 'Interactive HDF5 file browser and image viewer (CLI: DashPVA h5viewer)',
+        'edition': 'both',
+    },
+    {
         'key': 'phase_fitter',
         'label': 'Phase Fitter',
         'section': 'Post Analysis',
