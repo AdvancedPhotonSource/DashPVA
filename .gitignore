@@ -15,7 +15,6 @@ __pycache__/
 output/
 *.png
 *.csv
-!dummy/*.h5
 dist/
 build/
 .vscode
