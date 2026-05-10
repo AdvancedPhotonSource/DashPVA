@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
 
 import dashpva.settings as app_settings
 from dashpva.database.interface import DatabaseInterface
+from dashpva.gui import configure_app
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -2334,6 +2335,7 @@ class Workflow(QDialog, LogMixin):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
+    configure_app(app)
     dialog = Workflow()
     dialog.show()
     sys.exit(app.exec_())

@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
 )
 
 import dashpva.settings as settings
+from dashpva.gui import configure_app
 
 # ── Lock categories ────────────────────────────────────────────────────────────
 # Change these lists to control which fields fall into each category.
@@ -277,6 +278,7 @@ class SettingsDialog(QDialog):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
+    configure_app(app)
     dlg = SettingsDialog()
     dlg.show()
     sys.exit(app.exec_())

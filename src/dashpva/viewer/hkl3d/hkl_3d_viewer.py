@@ -9,7 +9,7 @@ from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from pyvistaqt import QtInteractor
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Writer, PVAReader, SizeManager
 from dashpva.utils.log_manager import LogMixin
 from dashpva.viewer.core.base_window import BaseWindow
@@ -592,6 +592,7 @@ class HKLImageWindow(BaseWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
+        configure_app(app)
         window = ConfigDialog()
         window.show()
         size_manager = SizeManager(app=app)

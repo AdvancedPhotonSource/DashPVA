@@ -62,6 +62,8 @@ import re
 
 from scipy.interpolate import griddata
 
+from dashpva.gui import configure_app
+
 # Configure matplotlib
 plt.rcParams.update({
     'font.size': 8,
@@ -1836,6 +1838,7 @@ if __name__ == "__main__":
     sys.excepthook = exception_hook
 
     app = QApplication(sys.argv)
+    configure_app(app)
     window = HDF5ImageViewer()
     window.show()
     sys.exit(app.exec_())

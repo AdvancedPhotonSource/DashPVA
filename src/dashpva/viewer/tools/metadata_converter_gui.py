@@ -5,7 +5,7 @@ from typing import List
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils.metadata_converter import convert_files_or_dir
 
 
@@ -130,6 +130,7 @@ class MetadataConverterDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
+    configure_app(app)
     dlg = MetadataConverterDialog()
     dlg.show()
     app.exec_()

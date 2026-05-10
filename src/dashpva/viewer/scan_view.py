@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout
 
 import dashpva.settings as app_settings
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Handler, PVAReader
 from dashpva.utils.log_manager import LogMixin
 
@@ -547,6 +547,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
+    configure_app(app)
     window = ScanMonitorWindow(channel=args.channel)
     window.show()
     sys.exit(app.exec_())

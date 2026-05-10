@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
+from dashpva.gui import configure_app
 from dashpva.utils.hdf5_loader import HDF5Loader
 from dashpva.utils.log_manager import get_default_manager
 
@@ -5063,6 +5064,7 @@ class WorkbenchWindow(BaseWindow):
 def main():
     """Main entry point for the Workbench application."""
     app = QApplication(sys.argv)
+    configure_app(app)
 
     # Set application properties
     app.setApplicationName("Workbench")

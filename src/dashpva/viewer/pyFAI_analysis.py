@@ -58,6 +58,8 @@ from PyQt5.QtWidgets import (
 # import cv2  # for image/mask resizing if needed
 from skimage.transform import resize
 
+from dashpva.gui import configure_app
+
 # Compression libraries for handling compressed PVA data
 try:
     import blosc2
@@ -1417,6 +1419,7 @@ if __name__ == "__main__":
     # Create QApplication first - this is critical for GUI to work
     try:
         app = QApplication(sys.argv)
+        configure_app(app)
     except Exception as e:
         print(f"CRITICAL: Failed to create QApplication: {e}")
         print(traceback.format_exc())

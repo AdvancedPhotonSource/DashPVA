@@ -40,7 +40,7 @@ from PyQt5.QtWidgets import (  # noqa: E402
     QPushButton,
 )
 
-from dashpva.gui import ui_path  # noqa: E402
+from dashpva.gui import configure_app, ui_path  # noqa: E402
 from dashpva.utils import PVAReader, rotation_cycle  # noqa: E402
 
 rot_gen = rotation_cycle(1, 5)
@@ -553,6 +553,7 @@ def main():
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
+    configure_app(app)
     VitViewerWindow(input_channel=args.channel)
     sys.exit(app.exec_())
 

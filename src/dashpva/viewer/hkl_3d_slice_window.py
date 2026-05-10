@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils import RSMConverter, SizeManager
 from dashpva.utils.hdf5_loader import HDF5Loader
 
@@ -1142,6 +1142,7 @@ class HKL3DSliceWindow(QMainWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
+        configure_app(app)
         window = HKL3DSliceWindow()
         window.show()
         size_manager = SizeManager(app=app)

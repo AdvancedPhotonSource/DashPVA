@@ -30,7 +30,7 @@ from pyqtgraph.colormap import get as get_colormap
 from roi_stats_dialog import RoiStatsDialog
 from roi_stats_plot import RoiStatsPlotDialog
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 
@@ -1444,6 +1444,7 @@ class DiffractionImageWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    configure_app(app)
     # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()

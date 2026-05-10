@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 
 from .registry import get_views
 
@@ -331,11 +331,8 @@ class LauncherDialog(QDialog):
             return
         text = f"{self._format_running_modules_list()}\n\nAre you sure you want to force stop all running modules?\n\nData might be lost."
         resp = QMessageBox.question(
-            self,
-            'Shutdown All Modules',
-            text,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self, 'Shutdown All Modules', text,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if resp == QMessageBox.Yes:
             self.shutdown_all()
@@ -345,11 +342,8 @@ class LauncherDialog(QDialog):
         running_list = self._format_running_modules_list()
         text = f"{running_list}\n\nShutdown all running processes and exit?\n\nData might be lost."
         resp = QMessageBox.question(
-            self,
-            'Exit Launcher',
-            text,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self, 'Exit Launcher', text,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         return resp == QMessageBox.Yes
 
@@ -370,6 +364,7 @@ class LauncherDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
+    configure_app(app)
     try:
         from dashpva.utils import SizeManager
         _size_manager = SizeManager(app)  # noqa: F841 — kept alive on stack during exec_

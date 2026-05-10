@@ -73,6 +73,7 @@ from ssrl_xrd_tools.analysis.phase import PhaseModel
 from ssrl_xrd_tools.integrate import integrate_1d, load_poni, poni_to_integrator
 from ssrl_xrd_tools.io.image import load_mask, read_image
 
+from dashpva.gui import configure_app
 from dashpva.utils.fast_phase_fit import fast_fit, fast_fit_sequence
 
 # --- pvaccess (optional, for live mode) ---
@@ -2211,6 +2212,7 @@ def main():
     sys.argv = [sys.argv[0]] + unknown
 
     app = QApplication(sys.argv)
+    configure_app(app)
     app.setStyle('Fusion')
     pg.setConfigOptions(antialias=True, background='w', foreground='k')
 

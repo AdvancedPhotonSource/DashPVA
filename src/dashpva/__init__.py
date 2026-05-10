@@ -1,6 +1,8 @@
 """DashPVA: Distributed Analysis and Streaming Hub with Process Variable Access."""
 
-__version__ = "1.0.0"
+from importlib.metadata import version
+
+__version__ = version("DashPVA")
 
 try:
     import hdf5plugin  # noqa: F401

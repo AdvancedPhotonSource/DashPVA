@@ -5,7 +5,7 @@ from pathlib import Path
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog
 
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 
 _UI_PATH = ui_path("log_viewer.ui")
 _MAX_LINES = 1000
@@ -72,6 +72,7 @@ class LogViewerDialog(QDialog):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    configure_app(app)
     dlg = LogViewerDialog()
     dlg.show()
     sys.exit(app.exec_())

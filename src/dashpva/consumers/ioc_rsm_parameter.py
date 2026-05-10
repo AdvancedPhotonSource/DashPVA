@@ -397,6 +397,8 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
         QWidget,
     )
 
+    from dashpva.gui import configure_app
+
     def _lbl(text, bold=False):
         w = QLabel(text)
         if bold:
@@ -586,6 +588,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             super().closeEvent(event)
 
     app = QApplication(sys.argv)
+    configure_app(app)
     win = SimulatorWindow()
     win.show()
     sys.exit(app.exec_())

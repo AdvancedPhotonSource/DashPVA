@@ -59,6 +59,8 @@ import matplotlib.pyplot as plt  # noqa: F401 – kept for colormaps
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from dashpva.gui import configure_app
+
 logger = logging.getLogger(__name__)
 
 
@@ -810,6 +812,7 @@ def main() -> None:
         format="%(asctime)s  %(levelname)-8s  %(name)s – %(message)s",
     )
     app = QtWidgets.QApplication(sys.argv)
+    configure_app(app)
     app.setApplicationName("Bayesian 2-D Scan Viewer")
     window = BayesianViewer()
     window.show()

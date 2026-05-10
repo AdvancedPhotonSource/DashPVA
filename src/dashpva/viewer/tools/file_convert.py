@@ -7,7 +7,7 @@ from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 import dashpva.settings as settings
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
 from dashpva.utils.hdf5_loader import HDF5Loader
 
 
@@ -285,6 +285,7 @@ class FileConvertDialog(QDialog):
 
 def main():
     app = QApplication(sys.argv)
+    configure_app(app)
     dlg = FileConvertDialog()
     dlg.show()
     app.exec_()

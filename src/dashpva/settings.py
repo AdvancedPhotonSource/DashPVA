@@ -145,7 +145,7 @@ HDF5_STRUCTURE = {
     }
 }
 
-__VERSION__ = 2.1
+__VERSION__ = __import__("dashpva").__version__
 
 # User variables
 BEAMLINE_NAME: Optional[str] = None
