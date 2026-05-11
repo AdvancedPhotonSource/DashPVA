@@ -657,12 +657,7 @@ class HDF5Loader(LogMixin):
             np.ndarray: Flattened coordinate array
         """
         try:
-            # Concatenate all images into single array
-            flattened_list = []
-            for i in range(coord_array.shape[0]):
-                flattened_list.append(np.reshape(coord_array[i], -1))
-            
-            return np.concatenate(flattened_list)
+            return coord_array.reshape(-1)
             
         except Exception as e:
             try:
@@ -1009,10 +1004,8 @@ class HDF5Loader(LogMixin):
 
             image_sum = np.zeros((H, W), dtype=np.float64)
             image_cnt = np.zeros((H, W), dtype=np.int64)
-            # Accumulate
-            for k in range(points.shape[0]):
-                image_sum[iv[k], iu[k]] += float(intensities[k])
-                image_cnt[iv[k], iu[k]] += 1
+            np.add.at(image_sum, (iv, iu), intensities.astype(np.float64))
+            np.add.at(image_cnt, (iv, iu), 1)
             # Average; fill empty bins with 0.0
             image = np.zeros((H, W), dtype=np.float32)
             nonzero = image_cnt > 0

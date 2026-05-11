@@ -1,4 +1,3 @@
-import copy
 import time
 
 import numpy as np
@@ -10,7 +9,7 @@ from pvapy.utility.timeUtility import TimeUtility
 
 # import logging
 #custom imports
-from dashpva.viewer.generators import rotation_cycle
+from dashpva.utils.generators import rotation_cycle
 
 
 # Example AD Metadata Processor for the streaming framework
@@ -244,9 +243,9 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
             else:
                 self.cache_id = next(self.cache_id_gen)
-                self.images_cache[self.cache_id,:,:] = copy.deepcopy(self.image)
-                self.positions_cache[self.cache_id,0] = copy.deepcopy(x_value) #TODO: generalize for whatever scan positions we get
-                self.positions_cache[self.cache_id,1] = copy.deepcopy(y_value) #TODO: generalize for whatever scan positions we get
+                self.images_cache[self.cache_id,:,:] = self.image
+                self.positions_cache[self.cache_id,0] = x_value
+                self.positions_cache[self.cache_id,1] = y_value
             
             # self.process_analysis_objects(pvObject=pvObject)
             frameAttributes = pvObject['attribute']

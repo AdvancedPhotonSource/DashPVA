@@ -41,9 +41,9 @@ def get_session():
 def create_tables():
     """Create all tables in the database (idempotent via create_all)."""
     # Late-import models so they register themselves with Base.metadata
-    import database.models.profile  # noqa: F401
-    import database.models.setting_value  # noqa: F401
-    import database.models.settings  # noqa: F401
+    import dashpva.database.models.profile  # noqa: F401
+    import dashpva.database.models.setting_value  # noqa: F401
+    import dashpva.database.models.settings  # noqa: F401
     Base.metadata.create_all(_engine)
     migrate_database()
 

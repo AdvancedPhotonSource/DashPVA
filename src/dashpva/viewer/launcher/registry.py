@@ -88,7 +88,8 @@ VIEWS = [
         'section': 'Post Analysis',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'phasefitter'],
         'running_text': 'Phase Fitter — Running…',
-        'tooltip': 'XRD phase fitting — file or live mode (CLI: DashPVA phasefitter)'
+        'tooltip': 'XRD phase fitting — file or live mode (CLI: DashPVA phasefitter)',
+        'edition': 'both',
     },
     {
         'key': 'metadata_converter',
