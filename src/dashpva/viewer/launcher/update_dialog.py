@@ -16,18 +16,19 @@ class ReleaseCheckWorker(QThread):
         try:
             import requests
             resp = requests.get(
-                'https://api.github.com/repos/AdvancedPhotonSource/DashPVA/tags',
+                'https://api.github.com/repos/AdvancedPhotonSource/DashPVA/releases/latest',
                 timeout=10,
                 headers={'Accept': 'application/vnd.github+json'},
             )
-            resp.raise_for_status()
-            tags = [t['name'] for t in resp.json() if t['name'].startswith('v')]
-            if not tags:
-                self.error.emit('No releases found')
+            if resp.status_code == 404:
+                self.error.emit('No release found')
                 return
-            tag = tags[0]
+            resp.raise_for_status()
+            data = resp.json()
+            tag = data.get('tag_name', '')
+            notes = data.get('body', '') or ''
             has_update = tag.lstrip('v') != str(settings.__VERSION__)
-            self.result.emit(has_update, tag, '')
+            self.result.emit(has_update, tag, notes)
         except Exception as exc:
             self.error.emit(str(exc))
 
