@@ -1,39 +1,46 @@
-# Dash Analysis
-This is a quick tool for analyzing data
+# DashAnalysis Quickstart
 
-Download any of the dummy data's for testing
+Interactive notebook for exploring HKL point cloud data using the DashAnalysis API from DashPVA.
 
-## Requirements
-`python >=3.11`
+## Setup
 
-## Instructions
-1. Download the dash_analysis.ipynb file and this README.md file
-into a `<folder>`
-From [DashPVA/utils](https://github.com/AdvancedPhotonSource/DashPVA/tree/dev/utils) Repo download both `hdf5_loader.py` and `dash_analysis.py` <br>
-*(4 files in total)*
+1. Install DashPVA (if not already done):
+   ```bash
+   cd DashPVA
+   bash install.sh
+   ```
 
-2. `cd <folder>`
+2. Register the DashPVA environment as a Jupyter kernel:
+   ```bash
+   source .venv/bin/activate
+   pip install ipykernel ipympl
+   python -m ipykernel install --user --name DashPVA --display-name "DashPVA"
+   ```
 
-3. Install uv [Link here](https://github.com/astral-sh/uv?tab=readme-ov-file)
+3. Open the notebook and select the **DashPVA** kernel:
+   ```bash
+   jupyter notebook notebooks/dash_analysis/DashAnalysis_Quickstart.ipynb
+   ```
 
-4. Create uv env
-`uv venv`
+All dependencies (numpy, h5py, matplotlib, pyvista, etc.) are already installed by DashPVA.
 
-5. For Mac/Linux
-`source .venv/bin/activate`<br>
-For Windows
-`venv\Scripts\activate`
+## Usage
 
-6. Install dependencies
-`uv pip install -r requirements.txt`
+In Python/notebooks, import the package as lowercase `dashpva`:
 
-7. Open the notebook and follow the instructions from there
+```python
+from dashpva.utils import DashAnalysis
 
-Struct Example
+da = DashAnalysis()
+data = da.load_data("your_data.h5")
 ```
-folder/
-    |_____dash_analysis.py
-    |_____hdf5_loader.py
-    |_____dash_analysis.inpynb
-    |_____.venv/
-```
+
+> **Note:** The CLI command is `DashPVA` (mixed case), but the Python import is `dashpva` (lowercase).
+
+## What's covered
+
+- Loading HDF5 data and inspecting metadata
+- 3D point cloud visualization
+- 2D slicing (canonical planes, custom normals, custom HKL axes)
+- Line cuts (presets, custom endpoints, interactive mode)
+- Volume creation and visualization

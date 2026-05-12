@@ -15,10 +15,16 @@ __pycache__/
 output/
 *.png
 *.csv
-!dummy/*.h5
 dist/
 build/
 .vscode
 *.log
 .continue
 .DS_Store
+.trees
+masks/
+dashpva.db
+*.egg-info/
+.dashpva_edition
+logs/
+.ruff_cache/
