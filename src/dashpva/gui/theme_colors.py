@@ -26,12 +26,12 @@ SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
 BORDER = "#DEE2E6"
 
-# -- Font sizes ----------------------------------------------------------------
-FONT_HEADING = "22px"
-FONT_SUBHEADING = "14px"
-FONT_BODY = "12px"
-FONT_CAPTION = "11px"
-FONT_SMALL = "9pt"
+# -- Font sizes (use pt to avoid QFont warnings on macOS high-DPI) -------------
+FONT_HEADING = "17pt"
+FONT_SUBHEADING = "11pt"
+FONT_BODY = "10pt"
+FONT_CAPTION = "9pt"
+FONT_SMALL = "8pt"
 
 
 def status_style(color: str, *, bold: bool = False,

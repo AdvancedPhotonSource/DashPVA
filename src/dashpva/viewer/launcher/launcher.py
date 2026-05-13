@@ -332,6 +332,14 @@ class LauncherDialog(QDialog):
             self.processes.pop(key, None)
         self._update_status()
 
+    @staticmethod
+    def _widen_messagebox(msg, width=420):
+        layout = msg.layout()
+        if layout is not None:
+            from PyQt5.QtWidgets import QSizePolicy, QSpacerItem
+            spacer = QSpacerItem(width, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+            layout.addItem(spacer, layout.rowCount(), 0, 1, layout.columnCount())
+
     def _confirm_shutdown_all(self):
         """Confirm and force-stop all running modules."""
         if not self.processes:
@@ -344,6 +352,7 @@ class LauncherDialog(QDialog):
         msg.setInformativeText(running_list + '\n\nData might be lost.')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msg.setDefaultButton(QMessageBox.No)
+        self._widen_messagebox(msg)
         if msg.exec_() == QMessageBox.Yes:
             self.shutdown_all()
 
@@ -359,6 +368,7 @@ class LauncherDialog(QDialog):
         msg.setInformativeText(running_list + '\n\nData might be lost.')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msg.setDefaultButton(QMessageBox.No)
+        self._widen_messagebox(msg)
         return msg.exec_() == QMessageBox.Yes
 
     def request_close(self):

@@ -46,7 +46,7 @@ QTabWidget#info_tabs QTabBar::tab:selected {
 
 /* -- File status label (workbench) ----------------------------------- */
 QLabel#file_status_label {
-    font-size: 14px;
+    font-size: 11pt;
     font-weight: bold;
     color: #2C3E50;
     padding: 10px;
@@ -55,26 +55,26 @@ QLabel#file_status_label {
 /* -- Stats labels (ROI docks, controls) ------------------------------ */
 QLabel#stats_label, QLabel#roi_stats_label {
     color: #2C3E50;
-    font-size: 11px;
+    font-size: 9pt;
 }
 
 /* -- Mode labels ----------------------------------------------------- */
 QLabel#mode_label {
     color: #7A8394;
-    font-size: 10px;
+    font-size: 8pt;
     font-weight: bold;
 }
 
 /* -- Range / muted labels -------------------------------------------- */
 QLabel#z_range_label, QLabel#val_label {
     color: #9BA5B5;
-    font-size: 10px;
+    font-size: 8pt;
 }
 
 /* -- Hint labels (vmin/vmax) ----------------------------------------- */
 QLabel#lblVminHint, QLabel#lblVmaxHint {
     color: #7A8394;
-    font-size: 10px;
+    font-size: 8pt;
     padding-right: 6px;
 }
 
@@ -87,7 +87,7 @@ QLabel#phase_placeholder, QLabel#label_placeholder {
 /* -- Log viewer ------------------------------------------------------ */
 QLabel#lbl_log_path {
     color: #7A8394;
-    font-size: 11px;
+    font-size: 9pt;
 }
 
 /* -- Lock banner (ROI calculator) ------------------------------------ */
