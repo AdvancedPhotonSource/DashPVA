@@ -168,10 +168,10 @@ class DocumentationDialog(QDialog):
         <html>
           <head><style>
             body{{font-family: Arial, sans-serif; padding: 16px;}}
-            .title{{font-size: 22px; font-weight: bold; margin-bottom: 6px;}}
+            .title{{font-size: 17pt; font-weight: bold; margin-bottom: 6px;}}
             .subtitle{{color:#555; margin-bottom: 12px;}}
             code{{background:#f5f5f5; padding:2px 4px; border-radius:4px;}}
-            .hint{{margin-top: 12px; font-size: 12px; color: #777;}}
+            .hint{{margin-top: 12px; font-size: 10pt; color: #777;}}
           </style></head>
           <body>
             <div class="title">{viewer_name} Documentation</div>

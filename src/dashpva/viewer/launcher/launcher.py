@@ -158,7 +158,7 @@ class LauncherDialog(QDialog):
 
             sec_lbl = QLabel(section_name.upper(), divider)
             sec_lbl.setStyleSheet(
-                f"font-size: 10px; font-weight: 600; color: {TEXT_MUTED}; letter-spacing: 0.5px;"
+                f"font-size: 8pt; font-weight: 600; color: {TEXT_MUTED}; letter-spacing: 0.5px;"
             )
             line = QFrame(divider)
             line.setFrameShape(QFrame.HLine)
