@@ -1,3 +1,5 @@
+import os
+import signal
 import subprocess
 import sys
 from collections import OrderedDict
@@ -211,7 +213,7 @@ class LauncherDialog(QDialog):
             kwargs['stderr'] = subprocess.DEVNULL
 
         try:
-            p = subprocess.Popen(cmd, **kwargs)
+            p = subprocess.Popen(cmd, start_new_session=True, **kwargs)
             button.setText(running_text)
             self.processes[key] = {
                 'popen': p,
@@ -310,18 +312,22 @@ class LauncherDialog(QDialog):
         return "Running modules:\n" + "\n".join(lines)
 
     def _terminate_proc(self, p, timeout=3.0):
-        """Attempt graceful terminate, then force kill if still alive."""
+        """Terminate the process group, then force kill if still alive."""
         try:
-            if p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=timeout)
-                except Exception:
-                    pass
-            if p.poll() is None:
-                p.kill()
+            if p.poll() is not None:
+                return
+            pgid = os.getpgid(p.pid)
+            os.killpg(pgid, signal.SIGTERM)
+            try:
+                p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(pgid, signal.SIGKILL)
+                p.wait(timeout=2)
         except Exception:
-            pass
+            try:
+                p.kill()
+            except Exception:
+                pass
 
     def shutdown_all(self):
         """Force-stop all running modules and restore UI state."""
@@ -372,13 +378,9 @@ class LauncherDialog(QDialog):
         return msg.exec_() == QMessageBox.Yes
 
     def request_close(self):
-        """Always ask for confirmation, shut down all processes, then close."""
-        if self._confirm_exit():
-            self.shutdown_all()
-            self.close()
+        self.close()
 
     def closeEvent(self, event):
-        """Always ask for confirmation, shut down all processes, then accept close."""
         if self._confirm_exit():
             self.shutdown_all()
             event.accept()

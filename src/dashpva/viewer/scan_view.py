@@ -26,7 +26,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         except Exception:
             pass
 
-        self.channel = channel
+        self.channel = channel or app_settings.get_input_channel("")
         self.scan_state = False
 
         # Track applied state for UI labels

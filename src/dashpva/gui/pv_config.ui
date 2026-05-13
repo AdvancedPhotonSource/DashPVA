@@ -35,7 +35,10 @@
      </rect>
     </property>
     <property name="text">
-     <string>processor:1:analysis</string>
+     <string></string>
+    </property>
+    <property name="placeholderText">
+     <string>e.g. pvapy:image</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_input_channel">

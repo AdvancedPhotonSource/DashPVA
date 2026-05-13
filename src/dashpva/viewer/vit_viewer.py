@@ -40,6 +40,7 @@ from PyQt5.QtWidgets import (  # noqa: E402
     QPushButton,
 )
 
+import dashpva.settings as app_settings  # noqa: E402
 from dashpva.gui import configure_app, ui_path  # noqa: E402
 from dashpva.utils import PVAReader, rotation_cycle  # noqa: E402
 
@@ -48,7 +49,7 @@ rot_gen = rotation_cycle(1, 5)
 
 class VitViewerWindow(QMainWindow):
 
-    def __init__(self, input_channel='vit:1:input_phase'):
+    def __init__(self, input_channel=None):
         super(VitViewerWindow, self).__init__()
         uic.loadUi(ui_path("imageshow.ui"), self)
         self.setWindowTitle('DashPVA — VIT Viewer')
@@ -61,7 +62,7 @@ class VitViewerWindow(QMainWindow):
         self.rot_num = 0
         self.mouse_x = 0
         self.mouse_y = 0
-        self._input_channel = input_channel
+        self._input_channel = input_channel or app_settings.get_input_channel("vit:1:input_phase")
         self.pv_prefix.setText(self._input_channel)
 
         self.timer_labels = QTimer()

@@ -9,6 +9,7 @@ from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from pyvistaqt import QtInteractor
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Writer, PVAReader, SizeManager
 from dashpva.utils.log_manager import LogMixin
@@ -42,11 +43,12 @@ class ConfigDialog(QDialog, LogMixin):
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(self.le_input_channel.text())
+        self.le_input_channel.setText(app_settings.get_input_channel())
 
     def dialog_accepted(self) -> None:
         """Open the HKL viewer with the given input channel; config comes from settings.py."""
         self.input_channel = self.le_input_channel.text()
+        app_settings.save_input_channel(self.input_channel)
         self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel)
 
 
@@ -71,7 +73,7 @@ class HKLImageWindow(BaseWindow):
         self.image = None
         self.call_id_plot = 0
         self.image_is_transposed = False
-        self._input_channel = input_channel or 'pvapy:image'
+        self._input_channel = input_channel or app_settings.get_input_channel()
         self.pv_prefix.setText(self._input_channel)
 
         # Initializing but not starting timers so they can be reached by different functions

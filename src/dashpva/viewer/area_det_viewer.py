@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 )
 from pyqtgraph.colormap import get as get_colormap
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
@@ -47,17 +48,18 @@ class ConfigDialog(QDialog):
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(self.le_input_channel.text())
+        self.le_input_channel.setText(app_settings.get_input_channel())
 
     def dialog_accepted(self) -> None:
         self.input_channel = self.le_input_channel.text()
+        app_settings.save_input_channel(self.input_channel)
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
 class DiffractionImageWindow(QMainWindow):
     hkl_data_updated = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image'):
+    def __init__(self, input_channel=None):
         super(DiffractionImageWindow, self).__init__()
         uic.loadUi(ui_path("imageshow.ui"), self)
         self.setWindowTitle('DashPVA')
@@ -74,7 +76,7 @@ class DiffractionImageWindow(QMainWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._input_channel = input_channel
+        self._input_channel = input_channel or app_settings.get_input_channel()
         self.pv_prefix.setText(self._input_channel)
 
         # Mask management
