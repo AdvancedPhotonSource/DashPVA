@@ -84,10 +84,10 @@ VIEWS = [
     },
     {
         'key': 'phase_fitter',
-        'label': 'Phase Fitter',
+        'label': 'XRD Phase Fitter',
         'section': 'Post Analysis',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'phasefitter'],
-        'running_text': 'Phase Fitter — Running…',
+        'running_text': 'XRD Phase Fitter — Running…',
         'tooltip': 'XRD phase fitting — file or live mode (CLI: DashPVA phasefitter)',
         'edition': 'both',
     },

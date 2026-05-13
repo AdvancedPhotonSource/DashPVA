@@ -22,23 +22,23 @@
   <property name="styleSheet">
    <string notr="true">
 QDialog {
-    background-color: #F5F6F8;
+    background-color: palette(window);
 }
 
 QLabel#lbl_header {
     font-size: 22px;
     font-weight: 700;
-    color: #1B2333;
+    color: palette(window-text);
 }
 
 QLabel#lbl_subtitle {
     font-size: 12px;
-    color: #7A8394;
+    color: palette(mid);
 }
 
 QLabel#lbl_status {
     font-size: 11px;
-    color: #7A8394;
+    color: palette(mid);
 }
 
 QLabel#lbl_info {
@@ -51,9 +51,9 @@ QLabel#lbl_info {
 }
 
 QPushButton {
-    background-color: #FFFFFF;
-    color: #1B2333;
-    border: 1px solid #E0E4EB;
+    background-color: palette(button);
+    color: palette(button-text);
+    border: 1px solid palette(mid);
     border-radius: 7px;
     padding: 9px 14px;
     font-size: 13px;
@@ -62,26 +62,26 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #EBF0FF;
-    border-color: #4B6EF5;
-    color: #2E52D5;
+    background-color: palette(highlight);
+    border-color: palette(highlight);
+    color: palette(highlighted-text);
 }
 
 QPushButton:pressed {
-    background-color: #D6E2FF;
-    border-color: #3A5EE5;
+    background-color: palette(dark);
+    border-color: palette(highlight);
 }
 
 QPushButton:disabled {
-    background-color: #EBF0FF;
-    border-color: #A8C0F0;
-    color: #4B6EF5;
+    background-color: palette(midlight);
+    border-color: palette(mid);
+    color: palette(highlight);
 }
 
 QPushButton#btn_settings {
     background: transparent;
-    color: #5B6474;
-    border: 1px solid #D8DCE5;
+    color: palette(mid);
+    border: 1px solid palette(mid);
     border-radius: 6px;
     padding: 5px 14px;
     font-size: 12px;
@@ -90,14 +90,14 @@ QPushButton#btn_settings {
 }
 
 QPushButton#btn_settings:hover {
-    background-color: #ECEEF2;
-    color: #1B2333;
-    border-color: #B8BDC8;
+    background-color: palette(midlight);
+    color: palette(window-text);
+    border-color: palette(dark);
 }
 
 QPushButton#btn_shutdown_all {
     background: transparent;
-    color: #C2550A;
+    color: #E8600A;
     border: 1px solid #FBCFB0;
     border-radius: 6px;
     padding: 5px 14px;
@@ -107,13 +107,13 @@ QPushButton#btn_shutdown_all {
 }
 
 QPushButton#btn_shutdown_all:hover {
-    background-color: #FFF4EE;
+    background-color: palette(midlight);
     border-color: #F5A77A;
 }
 
 QPushButton#btn_shutdown_all:disabled {
-    color: #C4C9D2;
-    border-color: #E8ECF0;
+    color: palette(mid);
+    border-color: palette(mid);
 }
 
 QPushButton#btn_exit {

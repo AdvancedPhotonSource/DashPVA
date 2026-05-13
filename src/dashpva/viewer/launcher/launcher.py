@@ -326,26 +326,32 @@ class LauncherDialog(QDialog):
 
     def _confirm_shutdown_all(self):
         """Confirm and force-stop all running modules."""
-        count = len(self.processes)
-        if count == 0:
+        if not self.processes:
             return
-        text = f"{self._format_running_modules_list()}\n\nAre you sure you want to force stop all running modules?\n\nData might be lost."
-        resp = QMessageBox.question(
-            self, 'Shutdown All Modules', text,
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if resp == QMessageBox.Yes:
+        running_list = self._format_running_modules_list()
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle('Shutdown All Modules')
+        msg.setText('Force stop all running modules?')
+        msg.setInformativeText(running_list + '\n\nData might be lost.')
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        if msg.exec_() == QMessageBox.Yes:
             self.shutdown_all()
 
     def _confirm_exit(self):
         """Show exit confirmation dialog. Returns True if the user confirmed."""
+        if not self.processes:
+            return True
         running_list = self._format_running_modules_list()
-        text = f"{running_list}\n\nShutdown all running processes and exit?\n\nData might be lost."
-        resp = QMessageBox.question(
-            self, 'Exit Launcher', text,
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        return resp == QMessageBox.Yes
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle('Exit Launcher')
+        msg.setText('Shutdown all running processes and exit?')
+        msg.setInformativeText(running_list + '\n\nData might be lost.')
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        return msg.exec_() == QMessageBox.Yes
 
     def request_close(self):
         """Always ask for confirmation, shut down all processes, then close."""
