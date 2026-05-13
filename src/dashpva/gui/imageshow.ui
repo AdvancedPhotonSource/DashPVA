@@ -85,18 +85,9 @@
          <widget class="QPushButton" name="start_live_view">
           <property name="minimumSize">
            <size>
-            <width>103</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
-          </property>
-          <property name="font">
-           <font>
-            <family>Sans Serif</family>
-            <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
-           </font>
           </property>
           <property name="text">
            <string>Start Live View</string>
@@ -107,18 +98,9 @@
          <widget class="QPushButton" name="stop_live_view">
           <property name="minimumSize">
            <size>
-            <width>101</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
-          </property>
-          <property name="font">
-           <font>
-            <family>Sans Serif</family>
-            <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
-           </font>
           </property>
           <property name="text">
            <string>Stop Live View</string>
@@ -146,7 +128,7 @@
         </property>
         <property name="maximumSize">
          <size>
-          <width>425</width>
+          <width>16777215</width>
           <height>16777215</height>
          </size>
         </property>
@@ -187,7 +169,7 @@
          <enum>QAbstractScrollArea::AdjustIgnored</enum>
         </property>
         <property name="widgetResizable">
-         <bool>false</bool>
+         <bool>true</bool>
         </property>
         <widget class="QWidget" name="scrollAreaWidgetContents">
          <property name="geometry">
@@ -212,11 +194,6 @@
               <width>0</width>
               <height>325</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="title">
              <string>Stats</string>
@@ -251,17 +228,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Frames Received:</string>
                 </property>
@@ -280,17 +246,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -311,17 +266,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Frames Missed:</string>
                 </property>
@@ -340,17 +284,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -371,11 +304,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Max [px value]:</string>
                 </property>
@@ -394,17 +322,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -425,11 +342,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Min [px value]:</string>
                 </property>
@@ -448,17 +360,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -479,11 +380,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Image Data Type:</string>
                 </property>
@@ -503,17 +399,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
                 </property>
@@ -527,11 +412,6 @@
               </item>
               <item row="6" column="0">
                <widget class="QLabel" name="lbl_set_max">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Set Max Intensity:</string>
                 </property>
@@ -545,17 +425,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="maximum">
                  <double>9999999999.989999771118164</double>
                 </property>
@@ -563,17 +432,6 @@
               </item>
               <item row="5" column="1">
                <widget class="QDoubleSpinBox" name="min_setting_val">
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="minimum">
                  <double>-10000000000.000000000000000</double>
                 </property>
@@ -584,11 +442,6 @@
               </item>
               <item row="5" column="0">
                <widget class="QLabel" name="lbl_set_min">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Set Min Intensity:</string>
                 </property>
@@ -596,11 +449,6 @@
               </item>
               <item row="7" column="0" colspan="2">
                <widget class="QCheckBox" name="chk_autoscale">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="checked">
                  <bool>true</bool>
                 </property>
@@ -611,11 +459,6 @@
               </item>
               <item row="8" column="0">
                <widget class="QCheckBox" name="chk_threshold">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="checked">
                  <bool>true</bool>
                 </property>
@@ -626,11 +469,6 @@
               </item>
               <item row="8" column="1">
                <widget class="QLabel" name="lbl_threshold_range">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>0 to 0</string>
                 </property>
@@ -656,11 +494,6 @@
               <width>0</width>
               <height>311</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="title">
              <string>Mouse Position</string>
@@ -713,11 +546,6 @@
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="mouseTracking">
                  <bool>false</bool>
                 </property>
@@ -742,11 +570,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -773,11 +596,6 @@
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="mouseTracking">
                  <bool>false</bool>
                 </property>
@@ -802,11 +620,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -833,11 +646,6 @@
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Pixel Value:</string>
                 </property>
@@ -859,11 +667,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1008,11 +811,6 @@
               <height>450</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="title">
              <string>Image</string>
             </property>
@@ -1052,11 +850,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Plot Call ID:</string>
                 </property>
@@ -1075,11 +868,6 @@
                   <width>0</width>
                   <height>0</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1100,11 +888,6 @@
                   <height>16</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Plotting rate (Hz):</string>
                 </property>
@@ -1117,11 +900,6 @@
                   <horstretch>0</horstretch>
                   <verstretch>0</verstretch>
                  </sizepolicy>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="minimum">
                  <number>1</number>
@@ -1136,11 +914,6 @@
               </item>
               <item row="2" column="0">
                <widget class="QLabel" name="image_lbl_size_x">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Size X [px]:</string>
                 </property>
@@ -1157,11 +930,6 @@
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
                 </property>
@@ -1175,11 +943,6 @@
               </item>
               <item row="3" column="0">
                <widget class="QLabel" name="image_lbl_size_y">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Size Y [px]:</string>
                 </property>
@@ -1198,11 +961,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1229,11 +987,6 @@
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="tabletTracking">
                  <bool>false</bool>
                 </property>
@@ -1253,11 +1006,6 @@
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Freeze Image</string>
                 </property>
@@ -1267,12 +1015,6 @@
                <widget class="QCheckBox" name="chk_transpose">
                 <property name="enabled">
                  <bool>true</bool>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>161</width>
-                  <height>16777215</height>
-                 </size>
                 </property>
                 <property name="text">
                  <string>Transpose Image</string>
@@ -1326,15 +1068,6 @@
                   <width>140</width>
                   <height>50</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <family>Sans Serif</family>
-                  <pointsize>11</pointsize>
-                  <weight>50</weight>
-                  <italic>false</italic>
-                  <bold>false</bold>
-                 </font>
                 </property>
                 <property name="text">
                  <string>Rotate 90° CCW</string>
@@ -1405,11 +1138,6 @@
               <height>630</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="title">
              <string>ROI</string>
             </property>
@@ -1434,11 +1162,6 @@
               </property>
               <item row="0" column="0">
                <widget class="QLabel" name="lbl_ROI1">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>ROI1 Total:</string>
                 </property>
@@ -1446,11 +1169,6 @@
               </item>
               <item row="1" column="0">
                <widget class="QLabel" name="lbl_ROI2">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>ROI2 Total:</string>
                 </property>
@@ -1598,11 +1316,6 @@
                <height>16</height>
               </rect>
              </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>ROI Specific Stats</string>
              </property>
@@ -1626,8 +1339,7 @@
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats1">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats1</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats1</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1641,8 +1353,7 @@
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats2">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats2</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats2</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1656,8 +1367,7 @@
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats3">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats3</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats3</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1671,8 +1381,7 @@
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats4">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats4</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats4</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1686,8 +1395,7 @@
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats5">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats5</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats5</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1740,17 +1448,6 @@
           <height>90</height>
          </size>
         </property>
-        <property name="maximumSize">
-         <size>
-          <width>16777215</width>
-          <height>70</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
         <property name="title">
          <string>Connection</string>
         </property>
@@ -1787,17 +1484,6 @@
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>175</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>Provider:</string>
             </property>
@@ -1817,22 +1503,11 @@
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>60</width>
-              <height>40</height>
-             </size>
-            </property>
             <property name="sizeIncrement">
              <size>
               <width>0</width>
               <height>0</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -1880,17 +1555,6 @@
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>State:</string>
             </property>
@@ -1909,17 +1573,6 @@
               <width>100</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -1967,17 +1620,6 @@
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>16675</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>PV Input Channel:</string>
             </property>
@@ -1996,17 +1638,6 @@
               <width>180</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16776</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="text">
              <string/>

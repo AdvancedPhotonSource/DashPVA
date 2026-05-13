@@ -16,11 +16,6 @@
     <verstretch>0</verstretch>
    </sizepolicy>
   </property>
-  <property name="font">
-   <font>
-    <pointsize>12</pointsize>
-   </font>
-  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -174,11 +169,6 @@ QPushButton:pressed {
           <height>70</height>
          </size>
         </property>
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
         <property name="title">
          <string>Connection</string>
         </property>
@@ -221,11 +211,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>Provider:</string>
             </property>
@@ -256,11 +241,6 @@ QPushButton:pressed {
               <width>0</width>
               <height>0</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -314,11 +294,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>State:</string>
             </property>
@@ -343,11 +318,6 @@ QPushButton:pressed {
               <width>140</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -401,11 +371,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>PV Input Channel:</string>
             </property>
@@ -430,11 +395,6 @@ QPushButton:pressed {
               <width>16776</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="text">
              <string/>

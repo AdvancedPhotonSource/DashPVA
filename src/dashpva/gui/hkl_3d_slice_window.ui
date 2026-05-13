@@ -10,6 +10,11 @@
     <height>1188</height>
    </rect>
   </property>
+  <property name="font">
+   <font>
+    <pointsize>12</pointsize>
+   </font>
+  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -19,14 +24,9 @@
      <widget class="QGroupBox" name="groupBox3DViewer">
       <property name="minimumSize">
        <size>
-        <width>1125</width>
+        <width>600</width>
         <height>0</height>
        </size>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>12</pointsize>
-       </font>
       </property>
       <property name="title">
        <string>Viewing 0 Image(s)</string>
@@ -91,11 +91,6 @@
           <layout class="QFormLayout" name="formLayout">
            <item row="0" column="1">
             <widget class="QPushButton" name="btnUseParentData">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Use Parent Data</string>
              </property>
@@ -123,11 +118,6 @@
           <layout class="QFormLayout" name="formLayout_4">
            <item row="2" column="0">
             <widget class="QLabel" name="lbRenderTime">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Low Resolution Render Time(s) :</string>
              </property>
@@ -135,11 +125,6 @@
            </item>
            <item row="2" column="1">
             <widget class="QLabel" name="lbRenderTimeNum">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Time to compute voxelization/interpolation for the current render.</string>
              </property>
@@ -170,11 +155,6 @@
            </item>
            <item row="3" column="0">
             <widget class="QLabel" name="lbSliceOrientation">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Preset plane orientation (HK/HL/KL or Custom).</string>
              </property>
@@ -185,11 +165,6 @@
            </item>
            <item row="3" column="1">
             <widget class="QLabel" name="lbSliceOrientationVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Preset plane orientation (HK/HL/KL or Custom).</string>
              </property>
@@ -203,11 +178,6 @@
            </item>
            <item row="4" column="0">
             <widget class="QLabel" name="lbSliceNormal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Slice Normal (H,K,L):</string>
              </property>
@@ -215,11 +185,6 @@
            </item>
            <item row="4" column="1">
             <widget class="QLabel" name="lbSliceNormalVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Normalized normal vector of the slice plane in HKL coordinates.</string>
              </property>
@@ -233,11 +198,6 @@
            </item>
            <item row="5" column="0">
             <widget class="QLabel" name="lbSliceOrigin">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Slice plane origin in HKL coordinates.</string>
              </property>
@@ -248,11 +208,6 @@
            </item>
            <item row="5" column="1">
             <widget class="QLabel" name="lbSliceOriginVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Slice plane origin in HKL coordinates.</string>
              </property>
@@ -266,11 +221,6 @@
            </item>
            <item row="6" column="0">
             <widget class="QLabel" name="lbSlicePosition">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Slice Position:</string>
              </property>
@@ -278,11 +228,6 @@
            </item>
            <item row="6" column="1">
             <widget class="QLabel" name="lbSlicePositionVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="frameShape">
               <enum>QFrame::Box</enum>
              </property>
@@ -293,11 +238,6 @@
            </item>
            <item row="7" column="0">
             <widget class="QLabel" name="lbInfoImageSizeOrig">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Image Size (Original):</string>
              </property>
@@ -305,11 +245,6 @@
            </item>
            <item row="7" column="1">
             <widget class="QLabel" name="lbInfoImageSizeOrigVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Original image dimensions (H × K) before any reduction.</string>
              </property>
@@ -323,11 +258,6 @@
            </item>
            <item row="8" column="0">
             <widget class="QLabel" name="lbInfoImageSizeCurr">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Current image dimensions (H × K) after reduction.</string>
              </property>
@@ -338,11 +268,6 @@
            </item>
            <item row="8" column="1">
             <widget class="QLabel" name="lbInfoImageSizeCurrVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Current image dimensions (H × K) after reduction.</string>
              </property>
@@ -356,11 +281,6 @@
            </item>
            <item row="0" column="0">
             <widget class="QLabel" name="lbInfoPointsOrig">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Points (Original):</string>
              </property>
@@ -371,11 +291,6 @@
            </item>
            <item row="0" column="1">
             <widget class="QLabel" name="lbInfoPointsOrigVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="frameShape">
               <enum>QFrame::Box</enum>
              </property>
@@ -389,11 +304,6 @@
            </item>
            <item row="9" column="0">
             <widget class="QLabel" name="lbInfoPointsCurr">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Points (Current):</string>
              </property>
@@ -404,11 +314,6 @@
            </item>
            <item row="9" column="1">
             <widget class="QLabel" name="lbInfoPointsCurrVal">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="frameShape">
               <enum>QFrame::Box</enum>
              </property>
@@ -686,11 +591,6 @@
           <layout class="QFormLayout" name="formLayout_3">
            <item row="0" column="0">
             <widget class="QLabel" name="label_2">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Color Map</string>
              </property>
@@ -698,11 +598,6 @@
            </item>
            <item row="0" column="1">
             <widget class="QComboBox" name="cbColorMapSelect">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <item>
               <property name="text">
                <string>jet</string>
@@ -740,11 +635,6 @@
              <property name="enabled">
               <bool>true</bool>
              </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Slice Pointer</string>
              </property>
@@ -758,11 +648,6 @@
              <property name="enabled">
               <bool>true</bool>
              </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Slice</string>
              </property>
@@ -773,20 +658,10 @@
            </item>
            <item row="1" column="1">
             <widget class="QSpinBox" name="sbMinIntensity">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
             </widget>
            </item>
            <item row="1" column="0">
             <widget class="QLabel" name="lbMinIntensity">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Min Intensity</string>
              </property>
@@ -794,11 +669,6 @@
            </item>
            <item row="2" column="0">
             <widget class="QLabel" name="lbMaxIntensity">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Max Intensity</string>
              </property>
@@ -806,20 +676,10 @@
            </item>
            <item row="2" column="1">
             <widget class="QSpinBox" name="sbMaxIntensity">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
             </widget>
            </item>
            <item row="4" column="0">
             <widget class="QLabel" name="lbReductionFactor">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Reduction Factor</string>
              </property>
@@ -827,11 +687,6 @@
            </item>
            <item row="4" column="1">
             <widget class="QComboBox" name="cbbReductionFactor">
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <item>
               <property name="text">
                <string>None</string>
@@ -859,11 +714,6 @@
              <property name="enabled">
               <bool>true</bool>
              </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Points</string>
              </property>
@@ -876,11 +726,6 @@
             <widget class="QCheckBox" name="cbLockSlice">
              <property name="enabled">
               <bool>true</bool>
-             </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
              </property>
              <property name="text">
               <string>Lock Slice</string>
@@ -911,11 +756,6 @@
           </item>
           <item>
            <widget class="QPushButton" name="btnSettings">
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>Settings</string>
             </property>
@@ -1003,60 +843,30 @@
    <property name="text">
     <string>Extract Slice</string>
    </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
   </action>
   <action name="actionLoadData">
    <property name="text">
     <string>Load </string>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
    </property>
   </action>
   <action name="actionSave">
    <property name="text">
     <string>Save</string>
    </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
   </action>
   <action name="actionSlice">
    <property name="text">
     <string>Controls…</string>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
    </property>
   </action>
   <action name="actionViewSlice">
    <property name="text">
     <string>Slice</string>
    </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
   </action>
   <action name="actionOptimize">
    <property name="text">
     <string>Optimize…</string>
-   </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
    </property>
   </action>
  </widget>

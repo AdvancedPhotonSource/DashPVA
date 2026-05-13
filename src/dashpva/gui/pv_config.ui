@@ -22,11 +22,6 @@
      <height>111</height>
     </rect>
    </property>
-   <property name="font">
-    <font>
-     <pointsize>12</pointsize>
-    </font>
-   </property>
    <property name="title">
     <string>Required Setup</string>
    </property>
@@ -38,11 +33,6 @@
       <width>421</width>
       <height>41</height>
      </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
     </property>
     <property name="text">
      <string>processor:1:analysis</string>
@@ -56,11 +46,6 @@
       <width>261</width>
       <height>21</height>
      </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>12</pointsize>
-     </font>
     </property>
     <property name="text">
      <string>Input Channel</string>
