@@ -18,6 +18,14 @@ from PyQt5.QtWidgets import (
 )
 
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import (
+    BORDER,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_SECONDARY,
+    WARNING,
+    status_style,
+)
 
 from .registry import get_views
 
@@ -89,7 +97,7 @@ class LauncherDialog(QDialog):
         row.setSpacing(8)
 
         self._lbl_update_status = QLabel('Checking for updates…', row_widget)
-        self._lbl_update_status.setStyleSheet('font-size: 11px; color: #9BA5B5;')
+        self._lbl_update_status.setStyleSheet(status_style(TEXT_MUTED))
         row.addWidget(self._lbl_update_status)
         row.addStretch()
 
@@ -110,10 +118,10 @@ class LauncherDialog(QDialog):
     def _on_release_check(self, has_update, tag, _notes):
         if has_update:
             self._lbl_update_status.setText(f'● Update available: {tag}')
-            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #E67E22; font-weight: 600;')
+            self._lbl_update_status.setStyleSheet(status_style(WARNING, bold=True))
         else:
             self._lbl_update_status.setText('Up to date')
-            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #27AE60;')
+            self._lbl_update_status.setStyleSheet(status_style(SUCCESS))
 
     def _insert_registry_sections(self):
         """Build section dividers and button grids from the VIEWS registry."""
@@ -150,12 +158,12 @@ class LauncherDialog(QDialog):
 
             sec_lbl = QLabel(section_name.upper(), divider)
             sec_lbl.setStyleSheet(
-                "font-size: 10px; font-weight: 600; color: #9BA5B5; letter-spacing: 0.5px;"
+                f"font-size: 10px; font-weight: 600; color: {TEXT_MUTED}; letter-spacing: 0.5px;"
             )
             line = QFrame(divider)
             line.setFrameShape(QFrame.HLine)
             line.setFrameShadow(QFrame.Plain)
-            line.setStyleSheet("background-color: #E0E4EB; max-height: 1px; border: none;")
+            line.setStyleSheet(f"background-color: {BORDER}; max-height: 1px; border: none;")
 
             divider_row.addWidget(sec_lbl)
             divider_row.addWidget(line, 1)
@@ -240,10 +248,10 @@ class LauncherDialog(QDialog):
         count = len(self.processes)
         if hasattr(self, 'lbl_status'):
             if count == 0:
-                self.lbl_status.setStyleSheet("font-size: 11px; color: #7A8394;")
+                self.lbl_status.setStyleSheet(status_style(TEXT_SECONDARY))
                 self.lbl_status.setText('No modules running')
             else:
-                self.lbl_status.setStyleSheet("font-size: 11px; color: #15803D; font-weight: 500;")
+                self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True))
                 noun = 'module' if count == 1 else 'modules'
                 self.lbl_status.setText(f'● {count} {noun} running')
         if hasattr(self, 'btn_exit'):

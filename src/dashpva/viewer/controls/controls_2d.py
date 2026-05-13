@@ -81,10 +81,10 @@ class Controls2D:
                 if not ui_has_vlabels:
                     if not hasattr(self.main, 'lblVminHint') or self.main.lblVminHint is None:
                         self.main.lblVminHint = QLabel("Vmin(...):")
-                        self.main.lblVminHint.setStyleSheet("color: #6c757d; font-size: 10px; padding-right: 6px;")
+                        self.main.lblVminHint.setObjectName("lblVminHint")
                     if not hasattr(self.main, 'lblVmaxHint') or self.main.lblVmaxHint is None:
                         self.main.lblVmaxHint = QLabel("Vmax(...):")
-                        self.main.lblVmaxHint.setStyleSheet("color: #6c757d; font-size: 10px; padding-right: 6px;")
+                        self.main.lblVmaxHint.setObjectName("lblVmaxHint")
             except Exception:
                 # If creation fails, continue without hints
                 pass
@@ -227,7 +227,7 @@ class Controls2D:
             if hasattr(self.main, 'layout_2d_controls_main') and not hasattr(self.main, 'roi_stats_label'):
                 try:
                     self.main.roi_stats_label = QLabel("ROI Stats: -")
-                    self.main.roi_stats_label.setStyleSheet("color: #2c3e50; font-size: 11px;")
+                    self.main.roi_stats_label.setObjectName("roi_stats_label")
                     hbox = QHBoxLayout()
                     hbox.addWidget(self.main.roi_stats_label)
                     self.main.layout_2d_controls_main.addLayout(hbox)

@@ -53,19 +53,11 @@ class ImageDock(BaseDock):
         self.btn_3d_slice_window = QPushButton("Open Slice 3D Window")
 
         self.btn_plot_cache = QPushButton("Plot Cache")
-        self.btn_plot_cache.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white; }"
-            "QPushButton:hover { background-color: #388e3c; }"
-            "QPushButton:pressed { background-color: #1b5e20; }"
-        )
+        self.btn_plot_cache.setObjectName("btn_plot_cache")
 
         self.btn_save_h5 = QPushButton("Save Cache")
+        self.btn_save_h5.setObjectName("btn_save_h5")
         self.btn_save_h5.setMinimumHeight(50)
-        self.btn_save_h5.setStyleSheet(
-            "QPushButton { background-color: #c62828; color: white; }"
-            "QPushButton:hover { background-color: #e53935; }"
-            "QPushButton:pressed { background-color: #b71c1c; }"
-        )
 
         layout.addWidget(self.btn_3d_slice_window)
         layout.addWidget(self.btn_plot_cache)

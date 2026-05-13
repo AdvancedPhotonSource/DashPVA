@@ -95,29 +95,17 @@ class ROIPlotDock(QDockWidget):
 
         # Stats label above plot
         self.stats_label = QLabel("ROI Stats: -")
-        try:
-            self.stats_label.setStyleSheet("color: #2c3e50; font-size: 11px;")
-        except Exception:
-            pass
+        self.stats_label.setObjectName("stats_label")
         layout.addWidget(self.stats_label)
 
         # Mode selection: Stack vs Single Frame
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 2, 0, 2)
         mode_lbl = QLabel("Mode:")
-        try:
-            mode_lbl.setStyleSheet("color: #7f8c8d; font-size: 10px; font-weight: bold;")
-        except Exception:
-            pass
+        mode_lbl.setObjectName("mode_label")
         self.radio_stack = QRadioButton("Stack")
         self.radio_single = QRadioButton("Single Frame")
         self.radio_stack.setChecked(True)
-        try:
-            _radio_style = "font-size: 11px;"
-            self.radio_stack.setStyleSheet(_radio_style)
-            self.radio_single.setStyleSheet(_radio_style)
-        except Exception:
-            pass
         self._mode_group = QButtonGroup(container)
         self._mode_group.addButton(self.radio_stack, 0)
         self._mode_group.addButton(self.radio_single, 1)

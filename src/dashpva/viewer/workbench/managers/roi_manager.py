@@ -426,7 +426,8 @@ class ROIManager:
             msg.addButton("No", QMessageBox.RejectRole)
             # Style the Delete button in red
             try:
-                btn_delete.setStyleSheet("color: white; background-color: #d9534f;")
+                from dashpva.gui.theme_colors import ERROR
+                btn_delete.setStyleSheet(f"color: white; background-color: {ERROR};")
             except Exception:
                 pass
 

@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
 import dashpva.settings as app_settings
 from dashpva.database.interface import DatabaseInterface
 from dashpva.gui import configure_app
+from dashpva.gui.theme_colors import ERROR, FONT_CAPTION, SUCCESS, status_style
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -151,7 +152,7 @@ class JsonEditorDialog(QDialog):
 
         # Error label
         self._error_label = QtWidgets.QLabel()
-        self._error_label.setStyleSheet('color: #E74C3C; font-size: 11px;')
+        self._error_label.setStyleSheet(status_style(ERROR))
         self._error_label.setVisible(False)
         main_layout.addWidget(self._error_label)
 
@@ -435,14 +436,14 @@ class Workflow(QDialog, LogMixin):
             self._db.get_all_profiles()  # confirm tables are queryable
             self._db_available = True
             self.labelDbStatus.setText('● Available')
-            self.labelDbStatus.setStyleSheet('QLabel { color: #27AE60; font-size: 10px; margin-left: 4px; }')
+            self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {SUCCESS}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip('')
             self.radioDatabase.setEnabled(True)
             self.buttonInitDb.setVisible(False)
         except Exception as e:
             self._db_available = False
             self.labelDbStatus.setText('● Unavailable')
-            self.labelDbStatus.setStyleSheet('QLabel { color: #E74C3C; font-size: 10px; margin-left: 4px; }')
+            self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {ERROR}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip(f'Error: {e}')
             self.radioDatabase.setEnabled(False)
             self.buttonInitDb.setVisible(True)

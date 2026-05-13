@@ -670,7 +670,7 @@ class PhaseFitApp(QMainWindow):
         phase_group = QGroupBox("Phases")
         self._phase_group_layout = QVBoxLayout()
         self._phase_placeholder = QLabel("Load data to discover phases")
-        self._phase_placeholder.setStyleSheet("color: gray; font-style: italic;")
+        self._phase_placeholder.setObjectName("phase_placeholder")
         self._phase_group_layout.addWidget(self._phase_placeholder)
 
         phase_btn_row = QHBoxLayout()
