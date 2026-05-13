@@ -5,11 +5,7 @@ import sys
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
-from analysis_window import AnalysisWindow
-
-# from epics import caget
 from epics import PV, caget, camonitor
-from mask_viewer import MaskViewerWindow
 from PyQt5 import uic
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -26,13 +22,13 @@ from PyQt5.QtWidgets import (
 )
 from pyqtgraph.colormap import get as get_colormap
 
-# Custom imported classes
-from roi_stats_dialog import RoiStatsDialog
-from roi_stats_plot import RoiStatsPlotDialog
-
 from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
+from dashpva.viewer.analysis_window import AnalysisWindow
+from dashpva.viewer.mask_viewer import MaskViewerWindow
+from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
+from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 
 # from ..utils.size_manager import SizeManager
 

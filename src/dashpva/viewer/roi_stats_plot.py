@@ -64,7 +64,7 @@ class RoiStatsPlotDialog(QDialog):
         self.timer_labels = timer
 
         # Apply ROI color from shared color map
-        from roi_stats_dialog import ROI_COLORS
+        from dashpva.viewer.roi_stats_dialog import ROI_COLORS
         roi_color = ROI_COLORS.get(stats_text)
         if roi_color:
             self.setStyleSheet(f'QDialog {{ border: 2px solid {roi_color}; }}')

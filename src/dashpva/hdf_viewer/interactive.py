@@ -52,7 +52,7 @@ from PyQt5.QtWidgets import (
 from pyqtgraph import RectROI
 
 try:
-    import crosscor  # Optional - for cross-correlation analysis
+    from dashpva.hdf_viewer import crosscor
     CROSSCOR_AVAILABLE = True
 except ImportError:
     CROSSCOR_AVAILABLE = False
