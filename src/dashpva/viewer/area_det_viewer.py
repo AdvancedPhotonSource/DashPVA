@@ -24,6 +24,7 @@ from pyqtgraph.colormap import get as get_colormap
 
 import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.viewer.analysis_window import AnalysisWindow
@@ -34,7 +35,39 @@ from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 # from ..utils.size_manager import SizeManager
 
 
-rot_gen = rotation_cycle(1,5)         
+rot_gen = rotation_cycle(1,5)
+
+
+class CaMonitorWorker(QThread):
+    """Run blocking CA monitor setup off the GUI thread."""
+    finished = pyqtSignal(dict)
+
+    def __init__(self, reader, stats_refs, stats_callback):
+        super().__init__()
+        self._reader = reader
+        self._stats_refs = stats_refs
+        self._stats_callback = stats_callback
+
+    def run(self):
+        stats_data = {}
+        try:
+            if self._reader is not None:
+                if not self._reader.rois and 'ROI' in self._reader.config:
+                    self._reader.start_roi_backup_monitor()
+                if 'METADATA' in self._reader.config:
+                    self._reader.start_metadata_ca_monitor()
+        except Exception:
+            pass
+        for stat_dict in self._stats_refs.values():
+            for pv in stat_dict.values():
+                try:
+                    pv_value = caget(pv, timeout=0.5)
+                    if pv_value is not None:
+                        stats_data[pv] = pv_value
+                        camonitor(pvname=pv, callback=self._stats_callback)
+                except Exception:
+                    pass
+        self.finished.emit(stats_data)
 
 
 class ConfigDialog(QDialog):
@@ -65,6 +98,7 @@ class DiffractionImageWindow(QMainWindow):
         self.setWindowTitle('DashPVA')
         self.show()
         self.reader = None
+        self._ca_worker = None
         self.image = None
         self.call_id_plot = 0
         self.first_plot = True
@@ -660,17 +694,15 @@ class DiffractionImageWindow(QMainWindow):
         
         try:
             if self.reader is not None:
-                if not(self.reader.rois):
-                    if 'ROI' in self.reader.config:
-                        self.reader.start_roi_backup_monitor()
-                # Start monitoring CA metadata PVs if configured
-                if 'METADATA' in self.reader.config:
-                    self.reader.start_metadata_ca_monitor()
-                # HKL monitoring disabled - uncomment to enable
-                # self.start_hkl_monitors()
-                self.start_stats_monitors()
                 self.add_rois()
                 self.start_timers()
+                self._ca_worker = CaMonitorWorker(
+                    self.reader,
+                    self.reader.stats if self.reader.stats else {},
+                    self.stats_ca_callback,
+                )
+                self._ca_worker.finished.connect(self._on_ca_monitors_ready)
+                self._ca_worker.start()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
@@ -680,6 +712,10 @@ class DiffractionImageWindow(QMainWindow):
 
         This method also updates the UI to reflect the disconnected state.
         """
+        if self._ca_worker is not None and self._ca_worker.isRunning():
+            self._ca_worker.quit()
+            self._ca_worker.wait(2000)
+            self._ca_worker = None
         if self.reader is not None:
             if self.reader.channel.isMonitorActive():
                 self.reader.stop_channel_monitor()
@@ -791,7 +827,10 @@ class DiffractionImageWindow(QMainWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.stats_data[pvname] = value
-        
+
+    def _on_ca_monitors_ready(self, stats_data: dict) -> None:
+        self.stats_data.update(stats_data)
+
     def on_writer_finished(self, message) -> None:
         print(message)
         self.file_writer_thread.quit()
@@ -847,15 +886,9 @@ class DiffractionImageWindow(QMainWindow):
     def add_rois(self) -> None:
         """
         Adds ROIs to the image viewer and assigns them color codes.
-
-        Color Codes:
-            ROI1 -- Red (#ff0000)
-            ROI2 -- Blue (#0000ff)
-            ROI3 -- Green (#4CBB17)
-            ROI4 -- Pink (#ff00ff)
         """
         try:
-            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
             # TODO: can just loop through values rather than lookup with keys
