@@ -35,11 +35,11 @@ VIEWS = [
         'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)',
         'edition': 'full',
     },
-    # streaming
+    # stream live
     {
         'key': 'area_det',
         'label': 'Area Detector 2D',
-        'section': 'Streaming',
+        'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'detector'],
         'running_text': 'Area Detector — Running…',
         'tooltip': 'Open Area detector (CLI: DashPVA detector)',
@@ -48,7 +48,7 @@ VIEWS = [
     {
         'key': 'hkl3d',
         'label': 'HKL 3D',
-        'section': 'Streaming',
+        'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'hkl3d'],
         'running_text': 'HKL 3D — Running…',
         'tooltip': 'Open HKL 3D (CLI: DashPVA hkl3d)',

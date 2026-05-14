@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import (
     BORDER,
+    FONT_SMALL,
     SUCCESS,
     TEXT_MUTED,
     TEXT_SECONDARY,
@@ -160,7 +161,7 @@ class LauncherDialog(QDialog):
 
             sec_lbl = QLabel(section_name.upper(), divider)
             sec_lbl.setStyleSheet(
-                f"font-size: 8pt; font-weight: 600; color: {TEXT_MUTED}; letter-spacing: 0.5px;"
+                f"font-size: {FONT_SMALL}; font-weight: 600; color: {TEXT_SECONDARY}; letter-spacing: 0.5px;"
             )
             line = QFrame(divider)
             line.setFrameShape(QFrame.HLine)

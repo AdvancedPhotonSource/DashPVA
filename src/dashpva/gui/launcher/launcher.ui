@@ -33,12 +33,12 @@ QLabel#lbl_header {
 
 QLabel#lbl_subtitle {
     font-size: 10pt;
-    color: palette(mid);
+    color: palette(dark);
 }
 
 QLabel#lbl_status {
     font-size: 9pt;
-    color: palette(mid);
+    color: palette(dark);
 }
 
 QLabel#lbl_info {
@@ -75,13 +75,13 @@ QPushButton:pressed {
 QPushButton:disabled {
     background-color: palette(midlight);
     border-color: palette(mid);
-    color: palette(highlight);
+    color: palette(dark);
 }
 
 QPushButton#btn_settings {
     background: transparent;
-    color: palette(mid);
-    border: 1px solid palette(mid);
+    color: palette(window-text);
+    border: 1px solid palette(dark);
     border-radius: 6px;
     padding: 5px 14px;
     font-size: 10pt;
@@ -112,7 +112,7 @@ QPushButton#btn_shutdown_all:hover {
 }
 
 QPushButton#btn_shutdown_all:disabled {
-    color: palette(mid);
+    color: palette(dark);
     border-color: palette(mid);
 }
 

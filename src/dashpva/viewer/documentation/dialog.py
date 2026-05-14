@@ -22,6 +22,16 @@ from pathlib import Path
 from PyQt5.QtCore import QUrl
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
 
+from dashpva.gui.theme_colors import (
+    FONT_BODY,
+    FONT_HEADING,
+    INFO,
+    SURFACE,
+    SURFACE_ALT,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
+
 # Try to use QWebEngineView for full HTML support (CSS/JS). Fallback to QTextBrowser.
 try:
     from PyQt5.QtWebEngineWidgets import QWebEngineView  # type: ignore
@@ -153,10 +163,10 @@ class DocumentationDialog(QDialog):
             styled_html = (
                 "<html><head><style>"
                 "body{font-family:Arial, sans-serif; padding:12px;}"
-                "pre{background:#f8f9fa; padding:8px; border-radius:4px;}"
-                "code{background:#f1f3f5; padding:2px 4px; border-radius:3px;}"
-                "h1,h2,h3{color:#2c3e50;}"
-                "a{color:#0069d9;}"
+                f"pre{{background:{SURFACE}; padding:8px; border-radius:4px;}}"
+                f"code{{background:{SURFACE_ALT}; padding:2px 4px; border-radius:3px;}}"
+                f"h1,h2,h3{{color:{TEXT_PRIMARY};}}"
+                f"a{{color:{INFO};}}"
                 "</style></head><body>" + html + "</body></html>"
             )
             self.set_content_html(styled_html)
@@ -168,10 +178,10 @@ class DocumentationDialog(QDialog):
         <html>
           <head><style>
             body{{font-family: Arial, sans-serif; padding: 16px;}}
-            .title{{font-size: 17pt; font-weight: bold; margin-bottom: 6px;}}
-            .subtitle{{color:#555; margin-bottom: 12px;}}
-            code{{background:#f5f5f5; padding:2px 4px; border-radius:4px;}}
-            .hint{{margin-top: 12px; font-size: 10pt; color: #777;}}
+            .title{{font-size: {FONT_HEADING}; font-weight: bold; margin-bottom: 6px;}}
+            .subtitle{{color:{TEXT_SECONDARY}; margin-bottom: 12px;}}
+            code{{background:{SURFACE}; padding:2px 4px; border-radius:4px;}}
+            .hint{{margin-top: 12px; font-size: {FONT_BODY}; color: {TEXT_SECONDARY};}}
           </style></head>
           <body>
             <div class="title">{viewer_name} Documentation</div>

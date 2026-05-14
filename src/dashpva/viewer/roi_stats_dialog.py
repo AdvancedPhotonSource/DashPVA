@@ -11,14 +11,7 @@ if TYPE_CHECKING:
     from PyQt5.QtWidgets import QMainWindow
 
 from dashpva.gui import ui_path
-
-# Stats-to-ROI color mapping: Stats1=Red, Stats2=Blue, Stats3=Green, Stats4=Pink
-ROI_COLORS = {
-    'Stats1': '#ff0000',
-    'Stats2': '#0000ff',
-    'Stats3': '#4CBB17',
-    'Stats4': '#ff00ff',
-}
+from dashpva.gui.theme_colors import ROI_STATS_COLORS as ROI_COLORS
 
 
 class RoiStatsDialog(QDialog):

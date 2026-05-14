@@ -27,6 +27,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from dashpva.gui.theme_colors import BORDER
+
 
 class ContextRectROI(pg.RectROI):
     """Rectangular ROI with right-click context menu that delegates actions to main window handlers."""
@@ -1358,10 +1360,10 @@ class ROIManager:
         if color is not None:
             hex_c = color.name()
             btn.setStyleSheet(
-                f"QToolButton {{ background-color: {hex_c}; border: 1px solid gray; }}"
+                f"QToolButton {{ background-color: {hex_c}; border: 1px solid {BORDER}; }}"
             )
         else:
-            btn.setStyleSheet("QToolButton { border: 1px solid gray; }")
+            btn.setStyleSheet(f"QToolButton {{ border: 1px solid {BORDER}; }}")
 
     def _make_paint_callback(self, roi):
         def on_paint_clicked(_):

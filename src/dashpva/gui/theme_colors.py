@@ -26,6 +26,22 @@ SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
 BORDER = "#DEE2E6"
 
+# -- ROI / Stats colors --------------------------------------------------------
+ROI_COLORS = ['#E05A5A', '#4A90D9', '#3EAF8E', '#A878D0']
+ROI_STATS_COLORS = {
+    'Stats1': ROI_COLORS[0],
+    'Stats2': ROI_COLORS[1],
+    'Stats3': ROI_COLORS[2],
+    'Stats4': ROI_COLORS[3],
+}
+
+# -- Log level colors (reuse status palette for consistency) -------------------
+LOG_ERROR = ERROR
+LOG_WARNING = WARNING
+LOG_DEBUG = "#8E7CC3"
+LOG_INFO = TEXT_SECONDARY
+LOG_DEFAULT = TEXT_PRIMARY
+
 # -- Font sizes (use pt to avoid QFont warnings on macOS high-DPI) -------------
 FONT_HEADING = "17pt"
 FONT_SUBHEADING = "11pt"

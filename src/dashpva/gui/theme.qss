@@ -177,7 +177,7 @@ QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
 QPushButton#btn_Stats1 {
     font-weight: bold;
     font-size: 12pt;
-    color: #FF0000;
+    color: #E05A5A;
     border: 1px solid #8F8F91;
     border-radius: 3px;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -186,7 +186,7 @@ QPushButton#btn_Stats1 {
 QPushButton#btn_Stats2 {
     font-weight: bold;
     font-size: 12pt;
-    color: #0000FF;
+    color: #4A90D9;
     border: 1px solid #8F8F91;
     border-radius: 3px;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -195,7 +195,7 @@ QPushButton#btn_Stats2 {
 QPushButton#btn_Stats3 {
     font-weight: bold;
     font-size: 12pt;
-    color: #4CBB17;
+    color: #3EAF8E;
     border: 1px solid #8F8F91;
     border-radius: 3px;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -204,7 +204,7 @@ QPushButton#btn_Stats3 {
 QPushButton#btn_Stats4 {
     font-weight: bold;
     font-size: 12pt;
-    color: #FF00FF;
+    color: #A878D0;
     border: 1px solid #8F8F91;
     border-radius: 3px;
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -248,10 +248,10 @@ QLineEdit#le_input_channel {
 }
 
 /* -- ROI identity labels (instrument convention colors) -------------- */
-QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #FF0000; }
-QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #0000FF; }
-QLabel#lbl_ROI3, QLabel#roi3_total_value { color: #4CBB17; }
-QLabel#lbl_ROI4, QLabel#roi4_total_value { color: #FF00FF; }
+QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #E05A5A; }
+QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #4A90D9; }
+QLabel#lbl_ROI3, QLabel#roi3_total_value { color: #3EAF8E; }
+QLabel#lbl_ROI4, QLabel#roi4_total_value { color: #A878D0; }
 QLabel#lbl_ROI3, QLabel#lbl_ROI4,
 QLabel#roi3_total_value, QLabel#roi4_total_value {
     font-size: 12pt;

@@ -29,7 +29,15 @@ from PyQt5.QtWidgets import (
 import dashpva.settings as app_settings
 from dashpva.database.interface import DatabaseInterface
 from dashpva.gui import configure_app
-from dashpva.gui.theme_colors import ERROR, FONT_CAPTION, SUCCESS, status_style
+from dashpva.gui.theme_colors import (
+    ERROR,
+    FONT_CAPTION,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    WARNING,
+    status_style,
+)
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -2119,14 +2127,14 @@ class Workflow(QDialog, LogMixin):
     def _format_and_append_output(self, text: str, target_widget: QTextEdit):
         timestamp = datetime.now().strftime('%H:%M:%S')
         safe_text = text.replace('<', '&lt;').replace('>', '&gt;')
-        color = "#000000"
+        color = TEXT_PRIMARY
         if "ERROR" in text.upper():
-            color = "#FF5733"
+            color = ERROR
         elif "WARNING" in text.upper():
-            color = "#FFC300"
+            color = WARNING
         elif "SUCCESS" in text.upper() or "done" in text.lower():
-            color = "#33FF57"
-        formatted_line = f"<font color='gray'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
+            color = SUCCESS
+        formatted_line = f"<font color='{TEXT_MUTED}'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
         target_widget.appendHtml(formatted_line)
 
     def _format_associator_output(self, line: str) -> None:
@@ -2180,7 +2188,7 @@ class Workflow(QDialog, LogMixin):
                 dead.append(ch.group(1))
 
         ts = datetime.now().strftime('%H:%M:%S')
-        color = '#FF5733' if n_err > 0 else ('#33FF57' if n_proc > 0 else '#FFC300')
+        color = ERROR if n_err > 0 else (SUCCESS if n_proc > 0 else WARNING)
         summary = (
             f"Consumer {consumer_id} | {channel} | "
             f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
@@ -2188,15 +2196,15 @@ class Workflow(QDialog, LogMixin):
             f"meta: {n_md_ok} ok  {n_disc} discarded"
         )
         self.textEditAssociatorConsumersOutput.appendHtml(
-            f"<font color='gray'>{ts}</font> <font color='{color}'>{summary}</font>"
+            f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
         )
         if dead:
             dead_list = ', '.join(dead[:6])
             if len(dead) > 6:
                 dead_list += f' +{len(dead) - 6} more'
             self.textEditAssociatorConsumersOutput.appendHtml(
-                f"<font color='gray'>{ts}</font>"
-                f"<font color='#FF8C00'>&nbsp;&nbsp;no data: {dead_list}</font>"
+                f"<font color='{TEXT_MUTED}'>{ts}</font>"
+                f"<font color='{WARNING}'>&nbsp;&nbsp;no data: {dead_list}</font>"
             )
 
     # ------------------------------------------------------------------ #
