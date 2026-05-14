@@ -509,15 +509,15 @@ class Workflow(QDialog, LogMixin):
         except Exception:
             return
 
-        # Resolve relative to the project root so cwd doesn't matter
-        project_root = pathlib.Path(__file__).parent.parent
+        # Resolve relative to the package root (src/dashpva/) where consumers/ lives
+        pkg_root = pathlib.Path(__file__).parent.parent
 
         def list_py_files(subdir):
             try:
-                d = project_root / consumers_base / hpc_base / subdir if subdir else project_root / consumers_base / hpc_base
+                d = pkg_root / consumers_base / hpc_base / subdir if subdir else pkg_root / consumers_base / hpc_base
                 if not d.is_dir():
                     return []
-                rel_base = pathlib.Path(consumers_base) / hpc_base / subdir
+                rel_base = d.relative_to(app_settings.PROJECT_ROOT)
                 return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
             except Exception:
                 return []
