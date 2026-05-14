@@ -1693,8 +1693,11 @@ class Workflow(QDialog, LogMixin):
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
             return
 
+        sim_path = self.lineEditProcessorFileSim.text()
+        if not os.path.isabs(sim_path):
+            sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
         cmd = [
-            'python', '-u', self.lineEditProcessorFileSim.text(),
+            sys.executable, '-u', sim_path,
             '-cn', self.lineEditInputChannelSim.text(),
             '-nx', str(self.spinBoxNx.value()),
             '-ny', str(self.spinBoxNy.value()),

@@ -1,16 +1,14 @@
-import os
-import textwrap
-
 import pytest
 
 
 @pytest.fixture()
-def isolated_settings(monkeypatch):
+def isolated_settings(monkeypatch, tmp_path):
     """Ensure settings uses no external config during tests."""
     import dashpva.settings as settings
 
     monkeypatch.setattr(settings, "_locator_internal", None)
     monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+    monkeypatch.setattr(settings, "_STATE_FILE", tmp_path / ".dashpva_locator_isolated")
     settings.reload()
     yield settings
 
@@ -59,9 +57,10 @@ def tmp_toml(tmp_path, sample_config_dict):
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
     """Create a temporary SQLite database for testing."""
-    import dashpva.database.db as db_mod
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
+    import dashpva.database.db as db_mod
 
     db_file = tmp_path / "test.db"
     db_url = f"sqlite:///{db_file.as_posix()}"
