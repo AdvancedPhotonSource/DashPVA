@@ -43,12 +43,12 @@ class ConfigDialog(QDialog, LogMixin):
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(app_settings.get_input_channel())
+        self.le_input_channel.setText(app_settings.get_input_channel_hkl3d())
 
     def dialog_accepted(self) -> None:
         """Open the HKL viewer with the given input channel; config comes from settings.py."""
         self.input_channel = self.le_input_channel.text()
-        app_settings.save_input_channel(self.input_channel)
+        app_settings.save_input_channel_hkl3d(self.input_channel)
         self.hkl_3d_viewer = HKLImageWindow(input_channel=self.input_channel)
 
 
@@ -73,7 +73,7 @@ class HKLImageWindow(BaseWindow):
         self.image = None
         self.call_id_plot = 0
         self.image_is_transposed = False
-        self._input_channel = input_channel or app_settings.get_input_channel()
+        self._input_channel = input_channel or app_settings.get_input_channel_hkl3d()
         self.pv_prefix.setText(self._input_channel)
 
         # Initializing but not starting timers so they can be reached by different functions

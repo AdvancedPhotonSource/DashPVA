@@ -154,6 +154,7 @@ BEAMLINE_NAME: Optional[str] = None
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DETECTOR_PREFIX: Optional[str] = None
 INPUT_CHANNEL: Optional[str] = None
+INPUT_CHANNEL_HKL3D: Optional[str] = None
 OUTPUT_FILE_LOCATION: Optional[str] = None
 CONSUMER_MODE: Optional[str] = None
 
@@ -228,7 +229,7 @@ def ensure_path() -> Optional[str]:
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
     global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
-    global DETECTOR_PREFIX, INPUT_CHANNEL, OUTPUT_FILE_LOCATION, CONSUMER_MODE
+    global DETECTOR_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
@@ -251,6 +252,7 @@ def reload() -> None:
     # Core
     DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')
     INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
+    INPUT_CHANNEL_HKL3D = cfg.get('INPUT_CHANNEL_HKL3D')
     OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
     CONSUMER_MODE = cfg.get('CONSUMER_MODE')
 
@@ -371,6 +373,27 @@ def save_input_channel(channel: str) -> bool:
     try:
         src = ConfigSource(eff)
         return src.save({'INPUT_CHANNEL': channel})
+    except Exception:
+        return False
+
+
+def get_input_channel_hkl3d(fallback: str = "pvapy:image") -> str:
+    """Return HKL3D-specific INPUT_CHANNEL, independent of the Area Detector channel."""
+    if INPUT_CHANNEL_HKL3D:
+        return INPUT_CHANNEL_HKL3D
+    return fallback
+
+
+def save_input_channel_hkl3d(channel: str) -> bool:
+    """Persist HKL3D input channel separately from the Area Detector channel."""
+    global INPUT_CHANNEL_HKL3D
+    INPUT_CHANNEL_HKL3D = channel
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        return src.save({'INPUT_CHANNEL_HKL3D': channel})
     except Exception:
         return False
 
