@@ -481,6 +481,8 @@ class Workflow(QDialog, LogMixin):
             self._refresh_profile_combo()
             if self.radioViewSettings.isChecked():
                 self._load_settings_tree()
+            else:
+                self.load_profile_to_tree()
             self._populate_processor_file_combos()
             self._load_meta_assoc_last()
             self._load_collector_last()
