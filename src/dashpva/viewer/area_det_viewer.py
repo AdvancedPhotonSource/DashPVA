@@ -804,6 +804,8 @@ class DiffractionImageWindow(QMainWindow):
 
     def _on_ca_monitors_ready(self, stats_data: dict) -> None:
         self.stats_data.update(stats_data)
+        if self.reader is not None and self.reader.rois:
+            self.add_rois()
 
     def on_writer_finished(self, message) -> None:
         print(message)
@@ -862,6 +864,9 @@ class DiffractionImageWindow(QMainWindow):
         Adds ROIs to the image viewer and assigns them color codes.
         """
         try:
+            for roi in self.rois:
+                self.image_view.removeItem(roi)
+            self.rois.clear()
             roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0

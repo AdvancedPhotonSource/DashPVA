@@ -125,7 +125,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.qx = None
         self.qy = None
         self.qz = None
-        self.codec_name = ''
+        self.codec_name = None
         self.codec_parameters = -1
         self.original_dtype = np.dtype('float64')
         self.uncompressed_size = 0
@@ -377,6 +377,16 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
+            if qxyz is None or qxyz[0] is None:
+                self.nFrameErrors += 1
+                if hasattr(self, 'logger'):
+                    self.logger.warning(
+                        "Skipping RSM for this frame: create_rsm returned None "
+                        "(likely missing HKL attributes from associator)."
+                    )
+                self.updateOutputChannel(pvObject)
+                self.processingTime += (time.time() - t0)
+                return pvObject
             self.qx: np.ndarray = np.ravel(qxyz[0])
             self.qy: np.ndarray = np.ravel(qxyz[1])
             self.qz: np.ndarray = np.ravel(qxyz[2])
@@ -395,6 +405,11 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 self.compressed_size_qx = self.qx.shape[0]
                 self.compressed_size_qy = self.qy.shape[0]
                 self.compressed_size_qz = self.qz.shape[0]
+
+        if self.qx is None or self.codec_name is None:
+            self.updateOutputChannel(pvObject)
+            self.processingTime += (time.time() - t0)
+            return pvObject
 
         try:
             # Create RSM data structure
