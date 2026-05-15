@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSlider,
@@ -27,7 +28,6 @@ from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
-from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
 from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
@@ -201,7 +201,11 @@ class DiffractionImageWindow(QMainWindow):
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
+        self._analysis_menu = QMenu(self)
+        self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
+        self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
+        self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self.btn_analysis_window.setMenu(self._analysis_menu)
         self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
@@ -568,68 +572,39 @@ class DiffractionImageWindow(QMainWindow):
             self.image_is_transposed = False
             self.reader.image_is_transposed = False
 
-    def open_analysis_window_clicked(self) -> None:
-        """
-        Opens the analysis window if the reader and image are initialized.
-        Also supports launching pyFAI analysis window as a separate independent process.
-        """
-        if self.reader is not None:
-            if self.reader.image is not None:
-                # Launch pyFAI analysis window as a separate independent process
-                analysis_script = os.path.join(os.path.dirname(__file__), 'pyFAI_analysis.py')
-                if os.path.exists(analysis_script):
-                    # Use sys.executable to ensure we use the correct Python interpreter
-                    import sys
-                    # Launch as fully independent process:
-                    # - start_new_session: Creates new process session (Unix) for independence
-                    # - stdout/stderr: Redirect to devnull to avoid blocking parent
-                    # - No reference kept: Process is fully detached
-                    try:
-                        # Pass PV address as command-line argument
-                        pv_address = self._input_channel if self._input_channel else "pvapy:image"
-                        
-                        # Get threshold values if threshold is enabled
-                        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
-                        min_thresh, max_thresh = self.get_threshold_range() if self.reader is not None else (0, 0)
-                        
-                        # Build command arguments
-                        cmd_args = [sys.executable, analysis_script, "--pv-address", pv_address]
-                        # Note: min_thresh is typically 0, so we check max_thresh > 0 to ensure valid thresholds
-                        if threshold_enabled and max_thresh > 0:
-                            cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
+    def _launch_pyfai(self) -> None:
+        pv_address = self._input_channel or app_settings.get_input_channel()
+        cmd = [sys.executable, '-m', 'dashpva.viewer.pyFAI_analysis', '--pv-address', pv_address]
+        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
+        if threshold_enabled and self.reader is not None:
+            min_thresh, max_thresh = self.get_threshold_range()
+            if max_thresh > 0:
+                cmd.extend(['--threshold-min', str(min_thresh), '--threshold-max', str(max_thresh)])
+        mask_path = self.mask_manager.mask_path or os.path.join(
+            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
+        cmd.extend(['--mask-file', mask_path])
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] pyFAI launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch pyFAI: {e}')
 
-                        # Always pass mask file path so pyFAI can detect new masks
-                        mask_path = self.mask_manager.mask_path or os.path.join(
-                            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
-                        cmd_args.extend(["--mask-file", mask_path])
+    def _launch_phase_fitter(self) -> None:
+        pv_address = self._input_channel or app_settings.get_input_channel()
+        cmd = [sys.executable, '-m', 'dashpva.viewer.phase_fitter', '--pv-address', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] Phase Fitter launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch Phase Fitter: {e}')
 
-                        # Don't redirect stderr so errors are visible in terminal for debugging
-                        # Redirect stdout to avoid clutter, but keep stderr visible
-                        subprocess.Popen(
-                            cmd_args, 
-                            cwd=os.path.dirname(os.path.dirname(analysis_script)),
-                            stdout=subprocess.DEVNULL,
-                            # stderr=None means it goes to terminal - helpful for debugging
-                            stderr=None,  # Let stderr go to terminal so we can see errors
-                            start_new_session=True  # Creates new process group (Unix) or job (Windows)
-                        )
-                        output_pv = f"{pv_address}:pyFAI"
-                        print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
-                        print(f"Broadcasting pyFAI results to: {output_pv}")
-                        if threshold_enabled and max_thresh > 0:
-                            print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
-                        elif threshold_enabled:
-                            print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
-                        print("Note: Check terminal/console for any error messages if window doesn't appear")
-                    except Exception as e:
-                        print(f"Error launching pyFAI_analysis.py: {e}")
-                        # Fallback to regular analysis window
-                        self.analysis_window = AnalysisWindow(parent=self)
-                        self.analysis_window.show()
-                else:
-                    # Fallback to regular analysis window
-                    self.analysis_window = AnalysisWindow(parent=self)
-                    self.analysis_window.show()        
+    def _launch_hkl3d(self) -> None:
+        cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print('[Area Detector] HKL 3D Viewer launched')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
 
     def start_live_view_clicked(self) -> None:
         """
@@ -735,18 +710,10 @@ class DiffractionImageWindow(QMainWindow):
     def start_hkl_viewer_clicked(self) -> None:
         try:
             if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                cmd = ['python', 'viewer/hkl3d/hkl_3d_viewer.py',]
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid,
-                    universal_newlines=True
-                )
-                self.processes[process.pid] = process
-
+                cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
         except Exception as e:
-            print(f'[Diffraction Image Viewer] Failed to load HKL Viewer:{e}')
+            print(f'[Area Detector] Failed to load HKL Viewer: {e}')
 
     def save_caches_clicked(self) -> None:
         if not self.reader.channel.isMonitorActive():  

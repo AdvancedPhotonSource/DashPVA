@@ -102,6 +102,14 @@ def h5viewer():
 
 
 @cli.command()
+def pyfai():
+    """Launch pyFAI 1D Reduction — live azimuthal integration."""
+    click.echo('Running pyFAI 1D Reduction')
+    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.pyFAI_analysis']).returncode
+    sys.exit(exit_code)
+
+
+@cli.command()
 def phasefitter():
     """Launch XRD Phase Fitter — fit crystal phases to 1D diffraction patterns."""
     click.echo('Running XRD Phase Fitter')
