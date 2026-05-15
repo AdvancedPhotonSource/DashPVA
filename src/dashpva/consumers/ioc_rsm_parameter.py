@@ -216,12 +216,15 @@ def _run_ioc(prefix: str) -> None:
         if lib:
             lib = os.path.realpath(lib)
             dbd = os.path.realpath(os.path.join(os.path.dirname(lib), '../../dbd'))
-            os.environ['EPICS_DB_INCLUDE_PATH'] = dbd
         elif os.environ.get('EPICS_BASE'):
-            os.environ['EPICS_DB_INCLUDE_PATH'] = os.path.join(os.environ['EPICS_BASE'], 'dbd')
+            dbd = os.path.join(os.environ['EPICS_BASE'], 'dbd')
+        else:
+            dbd = os.path.join(os.path.dirname(pva.__file__), 'dbd')
+            if not os.path.isdir(dbd):
+                raise RuntimeError('Cannot find dbd directory. Please set EPICS_DB_INCLUDE_PATH.')
+        os.environ['EPICS_DB_INCLUDE_PATH'] = dbd
 
-    dbd_dir = os.environ.get('EPICS_DB_INCLUDE_PATH', '')
-    base_dbd = os.path.join(dbd_dir, 'base.dbd') if dbd_dir else 'base.dbd'
+    base_dbd = os.path.join(os.environ['EPICS_DB_INCLUDE_PATH'], 'base.dbd')
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.db')
     tmp.write(build_db())

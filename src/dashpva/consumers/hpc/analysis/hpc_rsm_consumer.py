@@ -125,6 +125,13 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.qx = None
         self.qy = None
         self.qz = None
+        self.codec_name = ''
+        self.codec_parameters = -1
+        self.original_dtype = np.dtype('float64')
+        self.uncompressed_size = 0
+        self.compressed_size_qx = 0
+        self.compressed_size_qy = 0
+        self.compressed_size_qz = 0
 
         self.configure(configDict)
 
