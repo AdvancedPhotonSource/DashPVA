@@ -75,16 +75,23 @@ class ConfigDialog(QDialog):
     def __init__(self):
         super(ConfigDialog, self).__init__()
         uic.loadUi(ui_path("pv_config.ui"), self)
-        self.setWindowTitle('PV Config')
+        self.setWindowTitle('Area Detector Config')
         self.input_channel = ''
         self.init_ui()
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(app_settings.get_input_channel())
+        self.lbl_input_channel.setText("Detector Prefix")
+        self.le_input_channel.setPlaceholderText("e.g. s6lambda1")
+        if app_settings.DETECTOR_PREFIX:
+            self.le_input_channel.setText(app_settings.DETECTOR_PREFIX)
+        elif app_settings.INPUT_CHANNEL:
+            self.le_input_channel.setText(app_settings.INPUT_CHANNEL.split(":")[0])
 
     def dialog_accepted(self) -> None:
-        self.input_channel = self.le_input_channel.text()
+        prefix = self.le_input_channel.text().strip()
+        app_settings.save_detector_prefix(prefix)
+        self.input_channel = f"{prefix}:Pva1:Image"
         app_settings.save_input_channel(self.input_channel)
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 

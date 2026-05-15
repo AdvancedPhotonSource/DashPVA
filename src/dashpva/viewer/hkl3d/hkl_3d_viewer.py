@@ -37,12 +37,13 @@ class ConfigDialog(QDialog, LogMixin):
             self.set_log_manager(viewer_name="HKLConfigDialog")
         except Exception:
             pass
-        self.setWindowTitle('PV Config')
+        self.setWindowTitle('HKL 3D Config')
         self.input_channel = ""
         self.init_ui()
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
+        self.le_input_channel.setPlaceholderText("e.g. processor:1:analysis")
         self.le_input_channel.setText(app_settings.get_input_channel_hkl3d())
 
     def dialog_accepted(self) -> None:

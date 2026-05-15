@@ -354,6 +354,42 @@ def _get_effective_locator() -> Union[int, str, None]:
     return None
 
 
+def save_detector_prefix(prefix: str) -> bool:
+    """Persist *prefix* to the active config source, update the module global,
+    and rewrite ROI/STATS PV names to use the new prefix."""
+    global DETECTOR_PREFIX, ROI, STATS
+    old_prefix = DETECTOR_PREFIX
+    DETECTOR_PREFIX = prefix
+    update: dict = {'DETECTOR_PREFIX': prefix}
+    if old_prefix and old_prefix != prefix:
+        ROI = _reprefix(ROI, old_prefix, prefix)
+        STATS = _reprefix(STATS, old_prefix, prefix)
+        update['ROI'] = ROI
+        update['STATS'] = STATS
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        return src.save(update)
+    except Exception:
+        return False
+
+
+def _reprefix(section: dict, old: str, new: str) -> dict:
+    """Replace the detector prefix in all PV name values within a ROI/STATS section."""
+    rebuilt = {}
+    for group_key, group_dict in section.items():
+        if isinstance(group_dict, dict):
+            rebuilt[group_key] = {
+                k: v.replace(old, new, 1) if isinstance(v, str) else v
+                for k, v in group_dict.items()
+            }
+        else:
+            rebuilt[group_key] = group_dict
+    return rebuilt
+
+
 def get_input_channel(fallback: str = "pvapy:image") -> str:
     """Return INPUT_CHANNEL if explicitly set, else derive from DETECTOR_PREFIX."""
     if INPUT_CHANNEL:
