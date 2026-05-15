@@ -643,19 +643,21 @@ class Workflow(QDialog, LogMixin):
 
     def browse_config_upload(self):
         file_name, _ = QFileDialog.getOpenFileName(
-            self, 'Select Config File', '', 'TOML Files (*.toml)'
+            self, 'Select Config File', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
         )
         if file_name:
+            app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
             self.lineEditConfigUploadPath.setText(file_name)
             self.update_current_mode_label(file_name)
             self._load_toml_into_tree(file_name)
 
     def import_toml_to_tree(self):
         file_name, _ = QFileDialog.getOpenFileName(
-            self, 'Import TOML Config', '', 'TOML Files (*.toml)'
+            self, 'Import TOML Config', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
         )
         if not file_name:
             return
+        app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
         self.lineEditConfigUploadPath.setText(file_name)
         self.update_current_mode_label(file_name)
 

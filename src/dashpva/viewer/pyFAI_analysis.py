@@ -58,6 +58,7 @@ from PyQt5.QtWidgets import (
 # import cv2  # for image/mask resizing if needed
 from skimage.transform import resize
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app
 
 # Compression libraries for handling compressed PVA data
@@ -535,10 +536,11 @@ class PyFAIAnalysisWindow(QMainWindow):
         options = QFileDialog.Options()
         filePath, _ = QFileDialog.getOpenFileName(self,
                                                   "Select PONI File",
-                                                  "",
+                                                  app_settings.LAST_PONI_DIR,
                                                   "PONI Files (*.poni);;All Files (*)",
                                                   options=options)
         if filePath:
+            app_settings.LAST_PONI_DIR = os.path.dirname(filePath)
             try:
                 self.ai = pyFAI.load(filePath)
                 self.poni_file = filePath

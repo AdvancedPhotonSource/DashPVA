@@ -192,6 +192,12 @@ LOCATOR: Optional[Union[int, str]] = None
 # Resolved TOML path for components that need a direct file path.
 TOML_FILE: Optional[str] = None
 
+# Default file browser directory (test_data has sample PONI, CIF, mask files)
+_DEFAULT_BROWSE_DIR: str = str(PROJECT_ROOT / 'tests' / 'test_data')
+LAST_PONI_DIR: str = _DEFAULT_BROWSE_DIR
+LAST_CIF_DIR: str = _DEFAULT_BROWSE_DIR
+LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
