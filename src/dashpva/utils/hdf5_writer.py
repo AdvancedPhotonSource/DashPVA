@@ -2,13 +2,11 @@
 # from dashpva.utils import PVAReader
 import time
 from pathlib import Path
-
 import h5py
 import hdf5plugin
 import numpy as np
 import toml
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
-
 import dashpva.settings as settings
 from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.metadata_converter import (
@@ -16,7 +14,7 @@ from dashpva.utils.metadata_converter import (
     _derive_axis_from_pv,
     is_position_pv,
 )
-
+import dashpva.settings
 
 class HDF5Writer(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
@@ -179,7 +177,8 @@ class HDF5Writer(QObject, LogMixin):
 
             metadata_grp = data_grp.create_group('metadata')
 
-            # Write custom CA metadata to entry/data/metadata/ca_custom/
+            # Write custom CA metadata to entry/data/metadata/ca_custom/.
+            # CUSTOM nesting was flattened — METADATA_CA keys are the PV friendly names directly.
             custom_ca = {}
             try:
                 custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}

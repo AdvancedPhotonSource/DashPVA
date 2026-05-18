@@ -421,6 +421,7 @@ class Workflow(QDialog, LogMixin):
         if self._db_available:
             self.radioDatabase.setChecked(True)  # triggers _on_config_source_changed → load
         self._populate_processor_file_combos()
+        self._populate_processor_file_sim()
         self._load_meta_assoc_last()
         self._load_collector_last()
         self._load_analysis_last()
@@ -476,6 +477,34 @@ class Workflow(QDialog, LogMixin):
             self._load_meta_assoc_last()
             self._load_collector_last()
             self._load_analysis_last()
+
+    def _populate_processor_file_sim(self):
+        """Populate sim server combo with .py files in CONSUMERS > BASE + IOC."""
+        if not self._db_available:
+            return
+        try:
+            consumers_setting = self._db.get_setting_by_name('CONSUMERS')
+            if consumers_setting is None:
+                return
+            consumers_base = self._db.get_setting_value(consumers_setting.id, 'BASE') or 'consumers'
+            ioc_dir        = self._db.get_setting_value(consumers_setting.id, 'IOC')  or 'caIOC_servers'
+        except Exception:
+            return
+
+        project_root = pathlib.Path(__file__).parent.parent
+        d = project_root / consumers_base / ioc_dir
+        if not d.is_dir():
+            return
+        rel_base = pathlib.Path(consumers_base) / ioc_dir
+        files = sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
+
+        current = self.comboBoxProcessorFileSim.currentText()
+        self.comboBoxProcessorFileSim.blockSignals(True)
+        self.comboBoxProcessorFileSim.clear()
+        self.comboBoxProcessorFileSim.addItems(files)
+        if current and current in files:
+            self.comboBoxProcessorFileSim.setCurrentText(current)
+        self.comboBoxProcessorFileSim.blockSignals(False)
 
     def _populate_processor_file_combos(self):
         """Populate processor file dropdowns from CONSUMERS > hpc in the DB."""
@@ -1054,7 +1083,7 @@ class Workflow(QDialog, LogMixin):
     # Tree editing — add / delete keys, right-click context menu
     # ------------------------------------------------------------------ #
 
-    def _add_tree_key_dialog(self, title='Add Key', type_choices=None, default_key='', default_type=None):
+    def _add_tree_key_dialog(self, title='Add Key', type_choices=None, default_key='', default_type=None, default_value=''):
         """Name + optional Type dialog (no value step).
 
         Used for profile-view add and for editing section metadata.
@@ -1075,7 +1104,7 @@ class Workflow(QDialog, LogMixin):
                 type_combo.setCurrentText(default_type)
             layout.addRow('Type:', type_combo)
         else:
-            val_edit = QLineEdit()
+            val_edit = QLineEdit(default_value)
             val_edit.setPlaceholderText('(optional)')
             layout.addRow('Value:', val_edit)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -1404,6 +1433,66 @@ class Workflow(QDialog, LogMixin):
         self.treeWidgetConfig.scrollToItem(clone)
         self._save_tree_to_active_profile()
 
+    def _edit_tree_item(self, item):
+        """Rename a child key and update its value via the existing dialog."""
+        in_settings = self.radioViewSettings.isChecked()
+        is_value_item = bool(item.flags() & Qt.ItemIsEditable)
+
+        # JSON values get the proper editor instead of a single-line QLineEdit.
+        if item.text(2) == 'json':
+            self._open_json_editor(item)
+            return
+        # Section headers in Settings view already have a richer dedicated dialog.
+        if in_settings and not is_value_item:
+            self._edit_section(item)
+            return
+
+        old_key = item.text(0)
+        old_value = item.text(1)
+        new_key, new_value, _, ok = self._add_tree_key_dialog(
+            'Edit Key', default_key=old_key, default_value=old_value,
+        )
+        if not ok:
+            return
+        new_key = (new_key or '').strip()
+        if not new_key:
+            QMessageBox.warning(self, 'Edit Key', 'Key name cannot be empty.')
+            return
+        new_value = (new_value or '')
+
+        if new_key != old_key:
+            parent = item.parent()
+            sibling_root = parent if parent is not None else self.treeWidgetConfig.invisibleRootItem()
+            sibling_keys = {
+                sibling_root.child(i).text(0)
+                for i in range(sibling_root.childCount())
+                if sibling_root.child(i) is not item
+            }
+            if new_key in sibling_keys:
+                QMessageBox.warning(self, 'Edit Key', f"Key '{new_key}' already exists in this section.")
+                return
+
+        self.treeWidgetConfig.blockSignals(True)
+        item.setText(0, new_key)
+        item.setText(1, new_value)
+        self.treeWidgetConfig.blockSignals(False)
+
+        if in_settings and is_value_item and self._db_available:
+            parent = item.parent()
+            parent_setting_id = parent.data(0, Qt.UserRole) if parent is not None else None
+            if parent_setting_id is not None:
+                coerced = self._coerce_value(new_value)
+                try:
+                    if new_key != old_key:
+                        self._db.remove_setting_value(parent_setting_id, old_key)
+                    if not self._db.update_setting_value(parent_setting_id, new_key, coerced):
+                        self._db.add_setting_value(parent_setting_id, new_key, coerced)
+                    item.setData(0, Qt.UserRole, parent_setting_id)
+                except Exception as e:
+                    QMessageBox.critical(self, 'Edit Error', f'Failed to save edit:\n{e}')
+        elif not in_settings:
+            self._save_tree_to_active_profile()
+
     def _show_tree_context_menu(self, pos):
         item = self.treeWidgetConfig.itemAt(pos)
         in_settings = self.radioViewSettings.isChecked()
@@ -1421,6 +1510,8 @@ class Workflow(QDialog, LogMixin):
                 act_edit_sec = menu.addAction('Edit section…')
                 act_edit_sec.triggered.connect(lambda checked=False, i=item: self._edit_section(i))
                 menu.addSeparator()
+            act_edit = menu.addAction('Edit…')
+            act_edit.triggered.connect(lambda checked=False, i=item: self._edit_tree_item(i))
             act_child = menu.addAction('Add child key')
             act_child.triggered.connect(lambda checked=False, i=item: self._add_child_key(i))
             act_dup = menu.addAction('Duplicate')
@@ -1455,47 +1546,27 @@ class Workflow(QDialog, LogMixin):
 
     def _on_reseed(self):
         reply = QMessageBox.question(
-            self, 'Reseed', 'Add missing default values to settings and the current profile?',
+            self, 'Reseed', 'Add missing default values to the global settings table?',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
-        added = [0]
+        # Reseed only runs the canonical DB-creation script (idempotent: never
+        # overwrites existing values). Profiles are NOT reseeded from the
+        # sample TOML — that path was re-injecting FLAG_PV / METADATA rows
+        # which are now hardcoded in settings.py.
         try:
             from dashpva.scripts.seed_settings_defaults_sql import seed_defaults
             seed_defaults()
         except Exception as e:
             QMessageBox.critical(self, 'Reseed', f'Settings reseed failed:\n{e}')
             return
-        if self.radioDatabase.isChecked() and self._db_available and not self.radioViewSettings.isChecked():
-            _sample = pathlib.Path(__file__).resolve().parents[3] / 'pv_configs' / 'sample_config.toml'
-            if _sample.exists():
-                try:
-                    defaults = self.parse_toml(str(_sample))
-                    current = self._extract_tree_to_dict()
-                    merged = self._deep_merge(defaults, current, added)
-                    self.treeWidgetConfig.blockSignals(True)
-                    self.treeWidgetConfig.clear()
-                    self._populate_tree_node(merged, parent=None)
-                    self.treeWidgetConfig.blockSignals(False)
-                    self._save_tree_to_active_profile()
-                except Exception as e:
-                    QMessageBox.critical(self, 'Reseed', f'Profile reseed failed:\n{e}')
-                    return
-        elif self.radioViewSettings.isChecked():
-            self.load_profile_to_tree()
-        msg = f'{added[0]} missing profile value(s) added.' if added[0] else 'No missing profile values found.'
-        QMessageBox.information(self, 'Reseed', f'Settings defaults restored.\n{msg}')
-
-    def _deep_merge(self, defaults: dict, current: dict, added: list) -> dict:
-        result = dict(current)
-        for key, val in defaults.items():
-            if key not in result:
-                result[key] = val
-                added[0] += 1
-            elif isinstance(val, dict) and isinstance(result[key], dict):
-                result[key] = self._deep_merge(val, result[key], added)
-        return result
+        # Delegate to the existing view-mode handler so the visible tree
+        # refreshes via the same code path as a manual radio toggle. This
+        # avoids the prior bug where switching from Settings → Profile after
+        # reseed left the tree stuck on the 3-column Settings view.
+        self._on_view_mode_changed()
+        QMessageBox.information(self, 'Reseed', 'Settings defaults restored.')
 
     def _save_settings_from_tree(self):
         """Persist all edited setting values from the Settings tree back to the DB."""
@@ -1645,26 +1716,53 @@ class Workflow(QDialog, LogMixin):
     # ------------------------------------------------------------------ #
 
     def _build_metadata_channels(self) -> str:
-        """Build --metadata-channels string from app_settings."""
-        ca_pvs = ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
-        pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
+        """Build --metadata-channels string from app_settings.
+
+        CA PVs are pre-validated with a short caget — any that don't respond
+        are dropped (logged as a warning) so the associator subprocess doesn't
+        crash on a single dead METADATA.CA entry. PVA PVs are not pre-checked
+        (no cheap equivalent of caget); they pass through unchanged.
+        """
+        ca_names = [v for v in app_settings.METADATA_CA.values() if v]
         for pvs_dict in app_settings.HKL.values():
             if isinstance(pvs_dict, dict):
-                for pv_channel in pvs_dict.values():
-                    if pv_channel:
-                        ca_pvs += f'ca://{pv_channel},'
+                ca_names.extend(v for v in pvs_dict.values() if v)
+        live_ca = self._filter_live_ca_pvs(ca_names)
+        ca_pvs = ''.join(f'ca://{v},' for v in live_ca)
+        pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
         all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
         return all_pvs
 
+    @staticmethod
+    def _filter_live_ca_pvs(pv_names, timeout: float = 0.3) -> list:
+        """Return pv_names whose caget responds within timeout; warn on the rest."""
+        try:
+            from epics import caget
+        except Exception:
+            return list(pv_names)
+        live = []
+        for name in pv_names:
+            try:
+                val = caget(name, timeout=timeout, connection_timeout=timeout)
+            except Exception:
+                val = None
+            if val is None:
+                print(f'[Metadata] could not connect to CA PV: {name} — skipping')
+            else:
+                live.append(name)
+        return live
+
     def _build_roi_channels(self) -> str:
-        """Build --metadata-channels string from app_settings ROI section."""
-        roi_pvs = ''
+        """Build --metadata-channels string from app_settings ROI section.
+
+        ROI PVs are pre-validated with caget — dead ones are dropped instead
+        of crashing the consumer subprocess.
+        """
+        names = []
         for roi_specific_pvs in app_settings.ROI.values():
             if isinstance(roi_specific_pvs, dict):
-                for pv_channel in roi_specific_pvs.values():
-                    if pv_channel:
-                        roi_pvs += f'ca://{pv_channel},'
-        return roi_pvs.strip(',')
+                names.extend(v for v in roi_specific_pvs.values() if v)
+        return ','.join(f'ca://{v}' for v in self._filter_live_ca_pvs(names))
 
     def parse_toml(self, path) -> dict:
         with open(path, 'r') as f:
@@ -1693,7 +1791,7 @@ class Workflow(QDialog, LogMixin):
             return
 
         cmd = [
-            'python', '-u', self.lineEditProcessorFileSim.text(),
+            'python', '-u', self.comboBoxProcessorFileSim.currentText(),
             '-cn', self.lineEditInputChannelSim.text(),
             '-nx', str(self.spinBoxNx.value()),
             '-ny', str(self.spinBoxNy.value()),

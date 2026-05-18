@@ -3,10 +3,9 @@ import sys
 import numpy as np
 import pyvista as pyv
 from PyQt5 import uic
-
 # from epics import caget
-from PyQt5.QtCore import QThread, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
+from PyQt5.QtWidgets import (QApplication, QDialog, QFileDialog, QMessageBox)
 from pyvistaqt import QtInteractor
 
 from dashpva.gui import configure_app, ui_path
@@ -42,7 +41,11 @@ class ConfigDialog(QDialog, LogMixin):
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(self.le_input_channel.text())
+        # Override the shared gui/pv_config.ui labels — the area-det dialog
+        # asks for a prefix, this one wants the full PVA channel name.
+        self.lbl_input_channel.setText('Input Channel')
+        self.le_input_channel.setPlaceholderText('e.g. pvapy:image')
+        self.le_input_channel.clear()
 
     def dialog_accepted(self) -> None:
         """Open the HKL viewer with the given input channel; config comes from settings.py."""

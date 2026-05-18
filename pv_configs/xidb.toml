@@ -1,0 +1,31 @@
+IOC_PREFIX = 'xidb'
+OUTPUT_FILE_LOCATION = "OUTPUT.h5"
+CONSUMER_MODE = "continuous"
+
+[CACHE_OPTIONS]
+CACHING_MODE = "alignment"
+
+[METADATA]
+CA = ""
+PVA = ""
+
+[ANALYSIS]
+AXIS1 = "x"
+AXIS2 = "y"
+
+[CACHE_OPTIONS.ALIGNMENT]
+MAX_CACHE_SIZE = 1000
+
+[CACHE_OPTIONS.SCAN]
+START_SCAN = true
+STOP_SCAN = false
+THRESHOLD = 0.05
+MAX_CACHE_SIZE = 1000
+
+[CACHE_OPTIONS.BIN]
+COUNT = 10
+SIZE = 16
+
+# ROI and STATS PV names are constructed in code from IOC_PREFIX as
+# `{prefix}:ROI{1-4}:{MinX|MinY|SizeX|SizeY}` and
+# `{prefix}:Stats{1-5}:{Total_RBV|MinValue_RBV|MaxValue_RBV|Sigma_RBV|MeanValue_RBV}`.

@@ -46,7 +46,7 @@ Stores TOML configuration data associated with profiles.
 | profile_id | INTEGER NOT NULL | Foreign key to profiles table |
 | config_type | VARCHAR(50) NOT NULL | Type of config (e.g., 'root', 'CACHE_OPTIONS', 'METADATA') |
 | config_section | VARCHAR(100) | Config section name (e.g., 'ALIGNMENT', 'CA', 'ROI1') |
-| config_key | VARCHAR(100) NOT NULL | Configuration key (e.g., 'DETECTOR_PREFIX', 'MAX_CACHE_SIZE') |
+| config_key | VARCHAR(100) NOT NULL | Configuration key (e.g.'DETECTOR_PREFIX', 'IOC_PREFIX', 'MAX_CACHE_SIZE') |
 | config_value | TEXT | The actual configuration value as text |
 | created_at | DATETIME | When the config was created (UTC timestamp) |
 | updated_at | DATETIME | When the config was last modified (UTC timestamp) |

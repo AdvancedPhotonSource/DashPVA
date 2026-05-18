@@ -28,3 +28,4 @@ dashpva.db
 .dashpva_edition
 logs/
 .ruff_cache/
+tmp/

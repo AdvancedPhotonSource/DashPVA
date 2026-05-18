@@ -1,37 +1,36 @@
 import os
-import subprocess
 import sys
-
+import time
+import subprocess
 import numpy as np
 import pyqtgraph as pg
-import xrayutilities as xu
-from epics import PV, caget, camonitor
-from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QDialog,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QMessageBox,
-    QPushButton,
-    QSlider,
-)
 from pyqtgraph.colormap import get as get_colormap
-
-from dashpva.gui import configure_app, ui_path
-from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
-from dashpva.utils.mask_manager import MaskManager
-from dashpva.utils.user_config import load_last, save_last
-from dashpva.viewer.core.base_window import BaseWindow
-from dashpva.viewer.analysis_window import AnalysisWindow
-from dashpva.viewer.mask_viewer import MaskViewerWindow
-from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
-from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
-
+from pyqtgraph.colormap import listMaps
+import xrayutilities as xu
+from PyQt5 import uic
+# from epics import caget
+from epics import PV, pv
+from epics import camonitor, caget
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QDialog, QFileDialog, QSlider,
+                             QLabel, QPushButton, QCheckBox, QHBoxLayout, QVBoxLayout,
+                             QProgressBar)
+# Custom imported classes
+from roi_stats_dialog import RoiStatsDialog
+from roi_stats_plot import RoiStatsPlotDialog
+from mask_viewer import MaskViewerWindow
+from analysis_window import AnalysisWindow
+import pathlib
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+from utils import rotation_cycle
+from utils import PVAReader, HDF5Writer
+from utils.mask_manager import MaskManager
+from utils.user_config import load_last, save_last
+from viewer.core.base_window import BaseWindow
+from viewer.area_det.docks import (
+    StatsDock, MousePosDock, ImageDock, RoiDock, AnalysisDock, MaskDock,
+)
+import settings as app_settings
 # from ..utils.size_manager import SizeManager
 
 
@@ -42,7 +41,7 @@ class ConfigDialog(QDialog):
 
     def __init__(self):
         super(ConfigDialog, self).__init__()
-        uic.loadUi(ui_path("pv_config.ui"), self)
+        uic.loadUi('gui/pv_config.ui', self)
         self.setWindowTitle('PV Config')
         self.prefix = ''
         self.input_channel = ''
@@ -253,89 +252,111 @@ class DiffractionImageWindow(BaseWindow):
         self.lbl_threshold_range.show()
         
         self.analysis_window = None  # Initialize as None
-        self._build_mask_controls()
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    def _build_mask_controls(self):
-        """Build mask management UI programmatically and insert at top of sidebar."""
-        from PyQt5.QtWidgets import QFormLayout, QGroupBox, QSizePolicy
-
-        group = QGroupBox('Mask')
-        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        form = QFormLayout(group)
-        form.setContentsMargins(6, 6, 6, 6)
-        form.setVerticalSpacing(4)
-
-        # Row 0: mask status
-        self.lbl_mask_info = QLabel('No mask loaded')
-        self.lbl_mask_info.setFrameShape(QLabel.Box)
-        self.lbl_mask_info.setFrameShadow(QLabel.Sunken)
-        self.lbl_mask_info.setWordWrap(True)
-        form.addRow('Mask:', self.lbl_mask_info)
-
-        # Row 1: masked pixel count
-        self.lbl_mask_pixel_count = QLabel('0')
-        self.lbl_mask_pixel_count.setFrameShape(QLabel.Box)
-        self.lbl_mask_pixel_count.setFrameShadow(QLabel.Sunken)
-        form.addRow('Masked pixels:', self.lbl_mask_pixel_count)
-
-        # Row 2: Load / Show buttons
-        btn_row1 = QHBoxLayout()
-        self.btn_load_mask = QPushButton('Load Mask')
-        self.btn_load_mask.setMinimumHeight(35)
-        self.btn_load_mask.clicked.connect(self.load_mask_clicked)
-        btn_row1.addWidget(self.btn_load_mask)
-
-        self.btn_show_mask = QPushButton('Show Mask')
-        self.btn_show_mask.setMinimumHeight(35)
-        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
-        btn_row1.addWidget(self.btn_show_mask)
-        form.addRow(btn_row1)
-
-        # Row 3: Detect Dead Px / Clear buttons
-        btn_row2 = QHBoxLayout()
-        self.btn_detect_dead = QPushButton('Detect Dead Px')
-        self.btn_detect_dead.setMinimumHeight(35)
-        self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
-        btn_row2.addWidget(self.btn_detect_dead)
-
-        self.btn_clear_mask = QPushButton('Clear Mask')
-        self.btn_clear_mask.setMinimumHeight(35)
-        self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
-        btn_row2.addWidget(self.btn_clear_mask)
-        form.addRow(btn_row2)
-
-        # Row 3b: Export JSON button
-        self.btn_export_json = QPushButton('Export JSON')
-        self.btn_export_json.setMinimumHeight(35)
-        self.btn_export_json.setToolTip('Export mask as EPICS NDPluginBadPixel JSON')
-        self.btn_export_json.clicked.connect(self.export_json_clicked)
-        form.addRow(self.btn_export_json)
-
-        # Row 4: Apply mask checkbox
-        self.chk_apply_mask = QCheckBox('Apply mask to display')
-        self.chk_apply_mask.setChecked(True)
-        form.addRow(self.chk_apply_mask)
-
-        # Insert at top of sidebar (index 0 = above stats group box)
-        self.verticalLayout_3.insertWidget(0, group)
-
-        # Update labels if mask was auto-loaded
+        # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
+
+    def _setup_docks(self):
+        """Build side panels as dock widgets and alias their members onto self.
+
+        After this runs, code elsewhere can keep referring to widgets like
+        self.frames_received_val or self.btn_Stats1 — they now resolve to the
+        dock-owned widget instead of the original UI element.
+        """
+        # Drop the legacy sidebar from the central layout so the live-view
+        # image fills the full width and there's no gap before the docks.
+        if hasattr(self, 'scrollArea'):
+            self.central_glayout.removeWidget(self.scrollArea)
+            self.scrollArea.setParent(None)
+            self.scrollArea.deleteLater()
+        if hasattr(self, 'QGroupBox_live_view'):
+            self.central_glayout.removeWidget(self.QGroupBox_live_view)
+            self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
+
+        self.stats_dock     = StatsDock(main_window=self)
+        self.mouse_pos_dock = MousePosDock(main_window=self)
+        self.mask_dock      = MaskDock(main_window=self)
+        self.image_dock     = ImageDock(main_window=self, show=False)
+        self.roi_dock       = RoiDock(main_window=self, show=False)
+        self.analysis_dock  = AnalysisDock(main_window=self, show=False)
+
+        # Mask dock widgets
+        self.lbl_mask_info        = self.mask_dock.lbl_mask_info
+        self.lbl_mask_pixel_count = self.mask_dock.lbl_mask_pixel_count
+        self.btn_load_mask        = self.mask_dock.btn_load_mask
+        self.btn_show_mask        = self.mask_dock.btn_show_mask
+        self.btn_detect_dead      = self.mask_dock.btn_detect_dead
+        self.btn_clear_mask       = self.mask_dock.btn_clear_mask
+        self.btn_export_json      = self.mask_dock.btn_export_json
+        self.chk_apply_mask       = self.mask_dock.chk_apply_mask
+
+        # Stats dock widgets
+        self.frames_received_val = self.stats_dock.frames_received_val
+        self.missed_frames_val   = self.stats_dock.missed_frames_val
+        self.max_px_val          = self.stats_dock.max_px_val
+        self.min_px_val          = self.stats_dock.min_px_val
+        self.data_type_val       = self.stats_dock.data_type_val
+        self.min_setting_val     = self.stats_dock.min_setting_val
+        self.max_setting_val     = self.stats_dock.max_setting_val
+        self.chk_autoscale       = self.stats_dock.chk_autoscale
+        self.chk_threshold       = self.stats_dock.chk_threshold
+        self.lbl_threshold_range = self.stats_dock.lbl_threshold_range
+
+        # Mouse position dock widgets
+        self.mouse_x_val  = self.mouse_pos_dock.mouse_x_val
+        self.mouse_y_val  = self.mouse_pos_dock.mouse_y_val
+        self.mouse_px_val = self.mouse_pos_dock.mouse_px_val
+        self.mouse_h      = self.mouse_pos_dock.mouse_h
+        self.mouse_k      = self.mouse_pos_dock.mouse_k
+        self.mouse_l      = self.mouse_pos_dock.mouse_l
+
+        # Image dock widgets
+        self.plot_call_id       = self.image_dock.plot_call_id
+        self.plotting_frequency = self.image_dock.plotting_frequency
+        self.size_x_val         = self.image_dock.size_x_val
+        self.size_y_val         = self.image_dock.size_y_val
+        self.log_image          = self.image_dock.log_image
+        self.freeze_image       = self.image_dock.freeze_image
+        self.chk_transpose      = self.image_dock.chk_transpose
+        self.display_rois       = self.image_dock.display_rois
+        self.rbtn_C             = self.image_dock.rbtn_C
+        self.rbtn_F             = self.image_dock.rbtn_F
+        self.rotate90degCCW     = self.image_dock.rotate90degCCW
+        self.stop_hkl           = self.image_dock.stop_hkl
+        self.btn_hkl_viewer     = self.image_dock.btn_hkl_viewer
+        self.btn_save_caches    = self.image_dock.btn_save_caches
+
+        # ROI dock widgets
+        self.lbl_ROI1            = self.roi_dock.lbl_ROI1
+        self.lbl_ROI2            = self.roi_dock.lbl_ROI2
+        self.lbl_ROI3            = self.roi_dock.lbl_ROI3
+        self.lbl_ROI4            = self.roi_dock.lbl_ROI4
+        self.lbl_image_total     = self.roi_dock.lbl_image_total
+        self.roi1_total_value    = self.roi_dock.roi1_total_value
+        self.roi2_total_value    = self.roi_dock.roi2_total_value
+        self.roi3_total_value    = self.roi_dock.roi3_total_value
+        self.roi4_total_value    = self.roi_dock.roi4_total_value
+        self.stats5_total_value  = self.roi_dock.stats5_total_value
+        self.chk_show_roi = [
+            self.roi_dock.chk_show_roi1,
+            self.roi_dock.chk_show_roi2,
+            self.roi_dock.chk_show_roi3,
+            self.roi_dock.chk_show_roi4,
+        ]
+        for chk in self.chk_show_roi:
+            chk.stateChanged.connect(self._apply_roi_visibility)
+        for i in range(1, 6):
+            setattr(self, f"btn_Stats{i}", getattr(self.roi_dock, f"btn_Stats{i}"))
+            setattr(self, f"btn_PlotStats{i}", getattr(self.roi_dock, f"btn_PlotStats{i}"))
+
+        # Analysis dock widgets
+        self.btn_analysis_window = self.analysis_dock.btn_analysis_window
+
+        # Wire mask button signals (other docks are wired in __init__'s connection block)
+        self.btn_load_mask.clicked.connect(self.load_mask_clicked)
+        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
+        self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
+        self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
+        self.btn_export_json.clicked.connect(self.export_json_clicked)
 
     # ---- Mask handler methods ----
 
@@ -648,7 +669,7 @@ class DiffractionImageWindow(BaseWindow):
                             print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
                         elif threshold_enabled:
                             print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
-                        print("Note: Check terminal/console for any error messages if window doesn't appear")
+                        print(f"Note: Check terminal/console for any error messages if window doesn't appear")
                     except Exception as e:
                         print(f"Error launching pyFAI_analysis.py: {e}")
                         # Fallback to regular analysis window
@@ -662,7 +683,7 @@ class DiffractionImageWindow(BaseWindow):
     def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
-        
+
         This method ensures that any existing connections are cleared and re-initialized.
         Also starts monitoring the stats and adds ROIs to the viewer.
         """
@@ -736,6 +757,9 @@ class DiffractionImageWindow(BaseWindow):
                 # × N dead PVs).
                 import threading
                 threading.Thread(target=self._connect_pv_pollers, daemon=True).start()
+                # add_rois() runs from the rois_ready signal once the background
+                # sweep populates reader.rois — calling it here would race the
+                # async caget and find an empty dict.
                 self.start_timers()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
@@ -1471,7 +1495,9 @@ class DiffractionImageWindow(BaseWindow):
                                                 autoLevels=False,
                                                 levels=(min_level, max_level),
                                                 autoHistogramRange=False)
-                        # Set colormap separately
+                        # Set colormap separately, then re-collapse the gradient
+                        # to the lightweight preset so we don't end up with one
+                        # tick handle per colormap stop.
                         self.image_view.setColorMap(self.cet_colormap)
                         try:
                             self.image_view.ui.histogram.gradient.loadPreset('viridis')
@@ -1500,7 +1526,11 @@ class DiffractionImageWindow(BaseWindow):
     
     def update_min_max_setting(self) -> None:
         """
-        Updates the min/max pixel levels in the Image Viewer based on UI settings.
+        Apply the user's min/max spin-box values to the image LUT.
+
+        Manual edit takes precedence over autoscale: typing a value implicitly
+        switches autoscale off so the user's value isn't overwritten on the
+        next tick by ``apply_autoscale``.
         """
         if self.chk_autoscale.isChecked():
             self.chk_autoscale.blockSignals(True)
@@ -1635,7 +1665,6 @@ class DiffractionImageWindow(BaseWindow):
 
 def main():
     app = QApplication(sys.argv)
-    configure_app(app)
     # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()

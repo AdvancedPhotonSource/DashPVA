@@ -256,8 +256,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self._update_button_states()
 
     def _on_stop_scan_clicked(self) -> None:
-        if self.reader is None:
-            return
+        if self.reader is None: return
         try:
             if getattr(self.reader, 'FLAG_PV', ''):
                 caput(self.reader.FLAG_PV, self.reader.STOP_SCAN)
@@ -424,8 +423,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             if hasattr(self, 'label_file_output'):
                 file_output = "--"
                 try:
-                    file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
-                    file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+                    file_path_pv = app_settings.FILE_PATH or ''
+                    file_name_pv = app_settings.FILE_NAME or ''
                     if file_path_pv or file_name_pv:
                         fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
                         fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
@@ -448,8 +447,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
     def _refresh_save_fields(self):
         """Re-read FILE_PATH and FILE_NAME PVs and populate the Save folder/filename fields."""
         try:
-            file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
-            file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+            file_path_pv = app_settings.FILE_PATH or ''
+            file_name_pv = app_settings.FILE_NAME or ''
             fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
             fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
             if hasattr(self, 'lineedit_save_folder'):

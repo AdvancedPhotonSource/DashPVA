@@ -8,6 +8,8 @@ _LAZY_IMPORTS = {
     "DashAnalysis": "dashpva.utils.dash_analysis",
     "RSMConverter": "dashpva.utils.rsm_converter",
     "MaskManager": "dashpva.utils.mask_manager",
+    "load_last":"utils.user_config",
+    "save_last":"utils.user_config"
 }
 
 

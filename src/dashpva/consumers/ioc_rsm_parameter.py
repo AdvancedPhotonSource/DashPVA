@@ -49,22 +49,34 @@ def _save_config(cfg: dict) -> None:
 # Shared configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEFAULT_PREFIX = '6idb:'
+# Prefix the IOC publishes records under ({DEFAULT_PREFIX}{MotorName}:Position etc.).
+DEFAULT_PREFIX = 'xidb:'
 
+# Each axis: name (used in PV names), kind (sample|detector), per-circle
+# axis_number, lab-frame direction code xrayutilities expects, and the source
+# PV the IOC reads from to obtain the live position.
 MOTOR_AXES = [
-    {'name': 'Mu',    'source_pv': '6idb1:m28.RBV', 'axis_number': 1, 'direction': 'x+'},
-    {'name': 'Eta',   'source_pv': '6idb1:m17.RBV', 'axis_number': 2, 'direction': 'z-'},
-    {'name': 'Chi',   'source_pv': '6idb1:m19.RBV', 'axis_number': 3, 'direction': 'y+'},
-    {'name': 'Phi',   'source_pv': '6idb1:m20.RBV', 'axis_number': 4, 'direction': 'z-'},
-    {'name': 'Nu',    'source_pv': '6idb1:m29.RBV', 'axis_number': 1, 'direction': 'x+'},
-    {'name': 'Delta', 'source_pv': '6idb1:m18.RBV', 'axis_number': 2, 'direction': 'z-'},
+    {'name': 'Mu',    'kind': 'sample',   'axis_number': 1, 'direction': 'x+', 'source_pv': 'xidb1:m1.RBV'},
+    {'name': 'Eta',   'kind': 'sample',   'axis_number': 2, 'direction': 'z-', 'source_pv': 'xidb1:m2.RBV'},
+    {'name': 'Chi',   'kind': 'sample',   'axis_number': 3, 'direction': 'y+', 'source_pv': 'xidb1:m3.RBV'},
+    {'name': 'Phi',   'kind': 'sample',   'axis_number': 4, 'direction': 'z-', 'source_pv': 'xidb1:m4.RBV'},
+    {'name': 'Nu',    'kind': 'detector', 'axis_number': 1, 'direction': 'x+', 'source_pv': 'xidb1:m5.RBV'},
+    {'name': 'Delta', 'kind': 'detector', 'axis_number': 2, 'direction': 'z-', 'source_pv': 'xidb1:m6.RBV'},
 ]
 
-DEFAULT_ENERGY_SOURCE_PV = '6idb:spec:Energy'
-DEFAULT_UB            = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-DEFAULT_PRIMARY_BEAM  = [0, 1, 0]
-DEFAULT_INPLANE_REF   = [0, 1, 0]
-DEFAULT_SAMPLE_NORMAL = [0, 0, 1]
+# Source PV for energy (re-published as {DEFAULT_PREFIX}spec:Energy:Value).
+DEFAULT_ENERGY_SOURCE_PV = 'xidb:spec:Energy'
+
+# Fallback beam energy (keV) when the source PV is dead.  Without this the
+# IOC publishes 0 keV → xrayutilities divide-by-zero → RSM collapses onto the
+# origin.  11.2 mirrors sim_rsm_data.py for a physically meaningful default.
+DEFAULT_ENERGY_KEV = 11.2
+
+# Static defaults the IOC pre-populates in case nothing else provides them.
+DEFAULT_UB             = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+DEFAULT_PRIMARY_BEAM   = [0, 1, 0]
+DEFAULT_INPLANE_REF    = [0, 1, 0]
+DEFAULT_SAMPLE_NORMAL  = [0, 0, 1]
 DEFAULT_DETECTOR = {
     'pixel_dir1': 'z-',
     'pixel_dir2': 'x-',
@@ -74,9 +86,11 @@ DEFAULT_DETECTOR = {
     'units':      'mm',
 }
 
-POLL_INTERVAL    = 0.01   # IOC publish rate  (100 Hz)
-CAGET_INTERVAL   = 0.02   # PV-source refresh (50 Hz)
-SNAPSHOT_EVERY   = 5      # emit GUI snapshot every N IOC cycles (~20 Hz)
+POLL_INTERVAL        = 0.01   # IOC publish loop period — 100 Hz (motor/energy)
+CAGET_INTERVAL       = 0.02   # PV-source refresh cap — 50 Hz (currently unused)
+SNAPSHOT_EVERY       = 5      # GUI snapshot every N loops — ~20 Hz
+STATIC_REFRESH_EVERY = 10     # Re-put UB / axes / detector / ScanOn every N loops — ~10 Hz
+FILE_REFRESH_EVERY   = 100    # Re-put FilePath / FileName every N loops — ~1 Hz
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,11 +103,9 @@ def _run_ioc(prefix: str) -> None:
 
     import ctypes.util
     import tempfile
-
     import numpy as np
     import pvaccess as pva
-    from epics import PV as _PV
-    from epics import caget as _caget
+    from epics import caget as _caget, PV as _PV
 
     # ── DB builder ────────────────────────────────────────────────────────
     def _ai(name):
@@ -235,29 +247,79 @@ def _run_ioc(prefix: str) -> None:
     os.unlink(tmp.name)
 
     p = prefix
-    # Motor per-axis static fields (set in .db but must be in _current_vals too)
-    for ax in MOTOR_AXES:
-        ioc_put(caIoc, f"{p}{ax['name']}:AxisNumber",    float(ax['axis_number']))
-        ioc_put(caIoc, f"{p}{ax['name']}:DirectionAxis", ax['direction'])
-        ioc_put(caIoc, f"{p}{ax['name']}:SpecMotorName", ax['name'])
-    ioc_put(caIoc, f"{p}spec:UB_matrix:Value", DEFAULT_UB[:])
-    for i, v in enumerate(DEFAULT_PRIMARY_BEAM):
-        ioc_put(caIoc, f"{p}PrimaryBeamDirection:AxisNumber{i+1}", float(v))
-    for i, v in enumerate(DEFAULT_INPLANE_REF):
-        ioc_put(caIoc, f"{p}InplaneReferenceDirection:AxisNumber{i+1}", float(v))
-    for i, v in enumerate(DEFAULT_SAMPLE_NORMAL):
-        ioc_put(caIoc, f"{p}SampleSurfaceNormalDirection:AxisNumber{i+1}", float(v))
-    d = DEFAULT_DETECTOR
-    ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection1",    d['pixel_dir1'])
-    ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection2",    d['pixel_dir2'])
-    ioc_put(caIoc, f"{p}DetectorSetup:CenterChannelPixel", [float(v) for v in d['center']])
-    ioc_put(caIoc, f"{p}DetectorSetup:Size",               [float(v) for v in d['size']])
-    ioc_put(caIoc, f"{p}DetectorSetup:Distance",           float(d['distance']))
-    ioc_put(caIoc, f"{p}DetectorSetup:Units",              d['units'])
-    ioc_put(caIoc, f"{p}ScanOn:Value",   0)
-    ioc_put(caIoc, f"{p}FilePath:Value", '')
-    ioc_put(caIoc, f"{p}FileName:Value", '')
+    # PVs whose value is owned by external clients (scan software, GUI Save
+    # fields, etc.). The publish loop must re-put them with the *current*
+    # value (read back via _poll_static / camonitor below) — re-putting their
+    # initial defaults every iteration would silently wipe every external
+    # write.
+    # ScanOn changes on every scan start/stop, so it rides the fast static
+    # republish. FilePath/FileName change at most once per scan setup, so they
+    # ride a much slower cadence (FILE_REFRESH_EVERY) to cut CA traffic.
+    _EXTERNAL_FAST_PVS = (
+        f"{p}ScanOn:Value",
+    )
+    _EXTERNAL_FILE_PVS = (
+        f"{p}FilePath:Value",
+        f"{p}FileName:Value",
+    )
+    _EXTERNAL_PVS = _EXTERNAL_FAST_PVS + _EXTERNAL_FILE_PVS
+    _EXTERNAL_DEFAULTS = {
+        f"{p}ScanOn:Value":   0,
+        f"{p}FilePath:Value": '',
+        f"{p}FileName:Value": '',
+    }
 
+    def _publish_static_records():
+        """Re-put every static (non-dynamic) record so its CA timestamp refreshes.
+
+        Called once at startup, then again on every publish-loop iteration.
+        Without this, the MetaAssociator rejects DetectorSetup / direction /
+        UB / axis-metadata attributes because their initial timestamps drift
+        far outside the per-frame association tolerance.
+
+        For ScanOn the *current cached* value is republished (not the startup
+        default), so external writes survive but timestamps still refresh.
+        FilePath/FileName are handled separately by _publish_file_records on
+        the slower FILE_REFRESH_EVERY cadence.
+        """
+        for ax in MOTOR_AXES:
+            ioc_put(caIoc, f"{p}{ax['name']}:AxisNumber",    float(ax['axis_number']))
+            ioc_put(caIoc, f"{p}{ax['name']}:DirectionAxis", ax['direction'])
+            ioc_put(caIoc, f"{p}{ax['name']}:SpecMotorName", ax['name'])
+        ioc_put(caIoc, f"{p}spec:UB_matrix:Value", DEFAULT_UB[:])
+        for i, v in enumerate(DEFAULT_PRIMARY_BEAM):
+            ioc_put(caIoc, f"{p}PrimaryBeamDirection:AxisNumber{i+1}", float(v))
+        for i, v in enumerate(DEFAULT_INPLANE_REF):
+            ioc_put(caIoc, f"{p}InplaneReferenceDirection:AxisNumber{i+1}", float(v))
+        for i, v in enumerate(DEFAULT_SAMPLE_NORMAL):
+            ioc_put(caIoc, f"{p}SampleSurfaceNormalDirection:AxisNumber{i+1}", float(v))
+        d = DEFAULT_DETECTOR
+        ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection1",    d['pixel_dir1'])
+        ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection2",    d['pixel_dir2'])
+        ioc_put(caIoc, f"{p}DetectorSetup:CenterChannelPixel", [float(v) for v in d['center']])
+        ioc_put(caIoc, f"{p}DetectorSetup:Size",               [float(v) for v in d['size']])
+        ioc_put(caIoc, f"{p}DetectorSetup:Distance",           float(d['distance']))
+        ioc_put(caIoc, f"{p}DetectorSetup:Units",              d['units'])
+        for name in _EXTERNAL_FAST_PVS:
+            ioc_put(caIoc, name, _current_vals.get(name, _EXTERNAL_DEFAULTS[name]))
+
+    def _publish_file_records():
+        """Re-put FilePath/FileName so their CA timestamps refresh.
+
+        Called on the FILE_REFRESH_EVERY cadence (~1 Hz). External writes
+        survive because the cached value (kept current by camonitor) is
+        republished, not the startup default.
+        """
+        for name in _EXTERNAL_FILE_PVS:
+            ioc_put(caIoc, name, _current_vals.get(name, _EXTERNAL_DEFAULTS[name]))
+
+    # Seed the externally-owned PVs in _current_vals so the very first
+    # _publish_static_records() / _publish_file_records() call has something
+    # to publish.
+    for _name, _default in _EXTERNAL_DEFAULTS.items():
+        _current_vals[_name] = _default
+    _publish_static_records()
+    _publish_file_records()
     print(f'IOC ready (prefix={prefix})', flush=True)
 
     # ── PV monitor pool — non-blocking reads at any rate ─────────────────
@@ -302,6 +364,28 @@ def _run_ioc(prefix: str) -> None:
 
     threading.Thread(target=_poll_static, daemon=True).start()
 
+    # ── camonitor for externally-owned PVs (immediate update) ────────────
+    # The 100 Hz publish loop reads _current_vals[name] for these and re-puts
+    # it. The 2 Hz _poll_static thread alone leaves a ~500 ms race window
+    # where an external caput would be silently overwritten by the cached
+    # stale value before being polled back. Camonitor closes that window —
+    # external writes update _current_vals within milliseconds.
+    def _external_pv_callback(pvname=None, value=None, **_):
+        if pvname is None or value is None:
+            return
+        if hasattr(value, 'tolist'):
+            value = value.tolist()
+        elif hasattr(value, 'item'):
+            value = value.item()
+        _current_vals[pvname] = value
+
+    for _ext in _EXTERNAL_PVS:
+        try:
+            # Hold a reference so the PV (and its monitor) isn't GC'd.
+            _pv_mons[_ext] = _PV(_ext, auto_monitor=True, callback=_external_pv_callback)
+        except Exception as _e:
+            print(f'IOC: failed to monitor {_ext}: {_e}', flush=True)
+
     # ── Publish loop — 100 Hz, reads from cache (no blocking caget) ───────
     _loop_n = 0
     while not _stop.is_set():
@@ -313,14 +397,26 @@ def _run_ioc(prefix: str) -> None:
 
             motor_vals = {ax['name']: _get(motor_srcs[ax['name']]) for ax in MOTOR_AXES}
             energy_val = _get(energy_src)
+            # avoid division by zero error by using a default value
+            if not energy_val or energy_val <= 0:
+                energy_val = DEFAULT_ENERGY_KEV
 
             for ax in MOTOR_AXES:
                 ioc_put(caIoc, f"{p}{ax['name']}:Position", motor_vals[ax['name']])
             ioc_put(caIoc, f"{p}spec:Energy:Value", energy_val)
 
+            # Refresh the static records on a slower cadence (see
+            # STATIC_REFRESH_EVERY). They literally never change — re-putting
+            # them every 10 ms purely to refresh CA timestamps was the main
+            # CPU hog of this subprocess (~3,700 putField calls/sec).
+            _loop_n += 1
+            if _loop_n % STATIC_REFRESH_EVERY == 0:
+                _publish_static_records()
+            if _loop_n % FILE_REFRESH_EVERY == 0:
+                _publish_file_records()
+
             # Snapshot: _current_vals has every value ever written via ioc_put;
             # overlay the fast-changing motor/energy values on top.
-            _loop_n += 1
             if _loop_n % SNAPSHOT_EVERY == 0:
                 snap = dict(_current_vals)
                 print(json.dumps({'type': 'values', 'data': snap}), flush=True)
@@ -482,7 +578,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             prefix_lay.setContentsMargins(0, 0, 0, 0)
             prefix_lay.setSpacing(4)
             self._prefix_edit = QLineEdit(self._prefix)
-            self._prefix_edit.setPlaceholderText('e.g. 6idb:')
+            self._prefix_edit.setPlaceholderText('e.g. xidb:')
             btn_apply_prefix = QPushButton('Apply')
             btn_apply_prefix.setFixedWidth(60)
             def _on_apply_prefix():

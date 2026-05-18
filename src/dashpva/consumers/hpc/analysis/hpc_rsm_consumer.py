@@ -8,7 +8,7 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 import xrayutilities as xu
-from pvaccess import PvObject
+from pvaccess import PvObject, NtAttribute
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
@@ -125,6 +125,17 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.qx = None
         self.qy = None
         self.qz = None
+        # Cached fields produced by the rsm-recompute branch in process(). When
+        # create_rsm() fails, the recompute branch returns early and these stay
+        # at their None defaults; the rsm_data construction below skips itself
+        # accordingly so a stale frame never references an unset attribute.
+        self.codec_name = None
+        self.codec_parameters = -1
+        self.original_dtype = np.dtype('float64')
+        self.uncompressed_size = 0
+        self.compressed_size_qx = 0
+        self.compressed_size_qy = 0
+        self.compressed_size_qz = 0
 
         self.configure(configDict)
 
@@ -143,7 +154,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             )
 
         self.config = config
-        self.hkl_config = self.config.get('HKL', {})
+        self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set()
         for section in self.hkl_config.values():
             if isinstance(section, dict):
@@ -199,15 +210,24 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
 
     def get_axis_directions(self, hkl_attr: dict):
-         # Get beam and reference directions
-        if len(hkl_attr) == len(self.hkl_pv_channels):
-            primary_beam_directions = [hkl_attr.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
-            inplane_beam_direction = [hkl_attr.get(f'InplaneReferenceDirection:AxisNumber{i}', None) for i in range(1,4)]
-            sample_surface_normal_direction = [hkl_attr.get(f'SampleSurfaceNormalDirection:AxisNumber{i}', None) for i in range(1,4)]
+        """Get beam / reference / surface-normal direction triplets from hkl_attr.
 
-            return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
-        else:
+        PV names come from the active HKL config (which includes any prefix the
+        IOC publishes under), not hardcoded — so this works for `xidb:`,
+        `6idb:`, or unprefixed schemas without code changes.
+        """
+        if len(hkl_attr) != len(self.hkl_pv_channels):
             return None, None, None
+
+        def _triplet(section_name):
+            section = self.hkl_config.get(section_name, {}) or {}
+            return [hkl_attr.get(section.get(f'AXIS_NUMBER_{i}', ''), None) for i in range(1, 4)]
+
+        primary_beam_directions          = _triplet('PRIMARY_BEAM_DIRECTION')
+        # Section names match the (typo'd) keys used elsewhere in the config schema.
+        inplane_beam_direction           = _triplet('INPLANE_REFERENCE_DIRECITON')
+        sample_surface_normal_direction  = _triplet('SAMPLE_SURFACE_NORMAL_DIRECITON')
+        return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
 
     def get_ub_matrix(self, hkl_attr: dict):
         ub_matrix_key = self.hkl_config['SPEC'].get('UB_MATRIX_VALUE', '')
@@ -243,17 +263,18 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                         en=energy,
                         qconv=q_conv)
 
-            # Set up detector parameters
+            # Set up detector parameters — look up by the PV name in the active
+            # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
+            ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
             roi = [0, shape[0], 0, shape[1]]
-            pixel_dir1 = hkl_attr['DetectorSetup:PixelDirection1']
-            pixel_dir2 = hkl_attr['DetectorSetup:PixelDirection2']
-            cch1 = hkl_attr['DetectorSetup:CenterChannelPixel'][0]
-            cch2 = hkl_attr['DetectorSetup:CenterChannelPixel'][1]
-            nch1 = shape[0]
-            nch2 = shape[1]
-            pixel_width1 = hkl_attr['DetectorSetup:Size'][0] / nch1
-            pixel_width2 = hkl_attr['DetectorSetup:Size'][1] / nch2
-            distance = hkl_attr['DetectorSetup:Distance']
+            pixel_dir1   = hkl_attr[ds_cfg['PIXEL_DIRECTION_1']]
+            pixel_dir2   = hkl_attr[ds_cfg['PIXEL_DIRECTION_2']]
+            cch1, cch2   = hkl_attr[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
+            nch1, nch2   = shape[0], shape[1]
+            size_xy      = hkl_attr[ds_cfg['SIZE']]
+            pixel_width1 = size_xy[0] / nch1
+            pixel_width2 = size_xy[1] / nch2
+            distance     = hkl_attr[ds_cfg['DISTANCE']]
 
             hxrd.Ang2Q.init_area(
                 pixel_dir1, pixel_dir2,
@@ -370,6 +391,21 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
+            # create_rsm() returns (None, None, None) when its inputs are
+            # incomplete (e.g. MetaAssociator dropped DetectorSetup attributes).
+            # np.ravel(None) would build an object-dtype array and crash later
+            # in PvObject({'value': [pva.DOUBLE]}, ...). Skip RSM emission for
+            # this frame and pass the un-decorated pvObject downstream.
+            if qxyz is None or qxyz[0] is None:
+                self.nFrameErrors += 1
+                if hasattr(self, 'logger'):
+                    self.logger.warning(
+                        "Skipping RSM for this frame: create_rsm returned None "
+                        "(likely missing HKL attributes from associator)."
+                    )
+                self.updateOutputChannel(pvObject)
+                self.processingTime += (time.time() - t0)
+                return pvObject
             self.qx: np.ndarray = np.ravel(qxyz[0])
             self.qy: np.ndarray = np.ravel(qxyz[1])
             self.qz: np.ndarray = np.ravel(qxyz[2])
@@ -388,6 +424,14 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 self.compressed_size_qx = self.qx.shape[0]
                 self.compressed_size_qy = self.qy.shape[0]
                 self.compressed_size_qz = self.qz.shape[0]
+
+        # Without a successful create_rsm() in the current or a previous frame
+        # there is nothing to attach. Pass the original pvObject through so the
+        # downstream pipeline keeps moving.
+        if self.qx is None or self.codec_name is None:
+            self.updateOutputChannel(pvObject)
+            self.processingTime += (time.time() - t0)
+            return pvObject
 
         try:
             # Create RSM data structure

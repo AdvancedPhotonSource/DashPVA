@@ -130,7 +130,7 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         with open(self.path, "r") as config_file:
             self.config = toml.load(config_file)
 
-        self.hkl_config = self.config.get('HKL', {})
+        self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set()
         for section in self.hkl_config.values():
             if isinstance(section, dict):

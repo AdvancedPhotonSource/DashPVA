@@ -50,7 +50,10 @@ border-radius:3;
 </string>
     </property>
     <property name="text">
-     <string>processor:1:analysis</string>
+     <string/>
+    </property>
+    <property name="placeholderText">
+     <string>e.g. s6lambda1</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_input_channel">
@@ -68,7 +71,7 @@ border-radius:3;
      </font>
     </property>
     <property name="text">
-     <string>Input Channel</string>
+     <string>Detector prefix</string>
     </property>
    </widget>
   </widget>
