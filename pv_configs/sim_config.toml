@@ -1,0 +1,111 @@
+# Required Setup
+IOC_PREFIX = 'sim'
+OUTPUT_FILE_LOCATION = 'OUTPUT.h5' # file must end with .h5 # can probably be made into it's own section
+CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how consumer is performing analysis calculations
+
+[CACHE_OPTIONS]
+CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describes whether the caching should be done the entire time, when a flag is seen, or if it should be put into bins based on number of frames
+
+    [CACHE_OPTIONS.ALIGNMENT]
+    MAX_CACHE_SIZE = 1000
+
+    [CACHE_OPTIONS.SCAN]
+    START_SCAN = true
+    STOP_SCAN = false 
+    THRESHOLD = 0.05 # use if start and stop values are not binary/boolean
+    MAX_CACHE_SIZE = 1000
+
+    [CACHE_OPTIONS.BIN]
+    COUNT = 10
+    SIZE = 16
+
+# Section for Metadata PVs
+[METADATA]
+
+    [METADATA.CA]
+
+        [METADATA.CA.CUSTOM]
+        TEMPERATURE = 'Temperature:Value'
+        PRESSURE = 'Pressure:Value'
+        POSITION = 'Position:Value'
+        VOLTAGE = 'Voltage:Value'
+
+    [METADATA.PVA]
+
+[ANALYSIS]
+    # Make sure to use PVs that are also in METADATA section
+    AXIS1 = 'x'
+    AXIS2 = 'y'
+
+[HKL]
+
+    [HKL.SAMPLE_CIRCLE_AXIS_1]
+    AXIS_NUMBER = 'sim:m1_RBV:AxisNumber'      # Mu
+    DIRECTION_AXIS = 'sim:m1_RBV:DirectionAxis'
+    # NAME = 'sim:m1_RBV:Name'
+    POSITION = 'sim:m1_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m1_RBV:SpecMotorName'
+    
+    [HKL.SAMPLE_CIRCLE_AXIS_2]
+    AXIS_NUMBER = 'sim:m2_RBV:AxisNumber'      # Eta (sine-swept)
+    DIRECTION_AXIS = 'sim:m2_RBV:DirectionAxis'
+    # NAME = 'sim:m2_RBV:Name'
+    POSITION = 'sim:m2_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m2_RBV:SpecMotorName'
+
+    [HKL.SAMPLE_CIRCLE_AXIS_3]
+    AXIS_NUMBER = 'sim:m3_RBV:AxisNumber'      # Chi
+    DIRECTION_AXIS = 'sim:m3_RBV:DirectionAxis'
+    # NAME = 'sim:m3_RBV:Name'
+    POSITION = 'sim:m3_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m3_RBV:SpecMotorName'
+
+    [HKL.SAMPLE_CIRCLE_AXIS_4]
+    AXIS_NUMBER = 'sim:m4_RBV:AxisNumber'      # Phi
+    DIRECTION_AXIS = 'sim:m4_RBV:DirectionAxis'
+    # NAME = 'sim:m4_RBV:Name'
+    POSITION = 'sim:m4_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m4_RBV:SpecMotorName'
+
+    [HKL.DETECTOR_CIRCLE_AXIS_1]
+    AXIS_NUMBER = 'sim:m5_RBV:AxisNumber'      # Nu
+    DIRECTION_AXIS = 'sim:m5_RBV:DirectionAxis'
+    # NAME = 'sim:m5_RBV:Name'
+    POSITION = 'sim:m5_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m5_RBV:SpecMotorName'
+
+    [HKL.DETECTOR_CIRCLE_AXIS_2]
+    AXIS_NUMBER = 'sim:m6_RBV:AxisNumber'      # Delta (sine-swept)
+    DIRECTION_AXIS = 'sim:m6_RBV:DirectionAxis'
+    # NAME = 'sim:m6_RBV:Name'
+    POSITION = 'sim:m6_RBV:Position'
+    # SPEC_MOTOR_NAME = 'sim:m6_RBV:SpecMotorName'
+
+    [HKL.SPEC]
+    ENERGY_VALUE = 'sim:spec:Energy:Value'
+    UB_MATRIX_VALUE = 'sim:spec:UB_matrix:Value'
+
+    [HKL.PRIMARY_BEAM_DIRECTION]
+    AXIS_NUMBER_1 = 'PrimaryBeamDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'PrimaryBeamDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'PrimaryBeamDirection:AxisNumber3'
+
+    [HKL.INPLANE_REFERENCE_DIRECITON]
+    AXIS_NUMBER_1 = 'InplaneReferenceDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'InplaneReferenceDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'InplaneReferenceDirection:AxisNumber3'
+    
+    [HKL.SAMPLE_SURFACE_NORMAL_DIRECITON]
+    AXIS_NUMBER_1 = 'SampleSurfaceNormalDirection:AxisNumber1'
+    AXIS_NUMBER_2 = 'SampleSurfaceNormalDirection:AxisNumber2'
+    AXIS_NUMBER_3 = 'SampleSurfaceNormalDirection:AxisNumber3'
+
+    [HKL.DETECTOR_SETUP]
+    CENTER_CHANNEL_PIXEL = 'DetectorSetup:CenterChannelPixel'
+    DISTANCE = 'DetectorSetup:Distance'
+    PIXEL_DIRECTION_1 = 'DetectorSetup:PixelDirection1'
+    PIXEL_DIRECTION_2 = 'DetectorSetup:PixelDirection2'
+    SIZE = 'DetectorSetup:Size'
+    UNITS = 'DetectorSetup:Units'
+
+    
