@@ -47,7 +47,7 @@ class DashAI(BaseDock):
 
         # 3. Action Button
         self.btn_segment = QPushButton("Run DashAI Segmentation")
-        self.btn_segment.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.btn_segment.setObjectName("btn_segment")
         # Connect this button to your SAM function later
         # self.btn_segment.clicked.connect(self.run_segmentation)
         layout.addWidget(self.btn_segment)

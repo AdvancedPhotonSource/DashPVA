@@ -35,7 +35,7 @@
       <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
      </property>
      <property name="styleSheet">
-      <string notr="true">font-size: 14px; color: #666;</string>
+      <string notr="true">font-size: 11pt; color: #666;</string>
      </property>
     </widget>
    </item>

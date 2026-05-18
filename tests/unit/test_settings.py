@@ -1,14 +1,12 @@
 """Tests for dashpva.settings — configuration loading, defaults, and priority."""
 
-import os
-
-import pytest
-
 
 class TestSettingsDefaults:
 
-    def test_reload_with_no_config(self, isolated_settings):
+    def test_reload_with_no_config(self, monkeypatch, isolated_settings):
         s = isolated_settings
+        monkeypatch.setattr(s, "ConfigSource", None)
+        s.reload()
         assert s.DETECTOR_PREFIX is None
         assert s.OUTPUT_FILE_LOCATION is None
         assert isinstance(s.METADATA_CA, dict)
@@ -116,5 +114,98 @@ class TestGetEffectiveLocator:
 
         monkeypatch.setattr(settings, "_locator_internal", None)
         monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        monkeypatch.setattr(settings, "_STATE_FILE", settings.PROJECT_ROOT / ".dashpva_locator_test_nonexistent")
         eff = settings._get_effective_locator()
         assert eff is None
+
+    def test_state_file_fallback(self, monkeypatch, tmp_path):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        state_file.write_text("/some/config.toml")
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+        eff = settings._get_effective_locator()
+        assert eff == "/some/config.toml"
+
+    def test_state_file_int_locator(self, monkeypatch, tmp_path):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        state_file.write_text("42")
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+        eff = settings._get_effective_locator()
+        assert eff == 42
+
+    def test_set_locator_writes_state_file(self, monkeypatch, tmp_path):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+        settings.set_locator("/test/path.toml")
+        assert state_file.read_text() == "/test/path.toml"
+        monkeypatch.setattr(settings, "_locator_internal", None)
+
+
+class TestInputChannel:
+
+    def test_get_input_channel_from_explicit(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", "custom:Channel")
+        monkeypatch.setattr(settings, "DETECTOR_PREFIX", "somePrefix")
+        assert settings.get_input_channel() == "custom:Channel"
+
+    def test_get_input_channel_from_prefix(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", None)
+        monkeypatch.setattr(settings, "DETECTOR_PREFIX", "4idEiger")
+        assert settings.get_input_channel() == "4idEiger:Pva1:Image"
+
+    def test_get_input_channel_fallback(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", None)
+        monkeypatch.setattr(settings, "DETECTOR_PREFIX", None)
+        assert settings.get_input_channel() == "pvapy:image"
+
+    def test_get_input_channel_custom_fallback(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", None)
+        monkeypatch.setattr(settings, "DETECTOR_PREFIX", None)
+        assert settings.get_input_channel("vit:1:input_phase") == "vit:1:input_phase"
+
+    def test_save_input_channel_updates_global(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", None)
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        monkeypatch.setattr(settings, "_STATE_FILE", settings.PROJECT_ROOT / ".dashpva_locator_test_nonexistent")
+        settings.save_input_channel("test:Channel")
+        assert settings.INPUT_CHANNEL == "test:Channel"
+        monkeypatch.setattr(settings, "INPUT_CHANNEL", None)
+
+    def test_save_and_reload_input_channel(self, monkeypatch, tmp_toml, tmp_path):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+        monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        settings.set_locator(tmp_toml)
+        settings.reload()
+        assert settings.INPUT_CHANNEL is None
+
+        settings.save_input_channel("saved:Pva1:Image")
+        assert settings.INPUT_CHANNEL == "saved:Pva1:Image"
+
+        settings.reload()
+        assert settings.INPUT_CHANNEL == "saved:Pva1:Image"
+
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        settings.reload()

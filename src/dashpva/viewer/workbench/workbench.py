@@ -1287,7 +1287,7 @@ class WorkbenchWindow(BaseWindow):
 
         # File status label at the top
         self.file_status_label = QLabel("No HDF5 file loaded")
-        self.file_status_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #2c3e50; padding: 10px;")
+        self.file_status_label.setObjectName("file_status_label")
         self.file_status_label.setAlignment(Qt.AlignCenter)
         self.main_workspace_layout.addWidget(self.file_status_label)
 
@@ -1303,51 +1303,16 @@ class WorkbenchWindow(BaseWindow):
 
         # Create tab widget with compact size
         self.info_tabs = QTabWidget()
-        self.info_tabs.setMaximumHeight(150)  # Limit height to make it compact
-        self.info_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #dee2e6
-                border-radius: 4px
-                background-color: #f8f9fa
-            }
-            QTabBar::tab {
-                background-color: #e9ecef
-                border: 1px solid #dee2e6
-                padding: 6px 12px
-                margin-right: 2px
-                font-size: 9pt
-            }
-            QTabBar::tab:selected {
-                background-color: #f8f9fa
-                border-bottom: 1px solid #f8f9fa
-            }
-        """)
+        self.info_tabs.setObjectName("info_tabs")
+        self.info_tabs.setMaximumHeight(150)
 
         # Dataset Information Tab
         self.dataset_info_text = QTextEdit()
-        self.dataset_info_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8f9fa
-                border: none
-                padding: 6px
-                font-family: 'Consolas', monospace
-                font-size: 9pt
-            }
-        """)
         self.dataset_info_text.setReadOnly(True)
         self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
 
         # File Information Tab
         self.file_info_text = QTextEdit()
-        self.file_info_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8f9fa
-                border: none
-                padding: 6px
-                font-family: 'Consolas', monospace
-                font-size: 9pt
-            }
-        """)
         self.file_info_text.setReadOnly(True)
         self.file_info_text.setPlainText("Load an HDF5 file to view file information.")
 

@@ -1,3 +1,5 @@
+import os
+import signal
 import subprocess
 import sys
 from collections import OrderedDict
@@ -18,6 +20,15 @@ from PyQt5.QtWidgets import (
 )
 
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import (
+    BORDER,
+    FONT_SMALL,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_SECONDARY,
+    WARNING,
+    status_style,
+)
 
 from .registry import get_views
 
@@ -89,7 +100,7 @@ class LauncherDialog(QDialog):
         row.setSpacing(8)
 
         self._lbl_update_status = QLabel('Checking for updates…', row_widget)
-        self._lbl_update_status.setStyleSheet('font-size: 11px; color: #9BA5B5;')
+        self._lbl_update_status.setStyleSheet(status_style(TEXT_MUTED))
         row.addWidget(self._lbl_update_status)
         row.addStretch()
 
@@ -110,10 +121,10 @@ class LauncherDialog(QDialog):
     def _on_release_check(self, has_update, tag, _notes):
         if has_update:
             self._lbl_update_status.setText(f'● Update available: {tag}')
-            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #E67E22; font-weight: 600;')
+            self._lbl_update_status.setStyleSheet(status_style(WARNING, bold=True))
         else:
             self._lbl_update_status.setText('Up to date')
-            self._lbl_update_status.setStyleSheet('font-size: 11px; color: #27AE60;')
+            self._lbl_update_status.setStyleSheet(status_style(SUCCESS))
 
     def _insert_registry_sections(self):
         """Build section dividers and button grids from the VIEWS registry."""
@@ -150,12 +161,12 @@ class LauncherDialog(QDialog):
 
             sec_lbl = QLabel(section_name.upper(), divider)
             sec_lbl.setStyleSheet(
-                "font-size: 10px; font-weight: 600; color: #9BA5B5; letter-spacing: 0.5px;"
+                f"font-size: {FONT_SMALL}; font-weight: 600; color: {TEXT_SECONDARY}; letter-spacing: 0.5px;"
             )
             line = QFrame(divider)
             line.setFrameShape(QFrame.HLine)
             line.setFrameShadow(QFrame.Plain)
-            line.setStyleSheet("background-color: #E0E4EB; max-height: 1px; border: none;")
+            line.setStyleSheet(f"background-color: {BORDER}; max-height: 1px; border: none;")
 
             divider_row.addWidget(sec_lbl)
             divider_row.addWidget(line, 1)
@@ -203,7 +214,7 @@ class LauncherDialog(QDialog):
             kwargs['stderr'] = subprocess.DEVNULL
 
         try:
-            p = subprocess.Popen(cmd, **kwargs)
+            p = subprocess.Popen(cmd, start_new_session=True, **kwargs)
             button.setText(running_text)
             self.processes[key] = {
                 'popen': p,
@@ -240,10 +251,10 @@ class LauncherDialog(QDialog):
         count = len(self.processes)
         if hasattr(self, 'lbl_status'):
             if count == 0:
-                self.lbl_status.setStyleSheet("font-size: 11px; color: #7A8394;")
+                self.lbl_status.setStyleSheet(status_style(TEXT_SECONDARY))
                 self.lbl_status.setText('No modules running')
             else:
-                self.lbl_status.setStyleSheet("font-size: 11px; color: #15803D; font-weight: 500;")
+                self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True))
                 noun = 'module' if count == 1 else 'modules'
                 self.lbl_status.setText(f'● {count} {noun} running')
         if hasattr(self, 'btn_exit'):
@@ -302,18 +313,22 @@ class LauncherDialog(QDialog):
         return "Running modules:\n" + "\n".join(lines)
 
     def _terminate_proc(self, p, timeout=3.0):
-        """Attempt graceful terminate, then force kill if still alive."""
+        """Terminate the process group, then force kill if still alive."""
         try:
-            if p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=timeout)
-                except Exception:
-                    pass
-            if p.poll() is None:
-                p.kill()
+            if p.poll() is not None:
+                return
+            pgid = os.getpgid(p.pid)
+            os.killpg(pgid, signal.SIGTERM)
+            try:
+                p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(pgid, signal.SIGKILL)
+                p.wait(timeout=2)
         except Exception:
-            pass
+            try:
+                p.kill()
+            except Exception:
+                pass
 
     def shutdown_all(self):
         """Force-stop all running modules and restore UI state."""
@@ -323,6 +338,14 @@ class LauncherDialog(QDialog):
             entry['button'].setEnabled(True)
             self.processes.pop(key, None)
         self._update_status()
+
+    @staticmethod
+    def _widen_messagebox(msg, width=420):
+        layout = msg.layout()
+        if layout is not None:
+            from PyQt5.QtWidgets import QSizePolicy, QSpacerItem
+            spacer = QSpacerItem(width, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+            layout.addItem(spacer, layout.rowCount(), 0, 1, layout.columnCount())
 
     def _confirm_shutdown_all(self):
         """Confirm and force-stop all running modules."""
@@ -336,6 +359,7 @@ class LauncherDialog(QDialog):
         msg.setInformativeText(running_list + '\n\nData might be lost.')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msg.setDefaultButton(QMessageBox.No)
+        self._widen_messagebox(msg)
         if msg.exec_() == QMessageBox.Yes:
             self.shutdown_all()
 
@@ -351,16 +375,13 @@ class LauncherDialog(QDialog):
         msg.setInformativeText(running_list + '\n\nData might be lost.')
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msg.setDefaultButton(QMessageBox.No)
+        self._widen_messagebox(msg)
         return msg.exec_() == QMessageBox.Yes
 
     def request_close(self):
-        """Always ask for confirmation, shut down all processes, then close."""
-        if self._confirm_exit():
-            self.shutdown_all()
-            self.close()
+        self.close()
 
     def closeEvent(self, event):
-        """Always ask for confirmation, shut down all processes, then accept close."""
         if self._confirm_exit():
             self.shutdown_all()
             event.accept()

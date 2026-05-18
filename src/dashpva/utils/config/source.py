@@ -100,7 +100,9 @@ class DbProfileConfigSource:
         if profile_id is None or self.db is None:
             return False
         try:
-            return self.db.import_toml_to_profile(profile_id, update or {})
+            existing = self.db.export_profile_to_toml(profile_id) or {}
+            existing.update(update or {})
+            return self.db.import_toml_to_profile(profile_id, existing)
         except Exception:
             return False
 

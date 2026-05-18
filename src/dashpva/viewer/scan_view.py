@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout
 
 import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import ERROR, SUCCESS, WARNING
 from dashpva.utils import HDF5Handler, PVAReader
 from dashpva.utils.log_manager import LogMixin
 
@@ -26,7 +27,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         except Exception:
             pass
 
-        self.channel = channel
+        self.channel = channel or app_settings.get_input_channel("")
         self.scan_state = False
 
         # Track applied state for UI labels
@@ -330,12 +331,12 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
 
     def _apply_indicator_style(self):
         if hasattr(self, 'label_indicator'):
-            color = "green" if "on" in self.label_indicator.text().lower() else "red"
+            color = SUCCESS if "on" in self.label_indicator.text().lower() else ERROR
             self.label_indicator.setStyleSheet(f'color: {color}; font-weight: bold;')
 
     def _apply_listening_style(self, state):
         if hasattr(self, 'label_listening'):
-            color = "green" if state else "red"
+            color = SUCCESS if state else ERROR
             self.label_listening.setStyleSheet(f'color: {color}; font-weight: bold;')
 
     def _update_button_states(self):
@@ -351,7 +352,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         write_output = hasattr(self, 'checkbox_write_output') and self.checkbox_write_output.isChecked()
         if not write_temp and not write_output:
             self.label_mode.setText("Warning: No save targets selected — data will not be written")
-            self.label_mode.setStyleSheet("color: orange; font-weight: bold;")
+            self.label_mode.setStyleSheet(f"color: {WARNING}; font-weight: bold;")
         else:
             self.label_mode.setText("")
             self.label_mode.setStyleSheet("")

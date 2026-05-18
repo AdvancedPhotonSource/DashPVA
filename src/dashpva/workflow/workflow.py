@@ -29,6 +29,15 @@ from PyQt5.QtWidgets import (
 import dashpva.settings as app_settings
 from dashpva.database.interface import DatabaseInterface
 from dashpva.gui import configure_app
+from dashpva.gui.theme_colors import (
+    ERROR,
+    FONT_CAPTION,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    WARNING,
+    status_style,
+)
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -151,7 +160,7 @@ class JsonEditorDialog(QDialog):
 
         # Error label
         self._error_label = QtWidgets.QLabel()
-        self._error_label.setStyleSheet('color: #E74C3C; font-size: 11px;')
+        self._error_label.setStyleSheet(status_style(ERROR))
         self._error_label.setVisible(False)
         main_layout.addWidget(self._error_label)
 
@@ -435,14 +444,14 @@ class Workflow(QDialog, LogMixin):
             self._db.get_all_profiles()  # confirm tables are queryable
             self._db_available = True
             self.labelDbStatus.setText('● Available')
-            self.labelDbStatus.setStyleSheet('QLabel { color: #27AE60; font-size: 10px; margin-left: 4px; }')
+            self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {SUCCESS}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip('')
             self.radioDatabase.setEnabled(True)
             self.buttonInitDb.setVisible(False)
         except Exception as e:
             self._db_available = False
             self.labelDbStatus.setText('● Unavailable')
-            self.labelDbStatus.setStyleSheet('QLabel { color: #E74C3C; font-size: 10px; margin-left: 4px; }')
+            self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {ERROR}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip(f'Error: {e}')
             self.radioDatabase.setEnabled(False)
             self.buttonInitDb.setVisible(True)
@@ -472,6 +481,8 @@ class Workflow(QDialog, LogMixin):
             self._refresh_profile_combo()
             if self.radioViewSettings.isChecked():
                 self._load_settings_tree()
+            else:
+                self.load_profile_to_tree()
             self._populate_processor_file_combos()
             self._load_meta_assoc_last()
             self._load_collector_last()
@@ -500,15 +511,15 @@ class Workflow(QDialog, LogMixin):
         except Exception:
             return
 
-        # Resolve relative to the project root so cwd doesn't matter
-        project_root = pathlib.Path(__file__).parent.parent
+        # Resolve relative to the package root (src/dashpva/) where consumers/ lives
+        pkg_root = pathlib.Path(__file__).parent.parent
 
         def list_py_files(subdir):
             try:
-                d = project_root / consumers_base / hpc_base / subdir if subdir else project_root / consumers_base / hpc_base
+                d = pkg_root / consumers_base / hpc_base / subdir if subdir else pkg_root / consumers_base / hpc_base
                 if not d.is_dir():
                     return []
-                rel_base = pathlib.Path(consumers_base) / hpc_base / subdir
+                rel_base = d.relative_to(app_settings.PROJECT_ROOT)
                 return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
             except Exception:
                 return []
@@ -634,19 +645,21 @@ class Workflow(QDialog, LogMixin):
 
     def browse_config_upload(self):
         file_name, _ = QFileDialog.getOpenFileName(
-            self, 'Select Config File', '', 'TOML Files (*.toml)'
+            self, 'Select Config File', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
         )
         if file_name:
+            app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
             self.lineEditConfigUploadPath.setText(file_name)
             self.update_current_mode_label(file_name)
             self._load_toml_into_tree(file_name)
 
     def import_toml_to_tree(self):
         file_name, _ = QFileDialog.getOpenFileName(
-            self, 'Import TOML Config', '', 'TOML Files (*.toml)'
+            self, 'Import TOML Config', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
         )
         if not file_name:
             return
+        app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
         self.lineEditConfigUploadPath.setText(file_name)
         self.update_current_mode_label(file_name)
 
@@ -1692,8 +1705,11 @@ class Workflow(QDialog, LogMixin):
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
             return
 
+        sim_path = self.lineEditProcessorFileSim.text()
+        if not os.path.isabs(sim_path):
+            sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
         cmd = [
-            'python', '-u', self.lineEditProcessorFileSim.text(),
+            sys.executable, '-u', sim_path,
             '-cn', self.lineEditInputChannelSim.text(),
             '-nx', str(self.spinBoxNx.value()),
             '-ny', str(self.spinBoxNy.value()),
@@ -2115,14 +2131,14 @@ class Workflow(QDialog, LogMixin):
     def _format_and_append_output(self, text: str, target_widget: QTextEdit):
         timestamp = datetime.now().strftime('%H:%M:%S')
         safe_text = text.replace('<', '&lt;').replace('>', '&gt;')
-        color = "#000000"
+        color = TEXT_PRIMARY
         if "ERROR" in text.upper():
-            color = "#FF5733"
+            color = ERROR
         elif "WARNING" in text.upper():
-            color = "#FFC300"
+            color = WARNING
         elif "SUCCESS" in text.upper() or "done" in text.lower():
-            color = "#33FF57"
-        formatted_line = f"<font color='gray'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
+            color = SUCCESS
+        formatted_line = f"<font color='{TEXT_MUTED}'>{timestamp}</font> <font color='{color}'>{safe_text}</font>"
         target_widget.appendHtml(formatted_line)
 
     def _format_associator_output(self, line: str) -> None:
@@ -2176,7 +2192,7 @@ class Workflow(QDialog, LogMixin):
                 dead.append(ch.group(1))
 
         ts = datetime.now().strftime('%H:%M:%S')
-        color = '#FF5733' if n_err > 0 else ('#33FF57' if n_proc > 0 else '#FFC300')
+        color = ERROR if n_err > 0 else (SUCCESS if n_proc > 0 else WARNING)
         summary = (
             f"Consumer {consumer_id} | {channel} | "
             f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
@@ -2184,15 +2200,15 @@ class Workflow(QDialog, LogMixin):
             f"meta: {n_md_ok} ok  {n_disc} discarded"
         )
         self.textEditAssociatorConsumersOutput.appendHtml(
-            f"<font color='gray'>{ts}</font> <font color='{color}'>{summary}</font>"
+            f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
         )
         if dead:
             dead_list = ', '.join(dead[:6])
             if len(dead) > 6:
                 dead_list += f' +{len(dead) - 6} more'
             self.textEditAssociatorConsumersOutput.appendHtml(
-                f"<font color='gray'>{ts}</font>"
-                f"<font color='#FF8C00'>&nbsp;&nbsp;no data: {dead_list}</font>"
+                f"<font color='{TEXT_MUTED}'>{ts}</font>"
+                f"<font color='{WARNING}'>&nbsp;&nbsp;no data: {dead_list}</font>"
             )
 
     # ------------------------------------------------------------------ #

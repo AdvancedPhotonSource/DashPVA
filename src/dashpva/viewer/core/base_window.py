@@ -452,20 +452,23 @@ class BaseWindow(QMainWindow):
         self._perf_timer.start()
 
     def _update_perf_labels(self):
-        # CPU
-        with open("/proc/stat", "r") as f:
-            parts = f.readline().split()
-        vals = list(map(int, parts[1:]))
-        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
-        total = sum(vals[:8]) if len(vals) >= 8 else sum(vals)
-        if self._cpu_prev is not None:
-            ptotal, pidle = self._cpu_prev
-            dt = total - ptotal
-            didle = idle - pidle
-            if dt > 0:
-                percent = (dt - didle) * 100.0 / dt
-                self._cpu_label.setText(f"CPU: {percent:.0f}%")
-        self._cpu_prev = (total, idle)
+        # CPU — /proc/stat is Linux-only; use psutil or skip on other platforms
+        try:
+            with open("/proc/stat", "r") as f:
+                parts = f.readline().split()
+            vals = list(map(int, parts[1:]))
+            idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+            total = sum(vals[:8]) if len(vals) >= 8 else sum(vals)
+            if self._cpu_prev is not None:
+                ptotal, pidle = self._cpu_prev
+                dt = total - ptotal
+                didle = idle - pidle
+                if dt > 0:
+                    percent = (dt - didle) * 100.0 / dt
+                    self._cpu_label.setText(f"CPU: {percent:.0f}%")
+            self._cpu_prev = (total, idle)
+        except OSError:
+            self._cpu_label.setText("CPU: N/A")
 
         # GPU
         gpu_text = "GPU: N/A"

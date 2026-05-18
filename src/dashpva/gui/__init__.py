@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 _GUI_DIR = Path(__file__).resolve().parent
@@ -10,13 +9,7 @@ def ui_path(*parts: str) -> str:
 
 
 def configure_app(app):
-    """Apply platform-specific styling to a QApplication.
-
-    On macOS, Qt5's native style can render QMessageBox and QLabel text
-    with poor contrast in dark mode.  This applies a minimal stylesheet
-    fix that forces text to follow the system palette.  No-op on Linux.
-    """
-    if sys.platform == "darwin":
-        app.setStyleSheet(
-            "QMessageBox QLabel { color: palette(text); }"
-        )
+    """Apply the global theme stylesheet to a QApplication."""
+    qss_file = _GUI_DIR / "theme.qss"
+    if qss_file.is_file():
+        app.setStyleSheet(qss_file.read_text(encoding="utf-8"))

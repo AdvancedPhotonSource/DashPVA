@@ -38,9 +38,6 @@
       <property name="alignment">
        <set>Qt::AlignCenter</set>
       </property>
-      <property name="styleSheet">
-       <string notr="true">color: #666; font-style: italic;</string>
-      </property>
      </widget>
     </item>
     <item>

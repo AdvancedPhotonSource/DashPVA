@@ -17,6 +17,13 @@ from PyQt5.QtWidgets import (
 
 import dashpva.settings as settings
 from dashpva.gui import configure_app
+from dashpva.gui.theme_colors import (
+    ERROR,
+    ERROR_HOVER,
+    FONT_BODY,
+    SUCCESS,
+    SUCCESS_HOVER,
+)
 
 # ── Lock categories ────────────────────────────────────────────────────────────
 # Change these lists to control which fields fall into each category.
@@ -35,19 +42,19 @@ class _ToggleLock(QPushButton):
 
     _LOCKED_STYLE = (
         "QPushButton {"
-        "  background-color: #c0392b; color: white;"
-        "  border-radius: 10px; padding: 4px 16px;"
-        "  font-weight: bold; font-size: 12px;"
+        f"  background-color: {ERROR_HOVER}; color: white;"
+        f"  border-radius: 10px; padding: 4px 16px;"
+        f"  font-weight: bold; font-size: {FONT_BODY};"
         "}"
-        "QPushButton:hover { background-color: #e74c3c; }"
+        f"QPushButton:hover {{ background-color: {ERROR}; }}"
     )
     _UNLOCKED_STYLE = (
         "QPushButton {"
-        "  background-color: #27ae60; color: white;"
-        "  border-radius: 10px; padding: 4px 16px;"
-        "  font-weight: bold; font-size: 12px;"
+        f"  background-color: {SUCCESS}; color: white;"
+        f"  border-radius: 10px; padding: 4px 16px;"
+        f"  font-weight: bold; font-size: {FONT_BODY};"
         "}"
-        "QPushButton:hover { background-color: #2ecc71; }"
+        f"QPushButton:hover {{ background-color: {SUCCESS_HOVER}; }}"
     )
 
     def __init__(self, parent=None):

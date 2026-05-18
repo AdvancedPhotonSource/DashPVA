@@ -96,7 +96,7 @@
         <item>
          <widget class="QLabel" name="label_header">
           <property name="styleSheet">
-           <string notr="true">font-size: 16px; font-weight: bold; color: #2c3e50;</string>
+           <string notr="true">font-size: 12pt; font-weight: bold; color: #2c3e50;</string>
           </property>
           <property name="text">
            <string>Analysis Workbench</string>
@@ -161,7 +161,7 @@
                   <string>Image Dimensions: -</string>
                  </property>
                  <property name="styleSheet">
-                  <string notr="true">color: #000000; font-size: 13px; font-weight: bold;</string>
+                  <string notr="true">color: #000000; font-size: 10pt; font-weight: bold;</string>
                  </property>
                  <property name="alignment">
                   <set>Qt::AlignCenter</set>
@@ -601,7 +601,7 @@
                   <string>No HDF5 file loaded</string>
                  </property>
                  <property name="styleSheet">
-                  <string notr="true">font-size: 14px; font-weight: bold; color: #2c3e50; padding: 10px;</string>
+                  <string notr="true">font-size: 11pt; font-weight: bold; color: #2c3e50; padding: 10px;</string>
                  </property>
                  <property name="alignment">
                   <set>Qt::AlignCenter</set>

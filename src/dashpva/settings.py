@@ -153,6 +153,8 @@ BEAMLINE_NAME: Optional[str] = None
 # Core
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DETECTOR_PREFIX: Optional[str] = None
+INPUT_CHANNEL: Optional[str] = None
+INPUT_CHANNEL_HKL3D: Optional[str] = None
 OUTPUT_FILE_LOCATION: Optional[str] = None
 CONSUMER_MODE: Optional[str] = None
 
@@ -191,14 +193,29 @@ LOCATOR: Optional[Union[int, str]] = None
 # Resolved TOML path for components that need a direct file path.
 TOML_FILE: Optional[str] = None
 
+# Default file browser directory (test_data has sample PONI, CIF, mask files)
+_DEFAULT_BROWSE_DIR: str = str(PROJECT_ROOT / 'tests' / 'test_data')
+LAST_PONI_DIR: str = _DEFAULT_BROWSE_DIR
+LAST_CIF_DIR: str = _DEFAULT_BROWSE_DIR
+LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
+_STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
 
 
 def set_locator(locator: Union[int, str]) -> None:
-    """Set the configuration locator (TOML path, "profile:<name>", or int profile_id)."""
+    """Set the configuration locator (TOML path, "profile:<name>", or int profile_id).
+
+    Persists to a state file so sibling subprocesses can find the active config.
+    """
     global _locator_internal
     _locator_internal = locator
+    os.environ['DASPVA_CONFIG_LOCATOR'] = str(locator)
+    try:
+        _STATE_FILE.write_text(str(locator))
+    except Exception:
+        pass
 
 
 def ensure_path() -> Optional[str]:
@@ -212,7 +229,7 @@ def ensure_path() -> Optional[str]:
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
     global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
-    global DETECTOR_PREFIX, OUTPUT_FILE_LOCATION, CONSUMER_MODE
+    global DETECTOR_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
@@ -234,6 +251,8 @@ def reload() -> None:
 
     # Core
     DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')
+    INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
+    INPUT_CHANNEL_HKL3D = cfg.get('INPUT_CHANNEL_HKL3D')
     OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
     CONSUMER_MODE = cfg.get('CONSUMER_MODE')
 
@@ -305,7 +324,7 @@ def reload() -> None:
 
 
 def _get_effective_locator() -> Union[int, str, None]:
-    """Determine the effective locator: set_locator → env var → None.
+    """Determine the effective locator: set_locator → env var → state file → None.
 
     When None is returned, ConfigSource handles the selected-DB-profile
     fallback internally, so settings.py doesn't need to know about it.
@@ -322,7 +341,97 @@ def _get_effective_locator() -> Union[int, str, None]:
             return int(loc)
         return loc
 
+    # 3) State file written by set_locator in another process
+    try:
+        loc = _STATE_FILE.read_text().strip()
+        if loc:
+            if loc.isdigit():
+                return int(loc)
+            return loc
+    except Exception:
+        pass
+
     return None
+
+
+def save_detector_prefix(prefix: str) -> bool:
+    """Persist *prefix* to the active config source, update the module global,
+    and rewrite ROI/STATS PV names to use the new prefix."""
+    global DETECTOR_PREFIX, ROI, STATS
+    old_prefix = DETECTOR_PREFIX
+    DETECTOR_PREFIX = prefix
+    update: dict = {'DETECTOR_PREFIX': prefix}
+    if old_prefix and old_prefix != prefix:
+        ROI = _reprefix(ROI, old_prefix, prefix)
+        STATS = _reprefix(STATS, old_prefix, prefix)
+        update['ROI'] = ROI
+        update['STATS'] = STATS
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        return src.save(update)
+    except Exception:
+        return False
+
+
+def _reprefix(section: dict, old: str, new: str) -> dict:
+    """Replace the detector prefix in all PV name values within a ROI/STATS section."""
+    rebuilt = {}
+    for group_key, group_dict in section.items():
+        if isinstance(group_dict, dict):
+            rebuilt[group_key] = {
+                k: v.replace(old, new, 1) if isinstance(v, str) else v
+                for k, v in group_dict.items()
+            }
+        else:
+            rebuilt[group_key] = group_dict
+    return rebuilt
+
+
+def get_input_channel(fallback: str = "pvapy:image") -> str:
+    """Return INPUT_CHANNEL if explicitly set, else derive from DETECTOR_PREFIX."""
+    if INPUT_CHANNEL:
+        return INPUT_CHANNEL
+    if DETECTOR_PREFIX:
+        return f"{DETECTOR_PREFIX}:Pva1:Image"
+    return fallback
+
+
+def save_input_channel(channel: str) -> bool:
+    """Persist *channel* to the active config source and update the module global."""
+    global INPUT_CHANNEL
+    INPUT_CHANNEL = channel
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        return src.save({'INPUT_CHANNEL': channel})
+    except Exception:
+        return False
+
+
+def get_input_channel_hkl3d(fallback: str = "pvapy:image") -> str:
+    """Return HKL3D-specific INPUT_CHANNEL, independent of the Area Detector channel."""
+    if INPUT_CHANNEL_HKL3D:
+        return INPUT_CHANNEL_HKL3D
+    return fallback
+
+
+def save_input_channel_hkl3d(channel: str) -> bool:
+    """Persist HKL3D input channel separately from the Area Detector channel."""
+    global INPUT_CHANNEL_HKL3D
+    INPUT_CHANNEL_HKL3D = channel
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        return src.save({'INPUT_CHANNEL_HKL3D': channel})
+    except Exception:
+        return False
 
 
 # Initialize on import
@@ -359,6 +468,7 @@ class Settings:
         # Public attributes mirroring module-level constants
         self.BEAMLINE_NAME: Optional[str] = None
         self.DETECTOR_PREFIX: Optional[str] = None
+        self.INPUT_CHANNEL: Optional[str] = None
         self.OUTPUT_FILE_LOCATION: Optional[str] = None
         self.CONSUMER_MODE: Optional[str] = None
 
@@ -459,6 +569,7 @@ class Settings:
         # Core
         self.PROJECT_ROOT = PROJECT_ROOT
         self.DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')
+        self.INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
         self.OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
         self.CONSUMER_MODE = cfg.get('CONSUMER_MODE')
 

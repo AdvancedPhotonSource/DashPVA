@@ -16,16 +16,18 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSlider,
 )
 from pyqtgraph.colormap import get as get_colormap
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
-from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
 from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
@@ -33,7 +35,39 @@ from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 # from ..utils.size_manager import SizeManager
 
 
-rot_gen = rotation_cycle(1,5)         
+rot_gen = rotation_cycle(1,5)
+
+
+class CaMonitorWorker(QThread):
+    """Run blocking CA monitor setup off the GUI thread."""
+    finished = pyqtSignal(dict)
+
+    def __init__(self, reader, stats_refs, stats_callback):
+        super().__init__()
+        self._reader = reader
+        self._stats_refs = stats_refs
+        self._stats_callback = stats_callback
+
+    def run(self):
+        stats_data = {}
+        try:
+            if self._reader is not None:
+                if not self._reader.rois and 'ROI' in self._reader.config:
+                    self._reader.start_roi_backup_monitor()
+                if 'METADATA' in self._reader.config:
+                    self._reader.start_metadata_ca_monitor()
+        except Exception:
+            pass
+        for stat_dict in self._stats_refs.values():
+            for pv in stat_dict.values():
+                try:
+                    pv_value = caget(pv, timeout=0.5)
+                    if pv_value is not None:
+                        stats_data[pv] = pv_value
+                        camonitor(pvname=pv, callback=self._stats_callback)
+                except Exception:
+                    pass
+        self.finished.emit(stats_data)
 
 
 class ConfigDialog(QDialog):
@@ -41,28 +75,37 @@ class ConfigDialog(QDialog):
     def __init__(self):
         super(ConfigDialog, self).__init__()
         uic.loadUi(ui_path("pv_config.ui"), self)
-        self.setWindowTitle('PV Config')
+        self.setWindowTitle('Area Detector Config')
         self.input_channel = ''
         self.init_ui()
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
-        self.le_input_channel.setText(self.le_input_channel.text())
+        self.lbl_input_channel.setText("Detector Prefix")
+        self.le_input_channel.setPlaceholderText("e.g. s6lambda1")
+        if app_settings.DETECTOR_PREFIX:
+            self.le_input_channel.setText(app_settings.DETECTOR_PREFIX)
+        elif app_settings.INPUT_CHANNEL:
+            self.le_input_channel.setText(app_settings.INPUT_CHANNEL.split(":")[0])
 
     def dialog_accepted(self) -> None:
-        self.input_channel = self.le_input_channel.text()
+        prefix = self.le_input_channel.text().strip()
+        app_settings.save_detector_prefix(prefix)
+        self.input_channel = f"{prefix}:Pva1:Image"
+        app_settings.save_input_channel(self.input_channel)
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
 class DiffractionImageWindow(QMainWindow):
     hkl_data_updated = pyqtSignal(bool)
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image'):
+    def __init__(self, input_channel=None):
         super(DiffractionImageWindow, self).__init__()
         uic.loadUi(ui_path("imageshow.ui"), self)
         self.setWindowTitle('DashPVA')
         self.show()
         self.reader = None
+        self._ca_worker = None
         self.image = None
         self.call_id_plot = 0
         self.first_plot = True
@@ -74,7 +117,7 @@ class DiffractionImageWindow(QMainWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._input_channel = input_channel
+        self._input_channel = input_channel or app_settings.get_input_channel()
         self.pv_prefix.setText(self._input_channel)
 
         # Mask management
@@ -165,7 +208,11 @@ class DiffractionImageWindow(QMainWindow):
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
+        self._analysis_menu = QMenu(self)
+        self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
+        self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
+        self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self.btn_analysis_window.setMenu(self._analysis_menu)
         self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
@@ -532,68 +579,39 @@ class DiffractionImageWindow(QMainWindow):
             self.image_is_transposed = False
             self.reader.image_is_transposed = False
 
-    def open_analysis_window_clicked(self) -> None:
-        """
-        Opens the analysis window if the reader and image are initialized.
-        Also supports launching pyFAI analysis window as a separate independent process.
-        """
-        if self.reader is not None:
-            if self.reader.image is not None:
-                # Launch pyFAI analysis window as a separate independent process
-                analysis_script = os.path.join(os.path.dirname(__file__), 'pyFAI_analysis.py')
-                if os.path.exists(analysis_script):
-                    # Use sys.executable to ensure we use the correct Python interpreter
-                    import sys
-                    # Launch as fully independent process:
-                    # - start_new_session: Creates new process session (Unix) for independence
-                    # - stdout/stderr: Redirect to devnull to avoid blocking parent
-                    # - No reference kept: Process is fully detached
-                    try:
-                        # Pass PV address as command-line argument
-                        pv_address = self._input_channel if self._input_channel else "pvapy:image"
-                        
-                        # Get threshold values if threshold is enabled
-                        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
-                        min_thresh, max_thresh = self.get_threshold_range() if self.reader is not None else (0, 0)
-                        
-                        # Build command arguments
-                        cmd_args = [sys.executable, analysis_script, "--pv-address", pv_address]
-                        # Note: min_thresh is typically 0, so we check max_thresh > 0 to ensure valid thresholds
-                        if threshold_enabled and max_thresh > 0:
-                            cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
+    def _launch_pyfai(self) -> None:
+        pv_address = self._input_channel or app_settings.get_input_channel()
+        cmd = [sys.executable, '-m', 'dashpva.viewer.pyFAI_analysis', '--pv-address', pv_address]
+        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
+        if threshold_enabled and self.reader is not None:
+            min_thresh, max_thresh = self.get_threshold_range()
+            if max_thresh > 0:
+                cmd.extend(['--threshold-min', str(min_thresh), '--threshold-max', str(max_thresh)])
+        mask_path = self.mask_manager.mask_path or os.path.join(
+            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
+        cmd.extend(['--mask-file', mask_path])
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] pyFAI launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch pyFAI: {e}')
 
-                        # Always pass mask file path so pyFAI can detect new masks
-                        mask_path = self.mask_manager.mask_path or os.path.join(
-                            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
-                        cmd_args.extend(["--mask-file", mask_path])
+    def _launch_phase_fitter(self) -> None:
+        pv_address = self._input_channel or app_settings.get_input_channel()
+        cmd = [sys.executable, '-m', 'dashpva.viewer.phase_fitter', '--pv-address', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] Phase Fitter launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch Phase Fitter: {e}')
 
-                        # Don't redirect stderr so errors are visible in terminal for debugging
-                        # Redirect stdout to avoid clutter, but keep stderr visible
-                        subprocess.Popen(
-                            cmd_args, 
-                            cwd=os.path.dirname(os.path.dirname(analysis_script)),
-                            stdout=subprocess.DEVNULL,
-                            # stderr=None means it goes to terminal - helpful for debugging
-                            stderr=None,  # Let stderr go to terminal so we can see errors
-                            start_new_session=True  # Creates new process group (Unix) or job (Windows)
-                        )
-                        output_pv = f"{pv_address}:pyFAI"
-                        print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
-                        print(f"Broadcasting pyFAI results to: {output_pv}")
-                        if threshold_enabled and max_thresh > 0:
-                            print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
-                        elif threshold_enabled:
-                            print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
-                        print("Note: Check terminal/console for any error messages if window doesn't appear")
-                    except Exception as e:
-                        print(f"Error launching pyFAI_analysis.py: {e}")
-                        # Fallback to regular analysis window
-                        self.analysis_window = AnalysisWindow(parent=self)
-                        self.analysis_window.show()
-                else:
-                    # Fallback to regular analysis window
-                    self.analysis_window = AnalysisWindow(parent=self)
-                    self.analysis_window.show()        
+    def _launch_hkl3d(self) -> None:
+        cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print('[Area Detector] HKL 3D Viewer launched')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
 
     def start_live_view_clicked(self) -> None:
         """
@@ -658,17 +676,15 @@ class DiffractionImageWindow(QMainWindow):
         
         try:
             if self.reader is not None:
-                if not(self.reader.rois):
-                    if 'ROI' in self.reader.config:
-                        self.reader.start_roi_backup_monitor()
-                # Start monitoring CA metadata PVs if configured
-                if 'METADATA' in self.reader.config:
-                    self.reader.start_metadata_ca_monitor()
-                # HKL monitoring disabled - uncomment to enable
-                # self.start_hkl_monitors()
-                self.start_stats_monitors()
                 self.add_rois()
                 self.start_timers()
+                self._ca_worker = CaMonitorWorker(
+                    self.reader,
+                    self.reader.stats if self.reader.stats else {},
+                    self.stats_ca_callback,
+                )
+                self._ca_worker.finished.connect(self._on_ca_monitors_ready)
+                self._ca_worker.start()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
@@ -678,6 +694,10 @@ class DiffractionImageWindow(QMainWindow):
 
         This method also updates the UI to reflect the disconnected state.
         """
+        if self._ca_worker is not None and self._ca_worker.isRunning():
+            self._ca_worker.quit()
+            self._ca_worker.wait(2000)
+            self._ca_worker = None
         if self.reader is not None:
             if self.reader.channel.isMonitorActive():
                 self.reader.stop_channel_monitor()
@@ -697,18 +717,10 @@ class DiffractionImageWindow(QMainWindow):
     def start_hkl_viewer_clicked(self) -> None:
         try:
             if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                cmd = ['python', 'viewer/hkl3d/hkl_3d_viewer.py',]
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid,
-                    universal_newlines=True
-                )
-                self.processes[process.pid] = process
-
+                cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
         except Exception as e:
-            print(f'[Diffraction Image Viewer] Failed to load HKL Viewer:{e}')
+            print(f'[Area Detector] Failed to load HKL Viewer: {e}')
 
     def save_caches_clicked(self) -> None:
         if not self.reader.channel.isMonitorActive():  
@@ -789,7 +801,12 @@ class DiffractionImageWindow(QMainWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.stats_data[pvname] = value
-        
+
+    def _on_ca_monitors_ready(self, stats_data: dict) -> None:
+        self.stats_data.update(stats_data)
+        if self.reader is not None and self.reader.rois:
+            self.add_rois()
+
     def on_writer_finished(self, message) -> None:
         print(message)
         self.file_writer_thread.quit()
@@ -845,15 +862,12 @@ class DiffractionImageWindow(QMainWindow):
     def add_rois(self) -> None:
         """
         Adds ROIs to the image viewer and assigns them color codes.
-
-        Color Codes:
-            ROI1 -- Red (#ff0000)
-            ROI2 -- Blue (#0000ff)
-            ROI3 -- Green (#4CBB17)
-            ROI4 -- Pink (#ff00ff)
         """
         try:
-            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            for roi in self.rois:
+                self.image_view.removeItem(roi)
+            self.rois.clear()
+            roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
             # TODO: can just loop through values rather than lookup with keys

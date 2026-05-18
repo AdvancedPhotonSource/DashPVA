@@ -6,16 +6,23 @@ from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QDialog
 
 from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import (
+    LOG_DEBUG,
+    LOG_DEFAULT,
+    LOG_ERROR,
+    LOG_INFO,
+    LOG_WARNING,
+)
 
 _UI_PATH = ui_path("log_viewer.ui")
 _MAX_LINES = 1000
 
 _LEVEL_COLORS = {
-    'ERROR':   '#cc0000',
-    'WARNING': '#e06c00',
-    'WARN':    '#e06c00',
-    'DEBUG':   '#6666aa',
-    'INFO':    '#888888',
+    'ERROR':   LOG_ERROR,
+    'WARNING': LOG_WARNING,
+    'WARN':    LOG_WARNING,
+    'DEBUG':   LOG_DEBUG,
+    'INFO':    LOG_INFO,
 }
 
 
@@ -32,7 +39,7 @@ def _line_color(line: str) -> str:
     for level, color in _LEVEL_COLORS.items():
         if f' {level} ' in line or line.startswith(level):
             return color
-    return '#222222'
+    return LOG_DEFAULT
 
 
 def _lines_to_html(lines: list) -> str:
