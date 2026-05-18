@@ -3,10 +3,10 @@
 This script sets up a CA IOC (using pva.CaIoc) to broadcast a set of PVs
 exclusively via the Channel Access (CA) protocol. It includes:
 
-  - Dynamic axis records (6idb1:m28.RBV, etc.) whose "Position" field is updated periodically.
+  - Dynamic axis records (sim:m1.RBV, etc.) whose "Position" field is updated periodically.
   - Static records:
-      * 6idb:spec:UB_matrix
-      * 6idb:spec:Energy
+      * sim:spec:UB_matrix
+      * sim:spec:Energy
       * PrimaryBeamDirection
       * InplaneReferenceDirection
       * SampleSurfaceNormalDirection
@@ -31,37 +31,37 @@ import pvaccess as pva  # pva module provides CaIoc and related functions
 
 # Dynamic axis records:
 axis_records = {
-    "6idb1:m28.RBV": {
+    "sim:m1.RBV": {
         "AxisNumber": 1,
         "SpecMotorName": "Mu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
-    "6idb1:m17.RBV": {
+    "sim:m2.RBV": {
         "AxisNumber": 2,
         "SpecMotorName": "Eta",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
-    "6idb1:m19.RBV": {
+    "sim:m3.RBV": {
         "AxisNumber": 3,
         "SpecMotorName": "Chi",
         "DirectionAxis": "y+",
         "Position": 0.0
     },
-    "6idb1:m20.RBV": {
+    "sim:m4.RBV": {
         "AxisNumber": 4,
         "SpecMotorName": "Phi",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
-    "6idb1:m29.RBV": {
+    "sim:m5.RBV": {
         "AxisNumber": 1,
         "SpecMotorName": "Nu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
-    "6idb1:m18.RBV": {
+    "sim:m6.RBV": {
         "AxisNumber": 2,
         "SpecMotorName": "Delta",
         "DirectionAxis": "z-",
@@ -246,8 +246,8 @@ def main() -> None:
     # Combine all records into one dictionary
     all_records = {
         **axis_records,
-        "6idb:spec:UB_matrix": ub_matrix_record,
-        "6idb:spec:Energy": energy_record,
+        "sim:spec:UB_matrix": ub_matrix_record,
+        "sim:spec:Energy": energy_record,
         "PrimaryBeamDirection": primary_beam_direction_record,
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
@@ -270,14 +270,14 @@ def main() -> None:
         "PrimaryBeamDirection": primary_beam_direction_record,
         "InplaneReferenceDirection": inplane_reference_direction_record,
         "SampleSurfaceNormalDirection": sample_surface_normal_direction_record,
-        "6idb:spec:UB_matrix": ub_matrix_record,
+        "sim:spec:UB_matrix": ub_matrix_record,
         "DetectorSetup": detector_setup_record,
         "ScanOn": scan_on_record,
     }
 
     # For dynamic axis records, store their base positions
     {name: rec['Position'] for name, rec in axis_records.items()}
-    dynamic_records = {**axis_records, '6idb:spec:Energy':13.0,} #'6idb:spec:UB_matrix': caget('6idb:spec:UB_matrix')}
+    dynamic_records = {**axis_records, 'sim:spec:Energy':13.0,} #'sim:spec:UB_matrix': caget('sim:spec:UB_matrix')}
 
     amplitude = 0.5        # Amplitude of the sine-wave update
     update_interval = 0.5  # Seconds between updates
@@ -302,9 +302,9 @@ def main() -> None:
                     if rec["SpecMotorName"] == "Delta":
                         # Only Update Eta Position
                         update_ca_record_field(caIoc, name, 'Position', new_position)
-                # elif name == '6idb:spec:Energy':
+                # elif name == 'sim:spec:Energy':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)
-                # elif name == '6idb:spec:UB_matrix':
+                # elif name == 'sim:spec:UB_matrix':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)
             
             time.sleep(update_interval)

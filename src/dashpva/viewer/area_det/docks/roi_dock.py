@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from viewer.core.docks.base_dock import BaseDock
+from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
 

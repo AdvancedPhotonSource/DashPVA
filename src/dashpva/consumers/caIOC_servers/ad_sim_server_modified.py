@@ -14,6 +14,8 @@ import threading
 import time
 
 import numpy as np
+import cv2
+import matplotlib.pyplot as plt
 
 # HDF5 is optional
 try:
@@ -43,6 +45,20 @@ from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.intWithUnits import IntWithUnits
 
 __version__ = pva.__version__
+
+# At the top of the file, set up logging if not already done
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# # Optionally, add a handler if one is not already added:
+# if not logger.hasHandlers():
+#     ch = logging.StreamHandler()
+#     ch.setLevel(logging.DEBUG)
+#     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#     ch.setFormatter(formatter)
+#     logger.addHandler(ch)
+
+from PIL import Image
 
 class FrameGenerator:
     ''' Base frame generator class. '''
@@ -425,6 +441,118 @@ class NumpyRandomGenerator(FrameGenerator):
 
         print(f'Generated frame shape: {self.frames[0].shape}')
         print(f'Range of generated values: [{mn},{mx}]')
+
+class TiffZoomFileGenerator(FrameGenerator):
+    """
+    A frame generator that loads a TIFF file and, on each call,
+    returns the same image with a dynamic zoom applied.
+    The zoom is centered at (1030, 990) and oscillates smoothly
+    (sinusoidally) over a 5-second period.
+    """
+    def __init__(self, tiff_path, fps=10, zoom_center=(1030, 990), zoom_period=5, base_zoom=1.0, zoom_amplitude=0.5):
+        super().__init__()
+        if not fabio:
+            raise ImportError("fabio is required for TiffZoomFileGenerator")
+        try:
+            with Image.open(tiff_path) as img:
+                self.base_image = fabio.open(tiff_path).data
+                # plt.figure(figsize=(6, 6))
+                # plt.imshow(self.base_image, cmap='gray', vmin=self.base_image.min(), vmax=self.base_image.max())
+                # plt.title('Base Image')
+                # plt.axis('off')
+                # plt.savefig('debug_zoomed_framesbase_image.png')
+                # plt.close()
+                print(f"Loaded TIFF image with shape: {self.base_image.shape}, dtype: {self.base_image.dtype}")
+        except Exception as e:
+            raise RuntimeError(f"Error loading TIFF file '{tiff_path}': {e}")
+
+        self.zoom_center = zoom_center
+        self.zoom_period = zoom_period         # total period (in seconds) of a full zoom-in/out cycle
+        self.base_zoom = base_zoom             # nominal zoom factor (1.0 = no zoom)
+        self.zoom_amplitude = zoom_amplitude   # amplitude of zoom oscillation (+/- 0.5, for example)
+        self.start_time = time.time()
+        self.fps = fps
+        self.frames_per_cycle = int(self.zoom_period * self.fps)
+
+        # Set frame info – the generator produces an endless sequence.
+        self.nInputFrames = float('inf')
+        self.rows, self.cols = self.base_image.shape
+        self.dtype = self.base_image.dtype
+        self.colorMode = 0
+        self.compressorName = None
+
+    def getUncompressedFrameSize(self):
+        return self.rows * self.cols * self.base_image.itemsize
+
+    def getCompressedFrameSize(self):
+        # Adjust if you have compression
+        return self.getUncompressedFrameSize()
+
+    def getFrameData(self, frameId):
+        try:
+            # Calculate elapsed time
+            current_time = time.time()
+            elapsed_time = current_time - self.start_time
+
+            # Calculate the current zoom factor using a sinusoidal function.
+            # (Removed the special case for frameId==0 to allow continuous oscillation.)
+            zoom_factor = self.base_zoom + self.zoom_amplitude * np.sin(2 * np.pi * elapsed_time / self.zoom_period)
+
+            # Uncomment the following if you want to bypass processing exactly at 1.0
+            # if zoom_factor == 1.0:
+            #     return self.base_image.copy()
+
+            # Get image dimensions and zoom center
+            h, w = self.base_image.shape
+            cx, cy = self.zoom_center
+
+            # Compute the new cropped window size based on zoom factor.
+            # For zoom in (zoom_factor > 1) the crop region is smaller.
+            # For zoom out (zoom_factor < 1) the crop region is larger.
+            new_w = int(w / zoom_factor)
+            new_h = int(h / zoom_factor)
+
+            # Calculate cropping coordinates. With the current logic,
+            # if new_w or new_h exceed the image dimensions (as happens when zooming out),
+            # the cropping will just return the full image.
+            x1 = max(cx - new_w // 2, 0)
+            y1 = max(cy - new_h // 2, 0)
+            x2 = min(x1 + new_w, w)
+            y2 = min(y1 + new_h, h)
+
+            # Crop the image
+            cropped = self.base_image[y1:y2, x1:x2]
+
+            # Fallback if cropped region is empty
+            if cropped.size == 0 or cropped.shape[0] == 0 or cropped.shape[1] == 0:
+                print(f"Cropped image is empty or has invalid dimensions for frameId {frameId}. Using original image.")
+                return self.base_image.copy()
+
+            # Resize back to original size without interpolation
+            zoomed = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LANCZOS4)
+            # zoomed = cropped
+            # Save debug frame if needed (using matplotlib to correctly save the image without altering its type)
+            # if frameId < 20:
+            #     output_dir = 'debug_zoomed_frames'
+            #     os.makedirs(output_dir, exist_ok=True)
+            #     filename = os.path.join(output_dir, f'frame_{frameId}.png')
+            #     plt.figure(figsize=(6, 6))
+            #     plt.imshow(zoomed, cmap='gray', vmin=zoomed.min(), vmax=zoomed.max())
+            #     plt.title(f'Frame {frameId} - Zoom Factor: {zoom_factor}')
+            #     plt.axis('off')
+            #     plt.savefig(filename)
+            #     plt.close()
+            #     print(f"Saved debug zoomed frame to {filename}")
+
+            return zoomed  # Return the image in its original data format
+
+        except Exception as e:
+            print(f"Error generating frame {frameId}: {e}")
+            return self.base_image.copy()  # Fallback to original image
+
+    def getFrameInfo(self):
+        # Return the frame generator metadata expected by the ADSIM server.
+        return (self.nInputFrames, self.rows, self.cols, self.colorMode, self.dtype, self.compressorName)
 
 class AdSimServer:
     ''' AD Sim Server class. '''

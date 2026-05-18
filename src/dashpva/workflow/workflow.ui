@@ -172,11 +172,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
           </widget>
          </item>
          <item row="8" column="1">
-          <widget class="QLineEdit" name="lineEditProcessorFileSim">
-           <property name="text">
-            <string>consumers/ad_sim_server_modified.py</string>
-           </property>
-          </widget>
+          <widget class="QComboBox" name="comboBoxProcessorFileSim"/>
          </item>
          <item row="0" column="1">
           <widget class="QLineEdit" name="lineEditInputChannelSim">

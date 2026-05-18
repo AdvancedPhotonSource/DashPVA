@@ -290,8 +290,8 @@ class NumpyRandomGenerator(FrameGenerator):
         y = np.linspace(0, size - 1, size)
         x_grid, y_grid = np.meshgrid(x, y)
 
-        x0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_x * (x_grid+ shift_x) / size)) 
-        y0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_y * (y_grid+ shift_y) / size)) 
+        x0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_x * shift_x / size))
+        y0 = (size / 2) * (1 + np.sin(2 * np.pi * freq_y * shift_y / size))
         # for i in range(size):
         #     for j in range(size):
         #         array[i, j] = gaussian_2d(x_grid[i, j], y_grid[i, j], x0[i, j], y0[i, j], sigma_x, sigma_y, total_intensity)
