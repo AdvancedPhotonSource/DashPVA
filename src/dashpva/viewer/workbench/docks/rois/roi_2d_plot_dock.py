@@ -110,10 +110,7 @@ class ROI2DPlotDock(QDockWidget):
 
         # -- Stats label --------------------------------------------------
         self.stats_label = QLabel("ROI Stats: -")
-        try:
-            self.stats_label.setStyleSheet("color: #2c3e50; font-size: 11px;")
-        except Exception:
-            pass
+        self.stats_label.setObjectName("stats_label")
         layout.addWidget(self.stats_label)
 
         # -- Axis dropdowns: X, Y, Z --------------------------------------
@@ -121,10 +118,6 @@ class ROI2DPlotDock(QDockWidget):
         axis_row.setContentsMargins(0, 2, 0, 2)
         for lbl_text, attr_name in [("X:", "x_select"), ("Y:", "y_select"), ("Z (color):", "z_select")]:
             lbl = QLabel(lbl_text)
-            try:
-                lbl.setStyleSheet("font-size: 11px;")
-            except Exception:
-                pass
             combo = QComboBox()
             for key in METRIC_OPTIONS:
                 _add_metric_item(combo, key)
@@ -146,10 +139,6 @@ class ROI2DPlotDock(QDockWidget):
         cmap_row = QHBoxLayout()
         cmap_row.setContentsMargins(0, 0, 0, 0)
         cmap_lbl = QLabel("Colormap:")
-        try:
-            cmap_lbl.setStyleSheet("font-size: 11px;")
-        except Exception:
-            pass
         self.cmap_select = QComboBox()
         for cname in _AVAILABLE_COLORMAPS:
             self.cmap_select.addItem(cname, cname)
@@ -169,11 +158,6 @@ class ROI2DPlotDock(QDockWidget):
 
         z_min_lbl = QLabel("Z min:")
         z_max_lbl = QLabel("Z max:")
-        try:
-            for w in (z_min_lbl, z_max_lbl):
-                w.setStyleSheet("font-size: 11px;")
-        except Exception:
-            pass
 
         self.z_min_spin = QDoubleSpinBox()
         self.z_max_spin = QDoubleSpinBox()
@@ -186,10 +170,6 @@ class ROI2DPlotDock(QDockWidget):
 
         self.z_auto_check = QCheckBox("Auto")
         self.z_auto_check.setChecked(True)
-        try:
-            self.z_auto_check.setStyleSheet("font-size: 11px;")
-        except Exception:
-            pass
 
         z_range_row.addWidget(z_min_lbl)
         z_range_row.addWidget(self.z_min_spin)
@@ -203,10 +183,7 @@ class ROI2DPlotDock(QDockWidget):
 
         # -- Z actual range display ----------------------------------------
         self.z_range_label = QLabel("Z: —")
-        try:
-            self.z_range_label.setStyleSheet("color: #7f8c8d; font-size: 10px;")
-        except Exception:
-            pass
+        self.z_range_label.setObjectName("z_range_label")
         layout.addWidget(self.z_range_label)
 
         # -- Scatter plot --------------------------------------------------

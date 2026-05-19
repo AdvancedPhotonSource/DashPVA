@@ -22,7 +22,8 @@ from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.analysis_window import AnalysisWindow
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from dashpva.gui import ui_path
+from dashpva.gui import configure_app, ui_path
+from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import rotation_cycle
 from dashpva.utils import PVAReader, HDF5Writer
 from dashpva.utils.mask_manager import MaskManager
@@ -903,6 +904,11 @@ class DiffractionImageWindow(BaseWindow):
                 self.rois_ready.emit()
             self.pv_pollers_status.emit("Loading stats…", "info")
             self.start_stats_monitors()
+            # Scan FLAG_PV — moved here from PVAReader.start_channel_monitor so
+            # a slow/dead FLAG_PV can't block the GUI thread on Start Live View.
+            if self.reader.CACHING_MODE == 'scan' and self.reader.FLAG_PV:
+                self.pv_pollers_status.emit("Loading scan monitor…", "info")
+                self.reader.start_scan_monitor()
             # Metadata CA sweep disabled — was suspected of slowing the GUI.
             # if 'METADATA' in self.reader.config:
             #     self.pv_pollers_status.emit("Loading metadata PVs…", "info")
@@ -1028,14 +1034,10 @@ class DiffractionImageWindow(BaseWindow):
         """
         Adds ROIs to the image viewer and assigns them color codes.
 
-        Color Codes:
-            ROI1 -- Red (#ff0000)
-            ROI2 -- Blue (#0000ff)
-            ROI3 -- Green (#4CBB17)
-            ROI4 -- Pink (#ff00ff)
+        Colors come from dashpva.gui.theme_colors.ROI_COLORS.
         """
         try:
-            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
             # TODO: can just loop through values rather than lookup with keys
@@ -1666,6 +1668,7 @@ class DiffractionImageWindow(BaseWindow):
 
 def main():
     app = QApplication(sys.argv)
+    configure_app(app)
     # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()

@@ -221,8 +221,13 @@ class HDF5Writer(QObject, LogMixin):
                         grp = hkl_root.create_group(base)
                         for k, pv in sec.items():
                             if k == 'POSITION':
-                                axis_label = _derive_axis_from_pv(pv, axis_lookup)
-                                vals = motor_pos_values.get(axis_label)
+                                # HKL config names the PV directly; read it from
+                                # merged_metadata first. Fall back to axis-label
+                                # lookup only when METADATA.CA aliases the motor.
+                                vals = merged_metadata.get(pv)
+                                if vals is None:
+                                    axis_label = _derive_axis_from_pv(pv, axis_lookup)
+                                    vals = motor_pos_values.get(axis_label)
                                 if vals is not None:
                                     arr = np.array(vals)
                                     if arr.dtype.kind in ('i', 'u', 'f'):

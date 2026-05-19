@@ -16,11 +16,6 @@
     <verstretch>0</verstretch>
    </sizepolicy>
   </property>
-  <property name="font">
-   <font>
-    <pointsize>12</pointsize>
-   </font>
-  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -85,31 +80,15 @@
          <widget class="QPushButton" name="start_live_view">
           <property name="minimumSize">
            <size>
-            <width>103</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
           </property>
           <property name="font">
            <font>
             <family>Sans Serif</family>
             <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
            </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 7px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
           </property>
           <property name="text">
            <string>Start Live View</string>
@@ -120,32 +99,15 @@ QPushButton::pressed {
          <widget class="QPushButton" name="stop_live_view">
           <property name="minimumSize">
            <size>
-            <width>101</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
           </property>
           <property name="font">
            <font>
             <family>Sans Serif</family>
             <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
            </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 7px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-
-QPushButton:pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
           </property>
           <property name="text">
            <string>Stop Live View</string>
@@ -173,11 +135,6 @@ QPushButton:pressed {
           <width>16777215</width>
           <height>70</height>
          </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
         </property>
         <property name="title">
          <string>Connection</string>
@@ -221,11 +178,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>Provider:</string>
             </property>
@@ -256,11 +208,6 @@ QPushButton:pressed {
               <width>0</width>
               <height>0</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -314,11 +261,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>State:</string>
             </property>
@@ -343,11 +285,6 @@ QPushButton:pressed {
               <width>140</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -401,11 +338,6 @@ QPushButton:pressed {
               <height>40</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>PV Input Channel:</string>
             </property>
@@ -430,11 +362,6 @@ QPushButton:pressed {
               <width>16776</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="text">
              <string/>

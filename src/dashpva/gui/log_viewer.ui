@@ -36,9 +36,6 @@
        <property name="text">
         <string>Log file: --</string>
        </property>
-       <property name="styleSheet">
-        <string notr="true">color: #666; font-size: 11px;</string>
-       </property>
       </widget>
      </item>
      <item>
@@ -70,9 +67,6 @@
      </property>
      <property name="lineWrapMode">
       <enum>QTextEdit::NoWrap</enum>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-family: monospace; font-size: 11px;</string>
      </property>
     </widget>
    </item>

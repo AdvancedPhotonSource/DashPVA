@@ -223,12 +223,21 @@ class ProfileManager:
             )
             session.add(config)
             session.commit()
-            return True
         except Exception:
             session.rollback()
             return False
         finally:
             session.close()
+        # Run the idempotent seed so newly-imported TOML rows get root-level
+        # defaults (e.g. IOC_PREFIX) backfilled immediately, not only on next
+        # app launch. Cheap — skips profiles that already have the value.
+        if config_type == '__toml__' and config_key == '__data__':
+            try:
+                from dashpva.scripts.seed_settings_defaults_sql import seed_defaults
+                seed_defaults()
+            except Exception:
+                pass
+        return True
 
     def get_profile_configs(self, profile_id: int, config_type: Optional[str] = None) -> List[ProfileConfig]:
         session = get_session()
@@ -321,12 +330,20 @@ class ProfileManager:
             )
             session.add(blob)
             session.commit()
-            return True
         except Exception:
             session.rollback()
             return False
         finally:
             session.close()
+        # Run the idempotent seed so newly-imported TOML rows get root-level
+        # defaults (e.g. IOC_PREFIX) backfilled immediately. Cheap — skips
+        # profiles that already have the value.
+        try:
+            from dashpva.scripts.seed_settings_defaults_sql import seed_defaults
+            seed_defaults()
+        except Exception:
+            pass
+        return True
 
     def import_toml_file(self, profile_id: int, toml_file_path: str) -> bool:
         try:

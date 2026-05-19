@@ -54,6 +54,16 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # The last object time
         self.lastFrameTimestamp = 0
 
+        # Throttling for noisy timestamp-tolerance warnings
+        self._lastToleranceWarnTime = 0.0
+        self._toleranceWarnSuppressed = 0
+        self._toleranceWarnIntervalSec = 5.0
+        # Silent tally of "Metadata channel X not found" occurrences. Was
+        # previously logged at ERROR level, which the associator subprocess
+        # piped into the workflow GUI text box on every frame. Counting only —
+        # inspect self._mdMissingChannels if you need the per-channel tallies.
+        self._mdMissingChannels = {}  # channel -> total count
+
         # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
         self.CODEC_PARAMETERS_MAP = {
             np.dtype('uint8'): pva.UBYTE,
@@ -151,9 +161,11 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
     def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
         # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
-            self.logger.error(f'Metadata channel {mdChannel} not found in current metadata map')
-            print(f'Metadata channel {mdChannel} not found in current metadata map')
-
+            # Count silently — no logger.error, no print. The associator
+            # subprocess captures any ERROR-level output and pushes it into
+            # the workflow GUI text box on every frame, so logging here
+            # floods the UI.
+            self._mdMissingChannels[mdChannel] = self._mdMissingChannels.get(mdChannel, 0) + 1
             return False
 
         mdObject = self.currentMetadataMap[mdChannel]
@@ -195,9 +207,17 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
         if diff > self.timestampTolerance:
-            self.logger.warning(
-                f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s'
-            )
+            now = time.time()
+            if now - self._lastToleranceWarnTime >= self._toleranceWarnIntervalSec:
+                suppressed = self._toleranceWarnSuppressed
+                suffix = f' ({suppressed} similar warnings suppressed)' if suppressed else ''
+                self.logger.warning(
+                    f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s{suffix}'
+                )
+                self._lastToleranceWarnTime = now
+                self._toleranceWarnSuppressed = 0
+            else:
+                self._toleranceWarnSuppressed += 1
             self.nMetadataDiscarded += 1
             return False
         self.nMetadataProcessed += 1

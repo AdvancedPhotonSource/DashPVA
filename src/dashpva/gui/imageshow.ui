@@ -85,31 +85,9 @@
          <widget class="QPushButton" name="start_live_view">
           <property name="minimumSize">
            <size>
-            <width>103</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
-          </property>
-          <property name="font">
-           <font>
-            <family>Sans Serif</family>
-            <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 7px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-QPushButton::pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
           </property>
           <property name="text">
            <string>Start Live View</string>
@@ -120,32 +98,9 @@ QPushButton::pressed {
          <widget class="QPushButton" name="stop_live_view">
           <property name="minimumSize">
            <size>
-            <width>101</width>
-            <height>70</height>
+            <width>0</width>
+            <height>50</height>
            </size>
-          </property>
-          <property name="font">
-           <font>
-            <family>Sans Serif</family>
-            <pointsize>11</pointsize>
-            <weight>50</weight>
-            <italic>false</italic>
-            <bold>false</bold>
-           </font>
-          </property>
-          <property name="styleSheet">
-           <string notr="true">QPushButton{
-font: 11pt &quot;Sans Serif&quot;;
-border: 1px solid #8f8f91;
-border-radius: 7px;
-background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #f6f7fa, stop: 1 #dadbde);
-}
-
-QPushButton:pressed {
-    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-                                      stop: 0 #dadbde, stop: 1 #f6f7fa);
-}</string>
           </property>
           <property name="text">
            <string>Stop Live View</string>
@@ -173,7 +128,7 @@ QPushButton:pressed {
         </property>
         <property name="maximumSize">
          <size>
-          <width>425</width>
+          <width>16777215</width>
           <height>16777215</height>
          </size>
         </property>
@@ -214,7 +169,7 @@ QPushButton:pressed {
          <enum>QAbstractScrollArea::AdjustIgnored</enum>
         </property>
         <property name="widgetResizable">
-         <bool>false</bool>
+         <bool>true</bool>
         </property>
         <widget class="QWidget" name="scrollAreaWidgetContents">
          <property name="geometry">
@@ -239,11 +194,6 @@ QPushButton:pressed {
               <width>0</width>
               <height>325</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="title">
              <string>Stats</string>
@@ -278,17 +228,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Frames Received:</string>
                 </property>
@@ -307,17 +246,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -338,17 +266,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Frames Missed:</string>
                 </property>
@@ -367,17 +284,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>21</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -398,11 +304,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Max [px value]:</string>
                 </property>
@@ -421,17 +322,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -452,11 +342,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Min [px value]:</string>
                 </property>
@@ -475,17 +360,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -506,11 +380,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Image Data Type:</string>
                 </property>
@@ -530,17 +399,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
                 </property>
@@ -554,11 +412,6 @@ QPushButton:pressed {
               </item>
               <item row="6" column="0">
                <widget class="QLabel" name="lbl_set_max">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Set Max Intensity:</string>
                 </property>
@@ -572,17 +425,6 @@ QPushButton:pressed {
                   <height>30</height>
                  </size>
                 </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="maximum">
                  <double>9999999999.989999771118164</double>
                 </property>
@@ -590,17 +432,6 @@ QPushButton:pressed {
               </item>
               <item row="5" column="1">
                <widget class="QDoubleSpinBox" name="min_setting_val">
-                <property name="maximumSize">
-                 <size>
-                  <width>150</width>
-                  <height>16777215</height>
-                 </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="minimum">
                  <double>-10000000000.000000000000000</double>
                 </property>
@@ -611,11 +442,6 @@ QPushButton:pressed {
               </item>
               <item row="5" column="0">
                <widget class="QLabel" name="lbl_set_min">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Set Min Intensity:</string>
                 </property>
@@ -623,11 +449,6 @@ QPushButton:pressed {
               </item>
               <item row="7" column="0" colspan="2">
                <widget class="QCheckBox" name="chk_autoscale">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="checked">
                  <bool>true</bool>
                 </property>
@@ -638,11 +459,6 @@ QPushButton:pressed {
               </item>
               <item row="8" column="0">
                <widget class="QCheckBox" name="chk_threshold">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="checked">
                  <bool>true</bool>
                 </property>
@@ -653,11 +469,6 @@ QPushButton:pressed {
               </item>
               <item row="8" column="1">
                <widget class="QLabel" name="lbl_threshold_range">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>0 to 0</string>
                 </property>
@@ -683,11 +494,6 @@ QPushButton:pressed {
               <width>0</width>
               <height>311</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="title">
              <string>Mouse Position</string>
@@ -740,11 +546,6 @@ QPushButton:pressed {
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="mouseTracking">
                  <bool>false</bool>
                 </property>
@@ -769,11 +570,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -800,11 +596,6 @@ QPushButton:pressed {
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="mouseTracking">
                  <bool>false</bool>
                 </property>
@@ -829,11 +620,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -860,11 +646,6 @@ QPushButton:pressed {
                   <height>0</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Pixel Value:</string>
                 </property>
@@ -886,11 +667,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1035,11 +811,6 @@ QPushButton:pressed {
               <height>450</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="title">
              <string>Image</string>
             </property>
@@ -1079,11 +850,6 @@ QPushButton:pressed {
                   <height>25</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Plot Call ID:</string>
                 </property>
@@ -1102,11 +868,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>0</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1127,11 +888,6 @@ QPushButton:pressed {
                   <height>16</height>
                  </size>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Plotting rate (Hz):</string>
                 </property>
@@ -1144,11 +900,6 @@ QPushButton:pressed {
                   <horstretch>0</horstretch>
                   <verstretch>0</verstretch>
                  </sizepolicy>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="minimum">
                  <number>1</number>
@@ -1163,11 +914,6 @@ QPushButton:pressed {
               </item>
               <item row="2" column="0">
                <widget class="QLabel" name="image_lbl_size_x">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Size X [px]:</string>
                 </property>
@@ -1184,11 +930,6 @@ QPushButton:pressed {
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
                 </property>
@@ -1202,11 +943,6 @@ QPushButton:pressed {
               </item>
               <item row="3" column="0">
                <widget class="QLabel" name="image_lbl_size_y">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Size Y [px]:</string>
                 </property>
@@ -1225,11 +961,6 @@ QPushButton:pressed {
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::Box</enum>
@@ -1256,11 +987,6 @@ QPushButton:pressed {
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="tabletTracking">
                  <bool>false</bool>
                 </property>
@@ -1280,11 +1006,6 @@ QPushButton:pressed {
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
                 <property name="text">
                  <string>Freeze Image</string>
                 </property>
@@ -1294,12 +1015,6 @@ QPushButton:pressed {
                <widget class="QCheckBox" name="chk_transpose">
                 <property name="enabled">
                  <bool>true</bool>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>161</width>
-                  <height>16777215</height>
-                 </size>
                 </property>
                 <property name="text">
                  <string>Transpose Image</string>
@@ -1353,18 +1068,6 @@ QPushButton:pressed {
                   <width>140</width>
                   <height>50</height>
                  </size>
-                </property>
-                <property name="font">
-                 <font>
-                  <family>Sans Serif</family>
-                  <pointsize>11</pointsize>
-                  <weight>50</weight>
-                  <italic>false</italic>
-                  <bold>false</bold>
-                 </font>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true"/>
                 </property>
                 <property name="text">
                  <string>Rotate 90° CCW</string>
@@ -1435,11 +1138,6 @@ QPushButton:pressed {
               <height>630</height>
              </size>
             </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="title">
              <string>ROI</string>
             </property>
@@ -1464,14 +1162,6 @@ QPushButton:pressed {
               </property>
               <item row="0" column="0">
                <widget class="QLabel" name="lbl_ROI1">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(255, 0, 0);</string>
-                </property>
                 <property name="text">
                  <string>ROI1 Total:</string>
                 </property>
@@ -1479,14 +1169,6 @@ QPushButton:pressed {
               </item>
               <item row="1" column="0">
                <widget class="QLabel" name="lbl_ROI2">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                 </font>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(0, 0, 255);</string>
-                </property>
                 <property name="text">
                  <string>ROI2 Total:</string>
                 </property>
@@ -1494,10 +1176,6 @@ QPushButton:pressed {
               </item>
               <item row="2" column="0">
                <widget class="QLabel" name="lbl_ROI3">
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(76, 187, 23);
-font: 12pt &quot;Sans Serif&quot;;</string>
-                </property>
                 <property name="text">
                  <string>ROI3 Total:</string>
                 </property>
@@ -1505,10 +1183,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               </item>
               <item row="3" column="0">
                <widget class="QLabel" name="lbl_ROI4">
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(255, 0, 255);
-font: 12pt &quot;Sans Serif&quot;;</string>
-                </property>
                 <property name="text">
                  <string>ROI4 Total:</string>
                 </property>
@@ -1541,9 +1215,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <property name="alignment">
                  <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
                 </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(255, 0, 0);</string>
-                </property>
                </widget>
               </item>
               <item row="1" column="1">
@@ -1565,9 +1236,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 </property>
                 <property name="alignment">
                  <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(0, 0, 255);</string>
                 </property>
                </widget>
               </item>
@@ -1591,9 +1259,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 <property name="alignment">
                  <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
                 </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(76, 187, 23);</string>
-                </property>
                </widget>
               </item>
               <item row="3" column="1">
@@ -1615,9 +1280,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                 </property>
                 <property name="alignment">
                  <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-                </property>
-                <property name="styleSheet">
-                 <string notr="true">color: rgb(255, 0, 255);</string>
                 </property>
                </widget>
               </item>
@@ -1654,11 +1316,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <height>16</height>
               </rect>
              </property>
-             <property name="font">
-              <font>
-               <pointsize>12</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>ROI Specific Stats</string>
              </property>
@@ -1677,17 +1334,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <layout class="QHBoxLayout">
                 <item>
                  <widget class="QPushButton" name="btn_Stats1">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #ff0000; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
-                  <property name="text"><string>Stats1</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Stats1</string></property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats1">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
-                  <property name="text"><string>Plot Stats1</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats1</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1696,17 +1348,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <layout class="QHBoxLayout">
                 <item>
                  <widget class="QPushButton" name="btn_Stats2">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #0000ff; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
-                  <property name="text"><string>Stats2</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Stats2</string></property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats2">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
-                  <property name="text"><string>Plot Stats2</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats2</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1715,17 +1362,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <layout class="QHBoxLayout">
                 <item>
                  <widget class="QPushButton" name="btn_Stats3">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #4CBB17; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
-                  <property name="text"><string>Stats3</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Stats3</string></property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats3">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
-                  <property name="text"><string>Plot Stats3</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats3</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1734,17 +1376,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <layout class="QHBoxLayout">
                 <item>
                  <widget class="QPushButton" name="btn_Stats4">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: bold 12pt "Sans Serif"; color: #ff00ff; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
-                  <property name="text"><string>Stats4</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Stats4</string></property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats4">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
-                  <property name="text"><string>Plot Stats4</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats4</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1753,17 +1390,12 @@ font: 12pt &quot;Sans Serif&quot;;</string>
                <layout class="QHBoxLayout">
                 <item>
                  <widget class="QPushButton" name="btn_Stats5">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #f6f7fa,stop:1 #dadbde); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }</string></property>
-                  <property name="text"><string>Stats5</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Stats5</string></property>
                  </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_PlotStats5">
-                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>
-                  <property name="maximumSize"><size><width>100</width><height>45</height></size></property>
-                  <property name="styleSheet"><string notr="true">QPushButton{ font: 12pt "Sans Serif"; border: 1px solid #8f8f91; border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #e8f4e8,stop:1 #c8dcc8); } QPushButton::pressed { background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }</string></property>
-                  <property name="text"><string>Plot Stats5</string></property>
+                  <property name="minimumSize"><size><width>0</width><height>45</height></size></property>                  <property name="text"><string>Plot Stats5</string></property>
                  </widget>
                 </item>
                </layout>
@@ -1783,19 +1415,21 @@ font: 12pt &quot;Sans Serif&quot;;</string>
             <property name="title">
              <string>Analysis</string>
             </property>
-            <widget class="QPushButton" name="btn_analysis_window">
-             <property name="geometry">
-              <rect>
-               <x>10</x>
-               <y>30</y>
-               <width>301</width>
-               <height>81</height>
-              </rect>
-             </property>
-             <property name="text">
-              <string>Open Analysis Window</string>
-             </property>
-            </widget>
+            <layout class="QVBoxLayout" name="analysisLayout">
+             <item>
+              <widget class="QPushButton" name="btn_analysis_window">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>50</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>Analysis ▾</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </widget>
           </item>
          </layout>
@@ -1815,17 +1449,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
           <width>900</width>
           <height>90</height>
          </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>16777215</width>
-          <height>70</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
         </property>
         <property name="title">
          <string>Connection</string>
@@ -1863,17 +1486,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>175</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>Provider:</string>
             </property>
@@ -1893,22 +1505,11 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>60</width>
-              <height>40</height>
-             </size>
-            </property>
             <property name="sizeIncrement">
              <size>
               <width>0</width>
               <height>0</height>
              </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -1956,17 +1557,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>State:</string>
             </property>
@@ -1985,17 +1575,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <width>100</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="frameShape">
              <enum>QFrame::Box</enum>
@@ -2043,17 +1622,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <height>40</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>16675</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
             <property name="text">
              <string>PV Input Channel:</string>
             </property>
@@ -2072,17 +1640,6 @@ font: 12pt &quot;Sans Serif&quot;;</string>
               <width>180</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16776</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
             </property>
             <property name="text">
              <string/>

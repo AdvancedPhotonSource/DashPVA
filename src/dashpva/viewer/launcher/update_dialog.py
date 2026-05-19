@@ -6,6 +6,15 @@ from PyQt5.QtWidgets import QDialog
 
 import dashpva.settings as settings
 from dashpva.gui import ui_path
+from dashpva.gui.theme_colors import (
+    ERROR,
+    FONT_BODY,
+    INFO,
+    SUCCESS,
+    TEXT_SECONDARY,
+    WARNING,
+    status_style,
+)
 
 
 class ReleaseCheckWorker(QThread):
@@ -77,23 +86,23 @@ class UpdateDialog(QDialog):
     def _on_check_result(self, has_update, tag, notes):
         if has_update:
             self.lbl_status.setText(f'Update available: {tag}')
-            self.lbl_status.setStyleSheet('font-size: 13px; color: #E67E22; font-weight: 600;')
+            self.lbl_status.setStyleSheet(status_style(WARNING, bold=True, size=FONT_BODY))
             if notes.strip():
                 self.txt_notes.setPlainText(notes)
                 self.txt_notes.setVisible(True)
             self.btn_update.setVisible(True)
         else:
             self.lbl_status.setText(f'✓ v{settings.__VERSION__} is the latest')
-            self.lbl_status.setStyleSheet('font-size: 13px; color: #27AE60; font-weight: 600;')
+            self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True, size=FONT_BODY))
 
     def _on_check_error(self, msg):
         self.lbl_status.setText(f'Could not check for updates: {msg}')
-        self.lbl_status.setStyleSheet('font-size: 13px; color: #7A8394;')
+        self.lbl_status.setStyleSheet(status_style(TEXT_SECONDARY, size=FONT_BODY))
 
     def _start_pull(self):
         self.btn_update.setEnabled(False)
         self.lbl_status.setText('Pulling update…')
-        self.lbl_status.setStyleSheet('font-size: 13px; color: #4B6EF5;')
+        self.lbl_status.setStyleSheet(status_style(INFO, size=FONT_BODY))
         self.txt_notes.clear()
         self.txt_notes.setVisible(True)
         self._pull_worker = PullWorker()
@@ -104,7 +113,7 @@ class UpdateDialog(QDialog):
     def _on_pull_finished(self, success):
         if success:
             self.lbl_status.setText('Update complete — restart DashPVA to apply')
-            self.lbl_status.setStyleSheet('font-size: 13px; color: #27AE60; font-weight: 600;')
+            self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True, size=FONT_BODY))
         else:
             self.lbl_status.setText('Update failed — see output above')
-            self.lbl_status.setStyleSheet('font-size: 13px; color: #E74C3C; font-weight: 600;')
+            self.lbl_status.setStyleSheet(status_style(ERROR, bold=True, size=FONT_BODY))

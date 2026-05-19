@@ -125,10 +125,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.qx = None
         self.qy = None
         self.qz = None
-        # Cached fields produced by the rsm-recompute branch in process(). When
-        # create_rsm() fails, the recompute branch returns early and these stay
-        # at their None defaults; the rsm_data construction below skips itself
-        # accordingly so a stale frame never references an unset attribute.
         self.codec_name = None
         self.codec_parameters = -1
         self.original_dtype = np.dtype('float64')
@@ -391,11 +387,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         if attributes_diff:
             # Only recalculate qxyz if there are new attributes
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
-            # create_rsm() returns (None, None, None) when its inputs are
-            # incomplete (e.g. MetaAssociator dropped DetectorSetup attributes).
-            # np.ravel(None) would build an object-dtype array and crash later
-            # in PvObject({'value': [pva.DOUBLE]}, ...). Skip RSM emission for
-            # this frame and pass the un-decorated pvObject downstream.
             if qxyz is None or qxyz[0] is None:
                 self.nFrameErrors += 1
                 if hasattr(self, 'logger'):
@@ -425,9 +416,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 self.compressed_size_qy = self.qy.shape[0]
                 self.compressed_size_qz = self.qz.shape[0]
 
-        # Without a successful create_rsm() in the current or a previous frame
-        # there is nothing to attach. Pass the original pvObject through so the
-        # downstream pipeline keeps moving.
         if self.qx is None or self.codec_name is None:
             self.updateOutputChannel(pvObject)
             self.processingTime += (time.time() - t0)

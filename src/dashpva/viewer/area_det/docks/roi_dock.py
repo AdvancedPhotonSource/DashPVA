@@ -4,15 +4,18 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
 
+# 1-indexed to match the lbl_ROI1..lbl_ROI4 widget naming.
+# 5 maps to None (Stats5 has no color in the original UI).
 _ROI_COLORS = {
-    1: "rgb(255, 0, 0)",
-    2: "rgb(0, 0, 255)",
-    3: "rgb(76, 187, 23)",
-    4: "rgb(255, 0, 255)",
+    1: ROI_COLORS[0],
+    2: ROI_COLORS[1],
+    3: ROI_COLORS[2],
+    4: ROI_COLORS[3],
     5: None,
 }
 

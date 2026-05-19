@@ -517,12 +517,31 @@ class PVAReader(QObject):
         Args:
             callback (function, optional): A custom callback to use for the monitor.
                                            If None, defaults to self.pva_callbackSuccess.
+
+        The scan FLAG_PV monitor is now set up by ``start_scan_monitor`` from
+        the background PV-pollers thread, so a dead/slow FLAG_PV can't stall
+        the GUI thread on Start Live View. See area_det_viewer._connect_pv_pollers.
         """
         monitor_callback = callback if callback is not None else self.pva_callbackSuccess
         self.channel.subscribe('pva_monitor', monitor_callback)
         self.channel.startMonitor()
-        if self.CACHING_MODE == 'scan' and self.FLAG_PV:
-            camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
+
+    def start_scan_monitor(self) -> None:
+        """Initial caget + CA monitor for the scan FLAG_PV. No-op outside scan mode.
+
+        Designed to be called from a background thread (the PV pollers sweep).
+        The caget has a 0.15s timeout so an unreachable FLAG_PV can't block
+        more than a few hundred ms.
+        """
+        if self.CACHING_MODE != 'scan' or not self.FLAG_PV:
+            return
+        try:
+            initial = caget(self.FLAG_PV, timeout=0.15)
+        except Exception:
+            initial = None
+        if initial is not None:
+            self.is_scan_complete = not bool(initial)
+        camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
 
     def stop_channel_monitor(self) -> None:
         """

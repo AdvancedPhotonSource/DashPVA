@@ -35,11 +35,11 @@ VIEWS = [
         'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)',
         'edition': 'full',
     },
-    # streaming
+    # stream live
     {
         'key': 'area_det',
         'label': 'Area Detector 2D',
-        'section': 'Streaming',
+        'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'detector'],
         'running_text': 'Area Detector — Running…',
         'tooltip': 'Open Area detector (CLI: DashPVA detector)',
@@ -48,11 +48,29 @@ VIEWS = [
     {
         'key': 'hkl3d',
         'label': 'HKL 3D',
-        'section': 'Streaming',
+        'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'hkl3d'],
         'running_text': 'HKL 3D — Running…',
         'tooltip': 'Open HKL 3D (CLI: DashPVA hkl3d)',
         'edition': 'full',
+    },
+    {
+        'key': 'pyfai',
+        'label': 'pyFAI 1D Reduction',
+        'section': 'Stream Live',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'pyfai'],
+        'running_text': 'pyFAI 1D Reduction — Running…',
+        'tooltip': 'Live azimuthal integration (CLI: DashPVA pyfai)',
+        'edition': 'full',
+    },
+    {
+        'key': 'phase_fitter_live',
+        'label': 'XRD Phase Fitter',
+        'section': 'Stream Live',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'phasefitter'],
+        'running_text': 'XRD Phase Fitter — Running…',
+        'tooltip': 'Live XRD phase fitting (CLI: DashPVA phasefitter)',
+        'edition': 'both',
     },
     {
         'key': 'monitor_scan',
@@ -61,6 +79,15 @@ VIEWS = [
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
         'running_text': 'Scan Monitors — Running…',
         'tooltip': 'Open Scan monitor (CLI: DashPVA monitor scan)',
+        'edition': 'full',
+    },
+    {
+        'key': 'scan_viz',
+        'label': '2D Scan Visualization',
+        'section': 'Monitor',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
+        'running_text': '2D Scan Visualization — Running…',
+        'tooltip': 'Live 2D scan data collection and visualization',
         'edition': 'full',
     },
     # post analysis

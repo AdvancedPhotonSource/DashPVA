@@ -16,6 +16,9 @@ from dashpva.viewer.workbench.workers import DatasetLoader
 
 
 class DataStructureDock(BaseDock):
+    # Tree contents should grow vertically; don't cap to widget's min height.
+    _lock_height_to_widget = False
+
     def __init__(self, title="Data Structure", main_window:BaseWindow=None, segment_name="other", dock_area=Qt.LeftDockWidgetArea, show: bool = True):
         super().__init__(title, main_window, segment_name=segment_name, dock_area=dock_area, show=show)
         self.title = title
@@ -92,6 +95,8 @@ class DataStructureDock(BaseDock):
                 # If no selection, try current file
                 fp = getattr(mw, 'current_file_path', None)
                 if fp and os.path.exists(fp):
+                    if self._dispatch_3d_if_active(fp):
+                        return
                     self._load_main_data_for_path(fp)
                 else:
                     QMessageBox.information(self, "Load Dataset", "No selection or current file.")
@@ -100,6 +105,8 @@ class DataStructureDock(BaseDock):
             if item_type == "file_root":
                 path = item.data(0, Qt.UserRole + 1)
                 if path and os.path.exists(path):
+                    if self._dispatch_3d_if_active(path):
+                        return
                     self._load_main_data_for_path(path)
                 else:
                     QMessageBox.information(self, "Load Dataset", "Selected file is not available.")
@@ -112,15 +119,45 @@ class DataStructureDock(BaseDock):
                     mw.selected_dataset_path = full_path
                 except Exception:
                     pass
+                fp = getattr(mw, 'current_file_path', None)
+                if fp and self._dispatch_3d_if_active(fp):
+                    return
                 mw.start_dataset_load()
             else:
                 fp = getattr(mw, 'current_file_path', None)
                 if fp and os.path.exists(fp):
+                    if self._dispatch_3d_if_active(fp):
+                        return
                     self._load_main_data_for_path(fp)
                 else:
                     QMessageBox.information(self, "Load Dataset", "No dataset path found.")
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Failed to load dataset: {e}")
+
+    def _dispatch_3d_if_active(self, file_path: str) -> bool:
+        """If the 3D workspace tab is currently active, route the load to it.
+
+        Returns True if the 3D loader was invoked (caller should stop), False otherwise.
+        """
+        mw = getattr(self, 'main_window', None)
+        tab_3d = getattr(mw, 'tab_3d', None)
+        tabs = getattr(mw, 'tabWidget_analysis', None)
+        if mw is None or tab_3d is None or tabs is None:
+            return False
+        try:
+            if tabs.currentWidget() is not tab_3d:
+                return False
+        except Exception:
+            return False
+        try:
+            mw.current_file_path = file_path
+        except Exception:
+            pass
+        try:
+            tab_3d.load_data()
+        except Exception as e:
+            QMessageBox.critical(self, "3D Load Error", f"Failed to load 3D dataset: {e}")
+        return True
 
     def _ensure_current_file_from_item(self, item):
         try:

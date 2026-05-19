@@ -80,6 +80,11 @@ def init_database():
     # Issue 1: always create tables so new models get their tables on existing DBs
     is_new_db = not DB_FILE.exists()
     create_tables()
+    # Only run the full seed on a NEW DB — keeps app launches quiet (avoids
+    # log spam from re-seeding on every startup). Backfill into existing DBs
+    # still happens via:
+    #   • add_profile_config() — when the user imports a new profile/TOML
+    #   • the manual "Reseed" buttons in workflow.py and settings_dialog.py
     if is_new_db:
         # Issue 7: log failures instead of silently swallowing them
         try:

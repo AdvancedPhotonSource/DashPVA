@@ -5,6 +5,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QLabel, QWidget
 
 from dashpva.gui import ui_path
+from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
@@ -133,19 +134,19 @@ class InformationDockBase(BaseDock):
             if getattr(self, 'lbl_mouse_H', None) is not None:
                 self.lbl_mouse_H.setText(fmtf(H))
                 try:
-                    self.lbl_mouse_H.setStyleSheet("color: red;")
+                    self.lbl_mouse_H.setStyleSheet(f"color: {ROI_COLORS[0]};")
                 except Exception:
                     pass
             if getattr(self, 'lbl_mouse_K', None) is not None:
                 self.lbl_mouse_K.setText(fmtf(K))
                 try:
-                    self.lbl_mouse_K.setStyleSheet("color: green;")
+                    self.lbl_mouse_K.setStyleSheet(f"color: {ROI_COLORS[2]};")
                 except Exception:
                     pass
             if getattr(self, 'lbl_mouse_L', None) is not None:
                 self.lbl_mouse_L.setText(fmtf(L))
                 try:
-                    self.lbl_mouse_L.setStyleSheet("color: blue;")
+                    self.lbl_mouse_L.setStyleSheet(f"color: {ROI_COLORS[1]};")
                 except Exception:
                     pass
         except Exception:

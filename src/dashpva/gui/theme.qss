@@ -1,0 +1,275 @@
+/* =================================================================
+   DashPVA Global Stylesheet
+   =================================================================
+   Loaded once by configure_app() in gui/__init__.py.
+   Color values must match theme_colors.py.
+
+   NOTE: bayesian_viewer.py applies its own Catppuccin dark theme
+   via self.setStyleSheet() which overrides these app-level rules.
+   Do not add bayesian-specific selectors here.
+   ================================================================= */
+
+/* -- macOS dark mode text fix ---------------------------------------- */
+QMessageBox QLabel { color: palette(text); }
+
+/* -- Dock widget borders + title bar --------------------------------- */
+QDockWidget::pane {
+    border: 1px solid palette(mid);
+}
+/* Dark slate title bar with white text — matches DOCK_HEADER_BG in theme_colors.py */
+QDockWidget::title {
+    background: #2C3E50;
+    color: #FFFFFF;
+    padding: 6px 8px;
+    border-bottom: 1px solid palette(dark);
+    text-align: left;
+}
+QDockWidget::close-button, QDockWidget::float-button {
+    background: transparent;
+    border: none;
+    padding: 2px;
+}
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+}
+
+/* -- Readonly text editors (monospace info panels) -------------------- */
+QTextEdit[readOnly="true"] {
+    background-color: #F8F9FA;
+    border: none;
+    padding: 6px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 9pt;
+}
+
+/* -- Workbench info tabs --------------------------------------------- */
+QTabWidget#info_tabs::pane {
+    border: 1px solid #DEE2E6;
+    border-radius: 4px;
+    background-color: #F8F9FA;
+}
+QTabWidget#info_tabs QTabBar::tab {
+    background-color: #E9ECEF;
+    border: 1px solid #DEE2E6;
+    padding: 6px 12px;
+    margin-right: 2px;
+    font-size: 9pt;
+}
+QTabWidget#info_tabs QTabBar::tab:selected {
+    background-color: #F8F9FA;
+    border-bottom: 1px solid #F8F9FA;
+}
+
+/* -- File status label (workbench) ----------------------------------- */
+QLabel#file_status_label {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #2C3E50;
+    padding: 10px;
+}
+
+/* -- Stats labels (ROI docks, controls) ------------------------------ */
+QLabel#stats_label, QLabel#roi_stats_label {
+    color: #2C3E50;
+    font-size: 9pt;
+}
+
+/* -- Mode labels ----------------------------------------------------- */
+QLabel#mode_label {
+    color: #7A8394;
+    font-size: 8pt;
+    font-weight: bold;
+}
+
+/* -- Range / muted labels -------------------------------------------- */
+QLabel#z_range_label, QLabel#val_label {
+    color: #9BA5B5;
+    font-size: 8pt;
+}
+
+/* -- Hint labels (vmin/vmax) ----------------------------------------- */
+QLabel#lblVminHint, QLabel#lblVmaxHint {
+    color: #7A8394;
+    font-size: 8pt;
+    padding-right: 6px;
+}
+
+/* -- Placeholder labels (phase fitter, base window) ------------------ */
+QLabel#phase_placeholder, QLabel#label_placeholder {
+    color: #7A8394;
+    font-style: italic;
+}
+
+/* -- Log viewer ------------------------------------------------------ */
+QLabel#lbl_log_path {
+    color: #7A8394;
+    font-size: 9pt;
+}
+
+/* -- Lock banner (ROI calculator) ------------------------------------ */
+QLabel#lblLockBanner {
+    background-color: #FFD6D6;
+    color: #A94442;
+    border: 1px solid #A94442;
+    font-weight: bold;
+    padding: 4px;
+}
+
+/* -- Colored action buttons ------------------------------------------ */
+QPushButton#btn_plot_cache {
+    background-color: #27AE60;
+    color: white;
+    font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+}
+QPushButton#btn_plot_cache:hover { background-color: #2ECC71; }
+QPushButton#btn_plot_cache:pressed { background-color: #1E8449; }
+
+QPushButton#btn_save_h5 {
+    background-color: #E74C3C;
+    color: white;
+    font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+}
+QPushButton#btn_save_h5:hover { background-color: #C0392B; }
+QPushButton#btn_save_h5:pressed { background-color: #A93226; }
+
+QPushButton#btn_segment {
+    background-color: #27AE60;
+    color: white;
+    font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+}
+
+/* -- Dock window transfer buttons ------------------------------------ */
+QPushButton#btn_get_2d_docks {
+    background-color: #2980B9;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_get_3d_docks {
+    background-color: #27AE60;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_send_2d_docks {
+    background-color: #E67E22;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_send_3d_docks {
+    background-color: #E74C3C;
+    color: white;
+    font-weight: bold;
+}
+
+/* -- ROI delete button ----------------------------------------------- */
+QPushButton#btn_delete_roi {
+    color: white;
+    background-color: #E74C3C;
+}
+
+/* -- imageshow.ui Start/Stop Live View buttons ----------------------- */
+QPushButton#start_live_view, QPushButton#stop_live_view {
+    font-size: 11pt;
+    border: 1px solid #8F8F91;
+    border-radius: 7px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+    min-height: 50px;
+}
+QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+}
+
+/* -- imageshow.ui Stats buttons (ROI identity colors) ---------------- */
+QPushButton#btn_Stats1 {
+    font-weight: bold;
+    font-size: 12pt;
+    color: #E05A5A;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats2 {
+    font-weight: bold;
+    font-size: 12pt;
+    color: #4A90D9;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats3 {
+    font-weight: bold;
+    font-size: 12pt;
+    color: #3EAF8E;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats4 {
+    font-weight: bold;
+    font-size: 12pt;
+    color: #A878D0;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats5 {
+    font-size: 12pt;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats1:pressed, QPushButton#btn_Stats2:pressed,
+QPushButton#btn_Stats3:pressed, QPushButton#btn_Stats4:pressed,
+QPushButton#btn_Stats5:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+}
+
+/* -- imageshow.ui PlotStats buttons (green gradient) ----------------- */
+QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
+QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
+QPushButton#btn_PlotStats5 {
+    font-size: 12pt;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #E8F4E8, stop:1 #C8DCC8);
+}
+QPushButton#btn_PlotStats1:pressed, QPushButton#btn_PlotStats2:pressed,
+QPushButton#btn_PlotStats3:pressed, QPushButton#btn_PlotStats4:pressed,
+QPushButton#btn_PlotStats5:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #C8DCC8, stop:1 #E8F4E8);
+}
+
+/* -- PV config input channel ---------------------------------------- */
+QLineEdit#le_input_channel {
+    border: 1px solid palette(mid);
+    border-radius: 3px;
+}
+
+/* -- ROI identity labels (instrument convention colors) -------------- */
+QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #E05A5A; }
+QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #4A90D9; }
+QLabel#lbl_ROI3, QLabel#roi3_total_value { color: #3EAF8E; }
+QLabel#lbl_ROI4, QLabel#roi4_total_value { color: #A878D0; }
+QLabel#lbl_ROI3, QLabel#lbl_ROI4,
+QLabel#roi3_total_value, QLabel#roi4_total_value {
+    font-size: 12pt;
+}

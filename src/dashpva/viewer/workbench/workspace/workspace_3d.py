@@ -239,7 +239,7 @@ class Workspace3D(BaseTab):
             btn.setFixedWidth(26)
             btn.setToolTip(f'Reset {axis} to full data range')
             val_lbl.setAlignment(Qt.AlignCenter)
-            val_lbl.setStyleSheet('font-size: 10px; color: #aaa;')
+            val_lbl.setObjectName("val_label")
 
             sl_col = QVBoxLayout()
             sl_col.setSpacing(0)

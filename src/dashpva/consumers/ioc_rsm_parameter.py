@@ -153,6 +153,35 @@ def _run_ioc(prefix: str) -> None:
     # Also updated by the background caget poll so external CA writes are visible.
     _current_vals = {}
 
+    # Throttle state for noisy "empty value" errors on FilePath/FileName.
+    # These fire on every republish (~1 Hz) until the user caputs a real value.
+    _EMPTY_WARN_INTERVAL_SEC = 300.0  # 5 minutes
+    _empty_warn_last = {}             # rec -> last-print monotonic time
+    _empty_warn_suppressed = {}       # rec -> count suppressed since last print
+
+    def _report_put_error(rec, e):
+        msg = str(e)
+        is_empty_file_rec = (
+            rec.endswith('FilePath:Value') or rec.endswith('FileName:Value')
+        ) and 'empty' in msg.lower()
+        if is_empty_file_rec:
+            now = time.monotonic()
+            last = _empty_warn_last.get(rec, 0.0)
+            if now - last < _EMPTY_WARN_INTERVAL_SEC:
+                _empty_warn_suppressed[rec] = _empty_warn_suppressed.get(rec, 0) + 1
+                return
+            suppressed = _empty_warn_suppressed.pop(rec, 0)
+            suffix = f' ({suppressed} similar suppressed in last {int(_EMPTY_WARN_INTERVAL_SEC)}s)' if suppressed else ''
+            hint = (
+                f' — to mute, set the record: '
+                f'caput {prefix}FilePath:Value <path> && '
+                f'caput {prefix}FileName:Value <name>'
+            )
+            print(f'IOC put [{rec}]: {e}{suffix}{hint}', flush=True)
+            _empty_warn_last[rec] = now
+        else:
+            print(f'IOC put [{rec}]: {e}', flush=True)
+
     def ioc_put(caIoc, rec, val):
         # Update _current_vals FIRST so the snapshot always has the value
         # even if caIoc.putField fails.
@@ -164,19 +193,19 @@ def _run_ioc(prefix: str) -> None:
             try:
                 caIoc.putField(rec, converted)
             except Exception as e:
-                print(f'IOC put [{rec}]: {e}', flush=True)
+                _report_put_error(rec, e)
         elif isinstance(val, bool):
             _current_vals[rec] = int(val)
             try:
                 caIoc.putField(rec, int(val))
             except Exception as e:
-                print(f'IOC put [{rec}]: {e}', flush=True)
+                _report_put_error(rec, e)
         else:
             _current_vals[rec] = val
             try:
                 caIoc.putField(rec, val)
             except Exception as e:
-                print(f'IOC put [{rec}]: {e}', flush=True)
+                _report_put_error(rec, e)
 
     def safe_float(pv):
         try:
@@ -228,12 +257,15 @@ def _run_ioc(prefix: str) -> None:
         if lib:
             lib = os.path.realpath(lib)
             dbd = os.path.realpath(os.path.join(os.path.dirname(lib), '../../dbd'))
-            os.environ['EPICS_DB_INCLUDE_PATH'] = dbd
         elif os.environ.get('EPICS_BASE'):
-            os.environ['EPICS_DB_INCLUDE_PATH'] = os.path.join(os.environ['EPICS_BASE'], 'dbd')
+            dbd = os.path.join(os.environ['EPICS_BASE'], 'dbd')
+        else:
+            dbd = os.path.join(os.path.dirname(pva.__file__), 'dbd')
+            if not os.path.isdir(dbd):
+                raise RuntimeError('Cannot find dbd directory. Please set EPICS_DB_INCLUDE_PATH.')
+        os.environ['EPICS_DB_INCLUDE_PATH'] = dbd
 
-    dbd_dir = os.environ.get('EPICS_DB_INCLUDE_PATH', '')
-    base_dbd = os.path.join(dbd_dir, 'base.dbd') if dbd_dir else 'base.dbd'
+    base_dbd = os.path.join(os.environ['EPICS_DB_INCLUDE_PATH'], 'base.dbd')
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.db')
     tmp.write(build_db())
@@ -749,6 +781,12 @@ def main():
         threading.Thread(target=_fwd, daemon=True).start()
         return proc
 
+    # Silent tally of send_cmd errors — upstream pvapy emits BrokenPipeError
+    # repeatedly when the consumer subprocess restarts; printing every one
+    # (or even once per minute) clutters the terminal. Inspect _send_cmd_err_count
+    # if you need to know whether errors are happening.
+    _send_cmd_err_count = [0]
+
     def send_cmd(msg: dict):
         line = json.dumps(msg) + '\n'
         with _cmd_lock:
@@ -758,8 +796,8 @@ def main():
             try:
                 proc.stdin.write(line.encode())
                 proc.stdin.flush()
-            except Exception as e:
-                print(f'send_cmd error: {e}', flush=True)
+            except Exception:
+                _send_cmd_err_count[0] += 1
 
     def restart_ioc(new_prefix):
         old = _ioc_handle[0]

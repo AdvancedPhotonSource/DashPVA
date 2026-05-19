@@ -14,13 +14,21 @@ DashPVA is a modular analysis and visualization platform for X-ray experiments a
 
 ## Architecture
 
-DashPVA spawns analysis tools as independent processes, each acting as a node in a data processing pipeline:
+DashPVA uses two pipeline models, chosen based on whether the analysis is user-interactive or high-throughput:
+
+**Interactive Pipeline** — GUI tools launched as independent subprocesses, with each tool passing its PV channel to the next via command-line arguments. The user drives the analysis (selecting calibration files, toggling thresholds, choosing phases).
 
 ```
-Detector → Metadata Associator → Collector → Analysis Consumer(s) → Viewer(s)
+Area Detector 2D → pyFAI 1D Reduction → XRD Phase Fitter
 ```
 
-Each node can view data, perform analysis, or pass processed results downstream. This lets you compose different analysis chains — for example, a pyFAI integration node feeding a live phase fitter, or an RSM consumer feeding the HKL 3D viewer.
+**Managed Pipeline** — Headless processors orchestrated by the pvapy HPC framework, configured through the PVA Workflow UI. Designed for frame-rate processing where every detector frame must be handled automatically.
+
+```
+Detector → Metadata Associator → Collector → RSM Consumer → HKL 3D Viewer
+```
+
+Both models can coexist in the same session. New analysis chains should use the interactive model when a human needs to guide the analysis, or the managed model when throughput at detector frame rates is required.
 
 ## Installation
 

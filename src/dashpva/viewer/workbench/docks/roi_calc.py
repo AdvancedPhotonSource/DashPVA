@@ -80,12 +80,6 @@ class ROICalcDock(BaseDock):
         self.chkCalcLock.setChecked(True)
         self.lblLockBanner = QLabel("Calculator lock enabled — ROIs are fixed")
         self.lblLockBanner.setObjectName("lblLockBanner")
-        try:
-            self.lblLockBanner.setStyleSheet(
-                "background-color: #ffd6d6; color: #a94442; border: 1px solid #a94442; font-weight: bold; padding: 4px;"
-            )
-        except Exception:
-            pass
         self.vbox.addWidget(self.chkCalcLock)
         self.vbox.addWidget(self.lblLockBanner)
 

@@ -72,7 +72,7 @@ QMainWindow, QWidget {
     background-color: #1e1e2e;
     color: #cdd6f4;
     font-family: "Inter", "Segoe UI", sans-serif;
-    font-size: 13px;
+    font-size: 10pt;
 }
 QGroupBox {
     border: 1px solid #45475a;

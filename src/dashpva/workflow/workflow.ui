@@ -172,7 +172,11 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
           </widget>
          </item>
          <item row="8" column="1">
-          <widget class="QComboBox" name="comboBoxProcessorFileSim"/>
+          <widget class="QLineEdit" name="lineEditProcessorFileSim">
+           <property name="text">
+            <string>src/dashpva/consumers/caIOC_servers/ad_sim_server_modified.py</string>
+           </property>
+          </widget>
          </item>
          <item row="0" column="1">
           <widget class="QLineEdit" name="lineEditInputChannelSim">
@@ -315,7 +319,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
             <string>● Checking…</string>
            </property>
            <property name="styleSheet">
-            <string>QLabel { color: #999999; font-size: 10px; }</string>
+            <string>QLabel { color: #999999; font-size: 8pt; }</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeft|Qt::AlignVCenter</set>
@@ -331,7 +335,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
             <string>Attempt to create the database file and tables</string>
            </property>
            <property name="styleSheet">
-            <string>QPushButton { font-size: 10px; padding: 1px 6px; }</string>
+            <string>QPushButton { font-size: 8pt; padding: 1px 6px; }</string>
            </property>
            <property name="visible">
             <bool>false</bool>
@@ -347,7 +351,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
             <string>Reload the database and refresh the current view</string>
            </property>
            <property name="styleSheet">
-            <string>QPushButton { font-size: 10px; padding: 1px 6px; }</string>
+            <string>QPushButton { font-size: 8pt; padding: 1px 6px; }</string>
            </property>
           </widget>
          </item>
@@ -371,7 +375,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
           <string>QLabel {
   color: #E67E22;
   font-weight: bold;
-  font-size: 11px;
+  font-size: 9pt;
   background-color: #FDF2E9;
   border-left: 3px solid #E67E22;
   padding: 2px 6px;
@@ -500,7 +504,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
               <string>QLabel {
   color: #2980B9;
   font-weight: bold;
-  font-size: 11px;
+  font-size: 9pt;
   background-color: #EBF5FB;
   border-left: 3px solid #2980B9;
   padding: 2px 6px;
@@ -551,7 +555,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                 <string>Default</string>
                </property>
                <property name="styleSheet">
-                <string>QCheckBox { color: #E67E22; font-size: 11px; }</string>
+                <string>QCheckBox { color: #E67E22; font-size: 9pt; }</string>
                </property>
               </widget>
              </item>
@@ -564,7 +568,7 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                 <string>Selected</string>
                </property>
                <property name="styleSheet">
-                <string>QCheckBox { color: #27AE60; font-size: 11px; }</string>
+                <string>QCheckBox { color: #27AE60; font-size: 9pt; }</string>
                </property>
               </widget>
              </item>
@@ -746,7 +750,7 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
                 <string>Collapse all</string>
                </property>
                <property name="styleSheet">
-                <string>QPushButton { font-size: 12px; padding: 1px 6px; }</string>
+                <string>QPushButton { font-size: 10pt; padding: 1px 6px; }</string>
                </property>
                <property name="maximumWidth">
                 <number>32</number>
@@ -762,7 +766,7 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
                 <string>Expand all</string>
                </property>
                <property name="styleSheet">
-                <string>QPushButton { font-size: 12px; padding: 1px 6px; }</string>
+                <string>QPushButton { font-size: 10pt; padding: 1px 6px; }</string>
                </property>
                <property name="maximumWidth">
                 <number>32</number>
@@ -778,7 +782,7 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
                 <string>Add a top-level key to the config tree</string>
                </property>
                <property name="styleSheet">
-                <string>QPushButton { font-size: 10px; padding: 1px 8px; }</string>
+                <string>QPushButton { font-size: 8pt; padding: 1px 8px; }</string>
                </property>
                <property name="maximumWidth">
                 <number>60</number>

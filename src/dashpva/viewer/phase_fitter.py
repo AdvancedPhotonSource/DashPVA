@@ -19,6 +19,7 @@ Designed for integration into DashPVA as a real-time analysis module.
 
 import argparse
 import logging
+import os
 import re
 import sys
 import time
@@ -73,6 +74,7 @@ from ssrl_xrd_tools.analysis.phase import PhaseModel
 from ssrl_xrd_tools.integrate import integrate_1d, load_poni, poni_to_integrator
 from ssrl_xrd_tools.io.image import load_mask, read_image
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app
 from dashpva.utils.fast_phase_fit import fast_fit, fast_fit_sequence
 
@@ -670,7 +672,7 @@ class PhaseFitApp(QMainWindow):
         phase_group = QGroupBox("Phases")
         self._phase_group_layout = QVBoxLayout()
         self._phase_placeholder = QLabel("Load data to discover phases")
-        self._phase_placeholder.setStyleSheet("color: gray; font-style: italic;")
+        self._phase_placeholder.setObjectName("phase_placeholder")
         self._phase_group_layout.addWidget(self._phase_placeholder)
 
         phase_btn_row = QHBoxLayout()
@@ -939,28 +941,32 @@ class PhaseFitApp(QMainWindow):
         self.statusBar().showMessage(" | ".join(parts))
 
     def _browse_poni(self):
+        start = self.txt_poni.text() or app_settings.LAST_PONI_DIR
         f, _ = QFileDialog.getOpenFileName(
-            self, "Select PONI File", self.txt_poni.text(),
+            self, "Select PONI File", start,
             "PONI Files (*.poni);;All Files (*)")
         if f:
+            app_settings.LAST_PONI_DIR = os.path.dirname(f)
             self.txt_poni.setText(f)
 
     def _browse_mask(self):
+        start = self.txt_mask.text() or app_settings.LAST_PONI_DIR
         f, _ = QFileDialog.getOpenFileName(
-            self, "Select Mask File", self.txt_mask.text(),
+            self, "Select Mask File", start,
             "Mask Files (*.edf *.npy *.tif);;All Files (*)")
         if f:
             self.txt_mask.setText(f)
 
     def _browse_cif_dir(self):
-        d = QFileDialog.getExistingDirectory(self, "Select CIF Directory",
-                                             self.txt_cif_dir.text())
+        start = self.txt_cif_dir.text() or app_settings.LAST_CIF_DIR
+        d = QFileDialog.getExistingDirectory(self, "Select CIF Directory", start)
         if d:
+            app_settings.LAST_CIF_DIR = d
             self.txt_cif_dir.setText(d)
 
     def _browse_substrate(self):
-        d = QFileDialog.getExistingDirectory(self, "Select Substrate Directory",
-                                             self.txt_substrate.text())
+        start = self.txt_substrate.text() or app_settings.LAST_CIF_DIR
+        d = QFileDialog.getExistingDirectory(self, "Select Substrate Directory", start)
         if d:
             self.txt_substrate.setText(d)
 
