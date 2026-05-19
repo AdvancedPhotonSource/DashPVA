@@ -13,7 +13,9 @@ import tempfile
 import threading
 import time
 
+import cv2
 import numpy as np
+from PIL import Image
 
 # HDF5 is optional
 try:
@@ -426,6 +428,68 @@ class NumpyRandomGenerator(FrameGenerator):
         print(f'Generated frame shape: {self.frames[0].shape}')
         print(f'Range of generated values: [{mn},{mx}]')
 
+class TiffZoomFileGenerator(FrameGenerator):
+    """Loads a TIFF file and returns frames with a sinusoidal zoom oscillation."""
+
+    def __init__(self, tiff_path, fps=10, zoom_center=(1030, 990), zoom_period=5, base_zoom=1.0, zoom_amplitude=0.5):
+        super().__init__()
+        if not fabio:
+            raise ImportError("fabio is required for TiffZoomFileGenerator")
+        with Image.open(tiff_path):
+            self.base_image = fabio.open(tiff_path).data
+            print(f"Loaded TIFF image with shape: {self.base_image.shape}, dtype: {self.base_image.dtype}")
+
+        self.zoom_center = zoom_center
+        self.zoom_period = zoom_period
+        self.base_zoom = base_zoom
+        self.zoom_amplitude = zoom_amplitude
+        self.start_time = time.time()
+        self.fps = fps
+        self.frames_per_cycle = int(self.zoom_period * self.fps)
+
+        self.nInputFrames = sys.maxsize
+        self.rows, self.cols = self.base_image.shape
+        self.dtype = self.base_image.dtype
+        self.colorMode = 0
+        self.compressorName = None
+
+    def getUncompressedFrameSize(self):
+        return self.rows * self.cols * self.base_image.itemsize
+
+    def getCompressedFrameSize(self):
+        return self.getUncompressedFrameSize()
+
+    def getFrameData(self, frameId):
+        try:
+            elapsed_time = time.time() - self.start_time
+            zoom_factor = self.base_zoom + self.zoom_amplitude * np.sin(2 * np.pi * elapsed_time / self.zoom_period)
+
+            h, w = self.base_image.shape
+            cx, cy = self.zoom_center
+
+            new_w = int(w / zoom_factor)
+            new_h = int(h / zoom_factor)
+
+            x1 = max(cx - new_w // 2, 0)
+            y1 = max(cy - new_h // 2, 0)
+            x2 = min(x1 + new_w, w)
+            y2 = min(y1 + new_h, h)
+
+            cropped = self.base_image[y1:y2, x1:x2]
+
+            if cropped.size == 0 or cropped.shape[0] == 0 or cropped.shape[1] == 0:
+                return self.base_image.copy()
+
+            zoomed = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LANCZOS4)
+            return zoomed
+
+        except Exception:
+            return self.base_image.copy()
+
+    def getFrameInfo(self):
+        return (self.nInputFrames, self.rows, self.cols, self.colorMode, self.dtype, self.compressorName)
+
+
 class AdSimServer:
     ''' AD Sim Server class. '''
 
@@ -465,6 +529,7 @@ class AdSimServer:
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
+        self.framerate = frameRate
         self.nscans = int(np.round(np.sqrt(nFrames),decimals=0))
         self.nx = nx
         self.ny = ny
@@ -489,6 +554,8 @@ class AdSimServer:
             ext = f.split('.')[-1]
             if ext in allowedHdfExtensions:
                 self.frameGeneratorList.append(HdfFileGenerator(f, hdfDataset, hdfCompressionMode))
+            elif ext.lower() in ['tif', 'tiff']:
+                self.frameGeneratorList.append(TiffZoomFileGenerator(f, fps=self.framerate, zoom_center=(999+13, 1026-13), zoom_period=10, zoom_amplitude=0.5))
             elif ext not in allowedNpExtensions:
                 fabioFG = FabIOFileGenerator(f, self.configFile)
                 if fabioFG.isLoaded():
@@ -554,6 +621,13 @@ class AdSimServer:
         self.screen = None
         self.screenInitialized = False
         self.disableCurses = disableCurses
+
+        if self.nInputFrames > 0:
+            self.cols = self.frameGeneratorList[0].cols
+            self.rows = self.frameGeneratorList[0].rows
+        else:
+            self.cols = nx
+            self.rows = ny
 
     def setupCurses(self):
         screen = None
