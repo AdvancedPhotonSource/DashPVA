@@ -68,12 +68,6 @@ class LauncherDialog(QDialog):
 
         self._update_status()
 
-        try:
-            if hasattr(self, 'lbl_info') and self.lbl_info is not None:
-                self.lbl_info.setText("Note: On first time use loading may take a while")
-        except Exception:
-            pass
-
         # Wire up the logs link defined in launcher.ui
         if hasattr(self, 'lbl_logs'):
             self.lbl_logs.setCursor(QCursor(Qt.PointingHandCursor))
