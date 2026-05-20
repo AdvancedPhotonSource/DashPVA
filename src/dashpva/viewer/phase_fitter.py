@@ -272,14 +272,21 @@ class PhaseLoadWorker(QThread):
         self.cif_dir = Path(cif_dir)
         self.wavelength_A = wavelength_A
 
+    MIN_CALC_WAVELENGTH = 0.4
+
     def run(self):
         cif_files = sorted(self.cif_dir.glob('*.cif'))
         phases = []
+        calc_wl = max(self.wavelength_A, self.MIN_CALC_WAVELENGTH)
+        if calc_wl != self.wavelength_A:
+            print(f"[Phase Fitter] Clamping calculation wavelength "
+                  f"from {self.wavelength_A:.4f} to {calc_wl} Å "
+                  f"(peak generation too slow below {self.MIN_CALC_WAVELENGTH} Å)")
         for i, cif_path in enumerate(cif_files):
             self.progress.emit(i, len(cif_files), cif_path.stem)
             try:
                 ph = PhaseModel.from_cif(cif_path)
-                ph.calculate_peaks(wavelength=self.wavelength_A)
+                ph.calculate_peaks(wavelength=calc_wl)
                 phases.append(ph)
                 print(f"  [{i+1}/{len(cif_files)}] Loaded {ph.name}: "
                       f"{len(ph.peaks)} peaks")
@@ -467,7 +474,8 @@ class PhaseFitApp(QMainWindow):
         self._watch_worker = None
 
         # Auto-load phases if CIF dir + wavelength provided (live mode launch)
-        if self._init_cif_dir and self.wavelength_A and self.wavelength_A > 0:
+        if (self._init_cif_dir and self.wavelength_A
+                and self.wavelength_A >= PhaseLoadWorker.MIN_CALC_WAVELENGTH):
             if Path(self._init_cif_dir).exists():
                 print(f"[Phase Fitter] Auto-loading CIFs with "
                       f"wavelength={self.wavelength_A:.4f} Å")
@@ -1053,7 +1061,8 @@ class PhaseFitApp(QMainWindow):
                 "Please set a valid CIF directory first.")
             return
 
-        if self.wavelength_A and self.wavelength_A > 0:
+        if (self.wavelength_A and self.wavelength_A > 0
+                and self.wavelength_A >= PhaseLoadWorker.MIN_CALC_WAVELENGTH):
             default_wl = self.wavelength_A
         else:
             default_wl = 0.7293
@@ -1576,7 +1585,8 @@ class PhaseFitApp(QMainWindow):
         if sigma is None or len(sigma) == 0:
             sigma = np.sqrt(np.maximum(intensity, 1.0))
 
-        if not self.phases and not self._phases_loading and wavelength_A > 0:
+        if (not self.phases and not self._phases_loading
+                and wavelength_A >= PhaseLoadWorker.MIN_CALC_WAVELENGTH):
             cif_dir = self.txt_cif_dir.text().strip()
             if cif_dir and Path(cif_dir).exists():
                 print(f"[Phase Fitter] Wavelength {wavelength_A:.4f} Å received "
@@ -1623,6 +1633,8 @@ class PhaseFitApp(QMainWindow):
 
         config = self._build_config()
         init_kw = dict(config.init_kw)
+        if self.fit_background_template is not None:
+            init_kw['fit_background_template'] = self.fit_background_template
         selected_phases = [
             p for p in self.phases
             if getattr(p, 'name', None) in config.phase_names
