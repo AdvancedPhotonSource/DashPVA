@@ -41,14 +41,6 @@ QLabel#lbl_status {
     color: palette(dark);
 }
 
-QLabel#lbl_info {
-    background-color: #FFF8E1;
-    color: #8B6914;
-    border: 1px solid #FFE08A;
-    border-radius: 6px;
-    padding: 7px 10px;
-    font-size: 9pt;
-}
 
 QPushButton {
     background-color: palette(button);
@@ -187,18 +179,6 @@ QPushButton#btn_exit:pressed {
      </property>
      <property name="alignment">
       <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
-     </property>
-    </widget>
-   </item>
-
-   <!-- First-time-use info banner -->
-   <item>
-    <widget class="QLabel" name="lbl_info">
-     <property name="text">
-      <string></string>
-     </property>
-     <property name="wordWrap">
-      <bool>true</bool>
      </property>
     </widget>
    </item>
