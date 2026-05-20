@@ -259,17 +259,18 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                         en=energy,
                         qconv=q_conv)
 
-            # Set up detector parameters
+            # Set up detector parameters — look up by the PV name in the active
+            # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
+            ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
             roi = [0, shape[0], 0, shape[1]]
-            pixel_dir1 = hkl_attr['DetectorSetup:PixelDirection1']
-            pixel_dir2 = hkl_attr['DetectorSetup:PixelDirection2']
-            cch1 = hkl_attr['DetectorSetup:CenterChannelPixel'][0]
-            cch2 = hkl_attr['DetectorSetup:CenterChannelPixel'][1]
-            nch1 = shape[0]
-            nch2 = shape[1]
-            pixel_width1 = hkl_attr['DetectorSetup:Size'][0] / nch1
-            pixel_width2 = hkl_attr['DetectorSetup:Size'][1] / nch2
-            distance = hkl_attr['DetectorSetup:Distance']
+            pixel_dir1   = hkl_attr[ds_cfg['PIXEL_DIRECTION_1']]
+            pixel_dir2   = hkl_attr[ds_cfg['PIXEL_DIRECTION_2']]
+            cch1, cch2   = hkl_attr[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
+            nch1, nch2   = shape[0], shape[1]
+            size_xy      = hkl_attr[ds_cfg['SIZE']]
+            pixel_width1 = size_xy[0] / nch1
+            pixel_width2 = size_xy[1] / nch2
+            distance     = hkl_attr[ds_cfg['DISTANCE']]
 
             hxrd.Ang2Q.init_area(
                 pixel_dir1, pixel_dir2,
