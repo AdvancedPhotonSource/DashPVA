@@ -2078,7 +2078,7 @@ class Workflow(QDialog, LogMixin):
         self._save_meta_assoc_last()
 
         cmd = [
-            'pvapy-hpc-consumer',
+            sys.executable, '-m', 'pvapy.cli.hpcConsumer',
             '--input-channel', self.lineEditInputChannelAssociator.text(),
             '--control-channel', self.lineEditControlChannelAssociator.text(),
             '--status-channel', self.lineEditStatusChannelAssociator.text(),
@@ -2225,7 +2225,7 @@ class Workflow(QDialog, LogMixin):
         producer_id_list = ','.join(producer_id_list)
 
         cmd = [
-            'pvapy-hpc-collector',
+            sys.executable, '-m', 'pvapy.cli.hpcConsumer',
             '--collector-id', str(self.spinBoxCollectorId.value()),
             '--producer-id-list', producer_id_list,
             '--input-channel', self.lineEditInputChannelCollector.text(),
@@ -2286,7 +2286,7 @@ class Workflow(QDialog, LogMixin):
         self._save_analysis_last()
 
         cmd = [
-            'pvapy-hpc-consumer',
+            sys.executable, '-m', 'pvapy.cli.hpcConsumer',
             '--input-channel', self.lineEditInputChannelAnalysis.text(),
             '--control-channel', self.lineEditControlChannelAnalysis.text(),
             '--status-channel', self.lineEditStatusChannelAnalysis.text(),
