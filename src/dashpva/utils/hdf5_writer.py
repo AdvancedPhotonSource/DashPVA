@@ -2,13 +2,11 @@
 # from dashpva.utils import PVAReader
 import time
 from pathlib import Path
-
 import h5py
 import hdf5plugin
 import numpy as np
 import toml
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
-
 import dashpva.settings as settings
 from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.metadata_converter import (
@@ -16,7 +14,7 @@ from dashpva.utils.metadata_converter import (
     _derive_axis_from_pv,
     is_position_pv,
 )
-
+import dashpva.settings
 
 class HDF5Writer(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
@@ -179,7 +177,8 @@ class HDF5Writer(QObject, LogMixin):
 
             metadata_grp = data_grp.create_group('metadata')
 
-            # Write custom CA metadata to entry/data/metadata/ca_custom/
+            # Write custom CA metadata to entry/data/metadata/ca_custom/.
+            # CUSTOM nesting was flattened — METADATA_CA keys are the PV friendly names directly.
             custom_ca = {}
             try:
                 custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}
@@ -221,15 +220,7 @@ class HDF5Writer(QObject, LogMixin):
                     if sec:
                         grp = hkl_root.create_group(base)
                         for k, pv in sec.items():
-                            if k == 'POSITION':
-                                axis_label = _derive_axis_from_pv(pv, axis_lookup)
-                                vals = motor_pos_values.get(axis_label)
-                                if vals is not None:
-                                    arr = np.array(vals)
-                                    if arr.dtype.kind in ('i', 'u', 'f'):
-                                        grp.create_dataset(k, data=arr)
-                            else:
-                                self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
+                            self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
