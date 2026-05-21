@@ -51,7 +51,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Input Channel</string>
+     <string>Detector prefix</string>
     </property>
    </widget>
   </widget>

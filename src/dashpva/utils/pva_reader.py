@@ -1,15 +1,12 @@
-from collections import deque
-
 import bitshuffle
 import blosc2
 import lz4.block
 import numpy as np
 import pvaccess as pva
+from collections import deque
 from epics import caget, camonitor, camonitor_clear
 from PyQt5.QtCore import QObject, pyqtSignal
-
 import dashpva.settings as app_settings
-
 
 class PVAReader(QObject):
     # Signals
@@ -25,13 +22,17 @@ class PVAReader(QObject):
     def __init__(self,
                  input_channel=None,
                  provider=pva.PVA,
-                 viewer_type:str='image'):
+                 viewer_type:str='image',
+                 pva_prefix:str=None):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
 
         Args:
             input_channel (str): Input channel for the PVA connection.
             provider (protocol): The protocol for the PVA channel.
+            pva_prefix (str): IOC prefix used to construct ROI/Stats PV names.
+                When provided, takes precedence over app_settings.IOC_PREFIX.
+                When omitted, falls back to splitting input_channel on ':'.
         """
         super(PVAReader, self).__init__()
         # Each PVA ScalarType is enumerated in C++ starting 1-10
@@ -85,19 +86,19 @@ class PVAReader(QObject):
         }
 
         # variables related to monitoring connection
-        self.input_channel = input_channel        
+        self.input_channel = input_channel
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
-        self.pva_prefix = self.input_channel.split(":")[0]
+        self._explicit_prefix = pva_prefix
+        self.pva_prefix = pva_prefix or self.input_channel.split(":")[0]
 
         # variables setup using config
         self.config = {}
         self.rois = {}
-        self._roi_names = []
+        self._roi_names = ['ROI1', 'ROI2', 'ROI3', 'ROI4']
         self.stats = {}
         self.CONSUMER_MODE = ''
         self.OUTPUT_FILE_LOCATION = ''
-        self.ROI_IN_CONFIG = False
         self.ANALYSIS_IN_CONFIG = False
         self.HKL_IN_CONFIG = False
         self.CACHE_OPTIONS = {}
@@ -150,19 +151,14 @@ class PVAReader(QObject):
     def _configure(self) -> None:
         self.config = app_settings.CONFIG
         self.OUTPUT_FILE_LOCATION = app_settings.OUTPUT_PATH
-        self.stats: dict = app_settings.STATS
-        self.ROI_IN_CONFIG = (app_settings.ROI != {})
         self.ANALYSIS_IN_CONFIG = (app_settings.ANALYSIS != {})
         self.HKL_IN_CONFIG = (app_settings.HKL != {})
         self.CONSUMER_MODE = app_settings.CONSUMER_MODE or ''
         self.CACHE_OPTIONS: dict = app_settings.CACHE_OPTIONS
 
-        if app_settings.DETECTOR_PREFIX:
-            self.pva_prefix = app_settings.DETECTOR_PREFIX
-
-        if self.ROI_IN_CONFIG:
-            for roi in app_settings.ROI:
-                self._roi_names.append(roi)
+        # Caller-supplied prefix wins; otherwise honor settings.IOC_PREFIX.
+        if not self._explicit_prefix and app_settings.IOC_PREFIX:
+            self.pva_prefix = app_settings.IOC_PREFIX
 
         self.set_cache_options()
         if self.caches_needed != self.caches_initialized:
@@ -231,8 +227,7 @@ class PVAReader(QObject):
             self.pv_attributes = self.parse_attributes(pv)
             
             # Check for any roi pvs in metadata
-            if self.ROI_IN_CONFIG:
-                self.parse_roi_pvs(self.pv_attributes) 
+            self.parse_roi_pvs(self.pv_attributes)
 
             # Check for rsm attributes in metadata
             if (self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']) and 'RSM' in self.pv_attributes:
@@ -277,23 +272,9 @@ class PVAReader(QObject):
             traceback.print_exc()
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
-        name_components = pvname.split(":")
-        # PV format: BL172:eiger4M:ROI1:MinX
-        # name_components[0] = "BL172"
-        # name_components[1] = "eiger4M"
-        # name_components[2] = "ROI1" (this is the roi_key)
-        # name_components[3] = "MinX" (this is the pv_key)
-        if len(name_components) >= 4:
-            roi_key = name_components[2]
-            pv_key = name_components[3]
-        else:
-            # Fallback - try to extract from PV name
-            roi_key = name_components[1] if len(name_components) > 1 else "ROI1"
-            pv_key = name_components[2] if len(name_components) > 2 else "MinX"
-        pv_value = value
-        # can't append simply by using 2 keys in a row (self.rois[roi_key][pv_key]), there must be an inner dict to call
-        # then adds the key to the inner dictionary with update
-        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
+        # PV format: {pva_prefix}:{roi}:{dimension}
+        roi_key, pv_key = pvname.split(':')[-2:]
+        self.rois.setdefault(roi_key, {}).update({pv_key: value})
     
     def metadata_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -379,17 +360,23 @@ class PVAReader(QObject):
                                    'qz' : rsm_attributes['qz']['value']}
                           
     def parse_roi_pvs(self, pv_attributes: dict) -> None:
+        """Parse PVA attributes to extract ROI-specific PVs.
+
+        Same all-or-nothing rule as ``start_roi_backup_monitor``: if any of
+        the four corners is missing for an ROI, the whole ROI is skipped so
+        the renderer never gets a partial dict.
         """
-        Parses attributes to extract ROI-specific PV information.
-        """
+        dims = ['MinX', 'MinY', 'SizeX', 'SizeY']
         for roi in self._roi_names:
-            for dimension in ['MinX', 'MinY', 'SizeX', 'SizeY']:
-                pv_key = f'{self.pva_prefix}:{roi}:{dimension}'
-                pv_value = pv_attributes.get(pv_key, None)
-                # If a dictionary is empty, can't create an inner dictionary by using another [] at the end, there must be a dict to call to.
-                # To make sure there is an inner dictionary, we use .setdefault() to initialize the inner dictionary
-                if pv_value is not None:
-                    self.rois.setdefault(roi, {}).update({dimension: pv_value})
+            collected = {}
+            for dimension in dims:
+                pv_value = pv_attributes.get(f'{self.pva_prefix}:{roi}:{dimension}')
+                if pv_value is None:
+                    collected = None
+                    break
+                collected[dimension] = pv_value
+            if collected is not None:
+                self.rois[roi] = collected
             
     def pva_to_image(self, pva_object) -> np.ndarray:
         """
@@ -513,12 +500,31 @@ class PVAReader(QObject):
         Args:
             callback (function, optional): A custom callback to use for the monitor.
                                            If None, defaults to self.pva_callbackSuccess.
+
+        The scan FLAG_PV monitor is now set up by ``start_scan_monitor`` from
+        the background PV-pollers thread, so a dead/slow FLAG_PV can't stall
+        the GUI thread on Start Live View. See area_det_viewer._connect_pv_pollers.
         """
         monitor_callback = callback if callback is not None else self.pva_callbackSuccess
         self.channel.subscribe('pva_monitor', monitor_callback)
         self.channel.startMonitor()
-        if self.CACHING_MODE == 'scan' and self.FLAG_PV:
-            camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
+
+    def start_scan_monitor(self) -> None:
+        """Initial caget + CA monitor for the scan FLAG_PV. No-op outside scan mode.
+
+        Designed to be called from a background thread (the PV pollers sweep).
+        The caget has a 0.15s timeout so an unreachable FLAG_PV can't block
+        more than a few hundred ms.
+        """
+        if self.CACHING_MODE != 'scan' or not self.FLAG_PV:
+            return
+        try:
+            initial = caget(self.FLAG_PV, timeout=0.15)
+        except Exception:
+            initial = None
+        if initial is not None:
+            self.is_scan_complete = not bool(initial)
+        camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
 
     def stop_channel_monitor(self) -> None:
         """
@@ -533,41 +539,46 @@ class PVAReader(QObject):
                 pass
 
     def start_roi_backup_monitor(self) -> None:
-        if not app_settings.ROI:
-            return
-        for roi_num, roi_dict in app_settings.ROI.items():
-            for config_key, pv_name in roi_dict.items():
-                try:
-                    name_components = pv_name.split(":")
-                    # PV format: BL172:eiger4M:ROI1:MinX
-                    # name_components[0] = "BL172"
-                    # name_components[1] = "eiger4M"
-                    # name_components[2] = "ROI1" (this is the roi_key)
-                    # name_components[3] = "MinX" (this is the pv_key)
-                    if len(name_components) >= 4:
-                        roi_key = name_components[2] # ROI1-ROI4
-                        pv_key = name_components[3] # MinX, MinY, SizeX, SizeY
-                    else:
-                        # Fallback for different PV naming conventions
-                        roi_key = roi_num  # Use config key (ROI1, ROI2, etc.)
-                        # Map config keys to PV keys: MIN_X -> MinX, SIZE_X -> SizeX, etc.
-                        pv_key_map = {'MIN_X': 'MinX', 'MIN_Y': 'MinY', 'SIZE_X': 'SizeX', 'SIZE_Y': 'SizeY'}
-                        pv_key = pv_key_map.get(config_key, config_key)
+        """Connect to ROI PVs with a tight per-PV timeout.
 
-                    # Use timeout to avoid blocking on slow PVs
-                    pv_value = caget(pv_name, timeout=0.5)
-                    if pv_value is not None:
-                        self.rois.setdefault(roi_key, {}).update({pv_key: pv_value})
-                        camonitor(pvname=pv_name, callback=self.roi_backup_callback)
+        Each ROI requires all four corners (MinX/MinY/SizeX/SizeY) to be useful.
+        Collect into a temp dict and only commit + start camonitors when all
+        four are present — partial ROIs (e.g. MinX/MinY succeeded but SizeX
+        failed) would otherwise render as a 0×0 rectangle at the origin and
+        leave dangling CA monitors. Called from a background thread (see
+        ``DiffractionImageWindow._connect_pv_pollers``).
+        """
+        dims = ['MinX', 'MinY', 'SizeX', 'SizeY']
+        for roi in self._roi_names:
+            collected = {}
+            ok = True
+            for dimension in dims:
+                pv_key = f'{self.pva_prefix}:{roi}:{dimension}'
+                try:
+                    pv_value = caget(pv_key, timeout=0.15)
                 except Exception:
-                    # Silently skip failed PVs to avoid spam
-                    pass
+                    ok = False
+                    break
+                if pv_value is None:
+                    ok = False
+                    break
+                collected[dimension] = pv_value
+            if not ok:
+                continue
+            self.rois[roi] = collected
+            for dimension in dims:
+                camonitor(pvname=f'{self.pva_prefix}:{roi}:{dimension}',
+                          callback=self.roi_backup_callback)
 
     def start_metadata_ca_monitor(self) -> None:
         """
         Starts monitoring CA metadata PVs from the [METADATA.CA] section.
         If a PV fails to read, it's skipped. Values are stored in self.metadata_ca
         and also added to self.pv_attributes for consistency.
+
+        Runs on the background poller thread (see
+        ``DiffractionImageWindow._connect_pv_pollers``). Timeout is short so a
+        single dead PV doesn't add seconds to live-view startup.
         """
         metadata_config = self.config.get('METADATA', {})
         if not metadata_config:
@@ -579,8 +590,9 @@ class PVAReader(QObject):
 
         for config_key, pv_name in ca_config.items():
             try:
-                # Use timeout to avoid blocking on slow PVs
-                pv_value = caget(pv_name, timeout=0.5)
+                # 0.15 s is enough for a healthy network PV; dead ones get
+                # skipped quickly so the poller isn't dominated by timeouts.
+                pv_value = caget(pv_name, timeout=0.15)
                 if pv_value is not None:
                     self.metadata_ca[pv_name] = pv_value
                     # Also add to pv_attributes so it's available like PVA attributes
@@ -678,7 +690,6 @@ class PVAReader(QObject):
     
     def get_config_settings(self) -> dict:
         config_settings = {'OUTPUT_FILE_CONFIG' : self.get_output_file_location(),
-                        'ROI_IN_CONFIG' : self.ROI_IN_CONFIG,
                         'ANALYSIS_IN_CONFIG' : self.ANALYSIS_IN_CONFIG,
                         'HKL_IN_CONFIG' : self.HKL_IN_CONFIG,
                         'CACHE_OPTIONS' : self.CACHE_OPTIONS,
