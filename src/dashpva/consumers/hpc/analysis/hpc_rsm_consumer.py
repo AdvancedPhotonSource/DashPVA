@@ -8,7 +8,7 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 import xrayutilities as xu
-from pvaccess import PvObject
+from pvaccess import PvObject, NtAttribute
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
@@ -150,7 +150,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             )
 
         self.config = config
-        self.hkl_config = self.config.get('HKL', {})
+        self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set()
         for section in self.hkl_config.values():
             if isinstance(section, dict):
@@ -206,15 +206,24 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
 
     def get_axis_directions(self, hkl_attr: dict):
-         # Get beam and reference directions
-        if len(hkl_attr) == len(self.hkl_pv_channels):
-            primary_beam_directions = [hkl_attr.get(f'PrimaryBeamDirection:AxisNumber{i}', None) for i in range(1,4)]
-            inplane_beam_direction = [hkl_attr.get(f'InplaneReferenceDirection:AxisNumber{i}', None) for i in range(1,4)]
-            sample_surface_normal_direction = [hkl_attr.get(f'SampleSurfaceNormalDirection:AxisNumber{i}', None) for i in range(1,4)]
+        """Get beam / reference / surface-normal direction triplets from hkl_attr.
 
-            return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
-        else:
+        PV names come from the active HKL config (which includes any prefix the
+        IOC publishes under), not hardcoded — so this works for `xidb:`,
+        `6idb:`, or unprefixed schemas without code changes.
+        """
+        if len(hkl_attr) != len(self.hkl_pv_channels):
             return None, None, None
+
+        def _triplet(section_name):
+            section = self.hkl_config.get(section_name, {}) or {}
+            return [hkl_attr.get(section.get(f'AXIS_NUMBER_{i}', ''), None) for i in range(1, 4)]
+
+        primary_beam_directions          = _triplet('PRIMARY_BEAM_DIRECTION')
+        # Section names match the (typo'd) keys used elsewhere in the config schema.
+        inplane_beam_direction           = _triplet('INPLANE_REFERENCE_DIRECITON')
+        sample_surface_normal_direction  = _triplet('SAMPLE_SURFACE_NORMAL_DIRECITON')
+        return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
 
     def get_ub_matrix(self, hkl_attr: dict):
         ub_matrix_key = self.hkl_config['SPEC'].get('UB_MATRIX_VALUE', '')
@@ -250,17 +259,18 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                         en=energy,
                         qconv=q_conv)
 
-            # Set up detector parameters
+            # Set up detector parameters — look up by the PV name in the active
+            # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
+            ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
             roi = [0, shape[0], 0, shape[1]]
-            pixel_dir1 = hkl_attr['DetectorSetup:PixelDirection1']
-            pixel_dir2 = hkl_attr['DetectorSetup:PixelDirection2']
-            cch1 = hkl_attr['DetectorSetup:CenterChannelPixel'][0]
-            cch2 = hkl_attr['DetectorSetup:CenterChannelPixel'][1]
-            nch1 = shape[0]
-            nch2 = shape[1]
-            pixel_width1 = hkl_attr['DetectorSetup:Size'][0] / nch1
-            pixel_width2 = hkl_attr['DetectorSetup:Size'][1] / nch2
-            distance = hkl_attr['DetectorSetup:Distance']
+            pixel_dir1   = hkl_attr[ds_cfg['PIXEL_DIRECTION_1']]
+            pixel_dir2   = hkl_attr[ds_cfg['PIXEL_DIRECTION_2']]
+            cch1, cch2   = hkl_attr[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
+            nch1, nch2   = shape[0], shape[1]
+            size_xy      = hkl_attr[ds_cfg['SIZE']]
+            pixel_width1 = size_xy[0] / nch1
+            pixel_width2 = size_xy[1] / nch2
+            distance     = hkl_attr[ds_cfg['DISTANCE']]
 
             hxrd.Ang2Q.init_area(
                 pixel_dir1, pixel_dir2,
