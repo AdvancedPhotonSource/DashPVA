@@ -39,7 +39,7 @@ class TestCLI:
             result = runner.invoke(cli, ["detector"])
             mock_run.assert_called_once()
             cmd = mock_run.call_args[0][0]
-            assert "dashpva.viewer.area_det_viewer" in cmd[-1]
+            assert "dashpva.viewer.area_det.area_det_viewer" in cmd[-1]
 
     def test_monitor_scan(self, runner):
         with patch("dashpva.cli.subprocess.run") as mock_run:

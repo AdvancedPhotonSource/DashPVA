@@ -12,9 +12,32 @@
 /* -- macOS dark mode text fix ---------------------------------------- */
 QMessageBox QLabel { color: palette(text); }
 
-/* -- Dock widget borders --------------------------------------------- */
+/* -- Dock widget borders + title bar --------------------------------- */
 QDockWidget::pane {
     border: 1px solid palette(mid);
+}
+/* Title text color must be set on QDockWidget (not ::title); Qt's native
+   style renders the title using QDockWidget's palette, ignoring color on
+   the ::title sub-control. palette(bright-text) is the role designed to
+   contrast against dark backgrounds, so it stays white-on-dark in dark
+   system themes and adapts in light themes. */
+QDockWidget {
+    color: palette(bright-text);
+}
+QDockWidget::title {
+    background: palette(dark);
+    padding: 6px 8px;
+    border-bottom: 1px solid palette(shadow);
+    text-align: left;
+}
+QDockWidget::close-button, QDockWidget::float-button {
+    background: transparent;
+    border: none;
+    padding: 2px;
+}
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
 }
 
 /* -- Readonly text editors (monospace info panels) -------------------- */
