@@ -75,7 +75,7 @@ def _insert_profile(db_file, profile_id, name, data_dict):
     conn.execute("INSERT INTO profiles (id, name) VALUES (?, ?)", (profile_id, name))
     conn.execute(
         "INSERT INTO profile_configs (profile_id, config_type, config_section, config_key, config_value) "
-        "VALUES (?, '__toml__', '', '__data__', ?)",
+        "VALUES (?, '__toml__', NULL, '__data__', ?)",
         (profile_id, json.dumps(data_dict)),
     )
     conn.commit()

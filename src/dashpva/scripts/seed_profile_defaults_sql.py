@@ -217,7 +217,7 @@ def seed_profile_defaults(profile_id: int) -> bool:
     """
     if not _DB_FILE.exists():
         return False
-    payload = json.dumps(DEFAULT_PROFILE_DATA)
+    payload = json.dumps(get_default_profile_data())
     conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()
