@@ -2229,7 +2229,7 @@ class Workflow(QDialog, LogMixin):
         producer_id_list = ','.join(producer_id_list)
 
         cmd = [
-            sys.executable, '-m', 'pvapy.cli.hpcConsumer',
+            sys.executable, '-m', 'pvapy.cli.hpcCollector',
             '--collector-id', str(self.spinBoxCollectorId.value()),
             '--producer-id-list', producer_id_list,
             '--input-channel', self.lineEditInputChannelCollector.text(),
