@@ -455,27 +455,10 @@ class PVAReader(QObject):
                 self.cached_qz.append(rsm_attributes['qz'])
             return True
         elif self.CACHING_MODE == 'scan':
-            flag_found = self.FLAG_PV in pv_attributes
-            if not flag_found:
-                return False
-
-            flag_value = pv_attributes[self.FLAG_PV]
-            if flag_value == self.START_SCAN:
-                if not self.is_caching:
-                    self.is_caching = True
-                    self.is_scan_complete = False
-                    self.scan_state_changed.emit(True)
-            elif flag_value == self.STOP_SCAN and self.is_caching:
-                self.is_caching = False
-                self.is_scan_complete = True
-                self.scan_state_changed.emit(False)
-
             if not self.is_caching:
                 return False
-
             if not rsm_attributes and self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 return False
-
             self.cached_attributes.append(pv_attributes)
             if rsm_attributes:
                 self.cached_qx.append(rsm_attributes['qx'])
@@ -662,8 +645,8 @@ class PVAReader(QObject):
         return data
     
     def get_output_file_location(self) -> dict:
-        fp_pv_name = app_settings.METADATA_CA.get('FILE_PATH', '')
-        fn_pv_name = app_settings.METADATA_CA.get('FILE_NAME', '')
+        fp_pv_name = app_settings.FILE_PATH_PV or ''
+        fn_pv_name = app_settings.FILE_NAME_PV or ''
 
         file_path_val = ''
         file_name_val = ''

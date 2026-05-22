@@ -1,5 +1,6 @@
 # Required Setup
 DETECTOR_PREFIX = 'dp-ADSim'
+IOC_PREFIX = '8idi'
 OUTPUT_FILE_LOCATION = 'NEW_TEST.h5' # file must end with .h5 # can probably be made into it's own section
 CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how consumer is performing analysis calculations
 
@@ -10,8 +11,6 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
     MAX_CACHE_SIZE = 1000
 
     [CACHE_OPTIONS.SCAN]
-    # FLAG PV MUST BE IN METADATA SECTION   
-    FLAG_PV = 'ScanOn:Value' # a PV that will act as a flag to start caching
     START_SCAN = true
     STOP_SCAN = false 
     THRESHOLD = 0.05 # use if start and stop values are not binary/boolean
@@ -25,7 +24,10 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
 [METADATA]
 
     [METADATA.CA]
-    # FLAG_PV = 'ScanOn:Value'
+    # TEMPERATURE = 'Temperature:Value'
+    # PRESSURE = 'Pressure:Value'
+    # POSITION = 'Position:Value'
+    # VOLTAGE = 'Voltage:Value'
 
     [METADATA.PVA]
 
@@ -99,44 +101,32 @@ CACHING_MODE = '' # options: '', 'alignment', 'scan', or 'bin' describes whether
     [HKL.SAMPLE_CIRCLE_AXIS_1]
     AXIS_NUMBER = '8idi:m28_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m28_RBV:DirectionAxis'
-    # NAME = '8idi:m28_RBV:Name'
     POSITION = '8idi:m28_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m28_RBV:SpecMotorName'
-    
+
     [HKL.SAMPLE_CIRCLE_AXIS_2]
     AXIS_NUMBER = '8idi:m17_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m17_RBV:DirectionAxis'
-    # NAME = '8idi:m17_RBV:Name'
     POSITION = '8idi:m17_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m17_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_3]
     AXIS_NUMBER = '8idi:m19_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m19_RBV:DirectionAxis'
-    # NAME = '8idi:m19_RBV:Name'
     POSITION = '8idi:m19_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m19_RBV:SpecMotorName'
 
     [HKL.SAMPLE_CIRCLE_AXIS_4]
     AXIS_NUMBER = '8idi:m20_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m20_RBV:DirectionAxis'
-    # NAME = '8idi:m20_RBV:Name'
     POSITION = '8idi:m20_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m20_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_1]
     AXIS_NUMBER = '8idi:m29_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m29_RBV:DirectionAxis'
-    # NAME = '8idi:m29_RBV:Name'
     POSITION = '8idi:m29_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m29_RBV:SpecMotorName'
 
     [HKL.DETECTOR_CIRCLE_AXIS_2]
     AXIS_NUMBER = '8idi:m18_RBV:AxisNumber'
     DIRECTION_AXIS = '8idi:m18_RBV:DirectionAxis'
-    # NAME = '8idi:m18_RBV:Name'
     POSITION = '8idi:m18_RBV:Position'
-    # SPEC_MOTOR_NAME = '8idi:m18_RBV:SpecMotorName'
 
     [HKL.SPEC]
     ENERGY_VALUE = '8idi:spec:Energy:Value'

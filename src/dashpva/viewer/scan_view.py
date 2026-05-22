@@ -425,8 +425,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             if hasattr(self, 'label_file_output'):
                 file_output = "--"
                 try:
-                    file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
-                    file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+                    file_path_pv = app_settings.FILE_PATH_PV or ''
+                    file_name_pv = app_settings.FILE_NAME_PV or ''
                     if file_path_pv or file_name_pv:
                         fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
                         fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
@@ -447,10 +447,10 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             pass
 
     def _refresh_save_fields(self):
-        """Re-read FILE_PATH and FILE_NAME PVs and populate the Save folder/filename fields."""
+        """Re-read FILE_PATH_PV and FILE_NAME_PV and populate the Save folder/filename fields."""
         try:
-            file_path_pv = app_settings.METADATA_CA.get('FILE_PATH', '')
-            file_name_pv = app_settings.METADATA_CA.get('FILE_NAME', '')
+            file_path_pv = app_settings.FILE_PATH_PV or ''
+            file_name_pv = app_settings.FILE_NAME_PV or ''
             fp = caget(file_path_pv, timeout=0.3) if file_path_pv else ''
             fn = caget(file_name_pv, timeout=0.3) if file_name_pv else ''
             if hasattr(self, 'lineedit_save_folder'):

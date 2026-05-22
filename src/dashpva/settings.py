@@ -153,16 +153,26 @@ BEAMLINE_NAME: Optional[str] = None
 # Core
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DETECTOR_PREFIX: Optional[str] = None
+IOC_PREFIX: Optional[str] = None
 INPUT_CHANNEL: Optional[str] = None
 INPUT_CHANNEL_HKL3D: Optional[str] = None
 OUTPUT_FILE_LOCATION: Optional[str] = None
 CONSUMER_MODE: Optional[str] = None
+
+# Hardcoded PV name suffixes — combined with IOC_PREFIX at reload time to
+# produce SCAN_FLAG_PV / FILE_PATH_PV / FILE_NAME_PV. These are the sole
+# source of truth; METADATA.CA is reserved for user-custom CA PVs only.
+_FLAG_PV_SUFFIX = "ScanOn:Value"
+_FILE_PATH_SUFFIX = "FilePath:Value"
+_FILE_NAME_SUFFIX = "FileName:Value"
 
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
 ALIGNMENT_MAX_CACHE_SIZE: Optional[int] = None
 SCAN_FLAG_PV: Optional[str] = None
+FILE_PATH_PV: Optional[str] = None
+FILE_NAME_PV: Optional[str] = None
 SCAN_START_SCAN: Optional[bool] = None
 SCAN_STOP_SCAN: Optional[bool] = None
 SCAN_THRESHOLD: Optional[float] = None
@@ -229,9 +239,10 @@ def ensure_path() -> Optional[str]:
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
     global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
-    global DETECTOR_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
+    global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
-    global SCAN_FLAG_PV, SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
+    global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
+    global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
     global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
@@ -250,7 +261,15 @@ def reload() -> None:
         TOML_FILE = None
 
     # Core
+    # IOC_PREFIX is per-profile — read it from the active profile/TOML only.
+    # Backward-compat: also accept legacy 'DETECTOR_PREFIX' from older TOMLs.
+    IOC_PREFIX = cfg.get('IOC_PREFIX') or cfg.get('DETECTOR_PREFIX') or ''
     DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')
+    # Match the IOC convention (consumers/ioc_rsm_parameter.py enforces this on
+    # apply): a non-empty prefix always ends with ':'. Saves users from a
+    # silent caget/camonitor miss when they enter "6idb1" instead of "6idb1:".
+    if IOC_PREFIX and not IOC_PREFIX.endswith(':'):
+        IOC_PREFIX += ':'
     INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
     INPUT_CHANNEL_HKL3D = cfg.get('INPUT_CHANNEL_HKL3D')
     OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
@@ -269,7 +288,9 @@ def reload() -> None:
 
     # SCAN
     scan = CACHE_OPTIONS.get('SCAN', {}) or {}
-    SCAN_FLAG_PV = (cfg.get('METADATA', {}).get('CA', {}) or {}).get('FLAG_PV')
+    SCAN_FLAG_PV = f"{IOC_PREFIX}{_FLAG_PV_SUFFIX}" if IOC_PREFIX else _FLAG_PV_SUFFIX
+    FILE_PATH_PV = f"{IOC_PREFIX}{_FILE_PATH_SUFFIX}" if IOC_PREFIX else _FILE_PATH_SUFFIX
+    FILE_NAME_PV = f"{IOC_PREFIX}{_FILE_NAME_SUFFIX}" if IOC_PREFIX else _FILE_NAME_SUFFIX
     try:
         SCAN_START_SCAN = bool(scan.get('START_SCAN')) if scan.get('START_SCAN') is not None else None
     except Exception:
@@ -468,6 +489,7 @@ class Settings:
         # Public attributes mirroring module-level constants
         self.BEAMLINE_NAME: Optional[str] = None
         self.DETECTOR_PREFIX: Optional[str] = None
+        self.IOC_PREFIX: Optional[str] = None
         self.INPUT_CHANNEL: Optional[str] = None
         self.OUTPUT_FILE_LOCATION: Optional[str] = None
         self.CONSUMER_MODE: Optional[str] = None
@@ -476,6 +498,8 @@ class Settings:
         self.CACHE_OPTIONS: Dict[str, Any] = {}
         self.ALIGNMENT_MAX_CACHE_SIZE: Optional[int] = None
         self.SCAN_FLAG_PV: Optional[str] = None
+        self.FILE_PATH_PV: Optional[str] = None
+        self.FILE_NAME_PV: Optional[str] = None
         self.SCAN_START_SCAN: Optional[bool] = None
         self.SCAN_STOP_SCAN: Optional[bool] = None
         self.SCAN_THRESHOLD: Optional[float] = None
@@ -568,7 +592,14 @@ class Settings:
 
         # Core
         self.PROJECT_ROOT = PROJECT_ROOT
+        # IOC_PREFIX is per-profile — active profile/TOML only.
+        # Backward-compat: also accept legacy 'DETECTOR_PREFIX' from older TOMLs.
+        self.IOC_PREFIX = cfg.get('IOC_PREFIX') or cfg.get('DETECTOR_PREFIX') or ''
         self.DETECTOR_PREFIX = cfg.get('DETECTOR_PREFIX')
+        # See module-level reload(): match the IOC convention that the prefix
+        # always ends with ':'.
+        if self.IOC_PREFIX and not self.IOC_PREFIX.endswith(':'):
+            self.IOC_PREFIX += ':'
         self.INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
         self.OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
         self.CONSUMER_MODE = cfg.get('CONSUMER_MODE')
@@ -586,7 +617,9 @@ class Settings:
 
         # SCAN
         scan = self.CACHE_OPTIONS.get('SCAN', {}) or {}
-        self.SCAN_FLAG_PV = (cfg.get('METADATA', {}).get('CA', {}) or {}).get('FLAG_PV')
+        self.SCAN_FLAG_PV = f"{self.IOC_PREFIX}{_FLAG_PV_SUFFIX}" if self.IOC_PREFIX else _FLAG_PV_SUFFIX
+        self.FILE_PATH_PV = f"{self.IOC_PREFIX}{_FILE_PATH_SUFFIX}" if self.IOC_PREFIX else _FILE_PATH_SUFFIX
+        self.FILE_NAME_PV = f"{self.IOC_PREFIX}{_FILE_NAME_SUFFIX}" if self.IOC_PREFIX else _FILE_NAME_SUFFIX
         try:
             self.SCAN_START_SCAN = bool(scan.get('START_SCAN')) if scan.get('START_SCAN') is not None else None
         except Exception:

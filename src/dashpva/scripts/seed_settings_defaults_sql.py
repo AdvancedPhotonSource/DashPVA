@@ -27,6 +27,7 @@ Creates (if missing):
         collector  (section)    — collector last-used / named configs
         analysis   (section)    — analysis consumer last-used / named configs
 """
+import json
 import sqlite3
 
 import dashpva.settings as _settings
@@ -111,6 +112,46 @@ def seed_defaults() -> None:
         get_or_create_setting(cur, "meta",      "section", "Associator consumer configs", workflow_id)
         get_or_create_setting(cur, "collector", "section", "Collector configs",           workflow_id)
         get_or_create_setting(cur, "analysis",  "section", "Analysis consumer configs",   workflow_id)
+
+        # ── IOC_PREFIX at the root of every profile's __data__ JSON ───────── #
+        # Imported pre-IOC_PREFIX TOMLs only carry DETECTOR_PREFIX (the detector
+        # PVA prefix). Derive IOC_PREFIX from METADATA.CA.FLAG_PV first
+        # (authoritative when present and shaped like "{prefix}:Name:Value"),
+        # otherwise fall back to DETECTOR_PREFIX.
+        # Idempotent — profiles that already have IOC_PREFIX are skipped.
+        for row_id, raw in cur.execute(
+            "SELECT id, config_value FROM profile_configs "
+            "WHERE config_type='__toml__' AND config_key='__data__'"
+        ).fetchall():
+            if not isinstance(raw, str):
+                continue
+            try:
+                data = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(data, dict) or data.get("IOC_PREFIX"):
+                continue
+            # Defensive lookup: METADATA / METADATA.CA may be missing, None, or
+            # an empty string in older or partial profiles.
+            flag_pv = ""
+            metadata = data.get("METADATA")
+            if isinstance(metadata, dict):
+                ca = metadata.get("CA")
+                if isinstance(ca, dict):
+                    flag_pv = ca.get("FLAG_PV") or ""
+            # Only treat FLAG_PV as a prefixed name when it has the full
+            # "prefix:Name:Value" shape (3+ colon-separated parts). Otherwise
+            # the leading token is the field name itself (e.g. "ScanOn"), not
+            # a real prefix — fall through to DETECTOR_PREFIX.
+            parts = flag_pv.split(":") if isinstance(flag_pv, str) else []
+            if len(parts) >= 3 and parts[0]:
+                derived = parts[0]
+            else:
+                derived = str(data.get("DETECTOR_PREFIX") or "").rstrip(":") or None
+            if not derived:
+                continue
+            data["IOC_PREFIX"] = derived
+            cur.execute("UPDATE profile_configs SET config_value=? WHERE id=?", (json.dumps(data), row_id))
 
         conn.commit()
     except Exception:

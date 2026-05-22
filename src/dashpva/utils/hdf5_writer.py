@@ -6,16 +6,10 @@ from pathlib import Path
 import h5py
 import hdf5plugin
 import numpy as np
-import toml
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 import dashpva.settings as settings
 from dashpva.utils.log_manager import LogMixin
-from dashpva.utils.metadata_converter import (
-    _build_axis_lookup,
-    _derive_axis_from_pv,
-    is_position_pv,
-)
 
 
 class HDF5Writer(QObject, LogMixin):
@@ -157,14 +151,6 @@ class HDF5Writer(QObject, LogMixin):
 
     def h5_save(self, file_path: str, data: dict, compress: bool = False):
         """Write caches directly in NeXus structure — no flat intermediate, no post-conversion."""
-        axis_lookup = {}
-        try:
-            toml_path = settings.ensure_path()
-            if toml_path:
-                axis_lookup = _build_axis_lookup(toml.load(str(toml_path)))
-        except Exception:
-            pass
-
         hkl_cfg = getattr(self.pva_reader, 'config', {}).get('HKL', {})
         HKL_IN_CONFIG = data.get('HKL_IN_CONFIG', False) or bool(hkl_cfg)
         merged_metadata = data['metadata']
@@ -179,7 +165,8 @@ class HDF5Writer(QObject, LogMixin):
 
             metadata_grp = data_grp.create_group('metadata')
 
-            # Write custom CA metadata to entry/data/metadata/ca_custom/
+            # Write custom CA metadata to entry/data/metadata/ca_custom/.
+            # CUSTOM nesting was flattened — METADATA_CA keys are the PV friendly names directly.
             custom_ca = {}
             try:
                 custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}
@@ -198,14 +185,6 @@ class HDF5Writer(QObject, LogMixin):
                     except Exception:
                         pass
 
-            # Build axis-label -> per-frame values for HKL POSITION lookup
-            motor_pos_values = {}
-            for k, v in merged_metadata.items():
-                if is_position_pv(k):
-                    label = _derive_axis_from_pv(k, axis_lookup)
-                    if label and label not in motor_pos_values:
-                        motor_pos_values[label] = v
-
             if HKL_IN_CONFIG:
                 hkl_root = metadata_grp.create_group('HKL')
 
@@ -221,15 +200,7 @@ class HDF5Writer(QObject, LogMixin):
                     if sec:
                         grp = hkl_root.create_group(base)
                         for k, pv in sec.items():
-                            if k == 'POSITION':
-                                axis_label = _derive_axis_from_pv(pv, axis_lookup)
-                                vals = motor_pos_values.get(axis_label)
-                                if vals is not None:
-                                    arr = np.array(vals)
-                                    if arr.dtype.kind in ('i', 'u', 'f'):
-                                        grp.create_dataset(k, data=arr)
-                            else:
-                                self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
+                            self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:

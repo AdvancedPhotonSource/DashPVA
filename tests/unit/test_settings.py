@@ -68,7 +68,7 @@ class TestSettingsReload:
         settings.set_locator(tmp_toml)
         settings.reload()
 
-        assert settings.METADATA_CA.get("FLAG_PV") == "test:flag"
+        assert settings.METADATA_CA.get("ENERGY") == "test:energy"
         assert settings.METADATA_PVA.get("CHANNEL") == "test:pva"
 
         settings.set_locator(None)

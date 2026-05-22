@@ -1,5 +1,6 @@
 # Required Setup
 DETECTOR_PREFIX = '4idEiger'
+IOC_PREFIX = '4idgSoft'
 OUTPUT_FILE_LOCATION = '4idEiger.h5' # file must end with .h5
 CONSUMER_MODE = 'continuous' # options: continuous or vectorized, describes how consumer is performing analysis calculations
 
@@ -10,7 +11,6 @@ CACHING_MODE = 'scan' # options: '', 'alignment', 'scan', or 'bin' describes whe
     MAX_CACHE_SIZE = 1000
 
     [CACHE_OPTIONS.SCAN]
-    FLAG_PV = 'ScanOn:Value' # a PV that will act as a flag to start caching
     START_SCAN = true
     STOP_SCAN = false 
     THRESHOLD = 0.05 # use if start and stop values are not binary/boolean
@@ -23,9 +23,10 @@ CACHING_MODE = 'scan' # options: '', 'alignment', 'scan', or 'bin' describes whe
 [METADATA]
 
     [METADATA.CA]
-    FLAG_PV = 'ScanOn:Value'
-    FilePath = 'FilePath:Value'
-    FileName = 'FileName:Value'
+    # TEMPERATURE = 'Temperature:Value'
+    # PRESSURE = 'Pressure:Value'
+    # POSITION = 'Position:Value'
+    # VOLTAGE = 'Voltage:Value'
 
 
     [METADATA.PVA]

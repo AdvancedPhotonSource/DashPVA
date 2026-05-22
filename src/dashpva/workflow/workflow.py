@@ -1659,7 +1659,11 @@ class Workflow(QDialog, LogMixin):
 
     def _build_metadata_channels(self) -> str:
         """Build --metadata-channels string from app_settings."""
-        ca_pvs = ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
+        ca_pvs = ''
+        for pv in (app_settings.SCAN_FLAG_PV, app_settings.FILE_PATH_PV, app_settings.FILE_NAME_PV):
+            if pv:
+                ca_pvs += f'ca://{pv},'
+        ca_pvs += ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
         pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
         for pvs_dict in app_settings.HKL.values():
             if isinstance(pvs_dict, dict):
