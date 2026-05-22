@@ -12,7 +12,7 @@ from PyQt5 import uic
 from epics import PV, pv
 from epics import camonitor, caget
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QDialog, QFileDialog, QSlider,
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QDialog, QDockWidget, QFileDialog, QSlider,
                              QLabel, QPushButton, QCheckBox, QHBoxLayout, QVBoxLayout,
                              QProgressBar)
 # Custom imported classes
@@ -34,7 +34,10 @@ import dashpva.settings as app_settings
 # from ..utils.size_manager import SizeManager
 
 
-rot_gen = rotation_cycle(1,5)         
+rot_gen = rotation_cycle(1,5)
+# Detector PVA image channel suffix — appended to the user-entered IOC prefix
+# to form the full PVA channel name (e.g. "s6lambda1" + ":Pva1:Image").
+_PVA_IMAGE_SUFFIX = ":Pva1:Image"
 
 
 class ConfigDialog(QDialog):
@@ -56,7 +59,7 @@ class ConfigDialog(QDialog):
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
         save_last('area_det_prefix', self.prefix)
-        self.input_channel = f"{self.prefix}:Pva1:Image"
+        self.input_channel = f"{self.prefix}{_PVA_IMAGE_SUFFIX}"
         self.image_viewer = DiffractionImageWindow(
             input_channel=self.input_channel,
             pva_prefix=self.prefix,
@@ -98,9 +101,12 @@ class DiffractionImageWindow(BaseWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._input_channel = input_channel
         self._pva_prefix = pva_prefix or input_channel.split(':')[0]
-        self.pv_prefix.setText(self._input_channel)
+        self._input_channel = f"{self._pva_prefix}{_PVA_IMAGE_SUFFIX}"
+        # The input field shows only the IOC/area-detector prefix; the
+        # ":Pva1:Image" suffix is appended internally on every channel rebuild.
+        self.pv_prefix.setText(self._pva_prefix)
+        self.pv_prefix.setPlaceholderText("e.g. s6lambda1")
 
         # Mask management
         self.mask_manager = MaskManager()
@@ -207,7 +213,6 @@ class DiffractionImageWindow(BaseWindow):
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
         self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
-        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
@@ -279,6 +284,15 @@ class DiffractionImageWindow(BaseWindow):
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
 
+        # Stack stats + mask as tabs in the same dock area; lock both so the
+        # user can't undock, move, or close them. Cap the tab group's height
+        # so it doesn't claim the entire right column.
+        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
+        self.stats_dock.raise_()
+        for _d in (self.stats_dock, self.mask_dock):
+            _d.setFeatures(QDockWidget.NoDockWidgetFeatures)
+            _d.setMaximumHeight(320)
+
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
         self.lbl_mask_pixel_count = self.mask_dock.lbl_mask_pixel_count
@@ -322,8 +336,6 @@ class DiffractionImageWindow(BaseWindow):
         self.rbtn_F             = self.image_dock.rbtn_F
         self.rotate90degCCW     = self.image_dock.rotate90degCCW
         self.stop_hkl           = self.image_dock.stop_hkl
-        self.btn_hkl_viewer     = self.image_dock.btn_hkl_viewer
-        self.btn_save_caches    = self.image_dock.btn_save_caches
 
         # ROI dock widgets
         self.lbl_ROI1            = self.roi_dock.lbl_ROI1
@@ -694,6 +706,12 @@ class DiffractionImageWindow(BaseWindow):
         try:
             self.stop_timers()
             self.image_view.clear()
+            self.horizontal_avg_plot.getPlotItem().clear()
+            # Drop any ROI rectangles + "ROI too large" labels from the
+            # previous PV. add_rois() appends both kinds to self.rois.
+            for item in self.rois:
+                self.image_view.getView().removeItem(item)
+            self.rois.clear()
             self.reset_rsm_vars()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel, pva_prefix=self._pva_prefix)
@@ -705,10 +723,19 @@ class DiffractionImageWindow(BaseWindow):
                 if self.file_writer_thread.isRunning():
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
-                for roi in self.rois:
-                    self.image_view.getView().removeItem(roi)
-                self.rois.clear()
-                self.btn_save_caches.clicked.disconnect()
+                # Tear down HKL CA monitors. start_hkl_monitors() short-circuits
+                # on a populated self.hkl_pvs, so without this the old PV objects
+                # (and old pv_name keys in self.hkl_data) survive into the new
+                # config, hkl_setup() then can't find the new keys, and every
+                # frame raises "HKL update failed".
+                for hkl_pv in self.hkl_pvs.values():
+                    try:
+                        hkl_pv.clear_callbacks()
+                        hkl_pv.disconnect()
+                    except Exception:
+                        pass
+                self.hkl_pvs = {}
+                self.hkl_data = {}
                 # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
@@ -717,7 +744,6 @@ class DiffractionImageWindow(BaseWindow):
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
             self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
-            self.btn_save_caches.clicked.connect(self.save_caches_clicked)
 
             if self.reader.CACHING_MODE == 'scan':
                 self.file_writer_thread.start()
@@ -744,7 +770,6 @@ class DiffractionImageWindow(BaseWindow):
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-            self.btn_save_caches.clicked.disconnect()
             self.file_writer_thread.terminate()
         
         try:
@@ -785,33 +810,6 @@ class DiffractionImageWindow(BaseWindow):
             self.hkl_data = {}
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-
-    def start_hkl_viewer_clicked(self) -> None:
-        try:
-            if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                cmd = ['python', 'viewer/hkl3d/hkl_3d_viewer.py',]
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid,
-                    universal_newlines=True
-                )
-                self.processes[process.pid] = process
-
-        except Exception as e:
-            print(f'[Diffraction Image Viewer] Failed to load HKL Viewer:{e}')
-
-    def save_caches_clicked(self) -> None:
-        if not self.reader.channel.isMonitorActive():  
-            if not self.file_writer_thread.isRunning():
-                self.file_writer_thread.start()
-            self.file_writer.save_caches_to_h5(clear_caches=True)
-        else:
-            QMessageBox.critical(None,
-                                'Error',
-                                'Stop Live View to Save Cache',
-                                QMessageBox.Ok)
 
     def stats_button_clicked(self) -> None:
         """
@@ -1080,11 +1078,13 @@ class DiffractionImageWindow(BaseWindow):
                 self.rois.append(roi)
                 self.image_view.addItem(roi)
                 
-                # Add label if ROI is too big
+                # Add label if ROI is too big. Append to self.rois so
+                # start_live_view_clicked removes it on the next PV switch.
                 if roi_too_big:
                     label = pg.TextItem(f'{roi_num} - ROI too large', color=roi_color, anchor=(0, 0))
                     label.setPos(x + 5, y + 5)
                     self.image_view.addItem(label)
+                    self.rois.append(label)
                 
                 roi.sigRegionChanged.connect(self.update_roi_region)
             self._apply_roi_visibility()
@@ -1348,10 +1348,20 @@ class DiffractionImageWindow(BaseWindow):
         self.image_view.update()
 
     def update_pv_prefix(self) -> None:
+        """Recompute the IOC prefix + full PVA channel from the input field.
+
+        The user only types the IOC prefix (e.g. ``s6lambda1``); the
+        ``:Pva1:Image`` suffix is appended here. Both ``_pva_prefix`` and
+        ``_input_channel`` must update together — otherwise the next Start
+        Live View builds a fresh PVAReader with the new image channel but
+        the previous prefix, and ROI/Stats PVs stay pointed at the old IOC.
         """
-        Updates the input channel prefix based on the value entered in the prefix field.
-        """
-        self._input_channel = self.pv_prefix.text()
+        prefix = self.pv_prefix.text().strip()
+        # Tolerate users pasting a full channel; strip the suffix back off.
+        if prefix.endswith(_PVA_IMAGE_SUFFIX):
+            prefix = prefix[: -len(_PVA_IMAGE_SUFFIX)]
+        self._pva_prefix = prefix
+        self._input_channel = f"{prefix}{_PVA_IMAGE_SUFFIX}" if prefix else ""
     
     def on_double_click(self, event) -> None:
         """
@@ -1657,6 +1667,10 @@ class DiffractionImageWindow(BaseWindow):
 
 def main():
     app = QApplication(sys.argv)
+    # Without this the standalone area detector launch path skipped the
+    # global stylesheet entirely, so dock headers and other theme.qss rules
+    # never applied. The launcher path already calls configure_app.
+    configure_app(app)
     # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()

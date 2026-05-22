@@ -72,10 +72,4 @@ class ImageDock(BaseDock):
         self.stop_hkl = QCheckBox("Stop HKL")
         layout.addRow(self.rotate90degCCW, self.stop_hkl)
 
-        self.btn_hkl_viewer = QPushButton("HKL 3D Viewer")
-        self.btn_hkl_viewer.setMinimumHeight(50)
-        self.btn_save_caches = QPushButton("Save Cache")
-        self.btn_save_caches.setMinimumHeight(50)
-        layout.addRow(self.btn_hkl_viewer, self.btn_save_caches)
-
         self.setWidget(container)

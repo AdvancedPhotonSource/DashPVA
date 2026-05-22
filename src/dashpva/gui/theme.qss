@@ -16,11 +16,13 @@ QMessageBox QLabel { color: palette(text); }
 QDockWidget::pane {
     border: 1px solid palette(mid);
 }
-/* Title text color must be set on QDockWidget (not ::title); Qt's native
-   style renders the title using QDockWidget's palette, ignoring color on
-   the ::title sub-control. palette(bright-text) is the role designed to
-   contrast against dark backgrounds, so it stays white-on-dark in dark
-   system themes and adapts in light themes. */
+/* Dock title bar — adaptive coloring via Qt palette roles. configure_app()
+   forces the Fusion style which honors these QSS rules on all platforms
+   (native Linux styles otherwise draw dock titles in native code and ignore
+   the stylesheet). palette(dark) darkens with the system theme; palette
+   (bright-text) flips between black/white to stay readable. The slate
+   DOCK_HEADER_BG / DOCK_HEADER_TEXT constants in theme_colors.py are the
+   documented light-mode reference values. */
 QDockWidget {
     color: palette(bright-text);
 }

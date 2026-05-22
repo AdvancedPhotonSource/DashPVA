@@ -12,7 +12,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl = QLabel(default)
     lbl.setFrameShape(QFrame.Box)
     lbl.setFrameShadow(QFrame.Sunken)
-    lbl.setMinimumHeight(25)
+    lbl.setMinimumHeight(20)
     lbl.setMaximumWidth(150)
     return lbl
 
@@ -30,8 +30,8 @@ class StatsDock(BaseDock):
         container.setMaximumWidth(380)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(12)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setVerticalSpacing(4)
+        layout.setContentsMargins(6, 6, 6, 6)
 
         self.frames_received_val = _value_label("0")
         self.missed_frames_val   = _value_label("0")
@@ -51,7 +51,6 @@ class StatsDock(BaseDock):
 
         self.max_setting_val = QDoubleSpinBox()
         self.max_setting_val.setRange(-1e10, 9999999999.99)
-        self.max_setting_val.setMinimumHeight(30)
         self.max_setting_val.setMaximumWidth(150)
 
         layout.addRow(QLabel("Set Min Intensity:"), self.min_setting_val)
