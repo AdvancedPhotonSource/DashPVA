@@ -29,6 +29,7 @@ from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.area_det.docks import (
     StatsDock, MousePosDock, ImageDock, RoiDock, AnalysisDock, MaskDock,
 )
+from dashpva.gui.theme_colors import ROI_COLORS
 import dashpva.settings as app_settings
 # from ..utils.size_manager import SizeManager
 
@@ -1023,17 +1024,9 @@ class DiffractionImageWindow(BaseWindow):
         self.rot_num = next(rot_gen)
 
     def add_rois(self) -> None:
-        """
-        Adds ROIs to the image viewer and assigns them color codes.
-
-        Color Codes:
-            ROI1 -- Red (#ff0000)
-            ROI2 -- Blue (#0000ff)
-            ROI3 -- Green (#4CBB17)
-            ROI4 -- Pink (#ff00ff)
-        """
+        """Adds ROIs to the image viewer using the themed ROI palette."""
         try:
-            roi_colors = ['#ff0000', '#0000ff', '#4CBB17', '#ff00ff']  
+            roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
             # TODO: can just loop through values rather than lookup with keys
