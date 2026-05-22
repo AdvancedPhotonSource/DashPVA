@@ -1,0 +1,142 @@
+CONSUMER_MODE = "continuous"
+OUTPUT_FILE_LOCATION = "s6lambda1_scan.h5"
+DETECTOR_PREFIX = "s6lambda1"
+IOC_PREFIX = "6idb1"
+
+[CACHE_OPTIONS]
+CACHING_MODE = "scan"
+
+[METADATA]
+PVA = ""
+
+[ANALYSIS]
+AXIS1 = "x"
+AXIS2 = "y"
+
+[CACHE_OPTIONS.ALIGNMENT]
+MAX_CACHE_SIZE = 1000
+
+[CACHE_OPTIONS.SCAN]
+START_SCAN = true
+STOP_SCAN = false
+THRESHOLD = 0.05
+MAX_CACHE_SIZE = 1000
+
+[CACHE_OPTIONS.BIN]
+COUNT = 16
+SIZE = 16
+
+[METADATA.CA]
+# TEMPERATURE = 'Temperature:Value'
+# PRESSURE = 'Pressure:Value'
+# POSITION = 'Position:Value'
+# VOLTAGE = 'Voltage:Value'
+
+[ROI.ROI1]
+MIN_X = "s6lambda1:ROI1:MinX"
+MIN_Y = "s6lambda1:ROI1:MinY"
+SIZE_X = "s6lambda1:ROI1:SizeX"
+SIZE_Y = "s6lambda1:ROI1:SizeY"
+
+[ROI.ROI2]
+MIN_X = "s6lambda1:ROI2:MinX"
+MIN_Y = "s6lambda1:ROI2:MinY"
+SIZE_X = "s6lambda1:ROI2:SizeX"
+SIZE_Y = "s6lambda1:ROI2:SizeY"
+
+[ROI.ROI3]
+MIN_X = "s6lambda1:ROI3:MinX"
+MIN_Y = "s6lambda1:ROI3:MinY"
+SIZE_X = "s6lambda1:ROI3:SizeX"
+SIZE_Y = "s6lambda1:ROI3:SizeY"
+
+[ROI.ROI4]
+MIN_X = "s6lambda1:ROI4:MinX"
+MIN_Y = "s6lambda1:ROI4:MinY"
+SIZE_X = "s6lambda1:ROI4:SizeX"
+SIZE_Y = "s6lambda1:ROI4:SizeY"
+
+[STATS.STATS1]
+TOTAL = "s6lambda1:Stats1:Total_RBV"
+MIN = "s6lambda1:Stats1:MinValue_RBV"
+MAX = "s6lambda1:Stats1:MaxValue_RBV"
+SIGMA = "s6lambda1:Stats1:Sigma_RBV"
+MEAN = "s6lambda1:Stats1:MeanValue_RBV"
+
+[STATS.STATS2]
+TOTAL = "s6lambda1:Stats2:Total_RBV"
+MIN = "s6lambda1:Stats2:MinValue_RBV"
+MAX = "s6lambda1:Stats2:MaxValue_RBV"
+SIGMA = "s6lambda1:Stats2:Sigma_RBV"
+MEAN = "s6lambda1:Stats2:MeanValue_RBV"
+
+[STATS.STATS3]
+TOTAL = "s6lambda1:Stats3:Total_RBV"
+MIN = "s6lambda1:Stats3:MinValue_RBV"
+MAX = "s6lambda1:Stats3:MaxValue_RBV"
+SIGMA = "s6lambda1:Stats3:Sigma_RBV"
+MEAN = "s6lambda1:Stats3:MeanValue_RBV"
+
+[STATS.STATS4]
+TOTAL = "s6lambda1:Stats4:Total_RBV"
+MIN = "s6lambda1:Stats4:MinValue_RBV"
+MAX = "s6lambda1:Stats4:MaxValue_RBV"
+SIGMA = "s6lambda1:Stats4:Sigma_RBV"
+MEAN = "s6lambda1:Stats4:MeanValue_RBV"
+
+[HKL.SAMPLE_CIRCLE_AXIS_1]
+AXIS_NUMBER = "6idb1:Mu:AxisNumber"
+DIRECTION_AXIS = "6idb1:Mu:DirectionAxis"
+POSITION = "6idb1:Mu:Position"
+
+[HKL.SAMPLE_CIRCLE_AXIS_2]
+AXIS_NUMBER = "6idb1:Eta:AxisNumber"
+DIRECTION_AXIS = "6idb1:Eta:DirectionAxis"
+POSITION = "6idb1:Eta:Position"
+
+[HKL.SAMPLE_CIRCLE_AXIS_3]
+AXIS_NUMBER = "6idb1:Chi:AxisNumber"
+DIRECTION_AXIS = "6idb1:Chi:DirectionAxis"
+POSITION = "6idb1:Chi:Position"
+
+[HKL.SAMPLE_CIRCLE_AXIS_4]
+AXIS_NUMBER = "6idb1:Phi:AxisNumber"
+DIRECTION_AXIS = "6idb1:Phi:DirectionAxis"
+POSITION = "6idb1:Phi:Position"
+
+[HKL.DETECTOR_CIRCLE_AXIS_1]
+AXIS_NUMBER = "6idb1:Nu:AxisNumber"
+DIRECTION_AXIS = "6idb1:Nu:DirectionAxis"
+POSITION = "6idb1:Nu:Position"
+
+[HKL.DETECTOR_CIRCLE_AXIS_2]
+AXIS_NUMBER = "6idb1:Delta:AxisNumber"
+DIRECTION_AXIS = "6idb1:Delta:DirectionAxis"
+POSITION = "6idb1:Delta:Position"
+
+[HKL.SPEC]
+ENERGY_VALUE = "6idb1:spec:Energy:Value"
+UB_MATRIX_VALUE = "6idb1:spec:UB_matrix:Value"
+
+[HKL.PRIMARY_BEAM_DIRECTION]
+AXIS_NUMBER_1 = "6idb1:PrimaryBeamDirection:AxisNumber1"
+AXIS_NUMBER_2 = "6idb1:PrimaryBeamDirection:AxisNumber2"
+AXIS_NUMBER_3 = "6idb1:PrimaryBeamDirection:AxisNumber3"
+
+[HKL.INPLANE_REFERENCE_DIRECITON]
+AXIS_NUMBER_1 = "6idb1:InplaneReferenceDirection:AxisNumber1"
+AXIS_NUMBER_2 = "6idb1:InplaneReferenceDirection:AxisNumber2"
+AXIS_NUMBER_3 = "6idb1:InplaneReferenceDirection:AxisNumber3"
+
+[HKL.SAMPLE_SURFACE_NORMAL_DIRECITON]
+AXIS_NUMBER_1 = "6idb1:SampleSurfaceNormalDirection:AxisNumber1"
+AXIS_NUMBER_2 = "6idb1:SampleSurfaceNormalDirection:AxisNumber2"
+AXIS_NUMBER_3 = "6idb1:SampleSurfaceNormalDirection:AxisNumber3"
+
+[HKL.DETECTOR_SETUP]
+CENTER_CHANNEL_PIXEL = "6idb1:DetectorSetup:CenterChannelPixel"
+DISTANCE = "6idb1:DetectorSetup:Distance"
+PIXEL_DIRECTION_1 = "6idb1:DetectorSetup:PixelDirection1"
+PIXEL_DIRECTION_2 = "6idb1:DetectorSetup:PixelDirection2"
+SIZE = "6idb1:DetectorSetup:Size"
+UNITS = "6idb1:DetectorSetup:Units"

@@ -29,9 +29,9 @@ Usage:
       settings.ensure_path() -> a TOML path (original path or temp file when using DB)
 """
 
-from typing import Any, Dict, Optional, Union
 import os
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 try:
     from dashpva.utils.config.source import ConfigSource
@@ -160,7 +160,8 @@ OUTPUT_FILE_LOCATION: Optional[str] = None
 CONSUMER_MODE: Optional[str] = None
 
 # Hardcoded PV name suffixes — combined with IOC_PREFIX at reload time to
-# produce SCAN_FLAG / FILE_PATH / FILE_NAME.
+# produce SCAN_FLAG_PV / FILE_PATH_PV / FILE_NAME_PV. These are the sole
+# source of truth; METADATA.CA is reserved for user-custom CA PVs only.
 _FLAG_PV_SUFFIX = "ScanOn:Value"
 _FILE_PATH_SUFFIX = "FilePath:Value"
 _FILE_NAME_SUFFIX = "FileName:Value"
@@ -169,9 +170,9 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
 ALIGNMENT_MAX_CACHE_SIZE: Optional[int] = None
-SCAN_FLAG: Optional[str] = None
-FILE_PATH: Optional[str] = None
-FILE_NAME: Optional[str] = None
+SCAN_FLAG_PV: Optional[str] = None
+FILE_PATH_PV: Optional[str] = None
+FILE_NAME_PV: Optional[str] = None
 SCAN_START_SCAN: Optional[bool] = None
 SCAN_STOP_SCAN: Optional[bool] = None
 SCAN_THRESHOLD: Optional[float] = None
@@ -240,7 +241,7 @@ def reload() -> None:
     global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
-    global SCAN_FLAG, FILE_PATH, FILE_NAME
+    global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
     global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
@@ -287,13 +288,9 @@ def reload() -> None:
 
     # SCAN
     scan = CACHE_OPTIONS.get('SCAN', {}) or {}
-    # Prefer explicit METADATA.CA values when present (profiles may set a
-    # different IOC prefix than DETECTOR_PREFIX — e.g. detector "s6lambda1"
-    # but IOC "6idb1"). Fall back to IOC_PREFIX-built names otherwise.
-    _meta_ca = (cfg.get('METADATA', {}) or {}).get('CA', {}) or {}
-    SCAN_FLAG = _meta_ca.get('FLAG_PV') or (f"{IOC_PREFIX}{_FLAG_PV_SUFFIX}" if IOC_PREFIX else _FLAG_PV_SUFFIX)
-    FILE_PATH = _meta_ca.get('FILE_PATH') or (f"{IOC_PREFIX}{_FILE_PATH_SUFFIX}" if IOC_PREFIX else _FILE_PATH_SUFFIX)
-    FILE_NAME = _meta_ca.get('FILE_NAME') or (f"{IOC_PREFIX}{_FILE_NAME_SUFFIX}" if IOC_PREFIX else _FILE_NAME_SUFFIX)
+    SCAN_FLAG_PV = f"{IOC_PREFIX}{_FLAG_PV_SUFFIX}" if IOC_PREFIX else _FLAG_PV_SUFFIX
+    FILE_PATH_PV = f"{IOC_PREFIX}{_FILE_PATH_SUFFIX}" if IOC_PREFIX else _FILE_PATH_SUFFIX
+    FILE_NAME_PV = f"{IOC_PREFIX}{_FILE_NAME_SUFFIX}" if IOC_PREFIX else _FILE_NAME_SUFFIX
     try:
         SCAN_START_SCAN = bool(scan.get('START_SCAN')) if scan.get('START_SCAN') is not None else None
     except Exception:
@@ -500,9 +497,9 @@ class Settings:
         self.CACHING_MODE: Optional[str] = None
         self.CACHE_OPTIONS: Dict[str, Any] = {}
         self.ALIGNMENT_MAX_CACHE_SIZE: Optional[int] = None
-        self.SCAN_FLAG: Optional[str] = None
-        self.FILE_PATH: Optional[str] = None
-        self.FILE_NAME: Optional[str] = None
+        self.SCAN_FLAG_PV: Optional[str] = None
+        self.FILE_PATH_PV: Optional[str] = None
+        self.FILE_NAME_PV: Optional[str] = None
         self.SCAN_START_SCAN: Optional[bool] = None
         self.SCAN_STOP_SCAN: Optional[bool] = None
         self.SCAN_THRESHOLD: Optional[float] = None
@@ -620,12 +617,9 @@ class Settings:
 
         # SCAN
         scan = self.CACHE_OPTIONS.get('SCAN', {}) or {}
-        # Prefer explicit METADATA.CA values when present (profile may set a
-        # different IOC prefix than DETECTOR_PREFIX). See module-level reload().
-        _meta_ca = (cfg.get('METADATA', {}) or {}).get('CA', {}) or {}
-        self.SCAN_FLAG = _meta_ca.get('FLAG_PV') or (f"{self.IOC_PREFIX}{_FLAG_PV_SUFFIX}" if self.IOC_PREFIX else _FLAG_PV_SUFFIX)
-        self.FILE_PATH = _meta_ca.get('FILE_PATH') or (f"{self.IOC_PREFIX}{_FILE_PATH_SUFFIX}" if self.IOC_PREFIX else _FILE_PATH_SUFFIX)
-        self.FILE_NAME = _meta_ca.get('FILE_NAME') or (f"{self.IOC_PREFIX}{_FILE_NAME_SUFFIX}" if self.IOC_PREFIX else _FILE_NAME_SUFFIX)
+        self.SCAN_FLAG_PV = f"{self.IOC_PREFIX}{_FLAG_PV_SUFFIX}" if self.IOC_PREFIX else _FLAG_PV_SUFFIX
+        self.FILE_PATH_PV = f"{self.IOC_PREFIX}{_FILE_PATH_SUFFIX}" if self.IOC_PREFIX else _FILE_PATH_SUFFIX
+        self.FILE_NAME_PV = f"{self.IOC_PREFIX}{_FILE_NAME_SUFFIX}" if self.IOC_PREFIX else _FILE_NAME_SUFFIX
         try:
             self.SCAN_START_SCAN = bool(scan.get('START_SCAN')) if scan.get('START_SCAN') is not None else None
         except Exception:

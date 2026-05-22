@@ -1,13 +1,16 @@
 # Required Setup
 DETECTOR_PREFIX = "dp-ADSim"
+IOC_PREFIX = "dp-ADSim"
 CONSUMER_MODE = "spontaneous"
 
 # Section used specifically for Metadata Pvs
 [METADATA]
 
     [METADATA.CA]
-    X = "x"
-    Y = "y"
+    # TEMPERATURE = 'Temperature:Value'
+    # PRESSURE = 'Pressure:Value'
+    # POSITION = 'Position:Value'
+    # VOLTAGE = 'Voltage:Value'
 
     [METADATA.PVA]
 
@@ -39,19 +42,20 @@ CONSUMER_MODE = "spontaneous"
     SIZE_Y = "dp-ADSim:ROI4:SizeY"
 
 [STATS]
-    # [STATS.STATS1]
-    # TOTAL = "dp-ADSim:Stats1:Total_RBV"
-    # MIN = "dp-ADSim:Stats1:MinValue_RBV"
-    # MAX = "dp-ADSim:Stats1:MaxValue_RBV"
-    # SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
-    # MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
 
-    # [STATS.STATS2]
-    # TOTAL = "dp-ADSim:Stats2:Total_RBV"
-    # MIN = "dp-ADSim:Stats2:MinValue_RBV"
-    # MAX = "dp-ADSim:Stats2:MaxValue_RBV"
-    # SIGMA = "dp-ADSim:Stats2:Sigma_RBV"
-    # MEAN = "dp-ADSim:Stats2:MeanValue_RBV"
+    [STATS.STATS1]
+    TOTAL = "dp-ADSim:Stats1:Total_RBV"
+    MIN = "dp-ADSim:Stats1:MinValue_RBV"
+    MAX = "dp-ADSim:Stats1:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats1:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats1:MeanValue_RBV"
+
+    [STATS.STATS2]
+    TOTAL = "dp-ADSim:Stats2:Total_RBV"
+    MIN = "dp-ADSim:Stats2:MinValue_RBV"
+    MAX = "dp-ADSim:Stats2:MaxValue_RBV"
+    SIGMA = "dp-ADSim:Stats2:Sigma_RBV"
+    MEAN = "dp-ADSim:Stats2:MeanValue_RBV"
 
 [ANALYSIS]
 # For use in the analysis server, not on the client side.

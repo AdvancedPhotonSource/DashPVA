@@ -32,7 +32,7 @@ def sample_config_dict():
             "BIN": {"COUNT": 10, "SIZE": 256},
         },
         "METADATA": {
-            "CA": {"FLAG_PV": "test:flag", "ENERGY": "test:energy"},
+            "CA": {"ENERGY": "test:energy"},
             "PVA": {"CHANNEL": "test:pva"},
         },
         "ROI": {"X": 0, "Y": 0, "W": 100, "H": 100},

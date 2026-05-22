@@ -1,13 +1,16 @@
 # Required Setup
 DETECTOR_PREFIX = "PILATUS_1MF"
+IOC_PREFIX = "PILATUS_1MF"
 CONSUMER_MODE = "spontaneous"
 
 # Section used specifically for Metadata Pvs
 [METADATA]
 
     [METADATA.CA]
-    X = "x"
-    Y = "y"
+    # TEMPERATURE = 'Temperature:Value'
+    # PRESSURE = 'Pressure:Value'
+    # POSITION = 'Position:Value'
+    # VOLTAGE = 'Voltage:Value'
 
     [METADATA.PVA]
 
