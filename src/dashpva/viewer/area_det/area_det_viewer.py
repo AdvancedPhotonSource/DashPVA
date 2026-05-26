@@ -723,19 +723,11 @@ class DiffractionImageWindow(BaseWindow):
                 if self.file_writer_thread.isRunning():
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
-                # Tear down HKL CA monitors. start_hkl_monitors() short-circuits
-                # on a populated self.hkl_pvs, so without this the old PV objects
-                # (and old pv_name keys in self.hkl_data) survive into the new
-                # config, hkl_setup() then can't find the new keys, and every
-                # frame raises "HKL update failed".
                 for hkl_pv in self.hkl_pvs.values():
                     try:
                         hkl_pv.clear_callbacks()
-                        hkl_pv.disconnect()
                     except Exception:
                         pass
-                self.hkl_pvs = {}
-                self.hkl_data = {}
                 # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
@@ -1411,7 +1403,12 @@ class DiffractionImageWindow(BaseWindow):
                         self.mouse_x_val.setText(f"{self.mouse_x}")
                         self.mouse_y_val.setText(f"{self.mouse_y}")
                         self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
-                        if self.qx is not None and len(self.qx) > 0:
+                        # Stop HKL is meant to freeze the visible HKL output, not
+                        # just halt the qx/qy/qz recompute. Without this gate the
+                        # mouse H/K/L labels keep changing on every mouse move
+                        # (different indices into the stale array).
+                        if (self.qx is not None and len(self.qx) > 0
+                                and not self.stop_hkl.isChecked()):
                             self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]:.7f}')
                             self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]:.7f}')
                             self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]:.7f}')
