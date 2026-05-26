@@ -192,6 +192,7 @@ QPushButton#start_live_view, QPushButton#stop_live_view {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                       stop:0 #F6F7FA, stop:1 #DADBDE);
     min-height: 50px;
+    padding: 6px 14px;
 }
 QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
