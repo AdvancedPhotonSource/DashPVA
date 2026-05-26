@@ -35,6 +35,44 @@ BANNER
     echo
 }
 
+deactivate_conda() {
+    if [[ -z "${CONDA_DEFAULT_ENV:-}" && -z "${CONDA_PREFIX:-}" ]]; then
+        return
+    fi
+
+    info "Conda environment detected (${CONDA_DEFAULT_ENV:-?}); deactivating for this install."
+    info "Your shell session is unaffected — only this script runs without conda."
+
+    # Make `conda deactivate` available in this non-interactive shell
+    if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
+        local conda_base
+        conda_base="$("$CONDA_EXE" info --base 2>/dev/null || true)"
+        if [[ -n "$conda_base" && -f "$conda_base/etc/profile.d/conda.sh" ]]; then
+            # shellcheck disable=SC1091
+            source "$conda_base/etc/profile.d/conda.sh"
+        fi
+    fi
+
+    # Activations can stack — loop until empty (with a guard)
+    local guard=0
+    while [[ -n "${CONDA_DEFAULT_ENV:-}" && $guard -lt 10 ]]; do
+        if ! conda deactivate 2>/dev/null; then
+            break
+        fi
+        guard=$((guard + 1))
+    done
+
+    # Fallback: strip conda from PATH and unset env vars if anything lingers
+    if [[ -n "${CONDA_PREFIX:-}" ]]; then
+        info "Falling back to manual conda cleanup."
+        PATH="$(printf '%s' "$PATH" | tr ':' '\n' \
+            | grep -vE '/(conda|anaconda3?|miniconda3?|mambaforge)(/|$)' \
+            | paste -sd ':' -)"
+        export PATH
+        unset CONDA_DEFAULT_ENV CONDA_PREFIX CONDA_SHLVL CONDA_PROMPT_MODIFIER CONDA_PYTHON_EXE
+    fi
+}
+
 ensure_uv() {
     if command -v uv &>/dev/null; then
         info "Found uv: $(command -v uv)"
@@ -179,6 +217,7 @@ main() {
         fi
     fi
 
+    deactivate_conda
     ensure_uv
 
     cd "$REPO_DIR"
