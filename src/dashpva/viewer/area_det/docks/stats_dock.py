@@ -1,6 +1,11 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QFormLayout, QFrame, QLabel, QWidget,
+    QCheckBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QLabel,
+    QWidget,
 )
 
 from dashpva.viewer.core.docks.base_dock import BaseDock

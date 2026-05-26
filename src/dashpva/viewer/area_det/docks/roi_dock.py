@@ -1,7 +1,13 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QPushButton,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from dashpva.gui.theme_colors import ROI_COLORS

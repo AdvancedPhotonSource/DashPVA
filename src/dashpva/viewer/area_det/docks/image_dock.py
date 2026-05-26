@@ -1,7 +1,15 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QButtonGroup, QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
-    QPushButton, QRadioButton, QSpinBox, QWidget,
+    QButtonGroup,
+    QCheckBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QRadioButton,
+    QSpinBox,
+    QWidget,
 )
 
 from dashpva.viewer.core.docks.base_dock import BaseDock

@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
+
 class AnalysisDock(BaseDock):
 
     def __init__(self, main_window=None, show: bool = True):

@@ -1,36 +1,47 @@
 import os
-import sys
-import time
 import subprocess
+import sys
+
 import numpy as np
 import pyqtgraph as pg
-from pyqtgraph.colormap import get as get_colormap
-from pyqtgraph.colormap import listMaps
 import xrayutilities as xu
-from PyQt5 import uic
+
 # from epics import caget
-from epics import PV, pv
-from epics import camonitor, caget
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QDialog, QDockWidget, QFileDialog, QSlider,
-                             QLabel, QPushButton, QCheckBox, QHBoxLayout, QVBoxLayout,
-                             QProgressBar)
+from epics import PV, caget, camonitor
+from PyQt5 import uic
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDockWidget,
+    QFileDialog,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QSlider,
+)
+from pyqtgraph.colormap import get as get_colormap
+
 # Custom imported classes
 from dashpva.gui import configure_app, ui_path
-from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
-from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
-from dashpva.viewer.mask_viewer import MaskViewerWindow
-from dashpva.viewer.analysis_window import AnalysisWindow
-from dashpva.utils import rotation_cycle
-from dashpva.utils import PVAReader, HDF5Writer
+from dashpva.gui.theme_colors import ROI_COLORS
+from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.user_config import load_last, save_last
-from dashpva.viewer.core.base_window import BaseWindow
+from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.area_det.docks import (
-    StatsDock, MousePosDock, ImageDock, RoiDock, AnalysisDock, MaskDock,
+    AnalysisDock,
+    ImageDock,
+    MaskDock,
+    MousePosDock,
+    RoiDock,
+    StatsDock,
 )
-from dashpva.gui.theme_colors import ROI_COLORS
-import dashpva.settings as app_settings
+from dashpva.viewer.core.base_window import BaseWindow
+from dashpva.viewer.mask_viewer import MaskViewerWindow
+from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
+from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
+
 # from ..utils.size_manager import SizeManager
 
 
@@ -681,7 +692,7 @@ class DiffractionImageWindow(BaseWindow):
                             print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
                         elif threshold_enabled:
                             print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
-                        print(f"Note: Check terminal/console for any error messages if window doesn't appear")
+                        print("Note: Check terminal/console for any error messages if window doesn't appear")
                     except Exception as e:
                         print(f"Error launching pyFAI_analysis.py: {e}")
                         # Fallback to regular analysis window

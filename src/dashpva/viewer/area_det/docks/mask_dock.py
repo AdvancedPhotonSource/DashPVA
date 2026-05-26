@@ -1,9 +1,16 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QPushButton, QWidget,
+    QCheckBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
 )
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
+
 
 class MaskDock(BaseDock):
 
