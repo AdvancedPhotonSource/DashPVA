@@ -165,15 +165,12 @@ class HDF5Writer(QObject, LogMixin):
 
             metadata_grp = data_grp.create_group('metadata')
 
-            # Write custom CA metadata to entry/data/metadata/ca_custom/.
-            # CUSTOM nesting was flattened — METADATA_CA keys are the PV friendly names directly.
-            custom_ca = {}
-            try:
-                custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}
-            except Exception:
-                pass
+            # Write custom CA metadata to entry/data/metadata/ca/.
+            # METADATA_CA is a flat {friendly_name: pv_name} table from [METADATA.CA].
+            custom_ca = getattr(settings, 'METADATA_CA', {}) or {}
             if custom_ca:
-                ca_custom_grp = metadata_grp.create_group('ca')
+                ca_grp = metadata_grp.create_group('ca')
+                ca_grp.attrs['NX_class'] = 'NXcollection'
                 for friendly_name, pv_name in custom_ca.items():
                     try:
                         values = merged_metadata.get(pv_name)
@@ -181,7 +178,8 @@ class HDF5Writer(QObject, LogMixin):
                             continue
                         arr = np.array(values)
                         if arr.dtype.kind in ('i', 'u', 'f') and arr.size > 0:
-                            ca_custom_grp.create_dataset(friendly_name, data=arr)
+                            ds = ca_grp.create_dataset(friendly_name, data=arr)
+                            ds.attrs['pv_name'] = pv_name
                     except Exception:
                         pass
 
