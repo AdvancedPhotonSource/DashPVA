@@ -85,9 +85,9 @@ VIEWS = [
         'key': 'scan_viz',
         'label': '2D Scan Visualization',
         'section': 'Monitor',
-        'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'scan2d'],
         'running_text': '2D Scan Visualization — Running…',
-        'tooltip': 'Live 2D scan data collection and visualization',
+        'tooltip': 'Live 2D scan intensity and center-of-mass plots (CLI: DashPVA scan2d)',
         'edition': 'full',
     },
     # post analysis

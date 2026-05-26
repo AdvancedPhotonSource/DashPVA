@@ -121,6 +121,14 @@ def phasefitter():
     sys.exit(exit_code)
 
 
+@cli.command()
+def scan2d():
+    """Launch 2D Scan Visualization — live intensity and center-of-mass plots."""
+    click.echo('Running 2D Scan Visualization')
+    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.scan2d']).returncode
+    sys.exit(exit_code)
+
+
 _SIM_MODULE = 'dashpva.consumers.caIOC_servers.ad_sim_server_modified'
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

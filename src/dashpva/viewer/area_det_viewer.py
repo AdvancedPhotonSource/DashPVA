@@ -212,6 +212,7 @@ class DiffractionImageWindow(QMainWindow):
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan2d)
         self.btn_analysis_window.setMenu(self._analysis_menu)
         self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
@@ -250,7 +251,6 @@ class DiffractionImageWindow(QMainWindow):
         self.update_threshold_label()
         self.lbl_threshold_range.show()
         
-        self.analysis_window = None  # Initialize as None
         self._build_mask_controls()
 
     def _build_mask_controls(self):
@@ -612,6 +612,15 @@ class DiffractionImageWindow(QMainWindow):
             print('[Area Detector] HKL 3D Viewer launched')
         except Exception as e:
             print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
+
+    def _launch_scan2d(self) -> None:
+        pv_address = self._input_channel or app_settings.get_input_channel()
+        cmd = [sys.executable, '-m', 'dashpva.viewer.scan2d', '--channel', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] 2D Scan Visualization launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch 2D Scan Visualization: {e}')
 
     def start_live_view_clicked(self) -> None:
         """
