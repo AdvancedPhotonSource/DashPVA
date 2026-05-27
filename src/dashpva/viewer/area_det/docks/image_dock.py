@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QSpinBox,
     QWidget,
 )
@@ -23,6 +24,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl.setFrameShadow(QFrame.Sunken)
     lbl.setMinimumHeight(25)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    lbl.setProperty("valueLabel", True)
     return lbl
 
 
@@ -37,6 +39,7 @@ class ImageDock(BaseDock):
     def _build(self):
         container = QWidget()
         container.setMaximumWidth(380)
+        container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(12)
@@ -46,8 +49,10 @@ class ImageDock(BaseDock):
         layout.addRow(QLabel("Plot Call ID:"), self.plot_call_id)
 
         self.plotting_frequency = QSpinBox()
+        self.plotting_frequency.setObjectName("plotting_frequency")
         self.plotting_frequency.setRange(1, 999999999)
         self.plotting_frequency.setValue(5)
+        self.plotting_frequency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addRow(QLabel("Plotting rate (Hz):"), self.plotting_frequency)
 
         self.size_x_val = _value_label("0")

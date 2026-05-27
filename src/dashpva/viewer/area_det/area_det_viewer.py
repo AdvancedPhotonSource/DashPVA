@@ -9,16 +9,20 @@ import xrayutilities as xu
 # from epics import caget
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QEvent, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
     QDockWidget,
     QFileDialog,
     QLabel,
+    QMainWindow,
     QMessageBox,
     QProgressBar,
+    QSizePolicy,
     QSlider,
+    QTabWidget,
+    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -49,6 +53,17 @@ rot_gen = rotation_cycle(1,5)
 # Detector PVA image channel suffix — appended to the user-entered IOC prefix
 # to form the full PVA channel name (e.g. "s6lambda1" + ":Pva1:Image").
 _PVA_IMAGE_SUFFIX = ":Pva1:Image"
+# pvapy-hpc-consumer publishes its output on this channel; when the user
+# types it as the prefix, treat it as the full channel name (no suffix).
+_PVAPY_FULL_CHANNEL = "pvapy:image"
+
+
+def _build_image_channel(prefix: str) -> str:
+    if not prefix:
+        return ""
+    if prefix == _PVAPY_FULL_CHANNEL:
+        return prefix
+    return f"{prefix}{_PVA_IMAGE_SUFFIX}"
 
 
 class ConfigDialog(QDialog):
@@ -70,7 +85,7 @@ class ConfigDialog(QDialog):
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
         save_last('area_det_prefix', self.prefix)
-        self.input_channel = f"{self.prefix}{_PVA_IMAGE_SUFFIX}"
+        self.input_channel = _build_image_channel(self.prefix)
         self.image_viewer = DiffractionImageWindow(
             input_channel=self.input_channel,
             pva_prefix=self.prefix,
@@ -112,8 +127,13 @@ class DiffractionImageWindow(BaseWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._pva_prefix = pva_prefix or input_channel.split(':')[0]
-        self._input_channel = f"{self._pva_prefix}{_PVA_IMAGE_SUFFIX}"
+        if pva_prefix:
+            self._pva_prefix = pva_prefix
+        elif input_channel == _PVAPY_FULL_CHANNEL:
+            self._pva_prefix = input_channel
+        else:
+            self._pva_prefix = input_channel.split(':')[0]
+        self._input_channel = _build_image_channel(self._pva_prefix)
         # The input field shows only the IOC/area-detector prefix; the
         # ":Pva1:Image" suffix is appended internally on every channel rebuild.
         self.pv_prefix.setText(self._pva_prefix)
@@ -288,21 +308,46 @@ class DiffractionImageWindow(BaseWindow):
             self.central_glayout.removeWidget(self.QGroupBox_live_view)
             self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
 
-        self.stats_dock     = StatsDock(main_window=self)
-        self.mouse_pos_dock = MousePosDock(main_window=self)
-        self.mask_dock      = MaskDock(main_window=self)
+        self.stats_dock     = StatsDock(main_window=self, show=False)
         self.image_dock     = ImageDock(main_window=self, show=False)
+        self.mouse_pos_dock = MousePosDock(main_window=self, show=False)
+        self.mask_dock      = MaskDock(main_window=self, show=False)
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
 
-        # Stack stats + mask as tabs in the same dock area; lock both so the
-        # user can't undock, move, or close them. Cap the tab group's height
-        # so it doesn't claim the entire right column.
-        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
-        self.stats_dock.raise_()
-        for _d in (self.stats_dock, self.mask_dock):
-            _d.setFeatures(QDockWidget.NoDockWidgetFeatures)
-            _d.setMaximumHeight(320)
+        _info_docks = (self.stats_dock, self.image_dock, self.mouse_pos_dock)
+        for _d in _info_docks:
+            self.removeDockWidget(_d)
+            if getattr(_d, 'action_window_dock', None) is not None:
+                _d.action_window_dock.setVisible(False)
+
+        self._info_tabs = QTabWidget()
+        self._info_tabs.setTabPosition(QTabWidget.South)
+        self._info_tabs.addTab(self.stats_dock.widget(), "Stats")
+        self._info_tabs.addTab(self.image_dock.widget(), "Image")
+        self._info_tabs.addTab(self.mouse_pos_dock.widget(), "Mouse Position")
+        self._info_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+
+        self.setDockOptions(self.dockOptions() & ~QMainWindow.AllowTabbedDocks)
+
+        self.info_tabs_dock = QDockWidget("Info", self)
+        self.info_tabs_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.info_tabs_dock.setWidget(self._info_tabs)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.info_tabs_dock)
+
+        for _d in (self.mask_dock, self.roi_dock, self.analysis_dock):
+            self.splitDockWidget(self.info_tabs_dock, _d, Qt.Vertical)
+
+        QApplication.instance().installEventFilter(self)
+
+        _wm = getattr(self, 'windows_menu', None) or self.ensure_windows_menu()
+        for _key, _submenu in list(getattr(self, '_windows_submenus', {}).items()):
+            if not any(a.isVisible() for a in _submenu.actions()):
+                for _act in _wm.actions():
+                    if _act.menu() is _submenu:
+                        _wm.removeAction(_act)
+                        break
+                del self._windows_submenus[_key]
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -380,6 +425,34 @@ class DiffractionImageWindow(BaseWindow):
         self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
         self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
         self.btn_export_json.clicked.connect(self.export_json_clicked)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonRelease:
+            QTimer.singleShot(0, self._do_pin_info_to_top)
+        return super().eventFilter(obj, event)
+
+    def _do_pin_info_to_top(self):
+        if not hasattr(self, 'info_tabs_dock'):
+            return
+        if getattr(self, '_pinning_info', False):
+            return
+        info_top = self.info_tabs_dock.geometry().top()
+        displaced = [
+            d for d in (self.mask_dock, self.roi_dock, self.analysis_dock)
+            if (d.isVisible() and not d.isFloating()
+                and self.dockWidgetArea(d) == Qt.RightDockWidgetArea
+                and d.geometry().top() < info_top)
+        ]
+        if not displaced:
+            return
+        self._pinning_info = True
+        try:
+            for _d in (self.mask_dock, self.roi_dock, self.analysis_dock):
+                if (_d.isVisible() and not _d.isFloating()
+                        and self.dockWidgetArea(_d) == Qt.RightDockWidgetArea):
+                    self.splitDockWidget(self.info_tabs_dock, _d, Qt.Vertical)
+        finally:
+            self._pinning_info = False
 
     # ---- Mask handler methods ----
 
@@ -1364,7 +1437,7 @@ class DiffractionImageWindow(BaseWindow):
         if prefix.endswith(_PVA_IMAGE_SUFFIX):
             prefix = prefix[: -len(_PVA_IMAGE_SUFFIX)]
         self._pva_prefix = prefix
-        self._input_channel = f"{prefix}{_PVA_IMAGE_SUFFIX}" if prefix else ""
+        self._input_channel = _build_image_channel(prefix)
     
     def on_double_click(self, event) -> None:
         """

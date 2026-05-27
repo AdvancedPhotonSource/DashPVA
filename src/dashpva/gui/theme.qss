@@ -273,6 +273,21 @@ QLineEdit#le_input_channel {
     border-radius: 3px;
 }
 
+/* -- Area detector editable inputs (whiter bg to distinguish from
+      read-only value labels) ------------------------------------------ */
+QLineEdit#pv_prefix,
+QSpinBox#plotting_frequency,
+QDoubleSpinBox#min_setting_val,
+QDoubleSpinBox#max_setting_val {
+    background-color: #FFFFFF;
+}
+
+/* -- Area detector read-only value labels (darker bg so editable inputs
+      stand out by contrast) -------------------------------------------- */
+QLabel[valueLabel="true"] {
+    background-color: #E4E4E4;
+}
+
 /* -- ROI identity labels (instrument convention colors) -------------- */
 QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #E05A5A; }
 QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #4A90D9; }

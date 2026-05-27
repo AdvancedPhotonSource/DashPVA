@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QFormLayout,
     QFrame,
     QLabel,
+    QSizePolicy,
     QWidget,
 )
 
@@ -20,6 +21,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl.setMinimumHeight(20)
     lbl.setMaximumWidth(150)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    lbl.setProperty("valueLabel", True)
     return lbl
 
 
@@ -34,6 +36,7 @@ class StatsDock(BaseDock):
     def _build(self):
         container = QWidget()
         container.setMaximumWidth(380)
+        container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(4)
@@ -52,11 +55,13 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Image Data Type:"), self.data_type_val)
 
         self.min_setting_val = QDoubleSpinBox()
+        self.min_setting_val.setObjectName("min_setting_val")
         self.min_setting_val.setRange(-1e10, 9999999999.99)
         self.min_setting_val.setMaximumWidth(150)
         self.min_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.max_setting_val = QDoubleSpinBox()
+        self.max_setting_val.setObjectName("max_setting_val")
         self.max_setting_val.setRange(-1e10, 9999999999.99)
         self.max_setting_val.setMaximumWidth(150)
         self.max_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

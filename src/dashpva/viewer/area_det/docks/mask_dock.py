@@ -32,11 +32,13 @@ class MaskDock(BaseDock):
         self.lbl_mask_info.setFrameShape(QFrame.Box)
         self.lbl_mask_info.setFrameShadow(QFrame.Sunken)
         self.lbl_mask_info.setWordWrap(True)
+        self.lbl_mask_info.setProperty("valueLabel", True)
         layout.addRow("Mask:", self.lbl_mask_info)
 
         self.lbl_mask_pixel_count = QLabel("0")
         self.lbl_mask_pixel_count.setFrameShape(QFrame.Box)
         self.lbl_mask_pixel_count.setFrameShadow(QFrame.Sunken)
+        self.lbl_mask_pixel_count.setProperty("valueLabel", True)
         layout.addRow("Masked pixels:", self.lbl_mask_pixel_count)
 
         load_show = QHBoxLayout()

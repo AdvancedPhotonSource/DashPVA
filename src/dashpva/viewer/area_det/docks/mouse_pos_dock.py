@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QFormLayout, QFrame, QLabel, QWidget
+from PyQt5.QtWidgets import QFormLayout, QFrame, QLabel, QSizePolicy, QWidget
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
@@ -12,6 +12,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl.setFrameShadow(QFrame.Sunken)
     lbl.setMinimumHeight(25)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    lbl.setProperty("valueLabel", True)
     return lbl
 
 
@@ -26,6 +27,7 @@ class MousePosDock(BaseDock):
     def _build(self):
         container = QWidget()
         container.setMaximumWidth(380)
+        container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(6)
         layout.setVerticalSpacing(12)

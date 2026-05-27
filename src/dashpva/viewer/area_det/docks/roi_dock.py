@@ -49,6 +49,7 @@ def _total_label() -> QLabel:
     lbl.setFrameShape(QFrame.Box)
     lbl.setFrameShadow(QFrame.Sunken)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter)
+    lbl.setProperty("valueLabel", True)
     return lbl
 
 
