@@ -1,12 +1,15 @@
+from collections import deque
+
 import bitshuffle
 import blosc2
 import lz4.block
 import numpy as np
 import pvaccess as pva
-from collections import deque
 from epics import caget, camonitor, camonitor_clear
 from PyQt5.QtCore import QObject, pyqtSignal
+
 import dashpva.settings as app_settings
+
 
 class PVAReader(QObject):
     # Signals

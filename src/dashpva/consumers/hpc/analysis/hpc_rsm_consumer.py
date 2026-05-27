@@ -8,7 +8,7 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 import xrayutilities as xu
-from pvaccess import PvObject, NtAttribute
+from pvaccess import PvObject
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility

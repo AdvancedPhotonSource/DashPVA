@@ -677,7 +677,7 @@ class DiffractionImageWindow(BaseWindow):
 
                         # Don't redirect stderr so errors are visible in terminal for debugging
                         # Redirect stdout to avoid clutter, but keep stderr visible
-                        process = subprocess.Popen(
+                        subprocess.Popen(
                             cmd_args, 
                             cwd=os.path.dirname(os.path.dirname(analysis_script)),
                             stdout=subprocess.DEVNULL,
