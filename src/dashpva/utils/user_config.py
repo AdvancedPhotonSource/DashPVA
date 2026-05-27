@@ -7,10 +7,11 @@ unrelated keys are preserved.
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
-_CONFIG_FILE = Path(__file__).resolve().parents[1] / ".dashpva_data.json"
+from dashpva import settings as app_settings
+
+_CONFIG_FILE = app_settings.PROJECT_ROOT / ".dashpva_data.json"
 
 logger = logging.getLogger(__name__)
 
