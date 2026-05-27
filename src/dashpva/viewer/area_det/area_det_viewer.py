@@ -448,7 +448,7 @@ class DiffractionImageWindow(BaseWindow):
             return
         siblings_in_area = [
             d for d in (self.mask_dock, self.roi_dock, self.analysis_dock)
-            if d is not None and not d.isFloating()
+            if d is not None and not d.isFloating() and d.isVisible()
             and self.dockWidgetArea(d) == Qt.RightDockWidgetArea
         ]
         info_y = info.geometry().y()
