@@ -29,6 +29,7 @@ class TestCLI:
         with patch("dashpva.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             result = runner.invoke(cli, ["run"])
+            assert result.exit_code == 0
             mock_run.assert_called_once()
             cmd = mock_run.call_args[0][0]
             assert "dashpva.viewer.launcher.launcher" in cmd[-1]
@@ -37,6 +38,7 @@ class TestCLI:
         with patch("dashpva.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             result = runner.invoke(cli, ["detector"])
+            assert result.exit_code == 0
             mock_run.assert_called_once()
             cmd = mock_run.call_args[0][0]
             assert "dashpva.viewer.area_det.area_det_viewer" in cmd[-1]
@@ -45,6 +47,7 @@ class TestCLI:
         with patch("dashpva.cli.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             result = runner.invoke(cli, ["monitor", "scan"])
+            assert result.exit_code == 0
             mock_run.assert_called_once()
 
     def test_monitor_invalid_name(self, runner):
