@@ -22,7 +22,6 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSlider,
     QTabWidget,
-    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -328,7 +327,11 @@ class DiffractionImageWindow(BaseWindow):
         self._info_tabs.addTab(self.mouse_pos_dock.widget(), "Mouse Position")
         self._info_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
-        self.setDockOptions(self.dockOptions() & ~QMainWindow.AllowTabbedDocks)
+        self.setDockOptions(
+            self.dockOptions()
+            & ~QMainWindow.AllowTabbedDocks
+            & ~QMainWindow.AnimatedDocks
+        )
 
         self.info_tabs_dock = QDockWidget("Info", self)
         self.info_tabs_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
@@ -338,6 +341,10 @@ class DiffractionImageWindow(BaseWindow):
         for _d in (self.mask_dock, self.roi_dock, self.analysis_dock):
             self.splitDockWidget(self.info_tabs_dock, _d, Qt.Vertical)
 
+        # Re-pin the info dock to the top of the right area after any drag
+        # finishes (mouse release). Qt's dock system has no event for in-area
+        # reorders, so we listen application-wide and fix the order if a
+        # sibling has landed above the info dock.
         QApplication.instance().installEventFilter(self)
 
         _wm = getattr(self, 'windows_menu', None) or self.ensure_windows_menu()
@@ -428,31 +435,35 @@ class DiffractionImageWindow(BaseWindow):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonRelease:
-            QTimer.singleShot(0, self._do_pin_info_to_top)
+            QTimer.singleShot(0, self._repin_info_to_top)
         return super().eventFilter(obj, event)
 
-    def _do_pin_info_to_top(self):
-        if not hasattr(self, 'info_tabs_dock'):
+    def _repin_info_to_top(self):
+        """If any sibling dock has been dropped above the info dock, fully
+        rebuild the right-area column so the info dock sits on top again.
+        splitDockWidget alone can't always cross adjacent split trees, so we
+        remove + re-add to guarantee the order."""
+        info = getattr(self, 'info_tabs_dock', None)
+        if info is None or info.isFloating():
             return
-        if getattr(self, '_pinning_info', False):
-            return
-        info_top = self.info_tabs_dock.geometry().top()
-        displaced = [
+        siblings_in_area = [
             d for d in (self.mask_dock, self.roi_dock, self.analysis_dock)
-            if (d.isVisible() and not d.isFloating()
-                and self.dockWidgetArea(d) == Qt.RightDockWidgetArea
-                and d.geometry().top() < info_top)
+            if d is not None and not d.isFloating()
+            and self.dockWidgetArea(d) == Qt.RightDockWidgetArea
         ]
-        if not displaced:
+        info_y = info.geometry().y()
+        if not any(d.geometry().y() < info_y for d in siblings_in_area):
             return
-        self._pinning_info = True
-        try:
-            for _d in (self.mask_dock, self.roi_dock, self.analysis_dock):
-                if (_d.isVisible() and not _d.isFloating()
-                        and self.dockWidgetArea(_d) == Qt.RightDockWidgetArea):
-                    self.splitDockWidget(self.info_tabs_dock, _d, Qt.Vertical)
-        finally:
-            self._pinning_info = False
+        # Snapshot which siblings were visible so we can restore that state.
+        visibility = {d: d.isVisible() for d in siblings_in_area}
+        for d in siblings_in_area:
+            self.removeDockWidget(d)
+        self.removeDockWidget(info)
+        self.addDockWidget(Qt.RightDockWidgetArea, info)
+        info.setVisible(True)
+        for d in siblings_in_area:
+            self.splitDockWidget(info, d, Qt.Vertical)
+            d.setVisible(visibility.get(d, True))
 
     # ---- Mask handler methods ----
 
