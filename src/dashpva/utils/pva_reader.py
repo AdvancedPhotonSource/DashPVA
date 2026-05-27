@@ -33,8 +33,8 @@ class PVAReader(QObject):
         Args:
             input_channel (str): Input channel for the PVA connection.
             provider (protocol): The protocol for the PVA channel.
-            pva_prefix (str): IOC prefix used to construct ROI/Stats PV names.
-                When provided, takes precedence over app_settings.IOC_PREFIX.
+            pva_prefix (str): Detector prefix used to construct ROI/Stats PV names.
+                When provided, takes precedence over app_settings.DETECTOR_PREFIX.
                 When omitted, falls back to splitting input_channel on ':'.
         """
         super(PVAReader, self).__init__()
@@ -159,9 +159,8 @@ class PVAReader(QObject):
         self.CONSUMER_MODE = app_settings.CONSUMER_MODE or ''
         self.CACHE_OPTIONS: dict = app_settings.CACHE_OPTIONS
 
-        # Caller-supplied prefix wins; otherwise honor settings.IOC_PREFIX.
-        if not self._explicit_prefix and app_settings.IOC_PREFIX:
-            self.pva_prefix = app_settings.IOC_PREFIX
+        if not self._explicit_prefix and app_settings.DETECTOR_PREFIX:
+            self.pva_prefix = app_settings.DETECTOR_PREFIX
 
         self.set_cache_options()
         if self.caches_needed != self.caches_initialized:
