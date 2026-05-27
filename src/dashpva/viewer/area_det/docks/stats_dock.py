@@ -19,6 +19,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl.setFrameShadow(QFrame.Sunken)
     lbl.setMinimumHeight(20)
     lbl.setMaximumWidth(150)
+    lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
     return lbl
 
 
@@ -53,10 +54,12 @@ class StatsDock(BaseDock):
         self.min_setting_val = QDoubleSpinBox()
         self.min_setting_val.setRange(-1e10, 9999999999.99)
         self.min_setting_val.setMaximumWidth(150)
+        self.min_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.max_setting_val = QDoubleSpinBox()
         self.max_setting_val.setRange(-1e10, 9999999999.99)
         self.max_setting_val.setMaximumWidth(150)
+        self.max_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         layout.addRow(QLabel("Set Min Intensity:"), self.min_setting_val)
         layout.addRow(QLabel("Set Max Intensity:"), self.max_setting_val)

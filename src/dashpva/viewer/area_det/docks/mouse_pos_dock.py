@@ -11,6 +11,7 @@ def _value_label(default: str = "0") -> QLabel:
     lbl.setFrameShape(QFrame.Box)
     lbl.setFrameShadow(QFrame.Sunken)
     lbl.setMinimumHeight(25)
+    lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
     return lbl
 
 

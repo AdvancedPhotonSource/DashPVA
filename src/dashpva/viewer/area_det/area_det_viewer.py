@@ -1413,7 +1413,7 @@ class DiffractionImageWindow(BaseWindow):
                     if 0 <= self.mouse_x < self.image.shape[0] and 0 <= self.mouse_y < self.image.shape[1]:
                         self.mouse_x_val.setText(f"{self.mouse_x}")
                         self.mouse_y_val.setText(f"{self.mouse_y}")
-                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
+                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]:.2f}')
                         # Stop HKL is meant to freeze the visible HKL output, not
                         # just halt the qx/qy/qz recompute. Without this gate the
                         # mouse H/K/L labels keep changing on every mouse move
@@ -1442,11 +1442,11 @@ class DiffractionImageWindow(BaseWindow):
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
             self.data_type_val.setText(self.reader.display_dtype)
             self.update_threshold_label()
-            self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
-            self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
-            self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
-            self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
-            self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+            self.roi1_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', 0.0)):.2f}")
+            self.roi2_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', 0.0)):.2f}")
+            self.roi3_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', 0.0)):.2f}")
+            self.roi4_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', 0.0)):.2f}")
+            self.stats5_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', 0.0)):.2f}")
 
     def update_rsm(self) -> None:
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
