@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pyqtgraph as pg
@@ -464,6 +465,51 @@ class DiffractionImageWindow(BaseWindow):
         for d in siblings_in_area:
             self.splitDockWidget(info, d, Qt.Vertical)
             d.setVisible(visibility.get(d, True))
+
+    # ---- Perf status bar override ----
+    # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
+    # label and use a cross-platform CPU reader (psutil if available, /proc/stat
+    # on Linux, otherwise "N/A") instead of BaseWindow's Linux-only /proc/stat.
+
+    def init_perf_statusbar(self):
+        sb = self.statusBar()
+        self._cpu_label = QLabel("CPU: -%")
+        self._runtime_label = QLabel("Runtime: 0s")
+        sb.addPermanentWidget(self._cpu_label)
+        sb.addPermanentWidget(self._runtime_label)
+        self._start_time = time.monotonic()
+        self._cpu_prev = None
+        try:
+            import psutil  # noqa: F401
+            self._psutil = psutil
+            self._psutil.cpu_percent(interval=None)
+        except ImportError:
+            self._psutil = None
+        self._perf_timer = QTimer(self)
+        self._perf_timer.setInterval(1000)
+        self._perf_timer.timeout.connect(self._update_perf_labels)
+        self._perf_timer.start()
+
+    def _update_perf_labels(self):
+        if self._psutil is not None:
+            self._cpu_label.setText(f"CPU: {self._psutil.cpu_percent(interval=None):.0f}%")
+        else:
+            try:
+                with open("/proc/stat", "r") as f:
+                    parts = f.readline().split()
+                vals = list(map(int, parts[1:]))
+                idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+                total = sum(vals[:8]) if len(vals) >= 8 else sum(vals)
+                if self._cpu_prev is not None:
+                    ptotal, pidle = self._cpu_prev
+                    dt = total - ptotal
+                    didle = idle - pidle
+                    if dt > 0:
+                        self._cpu_label.setText(f"CPU: {(dt - didle) * 100.0 / dt:.0f}%")
+                self._cpu_prev = (total, idle)
+            except OSError:
+                self._cpu_label.setText("CPU: N/A")
+        self._runtime_label.setText(f"Runtime: {int(time.monotonic() - self._start_time)}s")
 
     # ---- Mask handler methods ----
 
