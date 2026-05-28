@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSlider,
     QTabWidget,
+    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -336,6 +337,7 @@ class DiffractionImageWindow(BaseWindow):
 
         self.info_tabs_dock = QDockWidget("Info", self)
         self.info_tabs_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.info_tabs_dock.setTitleBarWidget(QWidget())
         self.info_tabs_dock.setWidget(self._info_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.info_tabs_dock)
 
