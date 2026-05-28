@@ -70,7 +70,6 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Set Max Intensity:"), self.max_setting_val)
 
         self.chk_autoscale = QCheckBox("Autoscale (5%-95% histogram)")
-        self.chk_autoscale.setChecked(True)
         layout.addRow(self.chk_autoscale)
 
         self.chk_threshold = QCheckBox("Auto threshold:")

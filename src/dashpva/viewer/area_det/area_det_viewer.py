@@ -74,6 +74,8 @@ class ConfigDialog(QDialog):
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
 
     def init_ui(self) -> None:
+        self.lbl_input_channel.setText("Detector Prefix")
+        self.le_input_channel.setPlaceholderText("e.g. s6lambda1")
         last = load_last('area_det_prefix')
         if last:
             self.le_input_channel.setText(last)
@@ -147,16 +149,10 @@ class DiffractionImageWindow(BaseWindow):
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
-        # Throttled autoscale: recomputes the 5–95 percentile band a few times
-        # a second instead of every frame. Started by autoscale_checked() when
-        # the box is ticked; stopped on un-tick or on a manual spinbox edit.
-        self.timer_autoscale = QTimer()
-        self.timer_autoscale.setInterval(500)  # 2 Hz
         self.file_writer_thread = QThread()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
-        self.timer_autoscale.timeout.connect(self.apply_autoscale)
 
         # For testing ROIs being sent from analysis window
         self.roi_x = 100
@@ -276,9 +272,6 @@ class DiffractionImageWindow(BaseWindow):
         # Background sweep finished populating reader.rois → build rectangles on GUI thread
         self.rois_ready.connect(self.add_rois)
         
-        # Seed max before checking autoscale — setValue fires
-        # update_min_max_setting which would otherwise flip autoscale off.
-        self.max_setting_val.setValue(1.0)
         self.chk_autoscale.setChecked(True)
         self.chk_threshold.setChecked(False)
         
@@ -1560,9 +1553,8 @@ class DiffractionImageWindow(BaseWindow):
                                                 autoRange=False,
                                                 autoLevels=False,
                                                 autoHistogramRange=False)
-                    # Note: autoscale is a one-shot — fired by autoscale_checked()
-                    # when the user ticks the box, not on every frame, so a
-                    # manually-set max isn't clobbered as new frames arrive.
+                    if self.chk_autoscale.isChecked():
+                        self.apply_autoscale()
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
                                             y=np.arange(self.image.shape[1]),
@@ -1572,49 +1564,17 @@ class DiffractionImageWindow(BaseWindow):
                 self.max_px_val.setText(f"{max_level:.2f}")
     
     def update_min_max_setting(self) -> None:
-        """
-        Apply the user's min/max spin-box values to the image LUT.
-
-        Manual edit takes precedence over autoscale: typing a value implicitly
-        switches autoscale off so the user's value isn't overwritten on the
-        next tick by ``apply_autoscale``.
-        """
-        if self.chk_autoscale.isChecked():
-            self.chk_autoscale.blockSignals(True)
-            self.chk_autoscale.setChecked(False)
-            self.chk_autoscale.blockSignals(False)
-            # blockSignals above bypasses autoscale_checked → stop the timer
-            # explicitly so the autoscale tick doesn't keep clobbering the
-            # user's just-typed values.
-            self.timer_autoscale.stop()
-        self.image_view.setLevels(self.min_setting_val.value(), self.max_setting_val.value())
-
-    def autoscale_checked(self) -> None:
-        """
-        Handle the autoscale checkbox toggle.
-
-        ON  → fire one immediate ``apply_autoscale`` (so the LUT updates
-              instantly) and start ``timer_autoscale`` for continuous,
-              throttled (2 Hz) updates from the 5–95 percentile band.
-        OFF → stop the timer and apply whatever the spin boxes hold.
-        """
-        if self.chk_autoscale.isChecked():
-            if self.image is not None:
-                self.apply_autoscale()
-            self.timer_autoscale.start()
-        else:
-            self.timer_autoscale.stop()
+        # Passive when autoscale is on — autoscale drives the LUT each frame.
+        if not self.chk_autoscale.isChecked():
             self.image_view.setLevels(self.min_setting_val.value(),
                                       self.max_setting_val.value())
 
+    def autoscale_checked(self) -> None:
+        if self.chk_autoscale.isChecked() and self.image is not None:
+            self.apply_autoscale()
+
     def apply_autoscale(self) -> None:
-        """
-        Throttled tick: set both **min and max** LUT levels (and their spin
-        boxes) from the current frame's 5th and 95th percentiles. Driven by
-        ``timer_autoscale`` at 2 Hz while the autoscale checkbox is on; also
-        fired once immediately on toggle for an instant response.
-        """
-        if self.image is None or not self.chk_autoscale.isChecked():
+        if self.image is None:
             return
         intensities = self.image.flatten()
         intensities = intensities[np.isfinite(intensities)]
@@ -1623,8 +1583,6 @@ class DiffractionImageWindow(BaseWindow):
         min_pct, max_pct = np.percentile(intensities, [5, 95])
         min_pct = float(min_pct)
         max_pct = float(max_pct)
-        # Update the spin boxes (signal-blocked so we don't trip
-        # update_min_max_setting → autoscale-off side effect).
         self.min_setting_val.blockSignals(True)
         self.max_setting_val.blockSignals(True)
         self.min_setting_val.setValue(min_pct)
