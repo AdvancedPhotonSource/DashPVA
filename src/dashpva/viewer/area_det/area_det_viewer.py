@@ -277,11 +277,10 @@ class DiffractionImageWindow(BaseWindow):
         # Background sweep finished populating reader.rois → build rectangles on GUI thread
         self.rois_ready.connect(self.add_rois)
         
-        # Set checkboxes to checked by default
-        self.chk_autoscale.setChecked(True)
-        # Seed the manual max with a sane starting value so the spin box never
-        # reads "0" before the user has touched it.
+        # Seed max before checking autoscale — setValue fires
+        # update_min_max_setting which would otherwise flip autoscale off.
         self.max_setting_val.setValue(1.0)
+        self.chk_autoscale.setChecked(True)
         self.chk_threshold.setChecked(False)
         
         # Initialize threshold label - show it since threshold is checked by default
