@@ -10,41 +10,16 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
 
-# 1-indexed to match the lbl_ROI1..lbl_ROI4 widget naming.
-# 5 maps to None (Stats5 has no color in the original UI).
-_ROI_COLORS = {
-    1: ROI_COLORS[0],
-    2: ROI_COLORS[1],
-    3: ROI_COLORS[2],
-    4: ROI_COLORS[3],
-    5: None,
-}
-
-_STATS_BTN_BASE = (
-    "QPushButton { font: bold 12pt 'Sans Serif'; %s"
-    "border: 1px solid #8f8f91; border-radius: 3px;"
-    "background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
-    "stop:0 #f6f7fa,stop:1 #dadbde); }"
-    "QPushButton::pressed { background-color: qlineargradient("
-    "x1:0,y1:0,x2:0,y2:1,stop:0 #dadbde,stop:1 #f6f7fa); }"
-)
-
-_PLOT_BTN_STYLE = (
-    "QPushButton { font: 12pt 'Sans Serif'; border: 1px solid #8f8f91;"
-    "border-radius: 3px; background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
-    "stop:0 #e8f4e8,stop:1 #c8dcc8); }"
-    "QPushButton::pressed { background-color: qlineargradient("
-    "x1:0,y1:0,x2:0,y2:1,stop:0 #c8dcc8,stop:1 #e8f4e8); }"
-)
+_COLORED_ROIS = (1, 2, 3, 4)
 
 
-def _total_label() -> QLabel:
+def _total_label(object_name: str) -> QLabel:
     lbl = QLabel("0.0")
+    lbl.setObjectName(object_name)
     lbl.setMinimumHeight(30)
     lbl.setFrameShape(QFrame.Box)
     lbl.setFrameShadow(QFrame.Sunken)
@@ -72,24 +47,20 @@ class RoiDock(BaseDock):
         totals.setVerticalSpacing(20)
 
         self.lbl_ROI1 = QLabel("ROI1 Total:")
-        self.lbl_ROI1.setStyleSheet(f"color: {_ROI_COLORS[1]};")
+        self.lbl_ROI1.setObjectName("lbl_ROI1")
         self.lbl_ROI2 = QLabel("ROI2 Total:")
-        self.lbl_ROI2.setStyleSheet(f"color: {_ROI_COLORS[2]};")
+        self.lbl_ROI2.setObjectName("lbl_ROI2")
         self.lbl_ROI3 = QLabel("ROI3 Total:")
-        self.lbl_ROI3.setStyleSheet(f"color: {_ROI_COLORS[3]};")
+        self.lbl_ROI3.setObjectName("lbl_ROI3")
         self.lbl_ROI4 = QLabel("ROI4 Total:")
-        self.lbl_ROI4.setStyleSheet(f"color: {_ROI_COLORS[4]};")
+        self.lbl_ROI4.setObjectName("lbl_ROI4")
         self.lbl_image_total = QLabel("Stats5 Total:")
 
-        self.roi1_total_value  = _total_label()
-        self.roi1_total_value.setStyleSheet(f"color: {_ROI_COLORS[1]};")
-        self.roi2_total_value  = _total_label()
-        self.roi2_total_value.setStyleSheet(f"color: {_ROI_COLORS[2]};")
-        self.roi3_total_value  = _total_label()
-        self.roi3_total_value.setStyleSheet(f"color: {_ROI_COLORS[3]};")
-        self.roi4_total_value  = _total_label()
-        self.roi4_total_value.setStyleSheet(f"color: {_ROI_COLORS[4]};")
-        self.stats5_total_value = _total_label()
+        self.roi1_total_value   = _total_label("roi1_total_value")
+        self.roi2_total_value   = _total_label("roi2_total_value")
+        self.roi3_total_value   = _total_label("roi3_total_value")
+        self.roi4_total_value   = _total_label("roi4_total_value")
+        self.stats5_total_value = _total_label("stats5_total_value")
 
         # Per-ROI show/hide checkboxes — paired with the colored label so the
         # user can drop a single ROI rectangle from the image overlay without
@@ -111,15 +82,13 @@ class RoiDock(BaseDock):
         outer.addWidget(self.lbl_roi_specifi_stats)
 
         for i in range(1, 6):
-            color = _ROI_COLORS.get(i)
-            color_rule = f"color: {color};" if color else ""
             stat_btn = QPushButton(f"Stats{i}")
+            stat_btn.setObjectName(f"btn_Stats{i}")
             stat_btn.setMinimumHeight(45)
-            stat_btn.setStyleSheet(_STATS_BTN_BASE % color_rule)
             plot_btn = QPushButton(f"Plot Stats{i}")
+            plot_btn.setObjectName(f"btn_PlotStats{i}")
             plot_btn.setMinimumHeight(45)
             plot_btn.setMaximumWidth(100)
-            plot_btn.setStyleSheet(_PLOT_BTN_STYLE)
 
             setattr(self, f"btn_Stats{i}", stat_btn)
             setattr(self, f"btn_PlotStats{i}", plot_btn)
@@ -135,11 +104,9 @@ class RoiDock(BaseDock):
     @staticmethod
     def _make_roi_checkbox(index: int) -> QCheckBox:
         chk = QCheckBox()
+        chk.setObjectName(f"chk_show_roi{index}")
         chk.setChecked(True)
         chk.setToolTip(f"Show ROI{index} on the image")
-        color = _ROI_COLORS.get(index)
-        if color:
-            chk.setStyleSheet(f"QCheckBox::indicator:checked {{ background-color: {color}; }}")
         return chk
 
     @staticmethod

@@ -273,19 +273,19 @@ QLineEdit#le_input_channel {
     border-radius: 3px;
 }
 
-/* -- Area detector editable inputs (whiter bg to distinguish from
-      read-only value labels) ------------------------------------------ */
+/* -- Area detector editable inputs (use SURFACE as the active background
+      so editable fields read brighter than the surrounding value labels) */
 QLineEdit#pv_prefix,
 QSpinBox#plotting_frequency,
 QDoubleSpinBox#min_setting_val,
 QDoubleSpinBox#max_setting_val {
-    background-color: #FFFFFF;
+    background-color: #F8F9FA;  /* theme_colors.SURFACE */
 }
 
-/* -- Area detector read-only value labels (darker bg so editable inputs
-      stand out by contrast) -------------------------------------------- */
+/* -- Area detector read-only value labels (BORDER as a slightly darker
+      passive bg so editable inputs stand out by contrast) -------------- */
 QLabel[valueLabel="true"] {
-    background-color: #E4E4E4;
+    background-color: #DEE2E6;  /* theme_colors.BORDER */
 }
 
 /* -- ROI identity labels (instrument convention colors) -------------- */
@@ -297,3 +297,9 @@ QLabel#lbl_ROI3, QLabel#lbl_ROI4,
 QLabel#roi3_total_value, QLabel#roi4_total_value {
     font-size: 12pt;
 }
+
+/* -- Per-ROI show/hide checkboxes (indicator fills with ROI color) --- */
+QCheckBox#chk_show_roi1::indicator:checked { background-color: #E05A5A; }
+QCheckBox#chk_show_roi2::indicator:checked { background-color: #4A90D9; }
+QCheckBox#chk_show_roi3::indicator:checked { background-color: #3EAF8E; }
+QCheckBox#chk_show_roi4::indicator:checked { background-color: #A878D0; }
