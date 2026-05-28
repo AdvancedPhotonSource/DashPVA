@@ -16,10 +16,12 @@ QMessageBox QLabel { color: palette(text); }
 QDockWidget::pane {
     border: 1px solid palette(mid);
 }
-/* Dock title bar — adaptive coloring via Qt palette roles. configure_app()
-   forces the Fusion style which honors these QSS rules on all platforms
-   (native Linux styles otherwise draw dock titles in native code and ignore
-   the stylesheet). palette(dark) darkens with the system theme; palette
+/* Dock title bar — adaptive coloring via Qt palette roles. These rules only
+   take effect under the Fusion style (native Linux styles draw dock titles
+   in native code and ignore the stylesheet). Fusion is opted into per-viewer
+   where dock titles matter (currently only area_det_viewer.main()) instead
+   of globally, so the launcher / scan monitor / workbench keep the native
+   platform style. palette(dark) darkens with the system theme; palette
    (bright-text) flips between black/white to stay readable. The slate
    DOCK_HEADER_BG / DOCK_HEADER_TEXT constants in theme_colors.py are the
    documented light-mode reference values. */

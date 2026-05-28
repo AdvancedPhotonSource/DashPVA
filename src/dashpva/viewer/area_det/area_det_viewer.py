@@ -1807,9 +1807,12 @@ class DiffractionImageWindow(BaseWindow):
 
 def main():
     app = QApplication(sys.argv)
-    # Without this the standalone area detector launch path skipped the
-    # global stylesheet entirely, so dock headers and other theme.qss rules
-    # never applied. The launcher path already calls configure_app.
+    # Fusion is scoped to this viewer because the dock-title QSS rules only
+    # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
+    # titles in native code and ignore stylesheets. Other viewers keep the
+    # platform's native style.
+    from PyQt5.QtWidgets import QStyleFactory
+    app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
     # size_manager = SizeManager(app=app)
     window = ConfigDialog()
