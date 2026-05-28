@@ -10,20 +10,16 @@ import xrayutilities as xu
 # from epics import caget
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QEvent, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
-    QDockWidget,
     QFileDialog,
     QLabel,
-    QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
-    QSizePolicy,
     QSlider,
-    QTabWidget,
-    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -33,7 +29,6 @@ from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.user_config import load_last, save_last
-from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     ImageDock,
@@ -244,7 +239,11 @@ class DiffractionImageWindow(BaseWindow):
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
-        self.btn_analysis_window.clicked.connect(self.open_analysis_window_clicked)
+        self._analysis_menu = QMenu(self)
+        self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
+        self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
+        self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self.btn_analysis_window.setMenu(self._analysis_menu)
         self.btn_Stats1.clicked.connect(self.stats_button_clicked)
         self.btn_Stats2.clicked.connect(self.stats_button_clicked)
         self.btn_Stats3.clicked.connect(self.stats_button_clicked)
@@ -287,7 +286,6 @@ class DiffractionImageWindow(BaseWindow):
         self.update_threshold_label()
         self.lbl_threshold_range.show()
         
-        self.analysis_window = None  # Initialize as None
         # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
 
@@ -308,55 +306,23 @@ class DiffractionImageWindow(BaseWindow):
             self.central_glayout.removeWidget(self.QGroupBox_live_view)
             self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
 
-        self.stats_dock     = StatsDock(main_window=self, show=False)
-        self.image_dock     = ImageDock(main_window=self, show=False)
-        self.mouse_pos_dock = MousePosDock(main_window=self, show=False)
+        # BaseDock.setup() auto-adds each dock into RightDockWidgetArea.
+        # Default visible layout:
+        #     [ Stats ]
+        #     [ Image | Mouse Position ]  (tabified, Image raised)
+        # Mask / ROI / Analysis start hidden — toggle from the Windows menu.
+        self.stats_dock     = StatsDock(main_window=self)
         self.mask_dock      = MaskDock(main_window=self, show=False)
+        self.image_dock     = ImageDock(main_window=self)
+        self.mouse_pos_dock = MousePosDock(main_window=self)
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
 
-        _info_docks = (self.stats_dock, self.image_dock, self.mouse_pos_dock)
-        for _d in _info_docks:
-            self.removeDockWidget(_d)
-            if getattr(_d, 'action_window_dock', None) is not None:
-                _d.action_window_dock.setVisible(False)
-
-        self._info_tabs = QTabWidget()
-        self._info_tabs.setTabPosition(QTabWidget.South)
-        self._info_tabs.addTab(self.stats_dock.widget(), "Stats")
-        self._info_tabs.addTab(self.image_dock.widget(), "Image")
-        self._info_tabs.addTab(self.mouse_pos_dock.widget(), "Mouse Position")
-        self._info_tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-
-        self.setDockOptions(
-            self.dockOptions()
-            & ~QMainWindow.AllowTabbedDocks
-            & ~QMainWindow.AnimatedDocks
-        )
-
-        self.info_tabs_dock = QDockWidget("Info", self)
-        self.info_tabs_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
-        self.info_tabs_dock.setTitleBarWidget(QWidget())
-        self.info_tabs_dock.setWidget(self._info_tabs)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.info_tabs_dock)
-
-        for _d in (self.mask_dock, self.roi_dock, self.analysis_dock):
-            self.splitDockWidget(self.info_tabs_dock, _d, Qt.Vertical)
-
-        # Re-pin the info dock to the top of the right area after any drag
-        # finishes (mouse release). Qt's dock system has no event for in-area
-        # reorders, so we listen application-wide and fix the order if a
-        # sibling has landed above the info dock.
-        QApplication.instance().installEventFilter(self)
-
-        _wm = getattr(self, 'windows_menu', None) or self.ensure_windows_menu()
-        for _key, _submenu in list(getattr(self, '_windows_submenus', {}).items()):
-            if not any(a.isVisible() for a in _submenu.actions()):
-                for _act in _wm.actions():
-                    if _act.menu() is _submenu:
-                        _wm.removeAction(_act)
-                        break
-                del self._windows_submenus[_key]
+        self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
+        self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
+        self.image_dock.raise_()
+        for d in (self.mask_dock, self.roi_dock, self.analysis_dock):
+            d.hide()
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -434,38 +400,6 @@ class DiffractionImageWindow(BaseWindow):
         self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
         self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
         self.btn_export_json.clicked.connect(self.export_json_clicked)
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.MouseButtonRelease:
-            QTimer.singleShot(0, self._repin_info_to_top)
-        return super().eventFilter(obj, event)
-
-    def _repin_info_to_top(self):
-        """If any sibling dock has been dropped above the info dock, fully
-        rebuild the right-area column so the info dock sits on top again.
-        splitDockWidget alone can't always cross adjacent split trees, so we
-        remove + re-add to guarantee the order."""
-        info = getattr(self, 'info_tabs_dock', None)
-        if info is None or info.isFloating():
-            return
-        siblings_in_area = [
-            d for d in (self.mask_dock, self.roi_dock, self.analysis_dock)
-            if d is not None and not d.isFloating() and d.isVisible()
-            and self.dockWidgetArea(d) == Qt.RightDockWidgetArea
-        ]
-        info_y = info.geometry().y()
-        if not any(d.geometry().y() < info_y for d in siblings_in_area):
-            return
-        # Snapshot which siblings were visible so we can restore that state.
-        visibility = {d: d.isVisible() for d in siblings_in_area}
-        for d in siblings_in_area:
-            self.removeDockWidget(d)
-        self.removeDockWidget(info)
-        self.addDockWidget(Qt.RightDockWidgetArea, info)
-        info.setVisible(True)
-        for d in siblings_in_area:
-            self.splitDockWidget(info, d, Qt.Vertical)
-            d.setVisible(visibility.get(d, True))
 
     # ---- Perf status bar override ----
     # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
@@ -771,68 +705,40 @@ class DiffractionImageWindow(BaseWindow):
             self.image_is_transposed = False
             self.reader.image_is_transposed = False
 
-    def open_analysis_window_clicked(self) -> None:
-        """
-        Opens the analysis window if the reader and image are initialized.
-        Also supports launching pyFAI analysis window as a separate independent process.
-        """
-        if self.reader is not None:
-            if self.reader.image is not None:
-                # Launch pyFAI analysis window as a separate independent process
-                analysis_script = os.path.join(os.path.dirname(__file__), 'pyFAI_analysis.py')
-                if os.path.exists(analysis_script):
-                    # Use sys.executable to ensure we use the correct Python interpreter
-                    import sys
-                    # Launch as fully independent process:
-                    # - start_new_session: Creates new process session (Unix) for independence
-                    # - stdout/stderr: Redirect to devnull to avoid blocking parent
-                    # - No reference kept: Process is fully detached
-                    try:
-                        # Pass PV address as command-line argument
-                        pv_address = self._input_channel if self._input_channel else "pvapy:image"
-                        
-                        # Get threshold values if threshold is enabled
-                        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
-                        min_thresh, max_thresh = self.get_threshold_range() if self.reader is not None else (0, 0)
-                        
-                        # Build command arguments
-                        cmd_args = [sys.executable, analysis_script, "--pv-address", pv_address]
-                        # Note: min_thresh is typically 0, so we check max_thresh > 0 to ensure valid thresholds
-                        if threshold_enabled and max_thresh > 0:
-                            cmd_args.extend(["--threshold-min", str(min_thresh), "--threshold-max", str(max_thresh)])
+    def _launch_pyfai(self) -> None:
+        pv_address = self._input_channel or "pvapy:image"
+        cmd = [sys.executable, '-m', 'dashpva.viewer.pyFAI_analysis', '--pv-address', pv_address]
+        threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
+        if threshold_enabled and self.reader is not None:
+            min_thresh, max_thresh = self.get_threshold_range()
+            if max_thresh > 0:
+                cmd.extend(['--threshold-min', str(min_thresh), '--threshold-max', str(max_thresh)])
+        mask_path = self.mask_manager.mask_path or os.path.join(
+            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
+        cmd.extend(['--mask-file', mask_path])
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] pyFAI launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch pyFAI: {e}')
 
-                        # Always pass mask file path so pyFAI can detect new masks
-                        mask_path = self.mask_manager.mask_path or os.path.join(
-                            self.mask_manager.masks_dir, self.mask_manager.DEFAULT_MASK_FILENAME)
-                        cmd_args.extend(["--mask-file", mask_path])
+    def _launch_phase_fitter(self) -> None:
+        pv_address = self._input_channel or "pvapy:image"
+        cmd = [sys.executable, '-m', 'dashpva.viewer.phase_fitter', '--pv-address', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] Phase Fitter launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch Phase Fitter: {e}')
 
-                        # Don't redirect stderr so errors are visible in terminal for debugging
-                        # Redirect stdout to avoid clutter, but keep stderr visible
-                        subprocess.Popen(
-                            cmd_args, 
-                            cwd=os.path.dirname(os.path.dirname(analysis_script)),
-                            stdout=subprocess.DEVNULL,
-                            # stderr=None means it goes to terminal - helpful for debugging
-                            stderr=None,  # Let stderr go to terminal so we can see errors
-                            start_new_session=True  # Creates new process group (Unix) or job (Windows)
-                        )
-                        output_pv = f"{pv_address}:pyFAI"
-                        print(f"pyFAI_analysis.py launched successfully as independent process with PV: {pv_address}")
-                        print(f"Broadcasting pyFAI results to: {output_pv}")
-                        if threshold_enabled and max_thresh > 0:
-                            print(f"Threshold values passed: min={min_thresh}, max={max_thresh}")
-                        elif threshold_enabled:
-                            print(f"Warning: Threshold enabled but invalid values (min={min_thresh}, max={max_thresh})")
-                        print("Note: Check terminal/console for any error messages if window doesn't appear")
-                    except Exception as e:
-                        print(f"Error launching pyFAI_analysis.py: {e}")
-                        # Fallback to regular analysis window
-                        self.analysis_window = AnalysisWindow(parent=self)
-                        self.analysis_window.show()
-                else:
-                    # Fallback to regular analysis window
-                    self.analysis_window = AnalysisWindow(parent=self)
-                    self.analysis_window.show()        
+    def _launch_hkl3d(self) -> None:
+        cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print('[Area Detector] HKL 3D Viewer launched')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
+
 
     def start_live_view_clicked(self) -> None:
         """

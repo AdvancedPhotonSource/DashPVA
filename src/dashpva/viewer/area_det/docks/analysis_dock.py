@@ -19,7 +19,7 @@ class AnalysisDock(BaseDock):
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.btn_analysis_window = QPushButton("Open Analysis Window")
-        self.btn_analysis_window.setMinimumHeight(80)
+        self.btn_analysis_window.setMinimumHeight(50)
         layout.addWidget(self.btn_analysis_window)
         layout.addStretch()
 
