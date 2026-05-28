@@ -65,7 +65,7 @@ class ImageDock(BaseDock):
         layout.addRow(self.log_image, self.freeze_image)
 
         self.chk_transpose = QCheckBox("Transpose Image")
-        self.display_rois  = QCheckBox("Show Rois")
+        self.display_rois  = QCheckBox("Show ROIs")
         self.display_rois.setChecked(True)
         layout.addRow(self.chk_transpose, self.display_rois)
 

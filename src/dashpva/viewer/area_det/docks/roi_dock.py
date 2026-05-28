@@ -65,7 +65,7 @@ class RoiDock(BaseDock):
         # Per-ROI show/hide checkboxes — paired with the colored label so the
         # user can drop a single ROI rectangle from the image overlay without
         # losing the whole set.  An ROI is drawn iff this is checked AND the
-        # global "Show Rois" checkbox in the image dock is checked.
+        # global "Show ROIs" checkbox in the image dock is checked.
         self.chk_show_roi1 = self._make_roi_checkbox(1)
         self.chk_show_roi2 = self._make_roi_checkbox(2)
         self.chk_show_roi3 = self._make_roi_checkbox(3)

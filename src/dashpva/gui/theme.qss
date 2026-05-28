@@ -285,9 +285,12 @@ QDoubleSpinBox#max_setting_val {
 }
 
 /* -- Area detector read-only value labels (BORDER as a slightly darker
-      passive bg so editable inputs stand out by contrast) -------------- */
+      passive bg so editable inputs stand out by contrast). Monospace font
+      keeps every digit + the decimal point at a fixed glyph width so the
+      decimal stops jumping horizontally as values change magnitude. ------ */
 QLabel[valueLabel="true"] {
     background-color: #DEE2E6;  /* theme_colors.BORDER */
+    font-family: 'Consolas', 'Courier New', monospace;
 }
 
 /* -- ROI identity labels (instrument convention colors) -------------- */
