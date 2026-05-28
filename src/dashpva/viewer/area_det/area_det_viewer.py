@@ -84,7 +84,7 @@ class ConfigDialog(QDialog):
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
         save_last('area_det_prefix', self.prefix)
-        self.input_channel = _build_image_channel(self.prefix)
+        self.input_channel = f"{self.prefix}{_PVA_IMAGE_SUFFIX}" if self.prefix else ""
         self.image_viewer = DiffractionImageWindow(
             input_channel=self.input_channel,
             pva_prefix=self.prefix,

@@ -38,7 +38,7 @@
      <string></string>
     </property>
     <property name="placeholderText">
-     <string>e.g. pvapy:image</string>
+     <string>e.g. s6lambda1</string>
     </property>
    </widget>
    <widget class="QLabel" name="lbl_input_channel">
