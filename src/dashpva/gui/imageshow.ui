@@ -1302,7 +1302,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QLabel" name="lbl_roi_specifi_stats">
+            <widget class="QLabel" name="lbl_roi_specific_stats">
              <property name="geometry">
               <rect>
                <x>10</x>

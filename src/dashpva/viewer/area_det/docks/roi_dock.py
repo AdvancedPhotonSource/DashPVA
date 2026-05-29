@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.viewer.core.docks.base_dock import BaseDock
+from dashpva.viewer.core.docks.base_dock import DOCK_MAX_WIDTH, BaseDock
 
 _SEGMENT = "controls"
 
@@ -38,7 +38,7 @@ class RoiDock(BaseDock):
 
     def _build(self):
         container = QWidget()
-        container.setMaximumWidth(380)
+        container.setMaximumWidth(DOCK_MAX_WIDTH)
         outer = QVBoxLayout(container)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(12)
@@ -78,8 +78,8 @@ class RoiDock(BaseDock):
         totals.addRow(self.lbl_image_total, self.stats5_total_value)
         outer.addLayout(totals)
 
-        self.lbl_roi_specifi_stats = QLabel("ROI Specific Stats")
-        outer.addWidget(self.lbl_roi_specifi_stats)
+        self.lbl_roi_specific_stats = QLabel("ROI Specific Stats")
+        outer.addWidget(self.lbl_roi_specific_stats)
 
         for i in range(1, 6):
             stat_btn = QPushButton(f"Stats{i}")

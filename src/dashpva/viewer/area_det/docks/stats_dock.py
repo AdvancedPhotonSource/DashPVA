@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.viewer.core.docks.base_dock import BaseDock
+from dashpva.viewer.core.docks.base_dock import DOCK_MAX_WIDTH, BaseDock
 
 _SEGMENT = "info"
 
@@ -35,7 +35,7 @@ class StatsDock(BaseDock):
 
     def _build(self):
         container = QWidget()
-        container.setMaximumWidth(380)
+        container.setMaximumWidth(DOCK_MAX_WIDTH)
         container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(8)

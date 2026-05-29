@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
-from dashpva.viewer.core.docks.base_dock import BaseDock
+from dashpva.viewer.core.docks.base_dock import DOCK_MAX_WIDTH, BaseDock
 
 
 class AnalysisDock(BaseDock):
@@ -14,7 +14,7 @@ class AnalysisDock(BaseDock):
 
     def _build(self):
         container = QWidget()
-        container.setMaximumWidth(380)
+        container.setMaximumWidth(DOCK_MAX_WIDTH)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(10, 10, 10, 10)
 

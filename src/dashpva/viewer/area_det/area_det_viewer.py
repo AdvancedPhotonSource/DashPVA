@@ -6,8 +6,6 @@ import time
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
-
-# from epics import caget
 from epics import PV, caget, camonitor
 from PyQt5 import uic
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -42,10 +40,12 @@ from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
 from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 
-# from ..utils.size_manager import SizeManager
-
-
 rot_gen = rotation_cycle(1,5)
+
+_HAVG_PLOT_MAX_WIDTH = 200
+_PERF_TIMER_INTERVAL_MS = 1000
+_SPINNER_MAX_WIDTH = 120
+_SPINNER_MAX_HEIGHT = 14
 
 
 class ConfigDialog(QDialog):
@@ -129,12 +129,6 @@ class DiffractionImageWindow(BaseWindow):
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
 
-        # For testing ROIs being sent from analysis window
-        self.roi_x = 100
-        self.roi_y = 200
-        self.roi_width = 50
-        self.roi_height = 50
-
         # HKL values
         self.is_hkl_ready = False
         self.hkl_config = None
@@ -193,7 +187,7 @@ class DiffractionImageWindow(BaseWindow):
         # second is a separate plot to show the horiontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        self.horizontal_avg_plot.setMaximumWidth(200)
+        self.horizontal_avg_plot.setMaximumWidth(_HAVG_PLOT_MAX_WIDTH)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
@@ -215,20 +209,12 @@ class DiffractionImageWindow(BaseWindow):
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
         self.btn_analysis_window.setMenu(self._analysis_menu)
-        self.btn_Stats1.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats2.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats3.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats4.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats5.clicked.connect(self.stats_button_clicked)
-        self.btn_PlotStats1.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats2.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats3.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats4.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats5.clicked.connect(self.stats_plot_button_clicked)
+        for i in range(1, 6):
+            getattr(self, f"btn_Stats{i}").clicked.connect(self.stats_button_clicked)
+            getattr(self, f"btn_PlotStats{i}").clicked.connect(self.stats_plot_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
-        # self.rotate90degCCW.clicked.connect(self.rotate_rois)
         self.log_image.clicked.connect(self.update_image)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
@@ -339,15 +325,10 @@ class DiffractionImageWindow(BaseWindow):
         self.stop_hkl           = self.image_dock.stop_hkl
 
         # ROI dock widgets
-        self.lbl_ROI1            = self.roi_dock.lbl_ROI1
-        self.lbl_ROI2            = self.roi_dock.lbl_ROI2
-        self.lbl_ROI3            = self.roi_dock.lbl_ROI3
-        self.lbl_ROI4            = self.roi_dock.lbl_ROI4
+        for i in range(1, 5):
+            setattr(self, f"lbl_ROI{i}", getattr(self.roi_dock, f"lbl_ROI{i}"))
+            setattr(self, f"roi{i}_total_value", getattr(self.roi_dock, f"roi{i}_total_value"))
         self.lbl_image_total     = self.roi_dock.lbl_image_total
-        self.roi1_total_value    = self.roi_dock.roi1_total_value
-        self.roi2_total_value    = self.roi_dock.roi2_total_value
-        self.roi3_total_value    = self.roi_dock.roi3_total_value
-        self.roi4_total_value    = self.roi_dock.roi4_total_value
         self.stats5_total_value  = self.roi_dock.stats5_total_value
         self.chk_show_roi = [
             self.roi_dock.chk_show_roi1,
@@ -391,7 +372,7 @@ class DiffractionImageWindow(BaseWindow):
         except ImportError:
             self._psutil = None
         self._perf_timer = QTimer(self)
-        self._perf_timer.setInterval(1000)
+        self._perf_timer.setInterval(_PERF_TIMER_INTERVAL_MS)
         self._perf_timer.timeout.connect(self._update_perf_labels)
         self._perf_timer.start()
 
@@ -745,7 +726,6 @@ class DiffractionImageWindow(BaseWindow):
                         hkl_pv.clear_callbacks()
                     except Exception:
                         pass
-                # self.reader.reader_scan_complete.disconnect()
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel)
@@ -810,8 +790,6 @@ class DiffractionImageWindow(BaseWindow):
             self.stop_timers()
             for key in self.stats_dialogs:
                 self.stats_dialogs[key] = None
-            # for roi in self.rois:
-            #     self.image_view.getView().removeItem(roi)
             for hkl_pv in self.hkl_pvs.values():
                 hkl_pv.clear_callbacks()
                 hkl_pv.disconnect()
@@ -926,8 +904,8 @@ class DiffractionImageWindow(BaseWindow):
             self._pv_pollers_label = QLabel("")
             self._pv_pollers_spinner = QProgressBar()
             self._pv_pollers_spinner.setRange(0, 0)        # indeterminate animation
-            self._pv_pollers_spinner.setMaximumWidth(120)
-            self._pv_pollers_spinner.setMaximumHeight(14)
+            self._pv_pollers_spinner.setMaximumWidth(_SPINNER_MAX_WIDTH)
+            self._pv_pollers_spinner.setMaximumHeight(_SPINNER_MAX_HEIGHT)
             self._pv_pollers_spinner.setTextVisible(False)
             # Add to the LEFT side of the status bar (next to where messages live)
             sb.addWidget(self._pv_pollers_spinner)
@@ -1036,7 +1014,6 @@ class DiffractionImageWindow(BaseWindow):
             roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
-            # TODO: can just loop through values rather than lookup with keys
             for roi_num, roi in self.reader.rois.items():
                 x = roi.get("MinX", 0) if not(self.image_is_transposed) else roi.get('MinY',0)
                 y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
@@ -1436,10 +1413,9 @@ class DiffractionImageWindow(BaseWindow):
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
             self.data_type_val.setText(self.reader.display_dtype)
             self.update_threshold_label()
-            self.roi1_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', 0.0)):.2f}")
-            self.roi2_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', 0.0)):.2f}")
-            self.roi3_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', 0.0)):.2f}")
-            self.roi4_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', 0.0)):.2f}")
+            for i in range(1, 5):
+                label = getattr(self, f"roi{i}_total_value")
+                label.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}")
             self.stats5_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', 0.0)):.2f}")
 
     def update_rsm(self) -> None:
@@ -1641,7 +1617,6 @@ def main():
     from PyQt5.QtWidgets import QStyleFactory
     app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
-    # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()
 

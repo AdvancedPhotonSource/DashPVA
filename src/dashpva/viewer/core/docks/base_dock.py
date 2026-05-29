@@ -1,6 +1,10 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDockWidget, QMenu
 
+# Max width applied by area-detector docks so the right-area column doesn't
+# stretch as the user resizes the window.
+DOCK_MAX_WIDTH = 380
+
 
 class BaseDock(QDockWidget):
     def __init__(self, title="", main_window=None, segment_name=None, dock_area=Qt.LeftDockWidgetArea, show: bool = True):
