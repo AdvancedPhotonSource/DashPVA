@@ -313,6 +313,37 @@
       </property>
       <layout class="QVBoxLayout" name="verticalLayout_graph">
        <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutMaxCache">
+         <item>
+          <widget class="QLabel" name="label_max_cache_size_text">
+           <property name="text">
+            <string>Max Cache Size:</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="label_max_cache_size">
+           <property name="text">
+            <string>--</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerMaxCache">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
         <widget class="QLabel" name="label_graph_title">
          <property name="text">
           <string>Images collected over time</string>

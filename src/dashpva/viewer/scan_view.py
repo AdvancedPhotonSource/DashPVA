@@ -27,6 +27,11 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         except Exception:
             pass
 
+        try:
+            app_settings.reload()
+        except Exception:
+            pass
+
         self.channel = channel or app_settings.get_input_channel("")
         self.scan_state = False
 
@@ -392,6 +397,11 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             if hasattr(self, 'label_is_caching') and self.reader is not None:
                 is_caching = bool(getattr(self.reader, 'is_caching', False))
                 self.label_is_caching.setText('Yes' if is_caching else 'No')
+
+            # Update Max Cache Size from the reader's active deque size
+            if hasattr(self, 'label_max_cache_size'):
+                reader_size = getattr(self.reader, 'MAX_CACHE_SIZE', None) if self.reader else None
+                self.label_max_cache_size.setText(str(reader_size) if reader_size else '--')
 
             # Update Listening label to show elapsed listening time (positive integers)
             if hasattr(self, 'label_listening'):
