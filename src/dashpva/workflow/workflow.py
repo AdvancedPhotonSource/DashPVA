@@ -410,18 +410,21 @@ class Workflow(QDialog, LogMixin):
         self.buttonLoadConfigMeta.clicked.connect(
             lambda: self._load_named_config_dialog(self._META_ASSOC_PATH, self._apply_meta_assoc_config)
         )
+        self.buttonClearConfigMeta.clicked.connect(self.textEditAssociatorConsumersOutput.clear)
         self.buttonSaveConfigCollector.clicked.connect(
             lambda: self._save_named_config_dialog(self._COLLECTOR_PATH, self._collect_collector_config)
         )
         self.buttonLoadConfigCollector.clicked.connect(
             lambda: self._load_named_config_dialog(self._COLLECTOR_PATH, self._apply_collector_config)
         )
+        self.buttonClearConfigCollector.clicked.connect(self.textEditCollectorOutput.clear)
         self.buttonSaveConfigAnalysis.clicked.connect(
             lambda: self._save_named_config_dialog(self._ANALYSIS_PATH, self._collect_analysis_config)
         )
         self.buttonLoadConfigAnalysis.clicked.connect(
             lambda: self._load_named_config_dialog(self._ANALYSIS_PATH, self._apply_analysis_config)
         )
+        self.buttonClearConfigAnalysis.clicked.connect(self.textEditAnalysisConsumerOutput.clear)
 
         # Check DB availability, populate combo, then switch to DB mode if possible
         self._check_db_availability()

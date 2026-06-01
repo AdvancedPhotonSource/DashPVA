@@ -277,15 +277,14 @@ class HDF5Writer(QObject, LogMixin):
                 geo_grp[field] = h5py.SoftLink(f'/{target_path}')
 
     def merge_metadata(self, attributes):
-        merged_metadata = {}
-        for attribute_dict in attributes:
-            for key, value in attribute_dict.items():
-                if not (key == 'RSM' or key == 'Analysis'):
-                    if key not in merged_metadata:
-                        merged_metadata[key] = []
-                        merged_metadata[key].append(value)
-                    else:
-                        merged_metadata[key].append(value)
+        all_keys = set()
+        for d in attributes:
+            if isinstance(d, dict):
+                all_keys.update(k for k in d.keys() if k not in ('RSM', 'Analysis'))
+        merged_metadata = {k: [] for k in all_keys}
+        for d in attributes:
+            for k in all_keys:
+                merged_metadata[k].append(d.get(k, np.nan) if isinstance(d, dict) else np.nan)
         return merged_metadata
 
     # --- Scan format helpers (mirror of HDF5Handler methods) ---

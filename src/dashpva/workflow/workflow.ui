@@ -1035,6 +1035,16 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonClearConfigMeta">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear all configuration fields</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacerAssoc">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -1298,6 +1308,16 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonClearConfigCollector">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear all configuration fields</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacerCollector">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -1534,6 +1554,16 @@ QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; 
            </property>
            <property name="toolTip">
             <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonClearConfigAnalysis">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear all configuration fields</string>
            </property>
           </widget>
          </item>
