@@ -20,6 +20,9 @@ class BaseDock(QDockWidget):
     def setup(self):
         # Dock
         self.setWindowTitle(self.title)
+        # Stable ID required by QMainWindow.saveState/restoreState to match
+        # docks across launches.
+        self.setObjectName(self.title)
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.main_window.addDockWidget(self.dock_area, self)
         # Apply initial visibility before registering Windows menu action,

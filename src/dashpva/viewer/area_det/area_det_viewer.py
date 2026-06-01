@@ -8,8 +8,9 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
+    QAction,
     QApplication,
     QDialog,
     QFileDialog,
@@ -46,6 +47,10 @@ _HAVG_PLOT_MAX_WIDTH = 200
 _PERF_TIMER_INTERVAL_MS = 1000
 _SPINNER_MAX_WIDTH = 120
 _SPINNER_MAX_HEIGHT = 14
+# Bump when the dock set changes — restoreState silently rejects mismatched
+# versions so users with a stale saved layout fall back to defaults instead
+# of getting a half-broken arrangement.
+_DOCK_STATE_VERSION = 1
 
 
 class ConfigDialog(QDialog):
@@ -88,6 +93,12 @@ class DiffractionImageWindow(BaseWindow):
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
+        saved_geom = load_last('area_det_window_geom', '')
+        if saved_geom:
+            try:
+                self.restoreGeometry(QByteArray.fromHex(saved_geom.encode()))
+            except Exception:
+                pass
         self.show()
         self.reader = None
         self.image = None
@@ -272,13 +283,16 @@ class DiffractionImageWindow(BaseWindow):
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
 
-        self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
-        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
-        self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
-        self.stats_dock.raise_()
-        self.image_dock.raise_()
-        for d in (self.roi_dock, self.analysis_dock):
-            d.hide()
+        self._apply_default_layout()
+        # Restore the user's last layout if one was saved; falls through to
+        # the defaults applied above on any failure.
+        saved_state = load_last('area_det_dock_state', '')
+        if saved_state:
+            try:
+                self.restoreState(QByteArray.fromHex(saved_state.encode()),
+                                  _DOCK_STATE_VERSION)
+            except Exception:
+                pass
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -351,6 +365,27 @@ class DiffractionImageWindow(BaseWindow):
         self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
         self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
         self.btn_export_json.clicked.connect(self.export_json_clicked)
+
+        reset_action = QAction("Reset Dock Layout", self)
+        reset_action.triggered.connect(self._reset_layout)
+        self.add_windows_menu_action(reset_action, segment_name="other")
+
+    def _apply_default_layout(self) -> None:
+        self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
+        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
+        self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
+        self.stats_dock.raise_()
+        self.image_dock.raise_()
+        for d in (self.roi_dock, self.analysis_dock):
+            d.hide()
+
+    def _reset_layout(self) -> None:
+        save_last('area_det_dock_state', '')
+        save_last('area_det_window_geom', '')
+        for d in (self.stats_dock, self.mask_dock, self.image_dock,
+                  self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
+            d.show()
+        self._apply_default_layout()
 
     # ---- Perf status bar override ----
     # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
@@ -1599,6 +1634,11 @@ class DiffractionImageWindow(BaseWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        try:
+            save_last('area_det_dock_state', bytes(self.saveState(_DOCK_STATE_VERSION)).hex())
+            save_last('area_det_window_geom', bytes(self.saveGeometry()).hex())
+        except Exception:
+            pass
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
