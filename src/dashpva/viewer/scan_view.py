@@ -12,6 +12,7 @@ from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ERROR, SUCCESS, WARNING
 from dashpva.utils import HDF5Handler, PVAReader
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.user_config import load_last, save_last
 
 
 class ScanMonitorWindow(QMainWindow, LogMixin):
@@ -32,7 +33,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         except Exception:
             pass
 
-        self.channel = channel or app_settings.get_input_channel("")
+        self.channel = channel or load_last('scan_monitor_channel') or app_settings.get_input_channel("")
         self.scan_state = False
 
         # Track applied state for UI labels
@@ -314,6 +315,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
     def _on_channel_changed(self, text):
         self.channel = text
         self.applied_channel = None
+        save_last('scan_monitor_channel', text)
         if hasattr(self, 'label_listening'):
             # Reset listening timer when channel changes
             self.listening_start_time = None

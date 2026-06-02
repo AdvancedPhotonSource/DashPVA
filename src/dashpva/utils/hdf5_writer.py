@@ -175,16 +175,13 @@ class HDF5Writer(QObject, LogMixin):
             if custom_ca:
                 ca_grp = metadata_grp.create_group('ca')
                 ca_grp.attrs['NX_class'] = 'NXcollection'
-                print('[DEBUG] CA datasets being saved:')
                 for friendly_name, pv_name in custom_ca.items():
                     try:
                         values = cached_ca.get(pv_name) or merged_metadata.get(pv_name)
                         if not values:
-                            print(f'  {friendly_name} ({pv_name}): NO DATA')
                             continue
                         arr = np.array(values)
                         if arr.dtype.kind in ('i', 'u', 'f') and arr.size > 0:
-                            print(f'  {friendly_name} ({pv_name}): {arr.tolist()}')
                             ds = ca_grp.create_dataset(friendly_name, data=arr)
                             ds.attrs['pv_name'] = pv_name
                     except Exception:
@@ -205,11 +202,6 @@ class HDF5Writer(QObject, LogMixin):
                     if sec:
                         grp = hkl_root.create_group(base)
                         for k, pv in sec.items():
-                            vals = merged_metadata.get(pv)
-                            if base == 'SAMPLE_CIRCLE_AXIS_2' and k == 'POSITION':
-                                print(f'[DEBUG] SAMPLE_CIRCLE_AXIS_2/POSITION ({pv}): {list(vals) if vals is not None else "NO DATA"}')
-                                for ca_name, ca_vals in cached_ca.items():
-                                    print(f'[DEBUG] cached_ca {ca_name}: {ca_vals}')
                             self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
 
                 spec = hkl_cfg.get('SPEC', {})
