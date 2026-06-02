@@ -1,12 +1,15 @@
+from collections import deque
+
 import bitshuffle
 import blosc2
 import lz4.block
 import numpy as np
 import pvaccess as pva
-from collections import deque
 from epics import caget, camonitor, camonitor_clear
 from PyQt5.QtCore import QObject, pyqtSignal
+
 import dashpva.settings as app_settings
+
 
 class PVAReader(QObject):
     # Signals
@@ -117,7 +120,7 @@ class PVAReader(QObject):
         self.numpy_dtype = None
         self.attributes = []
         self.pv_attributes = {}
-        self.metadata_ca = {}  # Store CA metadata PVs
+        self.cached_ca: dict = {}  # pv_name -> [values] captured during scan
 
         # variables used for image manipulaiton
         self.pixel_ordering = 'F'
@@ -225,7 +228,7 @@ class PVAReader(QObject):
 
             # update with latest pv metadata
             self.pv_attributes = self.parse_attributes(pv)
-            
+
             # Check for any roi pvs in metadata
             self.parse_roi_pvs(self.pv_attributes)
 
@@ -240,6 +243,12 @@ class PVAReader(QObject):
                 try:
                     if self.cache_attributes(self.pv_attributes, self.rsm_attributes):
                         self.cache_image(np.ravel(self.image))
+                        if self.is_caching:
+                            ca_config = self.config.get('METADATA', {}).get('CA', {})
+                            for pv_name in ca_config.values():
+                                val = self.pv_attributes.get(pv_name)
+                                if val is not None:
+                                    self.cached_ca.setdefault(pv_name, []).append(val)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -276,15 +285,6 @@ class PVAReader(QObject):
         roi_key, pv_key = pvname.split(':')[-2:]
         self.rois.setdefault(roi_key, {}).update({pv_key: value})
     
-    def metadata_ca_callback(self, pvname, value, **kwargs) -> None:
-        """
-        Callback for CA metadata PV updates.
-        Stores the value in self.metadata_ca and also updates pv_attributes.
-        """
-        self.metadata_ca[pvname] = value
-        # Also update pv_attributes so it's available in the same way as PVA attributes
-        self.pv_attributes[pvname] = value
-        
 ########################### PVA PARSING ##################################
     def locate_analysis_index(self) -> int|None:
         """
@@ -492,6 +492,7 @@ class PVAReader(QObject):
             self.is_caching = True
             self.is_scan_complete = False
             self.scan_state_changed.emit(True)
+            self.cached_ca = {}
             print('[DEBUG] CA flag: Scan STARTED')
 
     def start_channel_monitor(self, callback=None) -> None:
@@ -570,40 +571,7 @@ class PVAReader(QObject):
                 camonitor(pvname=f'{self.pva_prefix}:{roi}:{dimension}',
                           callback=self.roi_backup_callback)
 
-    def start_metadata_ca_monitor(self) -> None:
-        """
-        Starts monitoring CA metadata PVs from the [METADATA.CA] section.
-        If a PV fails to read, it's skipped. Values are stored in self.metadata_ca
-        and also added to self.pv_attributes for consistency.
-
-        Runs on the background poller thread (see
-        ``DiffractionImageWindow._connect_pv_pollers``). Timeout is short so a
-        single dead PV doesn't add seconds to live-view startup.
-        """
-        metadata_config = self.config.get('METADATA', {})
-        if not metadata_config:
-            return
-
-        ca_config = metadata_config.get('CA', {})
-        if not ca_config:
-            return
-
-        for config_key, pv_name in ca_config.items():
-            try:
-                # 0.15 s is enough for a healthy network PV; dead ones get
-                # skipped quickly so the poller isn't dominated by timeouts.
-                pv_value = caget(pv_name, timeout=0.15)
-                if pv_value is not None:
-                    self.metadata_ca[pv_name] = pv_value
-                    # Also add to pv_attributes so it's available like PVA attributes
-                    self.pv_attributes[pv_name] = pv_value
-                    # Start monitoring for updates
-                    camonitor(pvname=pv_name, callback=self.metadata_ca_callback)
-            except Exception:
-                # Silently skip failed PVs to avoid spam
-                pass
-
-    ################################# Getters ################################# 
+    ################################# Getters #################################
     def get_cached_images(self) -> list[np.ndarray]:
         return list(self.cached_images)
     
@@ -634,7 +602,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")
@@ -645,7 +614,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")

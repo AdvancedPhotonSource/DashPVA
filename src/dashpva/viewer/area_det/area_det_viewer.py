@@ -903,10 +903,6 @@ class DiffractionImageWindow(BaseWindow):
                 self.rois_ready.emit()
             self.pv_pollers_status.emit("Loading stats…", "info")
             self.start_stats_monitors()
-            # Metadata CA sweep disabled — was suspected of slowing the GUI.
-            # if 'METADATA' in self.reader.config:
-            #     self.pv_pollers_status.emit("Loading metadata PVs…", "info")
-            #     self.reader.start_metadata_ca_monitor()
             self.pv_pollers_status.emit("ROIs and stats ready", "info")
         except Exception as e:
             self.pv_pollers_status.emit(f"PV poller error: {e}", "error")
