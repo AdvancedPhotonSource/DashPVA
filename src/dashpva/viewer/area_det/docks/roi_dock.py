@@ -2,7 +2,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QCheckBox,
     QFormLayout,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -21,8 +20,6 @@ def _total_label(object_name: str) -> QLabel:
     lbl = QLabel("0.0")
     lbl.setObjectName(object_name)
     lbl.setMinimumHeight(30)
-    lbl.setFrameShape(QFrame.Box)
-    lbl.setFrameShadow(QFrame.Sunken)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter)
     lbl.setProperty("valueLabel", True)
     return lbl

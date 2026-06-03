@@ -186,56 +186,11 @@ QPushButton#btn_delete_roi {
     background-color: #E74C3C;
 }
 
-/* -- imageshow.ui Start/Stop Live View buttons ----------------------- */
-QPushButton#start_live_view, QPushButton#stop_live_view {
-    font-size: 11pt;
-    color: palette(button-text);
-    border: 1px solid palette(mid);
-    border-radius: 7px;
-    background-color: palette(button);
-    min-height: 50px;
-    padding: 6px 14px;
-}
-QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
-    background-color: palette(mid);
-}
-
-/* -- imageshow.ui Stats buttons (ROI identity text color) ------------ */
-QPushButton#btn_Stats1, QPushButton#btn_Stats2,
-QPushButton#btn_Stats3, QPushButton#btn_Stats4,
-QPushButton#btn_Stats5 {
-    font-weight: bold;
-    font-size: 12pt;
-    border: 1px solid palette(mid);
-    border-radius: 3px;
-    background-color: palette(button);
-}
-QPushButton#btn_Stats1 { color: #E05A5A; }
-QPushButton#btn_Stats2 { color: #4A90D9; }
-QPushButton#btn_Stats3 { color: #3EAF8E; }
-QPushButton#btn_Stats4 { color: #A878D0; }
-QPushButton#btn_Stats5 { color: palette(button-text); font-weight: normal; }
-QPushButton#btn_Stats1:pressed, QPushButton#btn_Stats2:pressed,
-QPushButton#btn_Stats3:pressed, QPushButton#btn_Stats4:pressed,
-QPushButton#btn_Stats5:pressed {
-    background-color: palette(mid);
-}
-
-/* -- imageshow.ui PlotStats buttons ---------------------------------- */
-QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
-QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
-QPushButton#btn_PlotStats5 {
-    font-size: 12pt;
-    color: palette(button-text);
-    border: 1px solid palette(mid);
-    border-radius: 3px;
-    background-color: palette(button);
-}
-QPushButton#btn_PlotStats1:pressed, QPushButton#btn_PlotStats2:pressed,
-QPushButton#btn_PlotStats3:pressed, QPushButton#btn_PlotStats4:pressed,
-QPushButton#btn_PlotStats5:pressed {
-    background-color: palette(mid);
-}
+/* Start/Stop Live View and Stats/PlotStats buttons follow the mask-dock
+   pattern — no setObjectName in roi_dock.py and no QSS rule here, so they
+   render via the native platform style and adapt to OS dark mode (light
+   text + dark bg in dark mode, dark text + light bg in light mode).
+   Sizing only is set in Python / .ui. */
 
 /* -- PV config input channel ---------------------------------------- */
 QLineEdit#le_input_channel {
@@ -243,20 +198,125 @@ QLineEdit#le_input_channel {
     border-radius: 3px;
 }
 
-/* -- Area detector editable inputs ----------------------------------- */
-QLineEdit#pv_prefix,
-QSpinBox#plotting_frequency,
-QDoubleSpinBox#min_setting_val,
-QDoubleSpinBox#max_setting_val {
-    background-color: palette(base);
+/* -- Area detector editable QLineEdit (palette(midlight) gives a visible
+      non-white grey, adapts to dark mode). ------------- */
+QLineEdit#pv_prefix {
+    background-color: palette(midlight);
+    border: 1px solid palette(mid);
+    border-radius: 3px;
+    padding: 2px 6px;
 }
 
-/* -- Area detector read-only value labels (slightly darker passive bg
-      so editable inputs stand out by contrast). Monospace font keeps
-      every digit at a fixed glyph width so the decimal doesn't jump. -- */
-QLabel[valueLabel="true"] {
+/* -- Area detector spin boxes (QSpinBox / QDoubleSpinBox) ------------
+      Explicit stylesheet mode is required for visible adaptive borders.
+      ::up-button / ::down-button get palette(button) backgrounds so the
+      buttons are distinct from the text area. ::up-arrow / ::down-arrow
+      are left unspecified — Fusion's QStyle draws the triangle glyphs
+      using palette(button-text), which flips between dark/light with the
+      OS theme. -------------------------------------------------------- */
+QSpinBox, QDoubleSpinBox {
+    background-color: palette(base);
+    color: palette(text);
+    border: 1px solid palette(mid);
+    border-radius: 3px;
+    padding: 2px 4px;
+    selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    background-color: palette(button);
+    border-left: 1px solid palette(mid);
+    border-bottom: 1px solid palette(mid);
+    width: 16px;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    background-color: palette(button);
+    border-left: 1px solid palette(mid);
+    width: 16px;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
     background-color: palette(midlight);
+}
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background-color: palette(dark);
+}
+
+/* -- imageshow.ui Start/Stop Live View buttons (dev-peco gradient with
+      explicit dark text so the labels stay readable — gradient is
+      hardcoded light, palette-default light buttonText would be invisible
+      on macOS dark mode). ---------------------------------------------- */
+QPushButton#start_live_view, QPushButton#stop_live_view {
+    font-size: 11pt;
+    color: #2C3E50;
+    border: 1px solid #8F8F91;
+    border-radius: 7px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+    min-height: 50px;
+}
+QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+}
+
+/* -- imageshow.ui Stats buttons (ROI identity text on light gradient) - */
+QPushButton#btn_Stats1, QPushButton#btn_Stats2,
+QPushButton#btn_Stats3, QPushButton#btn_Stats4,
+QPushButton#btn_Stats5 {
+    font-weight: bold;
+    font-size: 12pt;
+    color: #2C3E50;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+}
+QPushButton#btn_Stats1 { color: #E05A5A; }
+QPushButton#btn_Stats2 { color: #4A90D9; }
+QPushButton#btn_Stats3 { color: #3EAF8E; }
+QPushButton#btn_Stats4 { color: #A878D0; }
+QPushButton#btn_Stats5 { font-weight: normal; }
+QPushButton#btn_Stats1:pressed, QPushButton#btn_Stats2:pressed,
+QPushButton#btn_Stats3:pressed, QPushButton#btn_Stats4:pressed,
+QPushButton#btn_Stats5:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+}
+
+/* -- imageshow.ui PlotStats buttons (dev-peco green gradient) -------- */
+QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
+QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
+QPushButton#btn_PlotStats5 {
+    font-size: 12pt;
+    color: #2C3E50;
+    border: 1px solid #8F8F91;
+    border-radius: 3px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #E8F4E8, stop:1 #C8DCC8);
+}
+QPushButton#btn_PlotStats1:pressed, QPushButton#btn_PlotStats2:pressed,
+QPushButton#btn_PlotStats3:pressed, QPushButton#btn_PlotStats4:pressed,
+QPushButton#btn_PlotStats5:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                      stop:0 #C8DCC8, stop:1 #E8F4E8);
+}
+
+/* -- Area detector read-only value labels (monospace fixed-width keeps
+      the decimal from jumping; palette(button) gives an adaptive non-white
+      bg that darkens in dark mode; palette(mid) border adapts the same
+      way). QFrame.Box/Sunken frame shape is superseded by this QSS rule. */
+QLabel[valueLabel="true"] {
     font-family: 'Consolas', 'Courier New', monospace;
+    background-color: palette(button);
+    border: 1px solid palette(mid);
+    border-radius: 2px;
+    padding: 2px 4px;
 }
 
 /* -- ROI identity labels (instrument convention colors) -------------- */
