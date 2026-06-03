@@ -195,7 +195,7 @@ class DiffractionImageWindow(BaseWindow):
         self.crosshair_v.hide()
         self.crosshair_h.hide()
         self.crosshair_visible = False
-        # second is a separate plot to show the horiontal avg of peaks in the image
+        # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
         self.horizontal_avg_plot.setMaximumWidth(_HAVG_PLOT_MAX_WIDTH)

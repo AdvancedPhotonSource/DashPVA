@@ -46,7 +46,7 @@ QDockWidget::close-button:hover, QDockWidget::float-button:hover {
 
 /* -- Readonly text editors (monospace info panels) -------------------- */
 QTextEdit[readOnly="true"] {
-    background-color: #F8F9FA;
+    background-color: palette(base);
     border: none;
     padding: 6px;
     font-family: 'Consolas', 'Courier New', monospace;
@@ -55,33 +55,33 @@ QTextEdit[readOnly="true"] {
 
 /* -- Workbench info tabs --------------------------------------------- */
 QTabWidget#info_tabs::pane {
-    border: 1px solid #DEE2E6;
+    border: 1px solid palette(mid);
     border-radius: 4px;
-    background-color: #F8F9FA;
+    background-color: palette(base);
 }
 QTabWidget#info_tabs QTabBar::tab {
-    background-color: #E9ECEF;
-    border: 1px solid #DEE2E6;
+    background-color: palette(button);
+    border: 1px solid palette(mid);
     padding: 6px 12px;
     margin-right: 2px;
     font-size: 9pt;
 }
 QTabWidget#info_tabs QTabBar::tab:selected {
-    background-color: #F8F9FA;
-    border-bottom: 1px solid #F8F9FA;
+    background-color: palette(base);
+    border-bottom: 1px solid palette(base);
 }
 
 /* -- File status label (workbench) ----------------------------------- */
 QLabel#file_status_label {
     font-size: 11pt;
     font-weight: bold;
-    color: #2C3E50;
+    color: palette(text);
     padding: 10px;
 }
 
 /* -- Stats labels (ROI docks, controls) ------------------------------ */
 QLabel#stats_label, QLabel#roi_stats_label {
-    color: #2C3E50;
+    color: palette(text);
     font-size: 9pt;
 }
 
@@ -189,84 +189,52 @@ QPushButton#btn_delete_roi {
 /* -- imageshow.ui Start/Stop Live View buttons ----------------------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
     font-size: 11pt;
-    border: 1px solid #8F8F91;
+    color: palette(button-text);
+    border: 1px solid palette(mid);
     border-radius: 7px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+    background-color: palette(button);
     min-height: 50px;
     padding: 6px 14px;
 }
 QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+    background-color: palette(mid);
 }
 
-/* -- imageshow.ui Stats buttons (ROI identity colors) ---------------- */
-QPushButton#btn_Stats1 {
-    font-weight: bold;
-    font-size: 12pt;
-    color: #E05A5A;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
-}
-QPushButton#btn_Stats2 {
-    font-weight: bold;
-    font-size: 12pt;
-    color: #4A90D9;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
-}
-QPushButton#btn_Stats3 {
-    font-weight: bold;
-    font-size: 12pt;
-    color: #3EAF8E;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
-}
-QPushButton#btn_Stats4 {
-    font-weight: bold;
-    font-size: 12pt;
-    color: #A878D0;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
-}
+/* -- imageshow.ui Stats buttons (ROI identity text color) ------------ */
+QPushButton#btn_Stats1, QPushButton#btn_Stats2,
+QPushButton#btn_Stats3, QPushButton#btn_Stats4,
 QPushButton#btn_Stats5 {
+    font-weight: bold;
     font-size: 12pt;
-    border: 1px solid #8F8F91;
+    border: 1px solid palette(mid);
     border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
+    background-color: palette(button);
 }
+QPushButton#btn_Stats1 { color: #E05A5A; }
+QPushButton#btn_Stats2 { color: #4A90D9; }
+QPushButton#btn_Stats3 { color: #3EAF8E; }
+QPushButton#btn_Stats4 { color: #A878D0; }
+QPushButton#btn_Stats5 { color: palette(button-text); font-weight: normal; }
 QPushButton#btn_Stats1:pressed, QPushButton#btn_Stats2:pressed,
 QPushButton#btn_Stats3:pressed, QPushButton#btn_Stats4:pressed,
 QPushButton#btn_Stats5:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #DADBDE, stop:1 #F6F7FA);
+    background-color: palette(mid);
 }
 
-/* -- imageshow.ui PlotStats buttons (green gradient) ----------------- */
+/* -- imageshow.ui PlotStats buttons ---------------------------------- */
 QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
 QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
 QPushButton#btn_PlotStats5 {
     font-size: 12pt;
-    border: 1px solid #8F8F91;
+    color: palette(button-text);
+    border: 1px solid palette(mid);
     border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #E8F4E8, stop:1 #C8DCC8);
+    background-color: palette(button);
 }
 QPushButton#btn_PlotStats1:pressed, QPushButton#btn_PlotStats2:pressed,
 QPushButton#btn_PlotStats3:pressed, QPushButton#btn_PlotStats4:pressed,
 QPushButton#btn_PlotStats5:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #C8DCC8, stop:1 #E8F4E8);
+    background-color: palette(mid);
 }
 
 /* -- PV config input channel ---------------------------------------- */
@@ -275,21 +243,19 @@ QLineEdit#le_input_channel {
     border-radius: 3px;
 }
 
-/* -- Area detector editable inputs (use SURFACE as the active background
-      so editable fields read brighter than the surrounding value labels) */
+/* -- Area detector editable inputs ----------------------------------- */
 QLineEdit#pv_prefix,
 QSpinBox#plotting_frequency,
 QDoubleSpinBox#min_setting_val,
 QDoubleSpinBox#max_setting_val {
-    background-color: #F8F9FA;  /* theme_colors.SURFACE */
+    background-color: palette(base);
 }
 
-/* -- Area detector read-only value labels (BORDER as a slightly darker
-      passive bg so editable inputs stand out by contrast). Monospace font
-      keeps every digit + the decimal point at a fixed glyph width so the
-      decimal stops jumping horizontally as values change magnitude. ------ */
+/* -- Area detector read-only value labels (slightly darker passive bg
+      so editable inputs stand out by contrast). Monospace font keeps
+      every digit at a fixed glyph width so the decimal doesn't jump. -- */
 QLabel[valueLabel="true"] {
-    background-color: #DEE2E6;  /* theme_colors.BORDER */
+    background-color: palette(midlight);
     font-family: 'Consolas', 'Courier New', monospace;
 }
 

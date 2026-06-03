@@ -20,9 +20,12 @@ class BaseDock(QDockWidget):
     def setup(self):
         # Dock
         self.setWindowTitle(self.title)
-        # Stable ID required by QMainWindow.saveState/restoreState to match
-        # docks across launches.
-        self.setObjectName(self.title)
+        # Stable ID required by QMainWindow.saveState/restoreState. Namespaced
+        # by host-viewer class so identically-titled docks in different
+        # viewers (e.g. a "Stats" dock in workbench vs area-det) don't share
+        # saveState slots and cross-wire layouts.
+        host_ns = type(self.main_window).__name__
+        self.setObjectName(f"{host_ns}_{self.title}")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.main_window.addDockWidget(self.dock_area, self)
         # Apply initial visibility before registering Windows menu action,
