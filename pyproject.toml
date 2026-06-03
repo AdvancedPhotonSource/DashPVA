@@ -52,6 +52,7 @@ dependencies = [
     "pyfai>=2025.3.0",
     "natsort>=8.0.0",
     "ssrl-xrd-tools>=0.35.0",
+    "filterpy>=1.4.5",
 ]
 
 [project.optional-dependencies]
