@@ -383,15 +383,8 @@ class DiffractionImageWindow(BaseWindow):
         self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
         self.stats_dock.raise_()
         self.image_dock.raise_()
-        if sys.platform == 'darwin':
-            dock_width = 380
-            dock_height = 300
-        else:
-            dpi = self.screen().logicalDotsPerInch()
-            dock_width = int(380 * dpi / 96)
-            dock_height = int(300 * dpi / 96)
-        dock_width = min(dock_width, self.width() // 3)
-        dock_height = min(dock_height, self.height() // 2)
+        dock_width = min(self.stats_dock.sizeHint().width(), self.width() // 3)
+        dock_height = min(self.stats_dock.sizeHint().height(), self.height() // 2)
         self.resizeDocks([self.stats_dock], [dock_width], Qt.Horizontal)
         self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
         self.roi_dock.hide()
