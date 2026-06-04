@@ -281,7 +281,7 @@ class DiffractionImageWindow(BaseWindow):
         #     [ Image | Mouse Position ]  (tabified, Image raised)
         # ROI / Analysis start hidden — toggle from the Windows menu.
         self.stats_dock     = StatsDock(main_window=self)
-        self.mask_dock      = MaskDock(main_window=self, show=False)
+        self.mask_dock      = MaskDock(main_window=self)
         self.image_dock     = ImageDock(main_window=self)
         self.mouse_pos_dock = MousePosDock(main_window=self)
         self.roi_dock       = RoiDock(main_window=self, show=False)
@@ -376,6 +376,7 @@ class DiffractionImageWindow(BaseWindow):
 
     def _apply_default_layout(self) -> None:
         self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
+        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
         self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
         self.stats_dock.raise_()
         self.image_dock.raise_()
