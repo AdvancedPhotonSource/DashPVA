@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.viewer.core.docks.base_dock import DOCK_MAX_WIDTH, BaseDock
+from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
 
@@ -35,7 +35,6 @@ class RoiDock(BaseDock):
 
     def _build(self):
         container = QWidget()
-        container.setMaximumWidth(DOCK_MAX_WIDTH)
         outer = QVBoxLayout(container)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(12)

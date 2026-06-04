@@ -207,44 +207,13 @@ QLineEdit#pv_prefix {
     padding: 2px 6px;
 }
 
-/* -- Area detector spin boxes (QSpinBox / QDoubleSpinBox) ------------
-      Explicit stylesheet mode is required for visible adaptive borders.
-      ::up-button / ::down-button get palette(button) backgrounds so the
-      buttons are distinct from the text area. ::up-arrow / ::down-arrow
-      are left unspecified — Fusion's QStyle draws the triangle glyphs
-      using palette(button-text), which flips between dark/light with the
-      OS theme. -------------------------------------------------------- */
+/* -- Spin boxes: explicit white/black keeps them readable under Fusion --
+   Fusion replaces macOS Aqua globally (needed for dock-title QSS), so
+   native stepper rendering is unavailable. Body-only rule; Fusion draws
+   the up/down buttons and arrows natively from its own palette. -------- */
 QSpinBox, QDoubleSpinBox {
-    background-color: palette(base);
-    color: palette(text);
-    border: 1px solid palette(mid);
-    border-radius: 3px;
-    padding: 2px 4px;
-    selection-background-color: palette(highlight);
-    selection-color: palette(highlighted-text);
-}
-QSpinBox::up-button, QDoubleSpinBox::up-button {
-    subcontrol-origin: border;
-    subcontrol-position: top right;
-    background-color: palette(button);
-    border-left: 1px solid palette(mid);
-    border-bottom: 1px solid palette(mid);
-    width: 16px;
-}
-QSpinBox::down-button, QDoubleSpinBox::down-button {
-    subcontrol-origin: border;
-    subcontrol-position: bottom right;
-    background-color: palette(button);
-    border-left: 1px solid palette(mid);
-    width: 16px;
-}
-QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background-color: palette(midlight);
-}
-QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
-QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
-    background-color: palette(dark);
+    background-color: white;
+    color: black;
 }
 
 /* -- imageshow.ui Start/Stop Live View buttons (dev-peco gradient with

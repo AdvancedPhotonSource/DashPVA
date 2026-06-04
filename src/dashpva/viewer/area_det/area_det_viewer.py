@@ -74,8 +74,11 @@ class ConfigDialog(QDialog):
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
         save_last('area_det_prefix', self.prefix)
-        self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else ""
-        self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
+        self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
+        self.image_viewer = DiffractionImageWindow(
+            input_channel=self.input_channel,
+            pva_prefix=self.prefix,
+        )
 
 
 class DiffractionImageWindow(BaseWindow):
@@ -88,7 +91,7 @@ class DiffractionImageWindow(BaseWindow):
     # thread).  Decouples the async caget sweep from rectangle creation.
     rois_ready = pyqtSignal()
 
-    def __init__(self, input_channel='s6lambda1:Pva1:Image'):
+    def __init__(self, input_channel='pvapy:image', pva_prefix=None):
         super().__init__(ui_file_name='imageshow.ui',
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
@@ -119,8 +122,9 @@ class DiffractionImageWindow(BaseWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
+        self._pva_prefix = pva_prefix or ""
         self._input_channel = input_channel
-        self.pv_prefix.setText(input_channel.split(':')[0])
+        self.pv_prefix.setText(self._pva_prefix)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1")
 
         # Mask management
@@ -277,7 +281,7 @@ class DiffractionImageWindow(BaseWindow):
         #     [ Image | Mouse Position ]  (tabified, Image raised)
         # ROI / Analysis start hidden — toggle from the Windows menu.
         self.stats_dock     = StatsDock(main_window=self)
-        self.mask_dock      = MaskDock(main_window=self)
+        self.mask_dock      = MaskDock(main_window=self, show=False)
         self.image_dock     = ImageDock(main_window=self)
         self.mouse_pos_dock = MousePosDock(main_window=self)
         self.roi_dock       = RoiDock(main_window=self, show=False)
@@ -372,7 +376,6 @@ class DiffractionImageWindow(BaseWindow):
 
     def _apply_default_layout(self) -> None:
         self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
-        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
         self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
         self.stats_dock.raise_()
         self.image_dock.raise_()
@@ -747,7 +750,7 @@ class DiffractionImageWindow(BaseWindow):
             self.rois.clear()
             self.reset_rsm_vars()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel)
+                self.reader = PVAReader(input_channel=self._input_channel, pva_prefix=self._pva_prefix)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
@@ -763,7 +766,7 @@ class DiffractionImageWindow(BaseWindow):
                         pass
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel)
+                self.reader = PVAReader(input_channel=self._input_channel, pva_prefix=self._pva_prefix)
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
@@ -913,6 +916,7 @@ class DiffractionImageWindow(BaseWindow):
         try:
             if self.reader is None:
                 return
+            self.reader.start_scan_monitor()
             self.pv_pollers_status.emit("Loading HKL monitors…", "info")
             self.start_hkl_monitors()
             if not self.reader.rois:
@@ -1370,7 +1374,8 @@ class DiffractionImageWindow(BaseWindow):
 
     def update_pv_prefix(self) -> None:
         prefix = self.pv_prefix.text().strip()
-        self._input_channel = f"{prefix}:Pva1:Image" if prefix else ""
+        self._pva_prefix = prefix
+        self._input_channel = f"{prefix}:Pva1:Image" if prefix else "pvapy:image"
     
     def on_double_click(self, event) -> None:
         """

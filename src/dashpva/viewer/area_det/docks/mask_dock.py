@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from dashpva.viewer.core.docks.base_dock import DOCK_MAX_WIDTH, BaseDock
+from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
 class MaskDock(BaseDock):
@@ -22,7 +22,6 @@ class MaskDock(BaseDock):
 
     def _build(self):
         container = QWidget()
-        container.setMaximumWidth(DOCK_MAX_WIDTH)
         layout = QFormLayout(container)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(4)
