@@ -100,6 +100,9 @@ class DiffractionImageWindow(BaseWindow):
         if saved_geom:
             try:
                 self.restoreGeometry(QByteArray.fromHex(saved_geom.encode()))
+                avail = self.screen().availableGeometry()
+                if self.width() > avail.width() or self.height() > avail.height():
+                    self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
             except Exception:
                 pass
         self.show()
@@ -380,16 +383,33 @@ class DiffractionImageWindow(BaseWindow):
         self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
         self.stats_dock.raise_()
         self.image_dock.raise_()
-        for d in (self.roi_dock, self.analysis_dock):
-            d.hide()
+        if sys.platform == 'darwin':
+            dock_width = 380
+            dock_height = 300
+        else:
+            dpi = self.screen().logicalDotsPerInch()
+            dock_width = int(380 * dpi / 96)
+            dock_height = int(300 * dpi / 96)
+        dock_width = min(dock_width, self.width() // 3)
+        dock_height = min(dock_height, self.height() // 2)
+        self.resizeDocks([self.stats_dock], [dock_width], Qt.Horizontal)
+        self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
+        self.roi_dock.hide()
+        self.analysis_dock.hide()
 
     def _reset_layout(self) -> None:
         save_last('area_det_dock_state', '')
-        save_last('area_det_window_geom', '')
+        geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
+            self.removeDockWidget(d)
+            self.addDockWidget(Qt.RightDockWidgetArea, d)
             d.show()
         self._apply_default_layout()
+        self.restoreGeometry(geom)
+        avail = self.screen().availableGeometry()
+        if self.width() > avail.width() or self.height() > avail.height():
+            self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
 
     # ---- Perf status bar override ----
     # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
