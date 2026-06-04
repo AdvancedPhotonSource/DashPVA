@@ -403,6 +403,7 @@ class DiffractionImageWindow(BaseWindow):
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
             self.removeDockWidget(d)
+            d.setFloating(False)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
             d.show()
         self._apply_default_layout()
