@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
+    QSizePolicy,
     QSlider,
 )
 from pyqtgraph.colormap import get as get_colormap
@@ -43,10 +44,7 @@ from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 
 rot_gen = rotation_cycle(1,5)
 
-_HAVG_PLOT_MAX_WIDTH = 200
 _PERF_TIMER_INTERVAL_MS = 1000
-_SPINNER_MAX_WIDTH = 120
-_SPINNER_MAX_HEIGHT = 14
 # Bump when the dock set changes — restoreState silently rejects mismatched
 # versions so users with a stale saved layout fall back to defaults instead
 # of getting a half-broken arrangement.
@@ -205,7 +203,10 @@ class DiffractionImageWindow(BaseWindow):
         # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        self.horizontal_avg_plot.setMaximumWidth(_HAVG_PLOT_MAX_WIDTH)
+        # Cap width by font metrics so the side plot stays narrow regardless
+        # of DPI / system font size — pg.PlotWidget's default sizeHint is
+        # generous, so QSizePolicy alone won't constrain it.
+        self.horizontal_avg_plot.setMaximumWidth(self.fontMetrics().averageCharWidth() * 25)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
@@ -226,6 +227,7 @@ class DiffractionImageWindow(BaseWindow):
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan_view)
         self.btn_analysis_window.setMenu(self._analysis_menu)
         for i in range(1, 6):
             getattr(self, f"btn_Stats{i}").clicked.connect(self.stats_button_clicked)
@@ -743,6 +745,15 @@ class DiffractionImageWindow(BaseWindow):
         except Exception as e:
             print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
 
+    def _launch_scan_view(self) -> None:
+        pv_address = self._input_channel or "pvapy:image"
+        cmd = [sys.executable, '-m', 'dashpva.viewer.scan_view', '--channel', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] 2D Scan Visualization launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch 2D Scan Visualization: {e}')
+
     def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
@@ -958,8 +969,7 @@ class DiffractionImageWindow(BaseWindow):
             self._pv_pollers_label = QLabel("")
             self._pv_pollers_spinner = QProgressBar()
             self._pv_pollers_spinner.setRange(0, 0)        # indeterminate animation
-            self._pv_pollers_spinner.setMaximumWidth(_SPINNER_MAX_WIDTH)
-            self._pv_pollers_spinner.setMaximumHeight(_SPINNER_MAX_HEIGHT)
+            self._pv_pollers_spinner.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
             self._pv_pollers_spinner.setTextVisible(False)
             # Add to the LEFT side of the status bar (next to where messages live)
             sb.addWidget(self._pv_pollers_spinner)

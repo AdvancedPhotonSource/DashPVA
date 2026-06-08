@@ -22,7 +22,6 @@ def _value_label(default: str = "0") -> QLabel:
     lbl = QLabel(default)
     lbl.setFrameShape(QFrame.Box)
     lbl.setFrameShadow(QFrame.Sunken)
-    lbl.setMinimumHeight(25)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
     lbl.setProperty("valueLabel", True)
     return lbl
@@ -81,7 +80,6 @@ class ImageDock(BaseDock):
         layout.addRow(QLabel("Image Pixel Order:"), order_row)
 
         self.rotate90degCCW = QPushButton("Rotate 90° CCW")
-        self.rotate90degCCW.setMinimumHeight(50)
         self.stop_hkl = QCheckBox("Stop HKL")
         layout.addRow(self.rotate90degCCW, self.stop_hkl)
 

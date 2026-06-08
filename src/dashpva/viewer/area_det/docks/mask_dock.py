@@ -42,24 +42,19 @@ class MaskDock(BaseDock):
 
         load_show = QHBoxLayout()
         self.btn_load_mask = QPushButton("Load Mask")
-        self.btn_load_mask.setMinimumHeight(26)
         load_show.addWidget(self.btn_load_mask)
         self.btn_show_mask = QPushButton("Show Mask")
-        self.btn_show_mask.setMinimumHeight(26)
         load_show.addWidget(self.btn_show_mask)
         layout.addRow(load_show)
 
         detect_clear = QHBoxLayout()
         self.btn_detect_dead = QPushButton("Detect Dead Px")
-        self.btn_detect_dead.setMinimumHeight(26)
         detect_clear.addWidget(self.btn_detect_dead)
         self.btn_clear_mask = QPushButton("Clear Mask")
-        self.btn_clear_mask.setMinimumHeight(26)
         detect_clear.addWidget(self.btn_clear_mask)
         layout.addRow(detect_clear)
 
         self.btn_export_json = QPushButton("Export JSON")
-        self.btn_export_json.setMinimumHeight(26)
         self.btn_export_json.setToolTip("Export mask as EPICS NDPluginBadPixel JSON")
         layout.addRow(self.btn_export_json)
 

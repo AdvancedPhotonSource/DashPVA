@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,7 +20,6 @@ _COLORED_ROIS = (1, 2, 3, 4)
 def _total_label(object_name: str) -> QLabel:
     lbl = QLabel("0.0")
     lbl.setObjectName(object_name)
-    lbl.setMinimumHeight(30)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter)
     lbl.setProperty("valueLabel", True)
     return lbl
@@ -80,17 +80,15 @@ class RoiDock(BaseDock):
         for i in range(1, 6):
             stat_btn = QPushButton(f"Stats{i}")
             stat_btn.setObjectName(f"btn_Stats{i}")
-            stat_btn.setMinimumHeight(45)
             plot_btn = QPushButton(f"Plot Stats{i}")
             plot_btn.setObjectName(f"btn_PlotStats{i}")
-            plot_btn.setMinimumHeight(45)
-            plot_btn.setMaximumWidth(100)
+            plot_btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
 
             setattr(self, f"btn_Stats{i}", stat_btn)
             setattr(self, f"btn_PlotStats{i}", plot_btn)
 
             row = QHBoxLayout()
-            row.addWidget(stat_btn)
+            row.addWidget(stat_btn, stretch=2)
             row.addWidget(plot_btn)
             outer.addLayout(row)
 
