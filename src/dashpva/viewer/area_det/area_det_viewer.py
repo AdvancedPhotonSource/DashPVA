@@ -31,6 +31,7 @@ from dashpva.utils.user_config import load_last, save_last
 from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
+    BlobTrackingDock,
     ImageDock,
     MaskDock,
     MousePosDock,
@@ -215,6 +216,14 @@ class DiffractionImageWindow(BaseWindow):
         self.horizontal_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         self.image_view.getView().getViewBox().sigYRangeChanged.connect(self._sync_havg_yrange)
 
+        # ── Blob tracking overlay ─────────────────────────────────────────
+        # Detection/tracking is performed by HpcBlobTrackingProcessor (consumer).
+        # Items are created lazily on first use so they don't exist in the
+        # pyqtgraph scene (and don't affect bounding-rect calculations) until
+        # blob tracking is actually enabled.
+        self._blob_box_item = None   # pg.PlotDataItem, created on first draw
+        self._blob_text_pool: list = []
+
         # Build side panels as dock widgets and alias their members onto self
         self._setup_docks()
 
@@ -288,12 +297,13 @@ class DiffractionImageWindow(BaseWindow):
             self.central_glayout.removeWidget(self.QGroupBox_live_view)
             self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
 
-        self.stats_dock     = StatsDock(main_window=self)
-        self.mouse_pos_dock = MousePosDock(main_window=self)
-        self.mask_dock      = MaskDock(main_window=self)
-        self.image_dock     = ImageDock(main_window=self, show=False)
-        self.roi_dock       = RoiDock(main_window=self, show=False)
-        self.analysis_dock  = AnalysisDock(main_window=self, show=False)
+        self.stats_dock         = StatsDock(main_window=self)
+        self.mouse_pos_dock     = MousePosDock(main_window=self)
+        self.mask_dock          = MaskDock(main_window=self)
+        self.image_dock         = ImageDock(main_window=self, show=False)
+        self.roi_dock           = RoiDock(main_window=self, show=False)
+        self.analysis_dock      = AnalysisDock(main_window=self, show=False)
+        self.blob_tracking_dock = BlobTrackingDock(main_window=self, show=False)
 
         # Stack stats + mask as tabs in the same dock area; lock both so the
         # user can't undock, move, or close them. Cap the tab group's height
@@ -373,6 +383,53 @@ class DiffractionImageWindow(BaseWindow):
 
         # Analysis dock widgets
         self.btn_analysis_window = self.analysis_dock.btn_analysis_window
+
+        # Blob tracking dock widgets — alias onto self so update_image() etc. can
+        # reference them directly without going through the dock object each time.
+        self.chk_enable_blob  = self.blob_tracking_dock.chk_enable_blob
+        self.chk_show_overlay = self.blob_tracking_dock.chk_show_overlay
+        self.lbl_blob_status  = self.blob_tracking_dock.lbl_blob_status
+
+        # Detector param spinboxes / checkboxes
+        self._blob_param_widgets = [
+            self.blob_tracking_dock.sb_min_threshold,
+            self.blob_tracking_dock.sb_max_threshold,
+            self.blob_tracking_dock.sb_threshold_step,
+            self.blob_tracking_dock.chk_filter_color,
+            self.blob_tracking_dock.cb_blob_color,
+            self.blob_tracking_dock.sb_min_dist,
+            self.blob_tracking_dock.sb_min_repeatability,
+            self.blob_tracking_dock.chk_filter_area,
+            self.blob_tracking_dock.sb_min_area,
+            self.blob_tracking_dock.sb_max_area,
+            self.blob_tracking_dock.chk_filter_circularity,
+            self.blob_tracking_dock.sb_min_circularity,
+            self.blob_tracking_dock.sb_max_circularity,
+            self.blob_tracking_dock.chk_filter_convexity,
+            self.blob_tracking_dock.sb_min_convexity,
+            self.blob_tracking_dock.sb_max_convexity,
+            self.blob_tracking_dock.chk_filter_inertia,
+            self.blob_tracking_dock.sb_min_inertia,
+            self.blob_tracking_dock.sb_max_inertia,
+        ]
+        # SORT param spinboxes
+        self._sort_param_widgets = [
+            self.blob_tracking_dock.sb_sort_max_age,
+            self.blob_tracking_dock.sb_sort_min_hits,
+            self.blob_tracking_dock.sb_sort_iou,
+        ]
+
+        # Any blob/sort param change → persist config so the consumer picks it up
+        from PyQt5.QtWidgets import QDoubleSpinBox, QSpinBox, QCheckBox as _QChk, QComboBox as _QCombo
+        for w in self._blob_param_widgets + self._sort_param_widgets:
+            if isinstance(w, (QDoubleSpinBox, QSpinBox)):
+                w.valueChanged.connect(self._save_blob_config)
+            elif isinstance(w, _QChk):
+                w.stateChanged.connect(self._save_blob_config)
+            elif isinstance(w, _QCombo):
+                w.currentIndexChanged.connect(self._save_blob_config)
+
+        self.blob_tracking_dock.btn_reset_tracker.clicked.connect(self._reset_blob_overlay)
 
         # Wire mask button signals (other docks are wired in __init__'s connection block)
         self.btn_load_mask.clicked.connect(self.load_mask_clicked)
@@ -589,6 +646,119 @@ class DiffractionImageWindow(BaseWindow):
             self.lbl_mask_info.setText('No mask loaded')
             self.lbl_mask_info.setToolTip('')
             self.lbl_mask_pixel_count.setText('0')
+
+    # ── Blob tracking overlay methods ─────────────────────────────────────
+
+    def _update_blob_overlay(self) -> None:
+        """
+        Read the latest blob tracks from the reader (populated by the consumer)
+        and refresh the overlay.  Called every timer tick when blob tracking is enabled.
+        """
+        if self.reader is None:
+            return
+        tracks = getattr(self.reader, 'blob_tracks', None)
+        if tracks is None or len(tracks) == 0:
+            self._clear_blob_overlay()
+            detections = getattr(self.reader, 'blob_detections', None)
+            n_det = len(detections) if detections is not None else 0
+            self.lbl_blob_status.setText(
+                f"{n_det} raw detections  |  0 confirmed tracks  "
+                f"(boxes = confirmed tracks only)")
+            return
+
+        n_det = len(getattr(self.reader, 'blob_detections',
+                            np.empty((0, 5))))
+        n_trk = len(tracks)
+        self.lbl_blob_status.setText(
+            f"{n_det} raw detections  |  {n_trk} confirmed tracks  "
+            f"(boxes = confirmed tracks only)")
+
+        if self.chk_show_overlay.isChecked():
+            display_tracks = self._transform_tracks_to_display(
+                tracks, self.reader.shape)
+            self._draw_blob_overlay(display_tracks)
+        else:
+            self._clear_blob_overlay()
+
+    def _transform_tracks_to_display(self, tracks: np.ndarray,
+                                     raw_shape: tuple) -> np.ndarray:
+        """
+        Mirror the transpose + rot90 applied to the pixel array so that
+        bounding boxes line up with the displayed image.  Centroids are exact;
+        box corners are approximate after rotation.
+        """
+        if len(tracks) == 0:
+            return tracks
+        result = tracks.copy()
+        h, w = raw_shape[:2]
+
+        if self.image_is_transposed:
+            result[:, [0, 1, 2, 3]] = result[:, [1, 0, 3, 2]]
+            h, w = w, h
+
+        k = self.rot_num % 4
+        for _ in range(k):
+            x1 = result[:, 0].copy()
+            y1 = result[:, 1].copy()
+            x2 = result[:, 2].copy()
+            y2 = result[:, 3].copy()
+            result[:, 0] = y1
+            result[:, 1] = w - x2
+            result[:, 2] = y2
+            result[:, 3] = w - x1
+            h, w = w, h
+
+        return result
+
+    def _draw_blob_overlay(self, tracks: np.ndarray) -> None:
+        """Update the single PlotDataItem and TextItem pool for the current tracks."""
+        # Lazy creation — only added to the scene when first needed
+        if self._blob_box_item is None:
+            self._blob_box_item = pg.PlotDataItem(pen=pg.mkPen('cyan', width=1.5))
+            self.image_view.view.addItem(self._blob_box_item)
+
+        xs: list = []
+        ys: list = []
+        nan = float('nan')
+        for x1, y1, x2, y2, _ in tracks:
+            xs += [x1, x2, x2, x1, x1, nan]
+            ys += [y1, y1, y2, y2, y1, nan]
+        self._blob_box_item.setData(x=xs, y=ys)
+        self._blob_box_item.show()
+
+        n = len(tracks)
+        while len(self._blob_text_pool) < n:
+            ti = pg.TextItem(color='cyan', anchor=(0, 1))
+            self.image_view.view.addItem(ti)
+            self._blob_text_pool.append(ti)
+        for i, (x1, y1, _x2, _y2, tid) in enumerate(tracks):
+            self._blob_text_pool[i].setText(f"#{int(tid)}")
+            self._blob_text_pool[i].setPos(x1, y1)
+            self._blob_text_pool[i].show()
+        for ti in self._blob_text_pool[n:]:
+            ti.hide()
+
+    def _clear_blob_overlay(self) -> None:
+        if self._blob_box_item is not None:
+            self._blob_box_item.hide()
+        for ti in self._blob_text_pool:
+            ti.hide()
+
+    def _save_blob_config(self) -> None:
+        """Persist current dock parameters to ~/.dashpva_blob_config.json for the consumer."""
+        self.blob_tracking_dock._write_json()
+
+    def _reset_blob_overlay(self) -> None:
+        """Clear the overlay and cached blob results (tracker reset is on the consumer side)."""
+        self._clear_blob_overlay()
+        if self.reader is not None:
+            self.reader.blob_detections_cache.clear()
+            self.reader.blob_tracks_cache.clear()
+            self.reader.blob_detections = np.empty((0, 5))
+            self.reader.blob_tracks = np.empty((0, 5))
+        self.lbl_blob_status.setText("—")
+
+    # ─────────────────────────────────────────────────────────────────────
 
     def start_timers(self) -> None:
         """
@@ -1468,6 +1638,12 @@ class DiffractionImageWindow(BaseWindow):
                 self.image = np.reshape(np.mean(np.stack(self.reader.cached_images[index]), axis=0), self.reader.shape) # (self.reader.shape)
 
             if self.image is not None:
+                # Blob overlay: detection+tracking is done by HpcBlobTrackingProcessor
+                # (consumer). On every frame we read the latest tracks from the reader
+                # and refresh the overlay — no local detection happens here.
+                if self.chk_enable_blob.isChecked():
+                    self._update_blob_overlay()
+
                 # Collect frame for dead pixel detection if active
                 self._collect_dead_pixel_frame()
                 # Apply vectorized thresholding if enabled
