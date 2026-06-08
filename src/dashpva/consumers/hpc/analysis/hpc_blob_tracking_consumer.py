@@ -1,3 +1,5 @@
+import json
+import pathlib
 import time
 
 import numpy as np
@@ -36,7 +38,9 @@ class HpcBlobTrackingProcessor(AdImageProcessor, LogMixin):
     """
 
     BLOB_PARAM_KEYS = {
-        'minThreshold', 'maxThreshold',
+        'minThreshold', 'maxThreshold', 'thresholdStep',
+        'filterByColor', 'blobColor',
+        'minDistBetweenBlobs', 'minRepeatability',
         'filterByArea', 'minArea', 'maxArea',
         'filterByCircularity', 'minCircularity', 'maxCircularity',
         'filterByConvexity', 'minConvexity', 'maxConvexity',
@@ -84,6 +88,15 @@ class HpcBlobTrackingProcessor(AdImageProcessor, LogMixin):
         self.nFramesProcessed = 0
         self.nFrameErrors = 0
         self.processingTime = 0.0
+
+        # Config file written by the viewer dock whenever params change.
+        # Polled every _cfg_interval seconds so live dock adjustments take effect
+        # without restarting the consumer.
+        self._cfg_path = pathlib.Path.home() / '.dashpva_blob_config.json'
+        self._cfg_mtime: float = 0.0
+        self._cfg_last_check: float = 0.0
+        self._cfg_interval: float = 3.0  # seconds between file-stat checks
+        self._load_config_file()
 
         self.configure(configDict)
 
@@ -135,6 +148,25 @@ class HpcBlobTrackingProcessor(AdImageProcessor, LogMixin):
         return np.asarray(data_list, dtype=dtype) if dtype is not None else np.asarray(data_list)
 
     # ------------------------------------------------------------------
+    # Startup config loading from viewer-written JSON file
+    # ------------------------------------------------------------------
+
+    def _load_config_file(self) -> None:
+        """Read ~/.dashpva_blob_config.json and reconfigure if it has changed."""
+        try:
+            mtime = self._cfg_path.stat().st_mtime
+        except FileNotFoundError:
+            return
+        if mtime <= self._cfg_mtime:
+            return
+        self._cfg_mtime = mtime
+        try:
+            cfg = json.loads(self._cfg_path.read_text())
+            self.configure(cfg)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Main processing loop
     # ------------------------------------------------------------------
 
@@ -146,6 +178,12 @@ class HpcBlobTrackingProcessor(AdImageProcessor, LogMixin):
             self.updateOutputChannel(pvObject)
             return pvObject
 
+        # Check for updated dock params at most once every _cfg_interval seconds.
+        now = time.time()
+        if now - self._cfg_last_check >= self._cfg_interval:
+            self._cfg_last_check = now
+            self._load_config_file()
+
         try:
             shape = tuple(dim['size'] for dim in dims)
             flat = self._decompress_image(pvObject)
@@ -154,23 +192,18 @@ class HpcBlobTrackingProcessor(AdImageProcessor, LogMixin):
             detections = self.blob_detector.detect(image)   # (N, 5)
             tracks     = self.tracker.update(detections)     # (M, 5)
 
-            det_pv = pva.PvScalarArray(pva.DOUBLE)
-            det_pv.set(detections.flatten().tolist())
-
-            trk_pv = pva.PvScalarArray(pva.DOUBLE)
-            trk_pv.set(tracks.flatten().tolist())
-
-            det_count_pv = pva.PvObject({'value': pva.INT})
-            det_count_pv['value'] = int(len(detections))
-
-            trk_count_pv = pva.PvObject({'value': pva.INT})
-            trk_count_pv['value'] = int(len(tracks))
-
+            # Use PvString(JSON) so parse_attributes() in PVAReader can read the
+            # 'value' key correctly. PvScalarArray stores under 'doubleValue', which
+            # parse_attributes() skips — that was causing zero tracks to be reported.
             new_attrs = [
-                {'name': 'BlobDetections',  'value': det_pv},
-                {'name': 'BlobDetCount',    'value': det_count_pv},
-                {'name': 'BlobTracks',      'value': trk_pv},
-                {'name': 'BlobTrackCount',  'value': trk_count_pv},
+                {'name': 'BlobDetections',
+                 'value': pva.PvString(json.dumps(detections.tolist()))},
+                {'name': 'BlobDetCount',
+                 'value': pva.PvFloat(float(len(detections)))},
+                {'name': 'BlobTracks',
+                 'value': pva.PvString(json.dumps(tracks.tolist()))},
+                {'name': 'BlobTrackCount',
+                 'value': pva.PvFloat(float(len(tracks)))},
             ]
 
             existing = list(pvObject['attribute']) if 'attribute' in pvObject else []
