@@ -19,6 +19,20 @@ class BlobDetector:
         self._detector = None
 
     def _build(self):
+        # Guard against invalid area params — cv2 requires 0 < minArea <= maxArea.
+        # Clamp rather than crash so a bad JSON file doesn't kill the consumer.
+        if self._params.filterByArea:
+            self._params.minArea = max(1.0, self._params.minArea)
+            self._params.maxArea = max(self._params.minArea + 1.0, self._params.maxArea)
+        if self._params.filterByCircularity:
+            self._params.minCircularity = max(0.0, min(self._params.minCircularity, 1.0))
+            self._params.maxCircularity = max(self._params.minCircularity, self._params.maxCircularity)
+        if self._params.filterByConvexity:
+            self._params.minConvexity = max(0.0, min(self._params.minConvexity, 1.0))
+            self._params.maxConvexity = max(self._params.minConvexity, self._params.maxConvexity)
+        if self._params.filterByInertia:
+            self._params.minInertiaRatio = max(0.0, min(self._params.minInertiaRatio, 1.0))
+            self._params.maxInertiaRatio = max(self._params.minInertiaRatio, self._params.maxInertiaRatio)
         self._detector = cv2.SimpleBlobDetector_create(self._params)
 
     def detect(self, image: np.ndarray) -> np.ndarray:
@@ -33,12 +47,22 @@ class BlobDetector:
         if self._detector is None:
             self._build()
 
-        img = image.astype(np.float64)
-        lo, hi = img.min(), img.max()
-        if hi > lo:
-            img8 = ((img - lo) / (hi - lo) * 255).astype(np.uint8)
+        # Normalise to uint8 so SimpleBlobDetector thresholds are meaningful.
+        # Use the dtype's full range rather than the per-frame min/max: global
+        # normalisation is consistent across frames.  Per-frame normalisation
+        # stretches contrast differently every frame (Poisson amplitude noise
+        # changes min/max each frame), making threshold values inconsistent and
+        # causing detection counts to jump wildly between 0 and hundreds.
+        if image.dtype == np.uint8:
+            img8 = image                                  # already in range, no copy
+        elif np.issubdtype(image.dtype, np.integer):
+            info = np.iinfo(image.dtype)
+            img8 = (image.astype(np.float32) / info.max * 255).astype(np.uint8)
         else:
-            img8 = np.zeros_like(image, dtype=np.uint8)
+            # Float image: clip to [0,1] convention, then scale
+            img = np.clip(image.astype(np.float32), 0.0, None)
+            hi = img.max()
+            img8 = (img / hi * 255).astype(np.uint8) if hi > 0 else np.zeros_like(image, dtype=np.uint8)
 
         keypoints = self._detector.detect(img8)
         if not keypoints:
