@@ -8,7 +8,7 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -28,7 +28,6 @@ from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
-from dashpva.utils.user_config import load_last, save_last
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     ImageDock,
@@ -51,6 +50,15 @@ _PERF_TIMER_INTERVAL_MS = 1000
 _DOCK_STATE_VERSION = 1
 
 
+def _settings() -> QSettings:
+    """QSettings handle for area-detector viewer state.
+
+    Stored per-user via Qt's native backend (macOS plist, Linux ~/.config,
+    Windows registry) — no hidden file in the repo root.
+    """
+    return QSettings("DashPVA", "Viewer")
+
+
 class ConfigDialog(QDialog):
 
     def __init__(self):
@@ -65,18 +73,15 @@ class ConfigDialog(QDialog):
     def init_ui(self) -> None:
         self.lbl_input_channel.setText("Detector Prefix")
         self.le_input_channel.setPlaceholderText("e.g. s6lambda1")
-        last = load_last('area_det_prefix')
+        last = _settings().value("area_det_prefix", "", type=str)
         if last:
             self.le_input_channel.setText(last)
 
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
-        save_last('area_det_prefix', self.prefix)
+        _settings().setValue("area_det_prefix", self.prefix)
         self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
-        self.image_viewer = DiffractionImageWindow(
-            input_channel=self.input_channel,
-            pva_prefix=self.prefix,
-        )
+        self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
 class DiffractionImageWindow(BaseWindow):
@@ -89,15 +94,15 @@ class DiffractionImageWindow(BaseWindow):
     # thread).  Decouples the async caget sweep from rectangle creation.
     rois_ready = pyqtSignal()
 
-    def __init__(self, input_channel='pvapy:image', pva_prefix=None):
+    def __init__(self, input_channel='pvapy:image'):
         super().__init__(ui_file_name='imageshow.ui',
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
-        saved_geom = load_last('area_det_window_geom', '')
-        if saved_geom:
+        saved_geom = _settings().value("area_det_window_geom", QByteArray(), type=QByteArray)
+        if not saved_geom.isEmpty():
             try:
-                self.restoreGeometry(QByteArray.fromHex(saved_geom.encode()))
+                self.restoreGeometry(saved_geom)
                 avail = self.screen().availableGeometry()
                 if self.width() > avail.width() or self.height() > avail.height():
                     self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
@@ -123,10 +128,9 @@ class DiffractionImageWindow(BaseWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._pva_prefix = pva_prefix or ""
         self._input_channel = input_channel
-        self.pv_prefix.setText(self._pva_prefix)
-        self.pv_prefix.setPlaceholderText("e.g. s6lambda1")
+        self.pv_prefix.setText(self._input_channel)
+        self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
 
         # Mask management
         self.mask_manager = MaskManager()
@@ -295,11 +299,10 @@ class DiffractionImageWindow(BaseWindow):
         self._apply_default_layout()
         # Restore the user's last layout if one was saved; falls through to
         # the defaults applied above on any failure.
-        saved_state = load_last('area_det_dock_state', '')
-        if saved_state:
+        saved_state = _settings().value("area_det_dock_state", QByteArray(), type=QByteArray)
+        if not saved_state.isEmpty():
             try:
-                self.restoreState(QByteArray.fromHex(saved_state.encode()),
-                                  _DOCK_STATE_VERSION)
+                self.restoreState(saved_state, _DOCK_STATE_VERSION)
             except Exception:
                 pass
 
@@ -393,7 +396,7 @@ class DiffractionImageWindow(BaseWindow):
         self.analysis_dock.hide()
 
     def _reset_layout(self) -> None:
-        save_last('area_det_dock_state', '')
+        _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
@@ -776,7 +779,7 @@ class DiffractionImageWindow(BaseWindow):
             self.rois.clear()
             self.reset_rsm_vars()
             if self.reader is None:
-                self.reader = PVAReader(input_channel=self._input_channel, pva_prefix=self._pva_prefix)
+                self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
@@ -792,7 +795,7 @@ class DiffractionImageWindow(BaseWindow):
                         pass
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
-                self.reader = PVAReader(input_channel=self._input_channel, pva_prefix=self._pva_prefix)
+                self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
@@ -1398,9 +1401,7 @@ class DiffractionImageWindow(BaseWindow):
         self.image_view.update()
 
     def update_pv_prefix(self) -> None:
-        prefix = self.pv_prefix.text().strip()
-        self._pva_prefix = prefix
-        self._input_channel = f"{prefix}:Pva1:Image" if prefix else "pvapy:image"
+        self._input_channel = self.pv_prefix.text()
     
     def on_double_click(self, event) -> None:
         """
@@ -1665,8 +1666,9 @@ class DiffractionImageWindow(BaseWindow):
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
         try:
-            save_last('area_det_dock_state', bytes(self.saveState(_DOCK_STATE_VERSION)).hex())
-            save_last('area_det_window_geom', bytes(self.saveGeometry()).hex())
+            s = _settings()
+            s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
+            s.setValue("area_det_window_geom", self.saveGeometry())
         except Exception:
             pass
         del self.stats_dialogs # otherwise dialogs stay in memory

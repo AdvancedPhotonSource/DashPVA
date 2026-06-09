@@ -42,11 +42,33 @@ QLabel#lbl_status {
 }
 
 
-/* Launch buttons (PVA Workflow Setup, Area Detector 2D, etc.) have no QSS
-   selector targeting them and no objectName set in launcher.py — they
-   render via the native platform style, matching the mask-dock pattern,
-   so they adapt to OS dark mode. The objectName-targeted buttons below
-   (settings, shutdown, exit) intentionally keep their distinct look. */
+QPushButton {
+    background-color: palette(button);
+    color: palette(button-text);
+    border: 1px solid palette(mid);
+    border-radius: 7px;
+    padding: 9px 14px;
+    font-size: 10pt;
+    font-weight: 500;
+    text-align: left;
+}
+
+QPushButton:hover {
+    background-color: palette(highlight);
+    border-color: palette(highlight);
+    color: palette(highlighted-text);
+}
+
+QPushButton:pressed {
+    background-color: palette(dark);
+    border-color: palette(highlight);
+}
+
+QPushButton:disabled {
+    background-color: palette(midlight);
+    border-color: palette(mid);
+    color: palette(dark);
+}
 
 QPushButton#btn_settings {
     background: transparent;
