@@ -180,12 +180,6 @@ QPushButton#btn_delete_roi {
     background-color: #E74C3C;
 }
 
-/* Start/Stop Live View and Stats/PlotStats buttons follow the mask-dock
-   pattern — no setObjectName in roi_dock.py and no QSS rule here, so they
-   render via the native platform style and adapt to OS dark mode (light
-   text + dark bg in dark mode, dark text + light bg in light mode).
-   Sizing only is set in Python / .ui. */
-
 /* -- PV config input channel ---------------------------------------- */
 QLineEdit#le_input_channel {
     border: 1px solid palette(mid);
@@ -201,73 +195,30 @@ QLineEdit#pv_prefix {
     padding: 2px 6px;
 }
 
-/* -- Spin boxes: explicit white/black keeps them readable under Fusion --
-   Fusion replaces macOS Aqua globally (needed for dock-title QSS), so
-   native stepper rendering is unavailable. Body-only rule; Fusion draws
-   the up/down buttons and arrows natively from its own palette. -------- */
-QSpinBox, QDoubleSpinBox {
-    background-color: white;
-    color: black;
-}
-
-/* -- imageshow.ui Start/Stop Live View buttons (dev-peco gradient with
-      explicit dark text so the labels stay readable — gradient is
-      hardcoded light, palette-default light buttonText would be invisible
-      on macOS dark mode). ---------------------------------------------- */
+/* -- imageshow.ui Start/Stop Live View buttons (sizing only) ---------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
     font-size: 11pt;
-    color: #2C3E50;
-    border: 1px solid #8F8F91;
-    border-radius: 7px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
     min-height: 50px;
 }
-QPushButton#start_live_view:pressed, QPushButton#stop_live_view:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #DADBDE, stop:1 #F6F7FA);
-}
 
-/* -- imageshow.ui Stats buttons (ROI identity text on light gradient) - */
+/* -- imageshow.ui Stats buttons (ROI identity text colors) ------------ */
 QPushButton#btn_Stats1, QPushButton#btn_Stats2,
 QPushButton#btn_Stats3, QPushButton#btn_Stats4,
 QPushButton#btn_Stats5 {
     font-weight: bold;
     font-size: 12pt;
-    color: #2C3E50;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #F6F7FA, stop:1 #DADBDE);
 }
 QPushButton#btn_Stats1 { color: #E05A5A; }
 QPushButton#btn_Stats2 { color: #4A90D9; }
 QPushButton#btn_Stats3 { color: #3EAF8E; }
 QPushButton#btn_Stats4 { color: #A878D0; }
 QPushButton#btn_Stats5 { font-weight: normal; }
-QPushButton#btn_Stats1:pressed, QPushButton#btn_Stats2:pressed,
-QPushButton#btn_Stats3:pressed, QPushButton#btn_Stats4:pressed,
-QPushButton#btn_Stats5:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #DADBDE, stop:1 #F6F7FA);
-}
 
-/* -- imageshow.ui PlotStats buttons (dev-peco green gradient) -------- */
+/* -- imageshow.ui PlotStats buttons (sizing only) --------------------- */
 QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
 QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
 QPushButton#btn_PlotStats5 {
     font-size: 12pt;
-    color: #2C3E50;
-    border: 1px solid #8F8F91;
-    border-radius: 3px;
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #E8F4E8, stop:1 #C8DCC8);
-}
-QPushButton#btn_PlotStats1:pressed, QPushButton#btn_PlotStats2:pressed,
-QPushButton#btn_PlotStats3:pressed, QPushButton#btn_PlotStats4:pressed,
-QPushButton#btn_PlotStats5:pressed {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                      stop:0 #C8DCC8, stop:1 #E8F4E8);
 }
 
 /* -- Area detector read-only value labels (monospace fixed-width keeps
