@@ -206,20 +206,12 @@ QPushButton#btn_Stats1, QPushButton#btn_Stats2,
 QPushButton#btn_Stats3, QPushButton#btn_Stats4,
 QPushButton#btn_Stats5 {
     font-weight: bold;
-    font-size: 12pt;
 }
 QPushButton#btn_Stats1 { color: #E05A5A; }
 QPushButton#btn_Stats2 { color: #4A90D9; }
 QPushButton#btn_Stats3 { color: #3EAF8E; }
 QPushButton#btn_Stats4 { color: #A878D0; }
 QPushButton#btn_Stats5 { font-weight: normal; }
-
-/* -- imageshow.ui PlotStats buttons (sizing only) --------------------- */
-QPushButton#btn_PlotStats1, QPushButton#btn_PlotStats2,
-QPushButton#btn_PlotStats3, QPushButton#btn_PlotStats4,
-QPushButton#btn_PlotStats5 {
-    font-size: 12pt;
-}
 
 /* -- Area detector read-only value labels (monospace fixed-width keeps
       the decimal from jumping; palette(button) gives an adaptive non-white
