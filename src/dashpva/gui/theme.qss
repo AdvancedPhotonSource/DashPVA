@@ -238,10 +238,6 @@ QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #E05A5A; }
 QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #4A90D9; }
 QLabel#lbl_ROI3, QLabel#roi3_total_value { color: #3EAF8E; }
 QLabel#lbl_ROI4, QLabel#roi4_total_value { color: #A878D0; }
-QLabel#lbl_ROI3, QLabel#lbl_ROI4,
-QLabel#roi3_total_value, QLabel#roi4_total_value {
-    font-size: 12pt;
-}
 
 /* -- Per-ROI show/hide checkboxes (indicator fills with ROI color) --- */
 QCheckBox#chk_show_roi1::indicator:checked { background-color: #E05A5A; }
