@@ -146,6 +146,16 @@ class PVAReader(QObject):
         self.cached_qx = None
         self.cached_qy = None
         self.cached_qz = None
+
+        # Blob detection / tracking — populated by parse_blob_attributes() on
+        # each PVA callback when HpcBlobTrackingProcessor is in the pipeline.
+        # blob_detections / blob_tracks hold the latest frame's data and are
+        # read by the viewer for the real-time overlay.
+        # The _cache lists accumulate per-frame results for HDF5 export.
+        self.blob_detections: np.ndarray = np.empty((0, 5))  # latest (N,5)
+        self.blob_tracks: np.ndarray = np.empty((0, 5))      # latest (M,5)
+        self.blob_detections_cache: list = []  # list[np.ndarray (N,5)]
+        self.blob_tracks_cache: list = []       # list[np.ndarray (M,5)]
         # self._on_scan_complete_callbacks = []
 
         self._configure()
@@ -235,6 +245,10 @@ class PVAReader(QObject):
             # Check for rsm attributes in metadata
             if (self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']) and 'RSM' in self.pv_attributes:
                 self.parse_rsm_attributes(self.pv_attributes)
+
+            # Parse blob detection / tracking results appended by HpcBlobTrackingProcessor
+            if 'BlobDetections' in self.pv_attributes or 'BlobTracks' in self.pv_attributes:
+                self.parse_blob_attributes(self.pv_attributes)
 
             if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
                 self.parse_analysis_attributes()
@@ -330,6 +344,40 @@ class PVAReader(QObject):
             return pv_attributes
         else:
             return {}
+
+    def parse_blob_attributes(self, pv_attributes: dict) -> None:
+        """
+        Extract BlobDetections and BlobTracks from pv_attributes (set by
+        HpcBlobTrackingProcessor) and store as (N,5) numpy arrays on self.
+        Values arrive as JSON-encoded strings via PvString so that
+        parse_attributes() can read them through the standard 'value' key.
+        """
+        import json as _json
+
+        try:
+            raw_det = pv_attributes.get('BlobDetections')
+            n_det   = int(pv_attributes.get('BlobDetCount', 0))
+            if raw_det and n_det > 0:
+                self.blob_detections = np.array(_json.loads(raw_det),
+                                                dtype=np.float64).reshape(n_det, 5)
+            else:
+                self.blob_detections = np.empty((0, 5))
+        except Exception:
+            self.blob_detections = np.empty((0, 5))
+
+        try:
+            raw_trk = pv_attributes.get('BlobTracks')
+            n_trk   = int(pv_attributes.get('BlobTrackCount', 0))
+            if raw_trk and n_trk > 0:
+                self.blob_tracks = np.array(_json.loads(raw_trk),
+                                            dtype=np.float64).reshape(n_trk, 5)
+            else:
+                self.blob_tracks = np.empty((0, 5))
+        except Exception:
+            self.blob_tracks = np.empty((0, 5))
+
+        self.blob_detections_cache.append(self.blob_detections)
+        self.blob_tracks_cache.append(self.blob_tracks)
 
     def parse_analysis_attributes(self, pv_attributes: dict) -> None:
         raise NotImplementedError
@@ -478,6 +526,8 @@ class PVAReader(QObject):
         self.cached_qx.clear()
         self.cached_qy.clear()
         self.cached_qz.clear()
+        self.blob_detections_cache.clear()
+        self.blob_tracks_cache.clear()
 
 ########################### Start and Stop Channel Monitors ##########################    
     def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:

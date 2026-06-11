@@ -236,6 +236,32 @@ class HDF5Writer(QObject, LogMixin):
                 except Exception:
                     pass
 
+            # ── Blob detection / tracking results ─────────────────────────
+            det_cache = getattr(self.pva_reader, 'blob_detections_cache', [])
+            trk_cache = getattr(self.pva_reader, 'blob_tracks_cache', [])
+            if det_cache:
+                try:
+                    max_n = max((len(d) for d in det_cache), default=0)
+                    if max_n > 0:
+                        padded = np.full((len(det_cache), max_n, 5), np.nan)
+                        for i, d in enumerate(det_cache):
+                            if len(d):
+                                padded[i, :len(d)] = d
+                        data_grp.create_dataset('blob_detections', data=padded)
+                except Exception:
+                    pass
+            if trk_cache:
+                try:
+                    max_m = max((len(t) for t in trk_cache), default=0)
+                    if max_m > 0:
+                        padded = np.full((len(trk_cache), max_m, 5), np.nan)
+                        for i, t in enumerate(trk_cache):
+                            if len(t):
+                                padded[i, :len(t)] = t
+                        data_grp.create_dataset('blob_tracks', data=padded)
+                except Exception:
+                    pass
+
             self._apply_nx_structure(h5f, entry)
 
     def _apply_nx_structure(self, h5f: h5py.File, entry: h5py.Group, base_group: str = "entry/data/metadata"):
