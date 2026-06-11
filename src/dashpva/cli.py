@@ -65,7 +65,7 @@ def hkl3d():
 def detector():
     """Launch Area Detector Viewer"""
     click.echo('Running Area Detector Viewer')
-    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.area_det_viewer']).returncode
+    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.area_det.area_det_viewer']).returncode
     sys.exit(exit_code)
 
 

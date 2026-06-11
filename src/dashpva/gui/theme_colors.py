@@ -26,6 +26,10 @@ SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
 BORDER = "#DEE2E6"
 
+# -- Dock title bar (slate header + white text; mirrored in theme.qss) ---------
+DOCK_HEADER_BG = "#2C3E50"
+DOCK_HEADER_TEXT = "#FFFFFF"
+
 # -- ROI / Stats colors --------------------------------------------------------
 ROI_COLORS = ['#E05A5A', '#4A90D9', '#3EAF8E', '#A878D0']
 ROI_STATS_COLORS = {

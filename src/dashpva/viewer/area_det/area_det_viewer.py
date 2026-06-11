@@ -1,81 +1,71 @@
 import os
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
+    QAction,
     QApplication,
-    QCheckBox,
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
-    QMainWindow,
     QMenu,
     QMessageBox,
-    QPushButton,
+    QProgressBar,
+    QSizePolicy,
     QSlider,
 )
 from pyqtgraph.colormap import get as get_colormap
 
-import dashpva.settings as app_settings
+# Custom imported classes
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
+from dashpva.viewer.area_det.docks import (
+    AnalysisDock,
+    ImageDock,
+    MaskDock,
+    MousePosDock,
+    RoiDock,
+    StatsDock,
+)
+from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
 from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 
-# from ..utils.size_manager import SizeManager
-
-
 rot_gen = rotation_cycle(1,5)
 
+_PERF_TIMER_INTERVAL_MS = 1000
+# Bump when the dock set changes — restoreState silently rejects mismatched
+# versions so users with a stale saved layout fall back to defaults instead
+# of getting a half-broken arrangement.
+_DOCK_STATE_VERSION = 1
 
-class CaMonitorWorker(QThread):
-    """Run blocking CA monitor setup off the GUI thread."""
-    finished = pyqtSignal(dict)
 
-    def __init__(self, reader, stats_refs, stats_callback):
-        super().__init__()
-        self._reader = reader
-        self._stats_refs = stats_refs
-        self._stats_callback = stats_callback
+def _settings() -> QSettings:
+    """QSettings handle for area-detector viewer state.
 
-    def run(self):
-        stats_data = {}
-        try:
-            if self._reader is not None:
-                if not self._reader.rois and 'ROI' in self._reader.config:
-                    self._reader.start_roi_backup_monitor()
-                if 'METADATA' in self._reader.config:
-                    self._reader.start_metadata_ca_monitor()
-        except Exception:
-            pass
-        for stat_dict in self._stats_refs.values():
-            for pv in stat_dict.values():
-                try:
-                    pv_value = caget(pv, timeout=0.5)
-                    if pv_value is not None:
-                        stats_data[pv] = pv_value
-                        camonitor(pvname=pv, callback=self._stats_callback)
-                except Exception:
-                    pass
-        self.finished.emit(stats_data)
+    Stored per-user via Qt's native backend (macOS plist, Linux ~/.config,
+    Windows registry) — no hidden file in the repo root.
+    """
+    return QSettings("DashPVA", "Viewer")
 
 
 class ConfigDialog(QDialog):
 
     def __init__(self):
         super(ConfigDialog, self).__init__()
-        uic.loadUi(ui_path("pv_config.ui"), self)
-        self.setWindowTitle('Area Detector Config')
+        uic.loadUi(ui_path('pv_config.ui'), self)
+        self.setWindowTitle('PV Config')
+        self.prefix = ''
         self.input_channel = ''
         self.init_ui()
         self.btn_accept_reject.accepted.connect(self.dialog_accepted)
@@ -83,33 +73,54 @@ class ConfigDialog(QDialog):
     def init_ui(self) -> None:
         self.lbl_input_channel.setText("Detector Prefix")
         self.le_input_channel.setPlaceholderText("e.g. s6lambda1")
-        if app_settings.DETECTOR_PREFIX:
-            self.le_input_channel.setText(app_settings.DETECTOR_PREFIX)
-        elif app_settings.INPUT_CHANNEL:
-            self.le_input_channel.setText(app_settings.INPUT_CHANNEL.split(":")[0])
+        last = _settings().value("area_det_prefix", "", type=str)
+        if last:
+            self.le_input_channel.setText(last)
 
     def dialog_accepted(self) -> None:
-        prefix = self.le_input_channel.text().strip()
-        app_settings.save_detector_prefix(prefix)
-        self.input_channel = f"{prefix}:Pva1:Image"
-        app_settings.save_input_channel(self.input_channel)
+        self.prefix = self.le_input_channel.text().strip()
+        _settings().setValue("area_det_prefix", self.prefix)
+        self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 
-class DiffractionImageWindow(QMainWindow):
+class DiffractionImageWindow(BaseWindow):
     hkl_data_updated = pyqtSignal(bool)
+    # Emitted from the ROI/Stats connection thread so update_status can run on
+    # the main (GUI) thread. Args: message, level ('info' | 'warning' | 'error').
+    pv_pollers_status = pyqtSignal(str, str)
+    # Emitted after start_roi_backup_monitor populates self.reader.rois so
+    # add_rois() runs on the main thread (pg.ROI must be created in the GUI
+    # thread).  Decouples the async caget sweep from rectangle creation.
+    rois_ready = pyqtSignal()
 
-    def __init__(self, input_channel=None):
-        super(DiffractionImageWindow, self).__init__()
-        uic.loadUi(ui_path("imageshow.ui"), self)
+    def __init__(self, input_channel='pvapy:image'):
+        super().__init__(ui_file_name='imageshow.ui',
+                         viewer_name='AreaDetector2D',
+                         visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
+        saved_geom = _settings().value("area_det_window_geom", QByteArray(), type=QByteArray)
+        if not saved_geom.isEmpty():
+            try:
+                self.restoreGeometry(saved_geom)
+                avail = self.screen().availableGeometry()
+                if self.width() > avail.width() or self.height() > avail.height():
+                    self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
+            except Exception:
+                pass
         self.show()
         self.reader = None
-        self._ca_worker = None
         self.image = None
         self.call_id_plot = 0
         self.first_plot = True
         self.image_is_transposed = False
+        # True while _connect_pv_pollers is sweeping ROI/Stats PVs in its
+        # background thread. Read-only flag for any code that wants to know if
+        # the initial PV connection sweep has finished.
+        self._pv_pollers_loading = False
+        # Indeterminate spinner + label in the status bar, only visible while
+        # the PV poller thread is running. Driven by _on_pv_pollers_status.
+        self._build_pv_pollers_indicator()
         self.rot_num = 0
         self.mouse_x = 0
         self.mouse_y = 0
@@ -117,8 +128,9 @@ class DiffractionImageWindow(QMainWindow):
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
-        self._input_channel = input_channel or app_settings.get_input_channel()
+        self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
+        self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
 
         # Mask management
         self.mask_manager = MaskManager()
@@ -136,12 +148,6 @@ class DiffractionImageWindow(QMainWindow):
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
-
-        # For testing ROIs being sent from analysis window
-        self.roi_x = 100
-        self.roi_y = 200
-        self.roi_width = 50
-        self.roi_height = 50
 
         # HKL values
         self.is_hkl_ready = False
@@ -176,6 +182,13 @@ class DiffractionImageWindow(QMainWindow):
         self.image_view = pg.ImageView(view=plot)
         # Set the default colormap when ImageView is created
         self.image_view.setColorMap(self.cet_colormap)
+        # pyqtgraph turns every colormap stop into a draggable triangle on the
+        # HistogramLUT gradient — viridis ships with ~256 stops, hence the
+        # forest of arrows. Load the built-in preset which has only a handful.
+        try:
+            self.image_view.ui.histogram.gradient.loadPreset('viridis')
+        except Exception:
+            pass
         # Remove ImageView's internal buttons to reduce vertical margin mismatch
         self.image_view.ui.roiBtn.setParent(None)
         self.image_view.ui.menuBtn.setParent(None)
@@ -191,10 +204,13 @@ class DiffractionImageWindow(QMainWindow):
         self.crosshair_v.hide()
         self.crosshair_h.hide()
         self.crosshair_visible = False
-        # second is a separate plot to show the horiontal avg of peaks in the image
+        # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        self.horizontal_avg_plot.setMaximumWidth(200)
+        # Cap width by font metrics so the side plot stays narrow regardless
+        # of DPI / system font size — pg.PlotWidget's default sizeHint is
+        # generous, so QSizePolicy alone won't constrain it.
+        self.horizontal_avg_plot.setMaximumWidth(self.fontMetrics().averageCharWidth() * 25)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
@@ -202,6 +218,9 @@ class DiffractionImageWindow(QMainWindow):
         # with padding=0 for precise alignment
         self.horizontal_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         self.image_view.getView().getViewBox().sigYRangeChanged.connect(self._sync_havg_yrange)
+
+        # Build side panels as dock widgets and alias their members onto self
+        self._setup_docks()
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
@@ -212,22 +231,14 @@ class DiffractionImageWindow(QMainWindow):
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
+        self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan_view)
         self.btn_analysis_window.setMenu(self._analysis_menu)
-        self.btn_hkl_viewer.clicked.connect(self.start_hkl_viewer_clicked)
-        self.btn_Stats1.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats2.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats3.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats4.clicked.connect(self.stats_button_clicked)
-        self.btn_Stats5.clicked.connect(self.stats_button_clicked)
-        self.btn_PlotStats1.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats2.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats3.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats4.clicked.connect(self.stats_plot_button_clicked)
-        self.btn_PlotStats5.clicked.connect(self.stats_plot_button_clicked)
+        for i in range(1, 6):
+            getattr(self, f"btn_Stats{i}").clicked.connect(self.stats_button_clicked)
+            getattr(self, f"btn_PlotStats{i}").clicked.connect(self.stats_plot_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
-        # self.rotate90degCCW.clicked.connect(self.rotate_rois)
         self.log_image.clicked.connect(self.update_image)
         self.log_image.clicked.connect(self.reset_first_plot)
         self.freeze_image.stateChanged.connect(self.freeze_image_checked)
@@ -241,8 +252,11 @@ class DiffractionImageWindow(QMainWindow):
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.image_view.getView().mouseDoubleClickEvent = self.on_double_click
         self.hkl_data_updated.connect(self.handle_hkl_data_update)
+        # Status messages from the ROI/Stats connection thread → main-thread label
+        self.pv_pollers_status.connect(self._on_pv_pollers_status)
+        # Background sweep finished populating reader.rois → build rectangles on GUI thread
+        self.rois_ready.connect(self.add_rois)
         
-        # Set checkboxes to checked by default
         self.chk_autoscale.setChecked(True)
         self.chk_threshold.setChecked(False)
         
@@ -250,75 +264,196 @@ class DiffractionImageWindow(QMainWindow):
         self.update_threshold_label()
         self.lbl_threshold_range.show()
         
-        self.analysis_window = None  # Initialize as None
-        self._build_mask_controls()
-
-    def _build_mask_controls(self):
-        """Build mask management UI programmatically and insert at top of sidebar."""
-        from PyQt5.QtWidgets import QFormLayout, QGroupBox, QSizePolicy
-
-        group = QGroupBox('Mask')
-        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        form = QFormLayout(group)
-        form.setContentsMargins(6, 6, 6, 6)
-        form.setVerticalSpacing(4)
-
-        # Row 0: mask status
-        self.lbl_mask_info = QLabel('No mask loaded')
-        self.lbl_mask_info.setFrameShape(QLabel.Box)
-        self.lbl_mask_info.setFrameShadow(QLabel.Sunken)
-        self.lbl_mask_info.setWordWrap(True)
-        form.addRow('Mask:', self.lbl_mask_info)
-
-        # Row 1: masked pixel count
-        self.lbl_mask_pixel_count = QLabel('0')
-        self.lbl_mask_pixel_count.setFrameShape(QLabel.Box)
-        self.lbl_mask_pixel_count.setFrameShadow(QLabel.Sunken)
-        form.addRow('Masked pixels:', self.lbl_mask_pixel_count)
-
-        # Row 2: Load / Show buttons
-        btn_row1 = QHBoxLayout()
-        self.btn_load_mask = QPushButton('Load Mask')
-        self.btn_load_mask.setMinimumHeight(35)
-        self.btn_load_mask.clicked.connect(self.load_mask_clicked)
-        btn_row1.addWidget(self.btn_load_mask)
-
-        self.btn_show_mask = QPushButton('Show Mask')
-        self.btn_show_mask.setMinimumHeight(35)
-        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
-        btn_row1.addWidget(self.btn_show_mask)
-        form.addRow(btn_row1)
-
-        # Row 3: Detect Dead Px / Clear buttons
-        btn_row2 = QHBoxLayout()
-        self.btn_detect_dead = QPushButton('Detect Dead Px')
-        self.btn_detect_dead.setMinimumHeight(35)
-        self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
-        btn_row2.addWidget(self.btn_detect_dead)
-
-        self.btn_clear_mask = QPushButton('Clear Mask')
-        self.btn_clear_mask.setMinimumHeight(35)
-        self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
-        btn_row2.addWidget(self.btn_clear_mask)
-        form.addRow(btn_row2)
-
-        # Row 3b: Export JSON button
-        self.btn_export_json = QPushButton('Export JSON')
-        self.btn_export_json.setMinimumHeight(35)
-        self.btn_export_json.setToolTip('Export mask as EPICS NDPluginBadPixel JSON')
-        self.btn_export_json.clicked.connect(self.export_json_clicked)
-        form.addRow(self.btn_export_json)
-
-        # Row 4: Apply mask checkbox
-        self.chk_apply_mask = QCheckBox('Apply mask to display')
-        self.chk_apply_mask.setChecked(True)
-        form.addRow(self.chk_apply_mask)
-
-        # Insert at top of sidebar (index 0 = above stats group box)
-        self.verticalLayout_3.insertWidget(0, group)
-
-        # Update labels if mask was auto-loaded
+        # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
+
+    def _setup_docks(self):
+        """Build side panels as dock widgets and alias their members onto self.
+
+        After this runs, code elsewhere can keep referring to widgets like
+        self.frames_received_val or self.btn_Stats1 — they now resolve to the
+        dock-owned widget instead of the original UI element.
+        """
+        # Drop the legacy sidebar from the central layout so the live-view
+        # image fills the full width and there's no gap before the docks.
+        if hasattr(self, 'scrollArea'):
+            self.central_glayout.removeWidget(self.scrollArea)
+            self.scrollArea.setParent(None)
+            self.scrollArea.deleteLater()
+        if hasattr(self, 'QGroupBox_live_view'):
+            self.central_glayout.removeWidget(self.QGroupBox_live_view)
+            self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
+
+        # BaseDock.setup() auto-adds each dock into RightDockWidgetArea.
+        # Default visible layout:
+        #     [ Stats | Mask ]            (tabified, Stats raised)
+        #     [ Image | Mouse Position ]  (tabified, Image raised)
+        # ROI / Analysis start hidden — toggle from the Windows menu.
+        self.stats_dock     = StatsDock(main_window=self)
+        self.mask_dock      = MaskDock(main_window=self)
+        self.image_dock     = ImageDock(main_window=self)
+        self.mouse_pos_dock = MousePosDock(main_window=self)
+        self.roi_dock       = RoiDock(main_window=self, show=False)
+        self.analysis_dock  = AnalysisDock(main_window=self, show=False)
+
+        self._apply_default_layout()
+        # Restore the user's last layout if one was saved; falls through to
+        # the defaults applied above on any failure.
+        saved_state = _settings().value("area_det_dock_state", QByteArray(), type=QByteArray)
+        if not saved_state.isEmpty():
+            try:
+                self.restoreState(saved_state, _DOCK_STATE_VERSION)
+            except Exception:
+                pass
+
+        # Mask dock widgets
+        self.lbl_mask_info        = self.mask_dock.lbl_mask_info
+        self.lbl_mask_pixel_count = self.mask_dock.lbl_mask_pixel_count
+        self.btn_load_mask        = self.mask_dock.btn_load_mask
+        self.btn_show_mask        = self.mask_dock.btn_show_mask
+        self.btn_detect_dead      = self.mask_dock.btn_detect_dead
+        self.btn_clear_mask       = self.mask_dock.btn_clear_mask
+        self.btn_export_json      = self.mask_dock.btn_export_json
+        self.chk_apply_mask       = self.mask_dock.chk_apply_mask
+
+        # Stats dock widgets
+        self.frames_received_val = self.stats_dock.frames_received_val
+        self.missed_frames_val   = self.stats_dock.missed_frames_val
+        self.max_px_val          = self.stats_dock.max_px_val
+        self.min_px_val          = self.stats_dock.min_px_val
+        self.data_type_val       = self.stats_dock.data_type_val
+        self.min_setting_val     = self.stats_dock.min_setting_val
+        self.max_setting_val     = self.stats_dock.max_setting_val
+        self.chk_autoscale       = self.stats_dock.chk_autoscale
+        self.chk_threshold       = self.stats_dock.chk_threshold
+        self.lbl_threshold_range = self.stats_dock.lbl_threshold_range
+
+        # Mouse position dock widgets
+        self.mouse_x_val  = self.mouse_pos_dock.mouse_x_val
+        self.mouse_y_val  = self.mouse_pos_dock.mouse_y_val
+        self.mouse_px_val = self.mouse_pos_dock.mouse_px_val
+        self.mouse_h      = self.mouse_pos_dock.mouse_h
+        self.mouse_k      = self.mouse_pos_dock.mouse_k
+        self.mouse_l      = self.mouse_pos_dock.mouse_l
+
+        # Image dock widgets
+        self.plot_call_id       = self.image_dock.plot_call_id
+        self.plotting_frequency = self.image_dock.plotting_frequency
+        self.size_x_val         = self.image_dock.size_x_val
+        self.size_y_val         = self.image_dock.size_y_val
+        self.log_image          = self.image_dock.log_image
+        self.freeze_image       = self.image_dock.freeze_image
+        self.chk_transpose      = self.image_dock.chk_transpose
+        self.display_rois       = self.image_dock.display_rois
+        self.rbtn_C             = self.image_dock.rbtn_C
+        self.rbtn_F             = self.image_dock.rbtn_F
+        self.rotate90degCCW     = self.image_dock.rotate90degCCW
+        self.stop_hkl           = self.image_dock.stop_hkl
+
+        # ROI dock widgets
+        for i in range(1, 5):
+            setattr(self, f"lbl_ROI{i}", getattr(self.roi_dock, f"lbl_ROI{i}"))
+            setattr(self, f"roi{i}_total_value", getattr(self.roi_dock, f"roi{i}_total_value"))
+        self.lbl_image_total     = self.roi_dock.lbl_image_total
+        self.stats5_total_value  = self.roi_dock.stats5_total_value
+        self.chk_show_roi = [
+            self.roi_dock.chk_show_roi1,
+            self.roi_dock.chk_show_roi2,
+            self.roi_dock.chk_show_roi3,
+            self.roi_dock.chk_show_roi4,
+        ]
+        for chk in self.chk_show_roi:
+            chk.stateChanged.connect(self._apply_roi_visibility)
+        for i in range(1, 6):
+            setattr(self, f"btn_Stats{i}", getattr(self.roi_dock, f"btn_Stats{i}"))
+            setattr(self, f"btn_PlotStats{i}", getattr(self.roi_dock, f"btn_PlotStats{i}"))
+
+        # Analysis dock widgets
+        self.btn_analysis_window = self.analysis_dock.btn_analysis_window
+
+        # Wire mask button signals (other docks are wired in __init__'s connection block)
+        self.btn_load_mask.clicked.connect(self.load_mask_clicked)
+        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
+        self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
+        self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
+        self.btn_export_json.clicked.connect(self.export_json_clicked)
+
+        reset_action = QAction("Reset Dock Layout", self)
+        reset_action.triggered.connect(self._reset_layout)
+        self.add_windows_menu_action(reset_action, segment_name="other")
+
+    def _apply_default_layout(self) -> None:
+        self.splitDockWidget(self.stats_dock, self.image_dock, Qt.Vertical)
+        self.tabifyDockWidget(self.stats_dock, self.mask_dock)
+        self.tabifyDockWidget(self.image_dock, self.mouse_pos_dock)
+        self.stats_dock.raise_()
+        self.image_dock.raise_()
+        dock_width = min(self.stats_dock.sizeHint().width(), self.width() // 3)
+        dock_height = min(self.stats_dock.sizeHint().height(), self.height() // 2)
+        self.resizeDocks([self.stats_dock], [dock_width], Qt.Horizontal)
+        self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
+        self.roi_dock.hide()
+        self.analysis_dock.hide()
+
+    def _reset_layout(self) -> None:
+        _settings().remove("area_det_dock_state")
+        geom = self.saveGeometry()
+        for d in (self.stats_dock, self.mask_dock, self.image_dock,
+                  self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
+            self.removeDockWidget(d)
+            d.setFloating(False)
+            self.addDockWidget(Qt.RightDockWidgetArea, d)
+            d.show()
+        self._apply_default_layout()
+        self.restoreGeometry(geom)
+        avail = self.screen().availableGeometry()
+        if self.width() > avail.width() or self.height() > avail.height():
+            self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
+
+    # ---- Perf status bar override ----
+    # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
+    # label and use a cross-platform CPU reader (psutil if available, /proc/stat
+    # on Linux, otherwise "N/A") instead of BaseWindow's Linux-only /proc/stat.
+
+    def init_perf_statusbar(self):
+        sb = self.statusBar()
+        self._cpu_label = QLabel("CPU: -%")
+        self._runtime_label = QLabel("Runtime: 0s")
+        sb.addPermanentWidget(self._cpu_label)
+        sb.addPermanentWidget(self._runtime_label)
+        self._start_time = time.monotonic()
+        self._cpu_prev = None
+        try:
+            import psutil  # noqa: F401
+            self._psutil = psutil
+            self._psutil.cpu_percent(interval=None)
+        except ImportError:
+            self._psutil = None
+        self._perf_timer = QTimer(self)
+        self._perf_timer.setInterval(_PERF_TIMER_INTERVAL_MS)
+        self._perf_timer.timeout.connect(self._update_perf_labels)
+        self._perf_timer.start()
+
+    def _update_perf_labels(self):
+        if self._psutil is not None:
+            self._cpu_label.setText(f"CPU: {self._psutil.cpu_percent(interval=None):.0f}%")
+        else:
+            try:
+                with open("/proc/stat", "r") as f:
+                    parts = f.readline().split()
+                vals = list(map(int, parts[1:]))
+                idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+                total = sum(vals[:8]) if len(vals) >= 8 else sum(vals)
+                if self._cpu_prev is not None:
+                    ptotal, pidle = self._cpu_prev
+                    dt = total - ptotal
+                    didle = idle - pidle
+                    if dt > 0:
+                        self._cpu_label.setText(f"CPU: {(dt - didle) * 100.0 / dt:.0f}%")
+                self._cpu_prev = (total, idle)
+            except OSError:
+                self._cpu_label.setText("CPU: N/A")
+        self._runtime_label.setText(f"Runtime: {int(time.monotonic() - self._start_time)}s")
 
     # ---- Mask handler methods ----
 
@@ -580,7 +715,7 @@ class DiffractionImageWindow(QMainWindow):
             self.reader.image_is_transposed = False
 
     def _launch_pyfai(self) -> None:
-        pv_address = self._input_channel or app_settings.get_input_channel()
+        pv_address = self._input_channel or "pvapy:image"
         cmd = [sys.executable, '-m', 'dashpva.viewer.pyFAI_analysis', '--pv-address', pv_address]
         threshold_enabled = self.chk_threshold.isChecked() if hasattr(self, 'chk_threshold') else False
         if threshold_enabled and self.reader is not None:
@@ -597,7 +732,7 @@ class DiffractionImageWindow(QMainWindow):
             print(f'[Area Detector] Failed to launch pyFAI: {e}')
 
     def _launch_phase_fitter(self) -> None:
-        pv_address = self._input_channel or app_settings.get_input_channel()
+        pv_address = self._input_channel or "pvapy:image"
         cmd = [sys.executable, '-m', 'dashpva.viewer.phase_fitter', '--pv-address', pv_address]
         try:
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
@@ -613,16 +748,35 @@ class DiffractionImageWindow(QMainWindow):
         except Exception as e:
             print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
 
+    def _launch_scan_view(self) -> None:
+        pv_address = self._input_channel or "pvapy:image"
+        cmd = [sys.executable, '-m', 'dashpva.viewer.scan_view', '--channel', pv_address]
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
+            print(f'[Area Detector] 2D Scan Visualization launched with PV: {pv_address}')
+        except Exception as e:
+            print(f'[Area Detector] Failed to launch 2D Scan Visualization: {e}')
+
     def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
-        
+
         This method ensures that any existing connections are cleared and re-initialized.
         Also starts monitoring the stats and adds ROIs to the viewer.
         """
+        # Surface a progress indicator the moment the user clicks; the spinner
+        # stays visible across PVA connect → ROI sweep → Stats sweep, hidden by
+        # the terminal "ROIs and stats ready" / error emit from _connect_pv_pollers.
+        self.pv_pollers_status.emit(f"Connecting to {self._input_channel}…", "info")
         try:
             self.stop_timers()
             self.image_view.clear()
+            self.horizontal_avg_plot.getPlotItem().clear()
+            # Drop any ROI rectangles + "ROI too large" labels from the
+            # previous PV. add_rois() appends both kinds to self.rois.
+            for item in self.rois:
+                self.image_view.getView().removeItem(item)
+            self.rois.clear()
             self.reset_rsm_vars()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel)
@@ -634,11 +788,11 @@ class DiffractionImageWindow(QMainWindow):
                 if self.file_writer_thread.isRunning():
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
-                for roi in self.rois:
-                    self.image_view.getView().removeItem(roi)
-                self.rois.clear()
-                self.btn_save_caches.clicked.disconnect()
-                # self.reader.reader_scan_complete.disconnect()
+                for hkl_pv in self.hkl_pvs.values():
+                    try:
+                        hkl_pv.clear_callbacks()
+                    except Exception:
+                        pass
                 self.file_writer.hdf5_writer_finished.disconnect()
                 del self.reader
                 self.reader = PVAReader(input_channel=self._input_channel)
@@ -646,7 +800,6 @@ class DiffractionImageWindow(QMainWindow):
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
             self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
-            self.btn_save_caches.clicked.connect(self.save_caches_clicked)
 
             if self.reader.CACHING_MODE == 'scan':
                 self.file_writer_thread.start()
@@ -663,6 +816,8 @@ class DiffractionImageWindow(QMainWindow):
             self.reader.start_channel_monitor()
         except Exception as e:
             print(f'Failed to Connect to {self._input_channel}: {e}')
+            # Terminal "error" message hides the spinner via _on_pv_pollers_status.
+            self.pv_pollers_status.emit(f"Connect failed: {e}", "error")
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             self.reset_rsm_vars()
@@ -671,20 +826,22 @@ class DiffractionImageWindow(QMainWindow):
             self.reader = None
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-            self.btn_save_caches.clicked.disconnect()
             self.file_writer_thread.terminate()
         
         try:
             if self.reader is not None:
-                self.add_rois()
+                # All PV connections (METADATA.CA + HKL + ROI + Stats) are
+                # done on one shared daemon thread so live-view startup never
+                # blocks the UI on slow CA timeouts. Previously METADATA.CA
+                # and HKL ran synchronously here and could freeze the GUI for
+                # several seconds when any PV was dead (caget × 0.5s timeout
+                # × N dead PVs).
+                import threading
+                threading.Thread(target=self._connect_pv_pollers, daemon=True).start()
+                # add_rois() runs from the rois_ready signal once the background
+                # sweep populates reader.rois — calling it here would race the
+                # async caget and find an empty dict.
                 self.start_timers()
-                self._ca_worker = CaMonitorWorker(
-                    self.reader,
-                    self.reader.stats if self.reader.stats else {},
-                    self.stats_ca_callback,
-                )
-                self._ca_worker.finished.connect(self._on_ca_monitors_ready)
-                self._ca_worker.start()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
@@ -694,18 +851,12 @@ class DiffractionImageWindow(QMainWindow):
 
         This method also updates the UI to reflect the disconnected state.
         """
-        if self._ca_worker is not None and self._ca_worker.isRunning():
-            self._ca_worker.quit()
-            self._ca_worker.wait(2000)
-            self._ca_worker = None
         if self.reader is not None:
             if self.reader.channel.isMonitorActive():
                 self.reader.stop_channel_monitor()
             self.stop_timers()
             for key in self.stats_dialogs:
                 self.stats_dialogs[key] = None
-            # for roi in self.rois:
-            #     self.image_view.getView().removeItem(roi)
             for hkl_pv in self.hkl_pvs.values():
                 hkl_pv.clear_callbacks()
                 hkl_pv.disconnect()
@@ -713,25 +864,6 @@ class DiffractionImageWindow(QMainWindow):
             self.hkl_data = {}
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
-
-    def start_hkl_viewer_clicked(self) -> None:
-        try:
-            if self.reader is not None and self.reader.HKL_IN_CONFIG:
-                cmd = [sys.executable, '-m', 'dashpva.viewer.hkl3d.hkl_3d_viewer']
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
-        except Exception as e:
-            print(f'[Area Detector] Failed to load HKL Viewer: {e}')
-
-    def save_caches_clicked(self) -> None:
-        if not self.reader.channel.isMonitorActive():  
-            if not self.file_writer_thread.isRunning():
-                self.file_writer_thread.start()
-            self.file_writer.save_caches_to_h5(clear_caches=True)
-        else:
-            QMessageBox.critical(None,
-                                'Error',
-                                'Stop Live View to Save Cache',
-                                QMessageBox.Ok)
 
     def stats_button_clicked(self) -> None:
         """
@@ -767,29 +899,113 @@ class DiffractionImageWindow(QMainWindow):
             )
             self.stats_plot_dialogs[stats_text].show()
 
-    def start_stats_monitors(self)  -> None:
-        """
-        Initializes monitors for updating stats values. If a PV fails to read, it's skipped.
-        If all Stats PVs fail, Stats feature is disabled (like no TOML config).
+    STATS_GROUPS = ('Stats1', 'Stats2', 'Stats3', 'Stats4', 'Stats5')
+    STATS_FIELDS = ('Total_RBV', 'MinValue_RBV', 'MaxValue_RBV', 'Sigma_RBV', 'MeanValue_RBV')
 
-        This method uses `camonitor` to observe changes in the stats PVs and update
-        them in the UI accordingly.
+    def start_stats_monitors(self) -> None:
+        """Connect to Stats PVs built from the detector prefix.
+
+        Names are constructed as ``{prefix}:Stats{N}:{field}`` for N=1..5 and
+        the standard area-detector field set. Per group, as soon as one PV
+        fails to connect, the rest of that group is skipped — if Total isn't
+        present, the rest aren't useful. Called from a background thread
+        (see ``_connect_pv_pollers``).
         """
-        if not self.reader.stats:
+        prefix = self.reader.pva_prefix
+        if not prefix:
             return
-        
-        for stat_num in self.reader.stats.keys():
-            for stat in self.reader.stats[stat_num].keys():
-                pv = f"{self.reader.stats[stat_num][stat]}"
+        for group in self.STATS_GROUPS:
+            for field in self.STATS_FIELDS:
+                pv = f"{prefix}:{group}:{field}"
                 try:
-                    # Use timeout to avoid blocking on slow PVs
-                    pv_value = caget(pv, timeout=0.5)
-                    if pv_value is not None:
-                        self.stats_data[pv] = pv_value
-                        camonitor(pvname=pv, callback=self.stats_ca_callback)
+                    pv_value = caget(pv, timeout=0.15)
+                    if pv_value is None:
+                        break
+                    self.stats_data[pv] = pv_value
+                    camonitor(pvname=pv, callback=self.stats_ca_callback)
                 except Exception:
-                    # Silently skip failed PVs to avoid spam
-                    pass
+                    break
+
+    def _connect_pv_pollers(self) -> None:
+        """Single background sweep: HKL → ROI → Stats → METADATA.CA.
+
+        All four share one daemon thread so we don't fan out to multiple
+        connection threads on every Start Live View, and so the GUI thread
+        never blocks on slow CA timeouts. Each step internally short-circuits
+        per-group on first failure, so worst-case wait is small even when many
+        PVs are dead. Sets ``self._pv_pollers_loading`` for the duration and
+        posts progress to the GUI via ``pv_pollers_status``.
+
+        METADATA.CA is intentionally last — it tends to be the largest set
+        and most likely to contain dead PVs, so connecting the visible
+        pieces (ROI rectangles + stats labels) first keeps the user-facing
+        UI responsive even if the metadata sweep takes a while.
+        """
+        self._pv_pollers_loading = True
+        try:
+            if self.reader is None:
+                return
+            self.reader.start_scan_monitor()
+            self.pv_pollers_status.emit("Loading HKL monitors…", "info")
+            self.start_hkl_monitors()
+            if not self.reader.rois:
+                self.pv_pollers_status.emit("Loading ROIs…", "info")
+                self.reader.start_roi_backup_monitor()
+            if self.reader.rois:
+                self.rois_ready.emit()
+            self.pv_pollers_status.emit("Loading stats…", "info")
+            self.start_stats_monitors()
+            # Metadata CA sweep disabled — was suspected of slowing the GUI.
+            # if 'METADATA' in self.reader.config:
+            #     self.pv_pollers_status.emit("Loading metadata PVs…", "info")
+            #     self.reader.start_metadata_ca_monitor()
+            self.pv_pollers_status.emit("ROIs and stats ready", "info")
+        except Exception as e:
+            self.pv_pollers_status.emit(f"PV poller error: {e}", "error")
+        finally:
+            self._pv_pollers_loading = False
+
+    def _build_pv_pollers_indicator(self) -> None:
+        """Add a hidden indeterminate progress bar + label to the status bar."""
+        try:
+            sb = self.statusBar()
+            self._pv_pollers_label = QLabel("")
+            self._pv_pollers_spinner = QProgressBar()
+            self._pv_pollers_spinner.setRange(0, 0)        # indeterminate animation
+            self._pv_pollers_spinner.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+            self._pv_pollers_spinner.setTextVisible(False)
+            # Add to the LEFT side of the status bar (next to where messages live)
+            sb.addWidget(self._pv_pollers_spinner)
+            sb.addWidget(self._pv_pollers_label)
+            self._pv_pollers_spinner.hide()
+            self._pv_pollers_label.hide()
+        except Exception:
+            self._pv_pollers_spinner = None
+            self._pv_pollers_label = None
+
+    def _on_pv_pollers_status(self, message: str, level: str) -> None:
+        """Slot for ``pv_pollers_status`` — runs on the GUI thread.
+
+        Shows an indeterminate spinner + the latest progress text while the
+        ROI/Stats sweep is running; hides both as soon as the sweep finishes
+        (success or error). Also routes through ``update_status`` so the
+        ``LogManager`` captures the message at the appropriate level.
+        """
+        try:
+            lower = message.lower()
+            done = ('ready' in lower) or ('error' in lower) or ('done' in lower)
+            if self._pv_pollers_spinner is not None and self._pv_pollers_label is not None:
+                if done:
+                    self._pv_pollers_spinner.hide()
+                    self._pv_pollers_label.hide()
+                    self._pv_pollers_label.setText("")
+                else:
+                    self._pv_pollers_label.setText(message)
+                    self._pv_pollers_spinner.show()
+                    self._pv_pollers_label.show()
+        except Exception:
+            pass
+        self.update_status(message, level=level)
 
     def stats_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -801,30 +1017,30 @@ class DiffractionImageWindow(QMainWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.stats_data[pvname] = value
-
-    def _on_ca_monitors_ready(self, stats_data: dict) -> None:
-        self.stats_data.update(stats_data)
-        if self.reader is not None and self.reader.rois:
-            self.add_rois()
-
+        
     def on_writer_finished(self, message) -> None:
         print(message)
         self.file_writer_thread.quit()
         self.file_writer_thread.wait()
 
     def show_rois_checked(self) -> None:
-        """
-        Toggles visibility of ROIs based on the checked state of the display checkbox.
-        """
-        if self.reader is not None:
-            if self.display_rois.isChecked():
-                for roi in self.rois:
-                    if roi is not None:
-                        roi.show()
+        """Global show/hide; per-ROI checkboxes act as a sub-mask on top."""
+        self._apply_roi_visibility()
+
+    def _apply_roi_visibility(self) -> None:
+        """An ROI is visible iff the global ``display_rois`` is checked AND
+        its per-ROI checkbox in the ROI dock is checked."""
+        if self.reader is None:
+            return
+        global_on = self.display_rois.isChecked()
+        for idx, roi in enumerate(self.rois):
+            if roi is None:
+                continue
+            per_roi_on = self.chk_show_roi[idx].isChecked() if idx < len(self.chk_show_roi) else True
+            if global_on and per_roi_on:
+                roi.show()
             else:
-                for roi in self.rois:
-                    if roi is not None:
-                        roi.hide()
+                roi.hide()
 
     def freeze_image_checked(self) -> None:
         """
@@ -860,17 +1076,11 @@ class DiffractionImageWindow(QMainWindow):
         self.rot_num = next(rot_gen)
 
     def add_rois(self) -> None:
-        """
-        Adds ROIs to the image viewer and assigns them color codes.
-        """
+        """Adds ROIs to the image viewer using the themed ROI palette."""
         try:
-            for roi in self.rois:
-                self.image_view.removeItem(roi)
-            self.rois.clear()
             roi_colors = ROI_COLORS
             # Track how many ROIs are too big for offset calculation
             too_big_count = 0
-            # TODO: can just loop through values rather than lookup with keys
             for roi_num, roi in self.reader.rois.items():
                 x = roi.get("MinX", 0) if not(self.image_is_transposed) else roi.get('MinY',0)
                 y = roi.get("MinY", 0) if not(self.image_is_transposed) else roi.get('MinX',0)
@@ -921,13 +1131,16 @@ class DiffractionImageWindow(QMainWindow):
                 self.rois.append(roi)
                 self.image_view.addItem(roi)
                 
-                # Add label if ROI is too big
+                # Add label if ROI is too big. Append to self.rois so
+                # start_live_view_clicked removes it on the next PV switch.
                 if roi_too_big:
                     label = pg.TextItem(f'{roi_num} - ROI too large', color=roi_color, anchor=(0, 0))
                     label.setPos(x + 5, y + 5)
                     self.image_view.addItem(label)
+                    self.rois.append(label)
                 
                 roi.sigRegionChanged.connect(self.update_roi_region)
+            self._apply_roi_visibility()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
 
@@ -935,18 +1148,34 @@ class DiffractionImageWindow(QMainWindow):
     def start_hkl_monitors(self) -> None:
         """
         Initializes camonitors for HKL values and stores them in a dictionary.
+
+        Runs on the background poller thread (see ``_connect_pv_pollers``).
+        Connection + initial-get timeouts are kept short so a dead PV doesn't
+        stall the whole sweep — pyepics defaults to ~5 s per dead get.
         """
         try:
             if self.reader.HKL_IN_CONFIG:
+                # Use the HKL config values verbatim — different profiles store
+                # PV names differently (some bare, some pre-prefixed like
+                # '6idb1:DetectorSetup:...'), so prepending pva_prefix here
+                # would double-prefix the ones that already include it.
                 self.hkl_config = self.reader.config["HKL"]
                 if not self.hkl_pvs:
                     for section, pv_dict in self.hkl_config.items():
                         for section_key, pv_name in pv_dict.items():
                             if pv_name not in self.hkl_pvs:
-                                self.hkl_pvs[pv_name] = PV(pvname=pv_name)
+                                self.hkl_pvs[pv_name] = PV(
+                                    pvname=pv_name,
+                                    connection_timeout=0.15,
+                                )
                 for pv_name, pv_obj in self.hkl_pvs.items():
-                    self.hkl_data[pv_name] = pv_obj.get() # Get current value
+                    self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
+                missing = [n for n, v in self.hkl_data.items() if v is None]
+                got = len(self.hkl_data) - len(missing)
+                print(f"[Diffraction Image Viewer] HKL monitors started: "
+                      f"{got}/{len(self.hkl_data)} PVs returned values"
+                      + (f"; missing/None: {missing}" if missing else ""))
                 self.hkl_data_updated.emit(True)
         except Exception as e:
             print(f"[Diffraction Image Viewer] Failed to initialize HKL monitors: {e}")
@@ -961,8 +1190,10 @@ class DiffractionImageWindow(QMainWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.hkl_data[pvname] = value
-        if self.qx is not None and self.qy is not None and self.qz is not None:
-            self.hkl_data_updated.emit(True)
+        # Always re-emit so handle_hkl_data_update re-runs hkl_setup(); the prior
+        # qx/qy/qz guard created a deadlock — those only get set by update_rsm(),
+        # so a failed bootstrap meant no future callback could ever recover.
+        self.hkl_data_updated.emit(True)
 
     def handle_hkl_data_update(self):
         if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
@@ -1099,15 +1330,19 @@ class DiffractionImageWindow(QMainWindow):
                             qconv=self.q_conv)
 
                 roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                cch1 = self.hkl_data['DetectorSetup:CenterChannelPixel'][0] # Center Channel Pixel 1
-                cch2 = self.hkl_data['DetectorSetup:CenterChannelPixel'][1] # Center Channel Pixel 2
-                distance = self.hkl_data['DetectorSetup:Distance'] # Distance
-                pixel_dir1 = self.hkl_data['DetectorSetup:PixelDirection1'] # Pixel Direction 1
-                pixel_dir2 = self.hkl_data['DetectorSetup:PixelDirection2'] # PIxel Direction 2
+                # Look up by the PV name in the active HKL config so any prefix
+                # scheme (xidb:, 6idb1:, none) works without code edits — same
+                # pattern HpcRsmProcessor uses.
+                ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
+                cch1, cch2 = self.hkl_data[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
+                distance = self.hkl_data[ds_cfg['DISTANCE']]
+                pixel_dir1 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_1']]
+                pixel_dir2 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_2']]
                 nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
                 nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
-                pixel_width1 = self.hkl_data['DetectorSetup:Size'][0] / nch1 # width of a pixel along direction 1
-                pixel_width2 = self.hkl_data['DetectorSetup:Size'][1] / nch2 # width of a pixel along direction 2
+                size_xy = self.hkl_data[ds_cfg['SIZE']]
+                pixel_width1 = size_xy[0] / nch1
+                pixel_width2 = size_xy[1] / nch2
 
                 hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
                                     Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
@@ -1166,9 +1401,6 @@ class DiffractionImageWindow(QMainWindow):
         self.image_view.update()
 
     def update_pv_prefix(self) -> None:
-        """
-        Updates the input channel prefix based on the value entered in the prefix field.
-        """
         self._input_channel = self.pv_prefix.text()
     
     def on_double_click(self, event) -> None:
@@ -1218,8 +1450,13 @@ class DiffractionImageWindow(QMainWindow):
                     if 0 <= self.mouse_x < self.image.shape[0] and 0 <= self.mouse_y < self.image.shape[1]:
                         self.mouse_x_val.setText(f"{self.mouse_x}")
                         self.mouse_y_val.setText(f"{self.mouse_y}")
-                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]}')
-                        if self.qx is not None and len(self.qx) > 0:
+                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]:.2f}')
+                        # Stop HKL is meant to freeze the visible HKL output, not
+                        # just halt the qx/qy/qz recompute. Without this gate the
+                        # mouse H/K/L labels keep changing on every mouse move
+                        # (different indices into the stale array).
+                        if (self.qx is not None and len(self.qx) > 0
+                                and not self.stop_hkl.isChecked()):
                             self.mouse_h.setText(f'{self.qx[self.mouse_x][self.mouse_y]:.7f}')
                             self.mouse_k.setText(f'{self.qy[self.mouse_x][self.mouse_y]:.7f}')
                             self.mouse_l.setText(f'{self.qz[self.mouse_x][self.mouse_y]:.7f}')
@@ -1242,11 +1479,10 @@ class DiffractionImageWindow(QMainWindow):
                 self.size_y_val.setText(f'{self.reader.shape[1]:d}')
             self.data_type_val.setText(self.reader.display_dtype)
             self.update_threshold_label()
-            self.roi1_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats1:Total_RBV', '0.0')}")
-            self.roi2_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats2:Total_RBV', '0.0')}")
-            self.roi3_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats3:Total_RBV', '0.0')}")
-            self.roi4_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats4:Total_RBV', '0.0')}")
-            self.stats5_total_value.setText(f"{self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', '0.0')}")
+            for i in range(1, 5):
+                label = getattr(self, f"roi{i}_total_value")
+                label.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}")
+            self.stats5_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats5:Total_RBV', 0.0)):.2f}")
 
     def update_rsm(self) -> None:
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
@@ -1293,20 +1529,26 @@ class DiffractionImageWindow(QMainWindow):
                 if len(self.image.shape) == 2:
                     min_level, max_level = np.min(self.image), np.max(self.image)
                     if self.log_image.isChecked():
-                            # Ensure non negative values
-                            self.image = np.maximum(self.image, 0)
-                            epsilon = 1e-10
-                            self.image = np.log10(self.image + 1)
-                            min_level = np.log10(max(min_level, epsilon) + 1)
-                            max_level = np.log10(max_level + 1)
+                        # Ensure non negative values
+                        self.image = np.maximum(self.image, 0)
+                        epsilon = 1e-10
+                        self.image = np.log10(self.image + 1)
+                        min_level = np.log10(max(min_level, epsilon) + 1)
+                        max_level = np.log10(max_level + 1)
                     if self.first_plot:
-                        self.image_view.setImage(self.image, 
-                                                autoRange=False, 
-                                                autoLevels=False, 
+                        self.image_view.setImage(self.image,
+                                                autoRange=False,
+                                                autoLevels=False,
                                                 levels=(min_level, max_level),
                                                 autoHistogramRange=False)
-                        # Set colormap separately
+                        # Set colormap separately, then re-collapse the gradient
+                        # to the lightweight preset so we don't end up with one
+                        # tick handle per colormap stop.
                         self.image_view.setColorMap(self.cet_colormap)
+                        try:
+                            self.image_view.ui.histogram.gradient.loadPreset('viridis')
+                        except Exception:
+                            pass
                         # Auto sets the max value based on first incoming image
                         if not self.chk_autoscale.isChecked():
                             self.max_setting_val.setValue(max_level)
@@ -1314,66 +1556,46 @@ class DiffractionImageWindow(QMainWindow):
                         self.first_plot = False
                     else:
                         self.image_view.setImage(self.image,
-                                                autoRange=False, 
-                                                autoLevels=False, 
+                                                autoRange=False,
+                                                autoLevels=False,
                                                 autoHistogramRange=False)
-                    # Apply autoscale if checkbox is checked (after image is set)
                     if self.chk_autoscale.isChecked():
                         self.apply_autoscale()
                 # Separate image update for horizontal average plot
-                self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0), 
-                                            y=np.arange(self.image.shape[1]), 
+                self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
+                                            y=np.arange(self.image.shape[1]),
                                             clear=True)
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
     
     def update_min_max_setting(self) -> None:
-        """
-        Updates the min/max pixel levels in the Image Viewer based on UI settings.
-        """
-        # Only update if autoscale is not checked (to prevent feedback loop)
+        # Passive when autoscale is on — autoscale drives the LUT each frame.
         if not self.chk_autoscale.isChecked():
-            min = self.min_setting_val.value()
-            max = self.max_setting_val.value()
-            self.image_view.setLevels(min, max)
-    
+            self.image_view.setLevels(self.min_setting_val.value(),
+                                      self.max_setting_val.value())
+
     def autoscale_checked(self) -> None:
-        """
-        Handles autoscale checkbox state changes.
-        When checked, calculates and sets min/max based on 5th and 95th percentiles of intensity histogram.
-        """
         if self.chk_autoscale.isChecked() and self.image is not None:
             self.apply_autoscale()
-    
+
     def apply_autoscale(self) -> None:
-        """
-        Calculates and applies autoscale based on 5th and 95th percentiles of the intensity histogram.
-        Sets min to 5th percentile and max to 95th percentile.
-        """
-        if self.image is not None:
-            # Flatten the image to get all intensity values
-            intensities = self.image.flatten()
-            
-            # Remove any NaN or infinite values
-            intensities = intensities[np.isfinite(intensities)]
-            
-            if len(intensities) > 0:
-                # Calculate 5th and 95th percentiles
-                min_percentile = np.percentile(intensities, 5)
-                max_percentile = np.percentile(intensities, 95)
-                
-                # Update the spinbox values (this will trigger update_min_max_setting)
-                # Temporarily block signals to prevent feedback loop
-                self.min_setting_val.blockSignals(True)
-                self.max_setting_val.blockSignals(True)
-                self.min_setting_val.setValue(min_percentile)
-                self.max_setting_val.setValue(max_percentile)
-                self.min_setting_val.blockSignals(False)
-                self.max_setting_val.blockSignals(False)
-                
-                # Apply the levels directly
-                self.image_view.setLevels(min_percentile, max_percentile)
+        if self.image is None:
+            return
+        intensities = self.image.flatten()
+        intensities = intensities[np.isfinite(intensities)]
+        if len(intensities) == 0:
+            return
+        min_pct, max_pct = np.percentile(intensities, [5, 95])
+        min_pct = float(min_pct)
+        max_pct = float(max_pct)
+        self.min_setting_val.blockSignals(True)
+        self.max_setting_val.blockSignals(True)
+        self.min_setting_val.setValue(min_pct)
+        self.max_setting_val.setValue(max_pct)
+        self.min_setting_val.blockSignals(False)
+        self.max_setting_val.blockSignals(False)
+        self.image_view.setLevels(min_pct, max_pct)
     
     def get_threshold_range(self) -> tuple:
         """
@@ -1443,6 +1665,12 @@ class DiffractionImageWindow(QMainWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        try:
+            s = _settings()
+            s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
+            s.setValue("area_det_window_geom", self.saveGeometry())
+        except Exception:
+            pass
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
@@ -1450,12 +1678,17 @@ class DiffractionImageWindow(QMainWindow):
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread
-        super(DiffractionImageWindow,self).closeEvent(event)
+        super().closeEvent(event)
 
 def main():
     app = QApplication(sys.argv)
+    # Fusion is scoped to this viewer because the dock-title QSS rules only
+    # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
+    # titles in native code and ignore stylesheets. Other viewers keep the
+    # platform's native style.
+    from PyQt5.QtWidgets import QStyleFactory
+    app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
-    # size_manager = SizeManager(app=app)
     window = ConfigDialog()
     window.show()
 

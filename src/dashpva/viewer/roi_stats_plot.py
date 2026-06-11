@@ -103,6 +103,23 @@ class RoiStatsPlotDialog(QDialog):
             pen = pg.mkPen(color=self.STAT_COLORS[key], width=2)
             self._curves[key] = self.plot_item.plot([], [], pen=pen, name=key.capitalize())
 
+        # Per-curve visibility toggles. Each checkbox controls one line so the
+        # user can declutter the plot without losing the underlying data
+        # collection. Label color matches the curve pen for quick association.
+        toggle_layout = QHBoxLayout()
+        toggle_layout.addWidget(QLabel('Curves:'))
+        self._curve_toggles = {}
+        for key in self.STAT_KEYS:
+            chk = QCheckBox(key.capitalize())
+            chk.setChecked(True)
+            r, g, b = self.STAT_COLORS[key]
+            chk.setStyleSheet(f'color: rgb({r}, {g}, {b}); font-weight: bold;')
+            chk.toggled.connect(lambda checked, k=key: self._curves[k].setVisible(checked))
+            self._curve_toggles[key] = chk
+            toggle_layout.addWidget(chk)
+        toggle_layout.addStretch()
+        layout.addLayout(toggle_layout)
+
         # Controls row
         ctrl_layout = QHBoxLayout()
 

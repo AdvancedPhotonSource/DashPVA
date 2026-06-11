@@ -58,6 +58,8 @@ dependencies = [
 full = [
     "pvapy>=5.5.0",
     "pyepics>=3.5.0",
+]
+gpu = [
     "torch>=2.9.1",
     "gpytorch>=1.11",
     "linear-operator>=0.5.0",
@@ -74,6 +76,11 @@ build-backend = "hatchling.build"
 packages = ["src/dashpva"]
 
 [tool.uv]
+required-environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'win32'",
+]
 
 [dependency-groups]
 dev = [
