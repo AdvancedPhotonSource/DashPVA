@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
 from pyqtgraph.colormap import get as get_colormap
 
 # Custom imported classes
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
@@ -32,16 +33,19 @@ from dashpva.viewer.analysis_window import AnalysisWindow
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     BlobTrackingDock,
+    FrameFeaturesDock,
     ImageDock,
     MaskDock,
     MousePosDock,
     RoiDock,
+    SessionAnalysisDock,
     StatsDock,
 )
 from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
 from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
+from dashpva.viewer.session_analysis_window import SessionAnalysisWindow
 
 # from ..utils.size_manager import SizeManager
 
@@ -297,13 +301,31 @@ class DiffractionImageWindow(BaseWindow):
             self.central_glayout.removeWidget(self.QGroupBox_live_view)
             self.central_glayout.addWidget(self.QGroupBox_live_view, 0, 0, 1, 2)
 
-        self.stats_dock         = StatsDock(main_window=self)
-        self.mouse_pos_dock     = MousePosDock(main_window=self)
-        self.mask_dock          = MaskDock(main_window=self)
-        self.image_dock         = ImageDock(main_window=self, show=False)
-        self.roi_dock           = RoiDock(main_window=self, show=False)
-        self.analysis_dock      = AnalysisDock(main_window=self, show=False)
-        self.blob_tracking_dock = BlobTrackingDock(main_window=self, show=False)
+        self.stats_dock                = StatsDock(main_window=self)
+        self.mouse_pos_dock            = MousePosDock(main_window=self)
+        self.mask_dock                 = MaskDock(main_window=self)
+        self.image_dock                = ImageDock(main_window=self, show=False)
+        self.roi_dock                  = RoiDock(main_window=self, show=False)
+        self.analysis_dock             = AnalysisDock(main_window=self, show=False)
+        self.blob_tracking_dock        = BlobTrackingDock(main_window=self, show=False)
+        self.frame_features_dock = FrameFeaturesDock(main_window=self, show=False)
+        self.session_analysis_dock = SessionAnalysisDock(main_window=self, show=False)
+
+        # Connect VLM sampler controls on frame_features_dock to start/stop
+        # a BackgroundVlmSampler. The sampler reaches the latest frame via
+        # self.reader, so it must be (re)created whenever the reader is rebuilt.
+        self._vlm_sampler = None
+        self.frame_features_dock.chk_vlm_enabled.stateChanged.connect(
+            self._on_vlm_enabled_changed)
+        self.frame_features_dock.sb_vlm_interval.valueChanged.connect(
+            self._on_vlm_interval_changed)
+
+        # Session-level analysis lives in a separate top-level window
+        # (lazily created on first launch). The dock-mounted variant is kept
+        # for now alongside; both share the same reader / analyzer / backend.
+        self._session_analysis_window: SessionAnalysisWindow | None = None
+        self.frame_features_dock.btn_session_analysis.clicked.connect(
+            self.open_session_analysis_window_clicked)
 
         # Stack stats + mask as tabs in the same dock area; lock both so the
         # user can't undock, move, or close them. Cap the tab group's height
@@ -420,7 +442,9 @@ class DiffractionImageWindow(BaseWindow):
         ]
 
         # Any blob/sort param change → persist config so the consumer picks it up
-        from PyQt5.QtWidgets import QDoubleSpinBox, QSpinBox, QCheckBox as _QChk, QComboBox as _QCombo
+        from PyQt5.QtWidgets import QCheckBox as _QChk
+        from PyQt5.QtWidgets import QComboBox as _QCombo
+        from PyQt5.QtWidgets import QDoubleSpinBox, QSpinBox
         for w in self._blob_param_widgets + self._sort_param_widgets:
             if isinstance(w, (QDoubleSpinBox, QSpinBox)):
                 w.valueChanged.connect(self._save_blob_config)
@@ -884,6 +908,13 @@ class DiffractionImageWindow(BaseWindow):
         # stays visible across PVA connect → ROI sweep → Stats sweep, hidden by
         # the terminal "ROIs and stats ready" / error emit from _connect_pv_pollers.
         self.pv_pollers_status.emit(f"Connecting to {self._input_channel}…", "info")
+        # Stop any VLM sampler holding a reference to the previous reader; the
+        # user can re-enable it from the dock once the new reader is up.
+        if self._vlm_sampler is not None:
+            self.frame_features_dock.chk_vlm_enabled.blockSignals(True)
+            self.frame_features_dock.chk_vlm_enabled.setChecked(False)
+            self.frame_features_dock.chk_vlm_enabled.blockSignals(False)
+            self._stop_vlm_sampler()
         try:
             self.stop_timers()
             self.image_view.clear()
@@ -916,6 +947,11 @@ class DiffractionImageWindow(BaseWindow):
                 self.file_writer.pva_reader = self.reader
             # Reconnecting signals
             self.reader.reader_scan_complete.connect(self.trigger_save_caches)
+            # If the Session Analysis window is already open from a previous
+            # PV, point it at the new reader so subsequent analyses use the
+            # current cache.
+            if self._session_analysis_window is not None:
+                self._session_analysis_window.set_reader(self.reader)
             self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
 
             if self.reader.CACHING_MODE == 'scan':
@@ -1644,6 +1680,12 @@ class DiffractionImageWindow(BaseWindow):
                 if self.chk_enable_blob.isChecked():
                     self._update_blob_overlay()
 
+                # Frame analysis dock: update feature summary and interpretation
+                if hasattr(self, 'frame_features_dock'):
+                    attrs = getattr(self.reader, 'pv_attributes', {})
+                    if attrs:
+                        self.frame_features_dock.update_features(attrs)
+
                 # Collect frame for dead pixel detection if active
                 self._collect_dead_pixel_frame()
                 # Apply vectorized thresholding if enabled
@@ -1829,6 +1871,81 @@ class DiffractionImageWindow(BaseWindow):
         result[result > max_thresh] = 0
         return result
     
+    # ── Session Analysis window launcher ──────────────────────────────────
+
+    def open_session_analysis_window_clicked(self) -> None:
+        """Show the standalone Session Analysis window, creating it lazily.
+
+        The window holds a reference to ``self.reader``, so when the user
+        rebuilds the reader (Start Live View on a new PV prefix) we hot-swap
+        the reference via ``set_reader`` instead of recreating the window.
+        """
+        if self.reader is None:
+            self.update_status(
+                "Start Live View before opening Session Analysis.", level="warning")
+            return
+        if self._session_analysis_window is None:
+            self._session_analysis_window = SessionAnalysisWindow(
+                pva_reader=self.reader, parent=self)
+        else:
+            self._session_analysis_window.set_reader(self.reader)
+        self._session_analysis_window.show()
+        self._session_analysis_window.raise_()
+        self._session_analysis_window.activateWindow()
+
+    # ── VLM sampler wiring ────────────────────────────────────────────────
+
+    def _on_vlm_enabled_changed(self, state: int) -> None:
+        """Start / stop the BackgroundVlmSampler from the dock checkbox."""
+        if state == Qt.Checked:
+            if self.reader is None:
+                self.frame_features_dock.update_vlm_status(
+                    "VLM sampler: start Live View first")
+                self.frame_features_dock.chk_vlm_enabled.blockSignals(True)
+                self.frame_features_dock.chk_vlm_enabled.setChecked(False)
+                self.frame_features_dock.chk_vlm_enabled.blockSignals(False)
+                return
+            self._start_vlm_sampler()
+        else:
+            self._stop_vlm_sampler()
+
+    def _on_vlm_interval_changed(self, value: int) -> None:
+        if self._vlm_sampler is not None:
+            self._vlm_sampler.set_interval(int(value))
+
+    def _start_vlm_sampler(self) -> None:
+        # Defer the import so users without Pillow / ollama don't pay the cost
+        # at viewer startup.
+        from dashpva.analysis.background_vlm_sampler import BackgroundVlmSampler
+
+        if self._vlm_sampler is not None and self._vlm_sampler.isRunning():
+            return
+
+        fa_cfg = getattr(app_settings, 'FRAME_ANALYSIS', {}) or {}
+        ollama_url = fa_cfg.get('VLM_OLLAMA_URL', 'http://localhost:11434')
+        model = fa_cfg.get('VLM_MODEL', 'moondream')
+        interval = int(self.frame_features_dock.sb_vlm_interval.value())
+
+        self._vlm_sampler = BackgroundVlmSampler(
+            pva_reader=self.reader,
+            interval_s=interval,
+            ollama_url=ollama_url,
+            model=model,
+            parent=self,
+        )
+        self._vlm_sampler.status_updated.connect(
+            self.frame_features_dock.update_vlm_status)
+        self._vlm_sampler.start()
+
+    def _stop_vlm_sampler(self) -> None:
+        if self._vlm_sampler is None:
+            return
+        try:
+            self._vlm_sampler.stop()
+        finally:
+            self._vlm_sampler = None
+            self.frame_features_dock.update_vlm_status("VLM sampler off")
+
     def closeEvent(self, event):
         """
         Custom close event to clean up resources, including stat dialogs.
@@ -1840,6 +1957,10 @@ class DiffractionImageWindow(BaseWindow):
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
             self.mask_viewer.close()
+        if self._session_analysis_window is not None:
+            self._session_analysis_window.close()
+        if self._vlm_sampler is not None:
+            self._stop_vlm_sampler()
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread

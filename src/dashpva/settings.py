@@ -187,6 +187,8 @@ ROI: Dict[str, Any] = {}
 STATS: Dict[str, Any] = {}
 HKL: Dict[str, Any] = {}
 ANALYSIS: Dict[str, Any] = {}
+FRAME_ANALYSIS: Dict[str, Any] = {}
+SESSION_ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
 LOG_PATH: Optional[str] = str(PROJECT_ROOT / "logs")
@@ -244,7 +246,7 @@ def reload() -> None:
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
-    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
+    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS, FRAME_ANALYSIS, SESSION_ANALYSIS
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
@@ -328,6 +330,8 @@ def reload() -> None:
     STATS = cfg.get('STATS', {}) or {}
     HKL = cfg.get('HKL', {}) or {}
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
+    FRAME_ANALYSIS = cfg.get('FRAME_ANALYSIS', {}) or {}
+    SESSION_ANALYSIS = cfg.get('SESSION_ANALYSIS', {}) or {}
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
     try:
@@ -657,6 +661,8 @@ class Settings:
         self.STATS = cfg.get('STATS', {}) or {}
         self.HKL = cfg.get('HKL', {}) or {}
         self.ANALYSIS = cfg.get('ANALYSIS', {}) or {}
+        self.FRAME_ANALYSIS = cfg.get('FRAME_ANALYSIS', {}) or {}
+        self.SESSION_ANALYSIS = cfg.get('SESSION_ANALYSIS', {}) or {}
 
         # AppSettings
         try:

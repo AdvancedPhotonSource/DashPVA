@@ -156,6 +156,14 @@ class PVAReader(QObject):
         self.blob_tracks: np.ndarray = np.empty((0, 5))      # latest (M,5)
         self.blob_detections_cache: list = []  # list[np.ndarray (N,5)]
         self.blob_tracks_cache: list = []       # list[np.ndarray (M,5)]
+
+        # Frame analysis — populated by HpcFeatureExtractionProcessor.
+        self.feature_vector: dict = {}        # latest FeatureVector dict
+        self.feature_vector_cache: list = []  # list[dict], one per frame
+
+        # Sampled VLM descriptions — populated by BackgroundVlmSampler (optional,
+        # viewer-side, off by default). Each entry: {timestamp, frame_id, text, model}
+        self.sampled_descriptions: list = []
         # self._on_scan_complete_callbacks = []
 
         self._configure()
@@ -249,6 +257,11 @@ class PVAReader(QObject):
             # Parse blob detection / tracking results appended by HpcBlobTrackingProcessor
             if 'BlobDetections' in self.pv_attributes or 'BlobTracks' in self.pv_attributes:
                 self.parse_blob_attributes(self.pv_attributes)
+
+            # Parse frame analysis results from HpcFeatureExtractionProcessor /
+            # HpcFrameInterpreterProcessor when they are in the pipeline.
+            if 'FeatureVector' in self.pv_attributes:
+                self._parse_feature_vector(self.pv_attributes)
 
             if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
                 self.parse_analysis_attributes()
@@ -378,6 +391,22 @@ class PVAReader(QObject):
 
         self.blob_detections_cache.append(self.blob_detections)
         self.blob_tracks_cache.append(self.blob_tracks)
+
+    def _parse_feature_vector(self, pv_attributes: dict) -> None:
+        """Parse FeatureVector JSON appended by HpcFeatureExtractionProcessor."""
+        import json as _json
+        raw = pv_attributes.get('FeatureVector', '')
+        if raw:
+            try:
+                self.feature_vector = _json.loads(raw)
+                # In alignment mode the cache is a plain list with no size cap.
+                # Mirror the MAX_CACHE_SIZE limit so it doesn't grow unboundedly.
+                max_size = getattr(self, 'MAX_CACHE_SIZE', None)
+                if max_size and len(self.feature_vector_cache) >= max_size:
+                    self.feature_vector_cache.pop(0)
+                self.feature_vector_cache.append(self.feature_vector)
+            except Exception:
+                pass
 
     def parse_analysis_attributes(self, pv_attributes: dict) -> None:
         raise NotImplementedError
@@ -528,6 +557,9 @@ class PVAReader(QObject):
         self.cached_qz.clear()
         self.blob_detections_cache.clear()
         self.blob_tracks_cache.clear()
+        self.feature_vector_cache.clear()
+        self.sampled_descriptions.clear()
+        self.feature_vector = {}
 
 ########################### Start and Stop Channel Monitors ##########################    
     def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:

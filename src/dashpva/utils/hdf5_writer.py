@@ -236,6 +236,28 @@ class HDF5Writer(QObject, LogMixin):
                 except Exception:
                     pass
 
+            # ── Feature vectors (one JSON string per frame) ───────────────
+            fv_cache = getattr(self.pva_reader, 'feature_vector_cache', [])
+            if fv_cache:
+                try:
+                    import json as _json
+                    str_dt = h5py.special_dtype(vlen=str)
+                    encoded = [_json.dumps(fv) for fv in fv_cache]
+                    data_grp.create_dataset('feature_vectors', data=encoded, dtype=str_dt)
+                except Exception:
+                    pass
+
+            # ── VLM sampled descriptions (sparse — only N per scan) ───────
+            desc_cache = getattr(self.pva_reader, 'sampled_descriptions', [])
+            if desc_cache:
+                try:
+                    import json as _json
+                    str_dt = h5py.special_dtype(vlen=str)
+                    encoded_desc = [_json.dumps(d) for d in desc_cache]
+                    data_grp.create_dataset('sampled_descriptions', data=encoded_desc, dtype=str_dt)
+                except Exception:
+                    pass
+
             # ── Blob detection / tracking results ─────────────────────────
             det_cache = getattr(self.pva_reader, 'blob_detections_cache', [])
             trk_cache = getattr(self.pva_reader, 'blob_tracks_cache', [])
