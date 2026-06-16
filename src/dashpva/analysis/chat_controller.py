@@ -123,8 +123,12 @@ class ChatController:
                 return
 
             calls = result.get('tool_calls') or []
-            # Append the assistant turn verbatim — OpenAI/Argo require the
-            # assistant tool-call message to precede its tool results.
+            # Append the assistant turn (in the backend's normalized
+            # ``{id, name, arguments: dict}`` tool-call shape) before its tool
+            # results — every provider requires the tool-call message to precede
+            # them. Each backend re-serializes these tool_calls into its own wire
+            # format at send time (OpenAI/Argo want JSON-string arguments, ollama
+            # wants a dict), so we store the normalized shape verbatim here.
             self.messages.append({
                 k: v for k, v in result.items()
                 if k in ('role', 'content', 'tool_calls')

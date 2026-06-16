@@ -55,13 +55,15 @@ class LLMBackend(ABC):
         Parameters
         ----------
         messages : list[dict]
-            OpenAI-shaped messages::
+            Chat history in our normalized shape::
 
-                [{'role': 'system'|'user'|'assistant'|'tool',
-                  'content': str,
-                  # only when role == 'tool':
-                  'tool_call_id': str,
-                  'name': str},
+                [{'role': 'system'|'user', 'content': str},
+                 {'role': 'assistant', 'content': str | None,
+                  # only when the assistant requested tools — SAME shape this
+                  # method returns, NOT the OpenAI wire shape. Each backend
+                  # serializes it to its own wire format before sending.
+                  'tool_calls': [{'id': str, 'name': str, 'arguments': dict}, ...]},
+                 {'role': 'tool', 'tool_call_id': str, 'name': str, 'content': str},
                  ...]
         tools : list[dict] | None
             List of OpenAI function-call tool schemas (see

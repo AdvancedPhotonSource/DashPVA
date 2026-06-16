@@ -41,7 +41,7 @@ class OllamaBackend(LLMBackend):
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         body: dict = {
             'model': self.model,
-            'messages': messages,
+            'messages': _to_ollama_messages(messages),
             'stream': False,
         }
         if tools:
@@ -83,6 +83,50 @@ class OllamaBackend(LLMBackend):
         if raw_calls:
             out['tool_calls'] = [_normalize_tool_call(c, i) for i, c in enumerate(raw_calls)]
         return out
+
+
+def _to_ollama_messages(messages: list[dict]) -> list[dict]:
+    """Serialize chat history into ollama's expected wire format.
+
+    The :class:`~dashpva.analysis.chat_controller.ChatController` stores assistant
+    tool calls in our internal normalized shape (``{id, name, arguments: dict}``).
+    Ollama renders tool calls through the model's chat template, which reads
+    ``tool_call.function.name`` / ``tool_call.function.arguments`` — so the call
+    must be nested under ``function``. Unlike OpenAI/Argo, ollama expects
+    ``arguments`` to remain a JSON *object* (dict), not a JSON-encoded string.
+
+    Only assistant messages carrying ``tool_calls`` are rewritten; everything
+    else passes through (ollama ignores fields like ``tool_call_id`` it doesn't use).
+    """
+    out: list[dict] = []
+    for m in messages:
+        calls = m.get('tool_calls')
+        if m.get('role') == 'assistant' and calls:
+            out.append({
+                'role': 'assistant',
+                'content': m.get('content') or '',
+                'tool_calls': [_to_ollama_tool_call(c) for c in calls],
+            })
+        else:
+            out.append(m)
+    return out
+
+
+def _to_ollama_tool_call(call: dict) -> dict:
+    """Render one normalized ``{id, name, arguments}`` call as ollama's nested shape."""
+    fn = call.get('function')
+    if isinstance(fn, dict) and isinstance(fn.get('arguments'), dict):
+        return call  # already ollama-shaped; pass through defensively
+    args = call.get('arguments')
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {}
+    elif not isinstance(args, dict):
+        args = {}
+    name = call.get('name') or (fn or {}).get('name', '')
+    return {'function': {'name': name, 'arguments': args}}
 
 
 def _normalize_tool_call(call: dict, idx: int) -> dict:
