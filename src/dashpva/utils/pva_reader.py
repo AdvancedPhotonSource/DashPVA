@@ -121,6 +121,15 @@ class PVAReader(QObject):
         self.attributes = []
         self.pv_attributes = {}
         self.cached_ca: dict = {}  # pv_name -> [values] captured during scan
+        # Parallel to cached_ca: per-PV frame_id and timestamp for each value,
+        # so the chat-tool layer can answer "what was PV X at frame Y / time T".
+        self.cached_ca_frame_ids: dict = {}    # pv_name -> [int]
+        self.cached_ca_timestamps: dict = {}   # pv_name -> [float]
+        # Updated at the top of every pva_callbackSuccess; used by cache_attributes
+        # and the CA-history loop to tag each cached entry with its detector
+        # uniqueId and POSIX timestamp.
+        self._current_frame_id: int = -1
+        self._current_timestamp: float = 0.0
 
         # variables used for image manipulaiton
         self.pixel_ordering = 'F'
@@ -146,6 +155,12 @@ class PVAReader(QObject):
         self.cached_qx = None
         self.cached_qy = None
         self.cached_qz = None
+        # Parallel to cached_attributes: detector uniqueId and POSIX timestamp
+        # for each cached frame, so historical-lookup tools can index into the
+        # other caches by frame_id or time. Same shape as cached_attributes
+        # (deque in alignment/scan mode, list[deque] in bin mode).
+        self.cached_frame_ids = None
+        self.cached_timestamps = None
 
         # Blob detection / tracking — populated by parse_blob_attributes() on
         # each PVA callback when HpcBlobTrackingProcessor is in the pipeline.
@@ -209,6 +224,8 @@ class PVAReader(QObject):
         if self.CACHING_MODE == 'alignment' or self.CACHING_MODE == 'scan':
             self.cached_images = deque(maxlen=self.MAX_CACHE_SIZE)
             self.cached_attributes = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cached_frame_ids = deque(maxlen=self.MAX_CACHE_SIZE)
+            self.cached_timestamps = deque(maxlen=self.MAX_CACHE_SIZE)
             if self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 self.cached_qx = deque(maxlen=self.MAX_CACHE_SIZE)
                 self.cached_qy = deque(maxlen=self.MAX_CACHE_SIZE)
@@ -218,10 +235,12 @@ class PVAReader(QObject):
             # and then an entry for each bin that lines up with the attributes and rsm attributes
             self.cached_images = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
             self.cached_attributes = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+            self.cached_frame_ids = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
+            self.cached_timestamps = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
             if self.HKL_IN_CONFIG or self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 self.cached_qx = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
                 self.cached_qy = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
-                self.cached_qz = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]               
+                self.cached_qz = [deque(maxlen=self.BIN_SIZE) for _ in range(self.BIN_COUNT)]
         self.caches_initialized = True
 
 #################### Class and PVA Channel Callbacks ########################
@@ -238,6 +257,22 @@ class PVAReader(QObject):
         try:
             self.frames_received += 1
             self.pva_object = pv
+
+            # Capture the detector uniqueId and POSIX timestamp once per frame.
+            # These index every parallel cache (cached_frame_ids, cached_timestamps,
+            # cached_ca_frame_ids, etc.) so historical-lookup tools can later
+            # answer "what was PV X at frame Y / time T".
+            try:
+                self._current_frame_id = int(pv['uniqueId'])
+            except Exception:
+                self._current_frame_id = -1
+            try:
+                ts = pv['timeStamp']
+                self._current_timestamp = (
+                    float(ts['secondsPastEpoch']) + float(ts['nanoseconds']) * 1e-9
+                )
+            except Exception:
+                self._current_timestamp = 0.0
 
             # parse data required to manipulate pv image
             self.parse_image_data_type(pv)
@@ -276,6 +311,8 @@ class PVAReader(QObject):
                                 val = self.pv_attributes.get(pv_name)
                                 if val is not None:
                                     self.cached_ca.setdefault(pv_name, []).append(val)
+                                    self.cached_ca_frame_ids.setdefault(pv_name, []).append(self._current_frame_id)
+                                    self.cached_ca_timestamps.setdefault(pv_name, []).append(self._current_timestamp)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -510,9 +547,17 @@ class PVAReader(QObject):
 
 ################################## Caching ####################################
     def cache_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> bool:
-        """Returns True if this frame was cached (caller should also cache the image)."""
+        """Returns True if this frame was cached (caller should also cache the image).
+
+        Appends the detector uniqueId and POSIX timestamp to the parallel
+        ``cached_frame_ids`` / ``cached_timestamps`` caches in lockstep with
+        ``cached_attributes`` so consumers (notably the chat-tool history
+        lookups) can map cache index ↔ frame_id ↔ timestamp.
+        """
         if self.CACHING_MODE == 'alignment':
             self.cached_attributes.append(pv_attributes)
+            self.cached_frame_ids.append(self._current_frame_id)
+            self.cached_timestamps.append(self._current_timestamp)
             if rsm_attributes:
                 self.cached_qx.append(rsm_attributes['qx'])
                 self.cached_qy.append(rsm_attributes['qy'])
@@ -524,6 +569,8 @@ class PVAReader(QObject):
             if not rsm_attributes and self.viewer_type == self.VIEWER_TYPE_MAP['rsm']:
                 return False
             self.cached_attributes.append(pv_attributes)
+            self.cached_frame_ids.append(self._current_frame_id)
+            self.cached_timestamps.append(self._current_timestamp)
             if rsm_attributes:
                 self.cached_qx.append(rsm_attributes['qx'])
                 self.cached_qy.append(rsm_attributes['qy'])
@@ -532,6 +579,8 @@ class PVAReader(QObject):
         elif self.CACHING_MODE == 'bin':
             bin_index = (self.frames_received + self.frames_missed - 1) % self.BIN_COUNT
             self.cached_attributes[bin_index].append(pv_attributes)
+            self.cached_frame_ids[bin_index].append(self._current_frame_id)
+            self.cached_timestamps[bin_index].append(self._current_timestamp)
             return True
         return False
 
@@ -552,6 +601,10 @@ class PVAReader(QObject):
     def reset_caches(self) -> None:
         self.cached_images.clear()
         self.cached_attributes.clear()
+        if self.cached_frame_ids is not None:
+            self._clear_parallel_cache(self.cached_frame_ids)
+        if self.cached_timestamps is not None:
+            self._clear_parallel_cache(self.cached_timestamps)
         self.cached_qx.clear()
         self.cached_qy.clear()
         self.cached_qz.clear()
@@ -560,6 +613,17 @@ class PVAReader(QObject):
         self.feature_vector_cache.clear()
         self.sampled_descriptions.clear()
         self.feature_vector = {}
+        self.cached_ca_frame_ids = {}
+        self.cached_ca_timestamps = {}
+
+    @staticmethod
+    def _clear_parallel_cache(cache) -> None:
+        """Clear a deque or a list-of-deques (bin mode) without changing structure."""
+        if isinstance(cache, deque):
+            cache.clear()
+        else:
+            for d in cache:
+                d.clear()
 
 ########################### Start and Stop Channel Monitors ##########################    
     def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:
@@ -573,6 +637,8 @@ class PVAReader(QObject):
             self.is_scan_complete = False
             self.scan_state_changed.emit(True)
             self.cached_ca = {}
+            self.cached_ca_frame_ids = {}
+            self.cached_ca_timestamps = {}
 
     def start_channel_monitor(self, callback=None) -> None:
         """

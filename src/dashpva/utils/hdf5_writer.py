@@ -12,6 +12,24 @@ import dashpva.settings as settings
 from dashpva.utils.log_manager import LogMixin
 
 
+def _flatten_parallel(cache) -> list:
+    """Return a flat list for either a deque (alignment/scan mode) or a list
+    of deques (bin mode). Returns ``[]`` when the cache is None / uninitialised."""
+    if cache is None:
+        return []
+    try:
+        from collections import deque as _deque
+        if isinstance(cache, _deque):
+            return list(cache)
+        # bin mode: list-of-deques
+        out: list = []
+        for d in cache:
+            out.extend(d)
+        return out
+    except Exception:
+        return []
+
+
 class HDF5Writer(QObject, LogMixin):
     hdf5_writer_finished = pyqtSignal(str)
 
@@ -163,6 +181,19 @@ class HDF5Writer(QObject, LogMixin):
                                     data=np.array([np.reshape(img, data['shape']) for img in data['images']]),
                                     **ds_kwargs)
 
+            # Per-frame correlators: detector uniqueId and POSIX timestamp,
+            # parallel to /entry/data/data. Lets a future H5HistoryStore
+            # answer "what was X at frame Y / time T" without iterating JSON.
+            n_frames = int(data['len_images'])
+            frame_ids = _flatten_parallel(getattr(self.pva_reader, 'cached_frame_ids', None))
+            timestamps = _flatten_parallel(getattr(self.pva_reader, 'cached_timestamps', None))
+            if frame_ids and len(frame_ids) >= n_frames:
+                data_grp.create_dataset('frame_ids',
+                                        data=np.asarray(frame_ids[:n_frames], dtype=np.int64))
+            if timestamps and len(timestamps) >= n_frames:
+                data_grp.create_dataset('timestamps',
+                                        data=np.asarray(timestamps[:n_frames], dtype=np.float64))
+
             metadata_grp = data_grp.create_group('metadata')
 
             # Write custom CA metadata to entry/data/metadata/ca/.
@@ -172,6 +203,8 @@ class HDF5Writer(QObject, LogMixin):
             # pre-scan value in the first entry).
             custom_ca = getattr(settings, 'METADATA_CA', {}) or {}
             cached_ca = data.get('cached_ca', {})
+            cached_ca_frame_ids = getattr(self.pva_reader, 'cached_ca_frame_ids', {}) or {}
+            cached_ca_timestamps = getattr(self.pva_reader, 'cached_ca_timestamps', {}) or {}
             if custom_ca:
                 ca_grp = metadata_grp.create_group('ca')
                 ca_grp.attrs['NX_class'] = 'NXcollection'
@@ -184,6 +217,19 @@ class HDF5Writer(QObject, LogMixin):
                         if arr.dtype.kind in ('i', 'u', 'f') and arr.size > 0:
                             ds = ca_grp.create_dataset(friendly_name, data=arr)
                             ds.attrs['pv_name'] = pv_name
+                            # Per-sample frame_id / timestamp so chat-tool
+                            # historical lookups can locate a value by frame
+                            # or time without scanning the whole array.
+                            ca_fids = cached_ca_frame_ids.get(pv_name)
+                            ca_ts = cached_ca_timestamps.get(pv_name)
+                            if ca_fids and len(ca_fids) == arr.size:
+                                ca_grp.create_dataset(
+                                    f'{friendly_name}__frame_ids',
+                                    data=np.asarray(ca_fids, dtype=np.int64))
+                            if ca_ts and len(ca_ts) == arr.size:
+                                ca_grp.create_dataset(
+                                    f'{friendly_name}__timestamps',
+                                    data=np.asarray(ca_ts, dtype=np.float64))
                     except Exception:
                         pass
 

@@ -136,6 +136,22 @@ class HpcFeatureExtractionProcessor(AdImageProcessor):
             blob_dets = self._read_blob_detections(pvObject)
             features = self.extractor.extract(image, blob_dets)
 
+            # Stamp the detector uniqueId and POSIX timestamp into the feature
+            # dict so downstream consumers (SessionAnalyzer prompt labels,
+            # historical-PV chat tools, HDF5 reader) can map each cached
+            # feature to a specific detector frame instead of a list index.
+            try:
+                features['frame_id'] = int(pvObject['uniqueId'])
+            except Exception:
+                features['frame_id'] = -1
+            try:
+                ts = pvObject['timeStamp']
+                features['timestamp'] = (
+                    float(ts['secondsPastEpoch']) + float(ts['nanoseconds']) * 1e-9
+                )
+            except Exception:
+                features['timestamp'] = 0.0
+
             new_attr = {
                 'name': 'FeatureVector',
                 'value': pva.PvString(json.dumps(features)),
