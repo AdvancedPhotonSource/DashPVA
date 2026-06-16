@@ -189,6 +189,7 @@ HKL: Dict[str, Any] = {}
 ANALYSIS: Dict[str, Any] = {}
 FRAME_ANALYSIS: Dict[str, Any] = {}
 SESSION_ANALYSIS: Dict[str, Any] = {}
+CHAT_TOOLS: Dict[str, Any] = {}
 
 # AppSettings
 LOG_PATH: Optional[str] = str(PROJECT_ROOT / "logs")
@@ -246,7 +247,7 @@ def reload() -> None:
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
-    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS, FRAME_ANALYSIS, SESSION_ANALYSIS
+    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS, FRAME_ANALYSIS, SESSION_ANALYSIS, CHAT_TOOLS
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
@@ -332,6 +333,12 @@ def reload() -> None:
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
     FRAME_ANALYSIS = cfg.get('FRAME_ANALYSIS', {}) or {}
     SESSION_ANALYSIS = cfg.get('SESSION_ANALYSIS', {}) or {}
+    CHAT_TOOLS = cfg.get('CHAT_TOOLS', {}) or {}
+    CHAT_TOOLS.setdefault('ENABLED', True)
+    CHAT_TOOLS.setdefault('EXTRA_PV_PREFIXES', [])
+    CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS', 5)
+    CHAT_TOOLS.setdefault('TOOL_TIMEOUT_S', 5.0)
+    CHAT_TOOLS.setdefault('HISTORY_MAX_POINTS', 500)
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
     try:
@@ -517,6 +524,9 @@ class Settings:
         self.STATS: Dict[str, Any] = {}
         self.HKL: Dict[str, Any] = {}
         self.ANALYSIS: Dict[str, Any] = {}
+        self.FRAME_ANALYSIS: Dict[str, Any] = {}
+        self.SESSION_ANALYSIS: Dict[str, Any] = {}
+        self.CHAT_TOOLS: Dict[str, Any] = {}
 
         self.LOG_PATH: Optional[str] = None
         self.OUTPUT_PATH: Optional[str] = None
@@ -663,6 +673,12 @@ class Settings:
         self.ANALYSIS = cfg.get('ANALYSIS', {}) or {}
         self.FRAME_ANALYSIS = cfg.get('FRAME_ANALYSIS', {}) or {}
         self.SESSION_ANALYSIS = cfg.get('SESSION_ANALYSIS', {}) or {}
+        self.CHAT_TOOLS = cfg.get('CHAT_TOOLS', {}) or {}
+        self.CHAT_TOOLS.setdefault('ENABLED', True)
+        self.CHAT_TOOLS.setdefault('EXTRA_PV_PREFIXES', [])
+        self.CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS', 5)
+        self.CHAT_TOOLS.setdefault('TOOL_TIMEOUT_S', 5.0)
+        self.CHAT_TOOLS.setdefault('HISTORY_MAX_POINTS', 500)
 
         # AppSettings
         try:

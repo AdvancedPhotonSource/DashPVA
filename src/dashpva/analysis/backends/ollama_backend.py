@@ -1,13 +1,23 @@
 """
-Local ollama backend for LLM completion.
+Local ollama backend for LLM chat / completion.
 
 Uses the ollama HTTP API (defaults to http://localhost:11434). Provides an
 optional helper to start the ollama server in the background if it isn't
 already running on the configured URL.
+
+Tool calling
+------------
+Ollama supports OpenAI-shape tool calling on a subset of models (``llama3.2``,
+``llama3.1``, ``qwen2.5``, ``mistral-nemo`` work; ``moondream`` and older
+``phi3`` do not). If the model doesn't support tools, ollama silently ignores
+the ``tools`` field and returns a text-only reply — we surface that as a
+no-op turn (``content`` present, no ``tool_calls``) and let the
+:class:`~dashpva.analysis.chat_controller.ChatController` flag it.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 
@@ -28,20 +38,19 @@ class OllamaBackend(LLMBackend):
     def name(self) -> str:
         return f"ollama/{self.model}"
 
-    def complete(self, prompt: str, system: str = '') -> str:
-        messages = []
-        if system:
-            messages.append({'role': 'system', 'content': system})
-        messages.append({'role': 'user', 'content': prompt})
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        body: dict = {
+            'model': self.model,
+            'messages': messages,
+            'stream': False,
+        }
+        if tools:
+            body['tools'] = tools
 
         try:
             resp = requests.post(
                 f"{self.url}/api/chat",
-                json={
-                    'model': self.model,
-                    'messages': messages,
-                    'stream': False,
-                },
+                json=body,
                 timeout=self.timeout,
             )
         except requests.exceptions.ConnectionError as e:
@@ -63,11 +72,34 @@ class OllamaBackend(LLMBackend):
             raise RuntimeError(f"Ollama returned non-JSON: {resp.text[:200]}") from e
 
         message = data.get('message') or {}
-        content = message.get('content', '')
+        content = (message.get('content') or '').strip()
         if not content:
             # ollama can also stream-chunk responses where content lives elsewhere
-            content = data.get('response', '')
-        return content.strip()
+            content = (data.get('response') or '').strip()
+
+        out: dict = {'role': 'assistant', 'content': content}
+
+        raw_calls = message.get('tool_calls') or []
+        if raw_calls:
+            out['tool_calls'] = [_normalize_tool_call(c, i) for i, c in enumerate(raw_calls)]
+        return out
+
+
+def _normalize_tool_call(call: dict, idx: int) -> dict:
+    """Translate ollama's tool-call shape into our internal ``{id, name, arguments}``."""
+    fn = call.get('function') or {}
+    args = fn.get('arguments')
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {'_raw': args}
+    elif not isinstance(args, dict):
+        args = {}
+    # Ollama omits an id; synthesize one so subsequent role='tool' messages can
+    # reference it (Argo and OpenAI both require tool_call_id).
+    cid = call.get('id') or f"call_{idx}_{int(time.time() * 1000)}"
+    return {'id': cid, 'name': fn.get('name', ''), 'arguments': args}
 
 
 def ensure_server(url: str = 'http://localhost:11434',
