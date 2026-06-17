@@ -101,16 +101,18 @@ prompt_edition() {
     echo
     info "Which edition would you like to install?"
     echo
-    info "  [1] Full        — live streaming + pvaccess/EPICS + bayesian"
-    info "  [2] Standalone  — post-analysis tools only"
+    info "  [1] Full          — streaming + 3D (HKL) + notebooks"
+    info "  [2] Area Detector — area detector viewer + live EPICS streaming (lean)"
+    info "  [3] Standalone    — post-analysis tools + notebooks (no streaming)"
     echo
     while true; do
-        read -rp "  Enter 1 or 2 [default: 1]: " choice
+        read -rp "  Enter 1, 2, or 3 [default: 1]: " choice
         choice="${choice:-1}"
         case "$choice" in
             1) EDITION="full"; return ;;
-            2) EDITION="standalone"; return ;;
-            *) info "Please enter 1 or 2." ;;
+            2) EDITION="area-det"; return ;;
+            3) EDITION="standalone"; return ;;
+            *) info "Please enter 1, 2, or 3." ;;
         esac
     done
 }
@@ -119,11 +121,12 @@ do_install() {
     local edition="$1"
     info "Installing $edition edition..."
     echo
-    if [[ "$edition" == "full" ]]; then
-        uv sync --extra full
-    else
-        uv sync
-    fi
+    case "$edition" in
+        full)       uv sync --extra full ;;
+        area-det)   uv sync --extra area-det ;;
+        standalone) uv sync --extra notebooks ;;
+        *)          err "Unknown edition: $edition"; exit 1 ;;
+    esac
 }
 
 write_edition() {
@@ -178,10 +181,11 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --full)       edition="full"; shift ;;
+            --area-det)   edition="area-det"; shift ;;
             --standalone) edition="standalone"; shift ;;
             --update)     update=true; shift ;;
             -h|--help)
-                echo "Usage: bash install.sh [--full|--standalone|--update]"
+                echo "Usage: bash install.sh [--full|--area-det|--standalone|--update]"
                 exit 0 ;;
             *)
                 err "Unknown option: $1"
@@ -207,11 +211,12 @@ main() {
         edition="$EDITION"
     fi
 
-    # Block downgrade
-    if [[ "$edition" == "standalone" && -f "$EDITION_FILE" ]]; then
+    # Block downgrade from a Full install to a leaner tier (would leave a
+    # mismatched env). Switching requires a fresh environment.
+    if [[ -f "$EDITION_FILE" ]]; then
         prev="$(cat "$EDITION_FILE")"
-        if [[ "$prev" == "full" ]]; then
-            err "Cannot downgrade from Full to Standalone."
+        if [[ "$prev" == "full" && ( "$edition" == "standalone" || "$edition" == "area-det" ) ]]; then
+            err "Cannot downgrade from Full to $edition."
             err "To switch, create a fresh environment."
             exit 1
         fi

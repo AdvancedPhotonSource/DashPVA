@@ -1,3 +1,4 @@
+import argparse
 import os
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from dashpva.viewer.area_det.docks import (
     MousePosDock,
     RoiDock,
     StatsDock,
+    WaterfallDock,
 )
 from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
@@ -47,7 +49,7 @@ _PERF_TIMER_INTERVAL_MS = 1000
 # Bump when the dock set changes — restoreState silently rejects mismatched
 # versions so users with a stale saved layout fall back to defaults instead
 # of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 1
+_DOCK_STATE_VERSION = 2
 
 
 def _settings() -> QSettings:
@@ -125,6 +127,9 @@ class DiffractionImageWindow(BaseWindow):
         self.mouse_x = 0
         self.mouse_y = 0
         self.rois: list[pg.ROI] = []
+        # name -> on-image pg.ROI overlay (e.g. "ROI1"), for transform-aware
+        # region lookup by consumers such as the waterfall dock.
+        self._roi_overlays: dict[str, pg.ROI] = {}
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
@@ -295,6 +300,7 @@ class DiffractionImageWindow(BaseWindow):
         self.mouse_pos_dock = MousePosDock(main_window=self)
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
+        self.waterfall_dock = WaterfallDock(main_window=self, show=False)
 
         self._apply_default_layout()
         # Restore the user's last layout if one was saved; falls through to
@@ -392,14 +398,19 @@ class DiffractionImageWindow(BaseWindow):
         dock_height = min(self.stats_dock.sizeHint().height(), self.height() // 2)
         self.resizeDocks([self.stats_dock], [dock_width], Qt.Horizontal)
         self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
+        # Waterfall shares the large lower-left region with Image when shown.
+        self.tabifyDockWidget(self.image_dock, self.waterfall_dock)
+        self.image_dock.raise_()
         self.roi_dock.hide()
         self.analysis_dock.hide()
+        self.waterfall_dock.hide()
 
     def _reset_layout(self) -> None:
         _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
-                  self.mouse_pos_dock, self.roi_dock, self.analysis_dock):
+                  self.mouse_pos_dock, self.roi_dock, self.analysis_dock,
+                  self.waterfall_dock):
             self.removeDockWidget(d)
             d.setFloating(False)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
@@ -778,6 +789,9 @@ class DiffractionImageWindow(BaseWindow):
                 self.image_view.getView().removeItem(item)
             self.rois.clear()
             self.reset_rsm_vars()
+            # Tear down the waterfall's manual ROI + buffer for the new channel.
+            if hasattr(self, 'waterfall_dock'):
+                self.waterfall_dock.on_channel_changed()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
@@ -1130,7 +1144,10 @@ class DiffractionImageWindow(BaseWindow):
                             pen=pg.mkPen(color=roi_color))
                 self.rois.append(roi)
                 self.image_view.addItem(roi)
-                
+                # Map by name (e.g. "ROI1") for transform-aware lookup by the
+                # waterfall dock; the same object is mutated in place by update_rois.
+                self._roi_overlays[roi_num] = roi
+
                 # Add label if ROI is too big. Append to self.rois so
                 # start_live_view_clicked removes it on the next PV switch.
                 if roi_too_big:
@@ -1141,6 +1158,9 @@ class DiffractionImageWindow(BaseWindow):
                 
                 roi.sigRegionChanged.connect(self.update_roi_region)
             self._apply_roi_visibility()
+            # New EPICS ROIs are now available — let the waterfall dock offer them.
+            if hasattr(self, 'waterfall_dock'):
+                self.waterfall_dock.refresh_roi_sources()
         except Exception as e:
             print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
 
@@ -1360,6 +1380,7 @@ class DiffractionImageWindow(BaseWindow):
     def reset_rsm_vars(self) -> None:
         self.hkl_data = {}
         self.rois.clear()
+        self._roi_overlays.clear()
         self.qx = None
         self.qy = None
         self.qz = None
@@ -1681,6 +1702,14 @@ class DiffractionImageWindow(BaseWindow):
         super().closeEvent(event)
 
 def main():
+    # --channel, when supplied (by `DashPVA detector --pv/--prefix`), opens the
+    # viewer directly on that PVA channel and skips the prefix dialog. Parse
+    # known args only so Qt's own sys.argv handling is left untouched.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--channel', default=None,
+                        help='PVA channel to open directly, skipping the prefix dialog.')
+    args, _ = parser.parse_known_args()
+
     app = QApplication(sys.argv)
     # Fusion is scoped to this viewer because the dock-title QSS rules only
     # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
@@ -1689,7 +1718,10 @@ def main():
     from PyQt5.QtWidgets import QStyleFactory
     app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
-    window = ConfigDialog()
+    if args.channel:
+        window = DiffractionImageWindow(input_channel=args.channel)
+    else:
+        window = ConfigDialog()
     window.show()
 
     sys.exit(app.exec_())

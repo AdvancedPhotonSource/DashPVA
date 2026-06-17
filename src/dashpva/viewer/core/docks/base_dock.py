@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QDockWidget, QMenu
 
 
@@ -35,6 +35,19 @@ class BaseDock(QDockWidget):
         self.action_window_dock = self.main_window.add_dock_toggle_action(
             self, self.title, segment_name=self.segment_name
         )
+        # Surface the dock (raise its tab) when the user enables it from the
+        # Windows menu, so toggling on a tabified dock brings it to the front
+        # instead of leaving it hidden behind a tab-mate. Only user menu-clicks
+        # emit `toggled` here -- programmatic visibility sync blocks signals
+        # (see BaseWindow.add_dock_toggle_action) -- so this does not fight the
+        # default layout at startup.
+        if self.action_window_dock is not None:
+            self.action_window_dock.toggled.connect(self._raise_on_enable)
+
+    def _raise_on_enable(self, checked: bool) -> None:
+        # Deferred one event-loop pass so the show()/tabify settles first.
+        if checked:
+            QTimer.singleShot(0, self.raise_)
 
     def _current_host(self):
         """Return the QMainWindow currently hosting this dock."""

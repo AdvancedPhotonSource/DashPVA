@@ -62,10 +62,25 @@ def hkl3d():
 
 
 @cli.command()
-def detector():
-    """Launch Area Detector Viewer"""
+@click.option('--pv', 'pv', default=None, metavar='CHANNEL',
+              help='Open a full PVA channel directly, used verbatim (e.g. s6lambda1:Pva1:Image).')
+@click.option('--prefix', 'prefix', default=None, metavar='PREFIX',
+              help='Open a detector prefix directly; ":Pva1:Image" is appended (e.g. s6lambda1).')
+def detector(pv, prefix):
+    """Launch Area Detector Viewer.
+
+    With no options the prefix dialog is shown. Use --pv to open a full channel
+    as-is, or --prefix to append ":Pva1:Image" to a detector prefix.
+    """
+    if pv and prefix:
+        raise click.UsageError('Use only one of --pv or --prefix.')
     click.echo('Running Area Detector Viewer')
-    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.area_det.area_det_viewer']).returncode
+    cmd = [sys.executable, '-m', 'dashpva.viewer.area_det.area_det_viewer']
+    if pv and pv.strip():
+        cmd += ['--channel', pv.strip()]
+    elif prefix and prefix.strip():
+        cmd += ['--channel', f'{prefix.strip()}:Pva1:Image']
+    exit_code = subprocess.run(cmd).returncode
     sys.exit(exit_code)
 
 
