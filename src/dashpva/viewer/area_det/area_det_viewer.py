@@ -1,3 +1,4 @@
+import argparse
 import os
 import subprocess
 import sys
@@ -1701,6 +1702,14 @@ class DiffractionImageWindow(BaseWindow):
         super().closeEvent(event)
 
 def main():
+    # --channel, when supplied (by `DashPVA detector --pv/--prefix`), opens the
+    # viewer directly on that PVA channel and skips the prefix dialog. Parse
+    # known args only so Qt's own sys.argv handling is left untouched.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--channel', default=None,
+                        help='PVA channel to open directly, skipping the prefix dialog.')
+    args, _ = parser.parse_known_args()
+
     app = QApplication(sys.argv)
     # Fusion is scoped to this viewer because the dock-title QSS rules only
     # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
@@ -1709,7 +1718,10 @@ def main():
     from PyQt5.QtWidgets import QStyleFactory
     app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
-    window = ConfigDialog()
+    if args.channel:
+        window = DiffractionImageWindow(input_channel=args.channel)
+    else:
+        window = ConfigDialog()
     window.show()
 
     sys.exit(app.exec_())
