@@ -79,6 +79,15 @@ class LLMBackend(ABC):
             'tool_calls': [{'id': str, 'name': str, 'arguments': dict}, ...]}``
             when the model wants to call tools.
 
+            Backends MAY additionally set two optional keys, which other
+            backends and the controller's generic path safely ignore:
+
+            * ``'thinking': str`` — native reasoning text (e.g. Claude extended
+              thinking) to surface to the user.
+            * ``'_provider_blocks': list`` — provider-native content blocks the
+              controller carries verbatim back into history so stateful artifacts
+              (e.g. thinking-block signatures) round-trip across tool rounds.
+
         Raises
         ------
         ConnectionError
@@ -132,7 +141,10 @@ def make_backend(config: dict) -> LLMBackend:
     if kind == 'argo':
         from dashpva.analysis.backends.argo_backend import ArgoBackend
         return ArgoBackend(config)
+    if kind == 'anthropic':
+        from dashpva.analysis.backends.anthropic_backend import AnthropicBackend
+        return AnthropicBackend(config)
     raise ValueError(
         f"Unknown LLM backend {kind!r}. "
-        "Set SESSION_ANALYSIS.BACKEND to 'ollama' or 'argo'."
+        "Set SESSION_ANALYSIS.BACKEND to 'ollama', 'argo', or 'anthropic'."
     )
