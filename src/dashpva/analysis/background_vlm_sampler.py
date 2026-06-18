@@ -9,8 +9,6 @@ Off by default — controlled via the Frame Features dock checkbox.
 
 from __future__ import annotations
 
-import base64
-import io
 import threading
 import time
 
@@ -107,32 +105,9 @@ class BackgroundVlmSampler(QThread):
         self.status_updated.emit(f"frame {frame_id}: {preview}")
 
     def _interpret(self, image: np.ndarray, features: dict) -> str:
-        # Avoid importing PIL until the user actually enables sampling — keeps
-        # the dock cheap to construct on startup.
-        from PIL import Image
-
-        # Reduce dimensionality (some PVA frames arrive as (H, W, 1) etc.)
-        if image.ndim == 3:
-            image = image.mean(axis=2)
-        arr = image.astype(np.float32)
-        mn, mx = float(arr.min()), float(arr.max())
-        if mx > mn:
-            arr = ((arr - mn) / (mx - mn) * 255.0).astype(np.uint8)
-        else:
-            arr = np.zeros_like(arr, dtype=np.uint8)
-
-        img_pil = Image.fromarray(arr, mode='L')
-        # moondream uses 378×378 internally; downscale to keep payload + latency low.
-        max_side = max(img_pil.size)
-        if max_side > 336:
-            scale = 336 / max_side
-            new_w = max(1, int(img_pil.size[0] * scale))
-            new_h = max(1, int(img_pil.size[1] * scale))
-            img_pil = img_pil.resize((new_w, new_h), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        img_pil.save(buf, format='JPEG', quality=85)
-        b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        # Shared encode path (also used by the on-demand describe_frame tool).
+        from dashpva.analysis.vlm_util import encode_frame_for_vlm
+        b64 = encode_frame_for_vlm(image)
 
         n = features.get('n_blobs', 0)
         frame_feats = features.get('frame', {}) or {}

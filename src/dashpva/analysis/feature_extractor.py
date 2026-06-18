@@ -47,6 +47,9 @@ class FrameFeatureExtractor:
         Parameters
         ----------
         image : np.ndarray  shape (H, W) or (H, W, C)
+            The raw detector frame in its native ADU values (the extractor only
+            casts to float for the math — values are preserved, so per-detector
+            granularity such as the true count range is retained).
         blob_detections : np.ndarray  shape (N, 5)  [x1, y1, x2, y2, score]
 
         Returns
@@ -63,6 +66,7 @@ class FrameFeatureExtractor:
         blob_list = self._per_blob_features(img, blob_detections, h, w)
         radial_peaks = self._radial_profile_peaks(img, h, w)
         bg_texture = self._background_texture(img, h, w)
+        extra = self._extended_frame_features(img, h, w, frame_feats)
 
         return {
             'n_blobs': len(blob_list),
@@ -71,6 +75,7 @@ class FrameFeatureExtractor:
                 **frame_feats,
                 'background_texture': bg_texture,
                 'radial_profile_peaks': radial_peaks,
+                **extra,
             },
         }
 
@@ -113,6 +118,53 @@ class FrameFeatureExtractor:
             'com_x': round(com_x, 2),
             'com_y': round(com_y, 2),
             'active_fraction': active_fraction,
+        }
+
+    def _extended_frame_features(self, img: np.ndarray, h: int, w: int,
+                                 base: dict) -> dict:
+        """A few additional cheap, physically-meaningful frame features that a
+        beamline scientist actually acts on: clipping/saturation evidence,
+        blank/dark frames, and signal running into the detector edge. All numpy,
+        all JSON-serializable; additive to the existing ``frame`` dict.
+
+        Saturation is reported as raw evidence rather than a guessed boolean: the
+        peak ADU and how many pixels are pinned at it. A plateau of many pixels
+        at the same maximum is the signature of clipping regardless of the
+        detector's (per-detector, often sub-container) full-well ceiling — the
+        reader can compare ``max_value`` to the known ceiling to confirm.
+        """
+        total = float(np.sum(img))
+        max_value = float(img.max())
+
+        # --- Clipping / saturation evidence ----------------------------
+        n_at_max = int(np.count_nonzero(img >= max_value))
+        max_plateau_fraction = round(n_at_max / float(img.size), 8)
+
+        # --- Blank / dark frame ----------------------------------------
+        # Beam dropped, shutter closed, or a missed frame: essentially no signal
+        # above background.
+        active_fraction = base.get('active_fraction', 0.0)
+        snr = base.get('snr', 0.0)
+        blank_frame = bool(active_fraction < 1e-4 and snr < 1.5)
+
+        # --- Edge clipping ---------------------------------------------
+        # Fraction of total intensity in the outer 5% border. A high value means
+        # signal (or the direct beam) is running into the detector edge — counts
+        # are being lost / the detector may need to move.
+        bh = max(1, int(h * 0.05))
+        bw = max(1, int(w * 0.05))
+        if total > 0 and h > 2 * bh and w > 2 * bw:
+            inner = float(np.sum(img[bh:h - bh, bw:w - bw]))
+            edge_fraction = round((total - inner) / total, 6)
+        else:
+            edge_fraction = 0.0
+
+        return {
+            'max_value': round(max_value, 4),
+            'n_pixels_at_max': n_at_max,
+            'max_plateau_fraction': max_plateau_fraction,
+            'blank_frame': blank_frame,
+            'edge_intensity_fraction': edge_fraction,
         }
 
     def _radial_profile_peaks(self, img: np.ndarray, h: int, w: int,

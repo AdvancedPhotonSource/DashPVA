@@ -51,6 +51,17 @@ class PvTools(BaseTool):
         """Point ``source='h5'`` lookups at *path* (or clear with None)."""
         self._h5_store = H5HistoryStore(path) if path else None
 
+    def resolve_and_check(self, pv_name: str) -> str | None:
+        """Resolve a friendly name and apply the chat-tool allowlist. Returns the
+        canonical PV name, or None if it is not allowed. Lets sibling tools
+        (e.g. AnalysisTools.correlate_series) reuse the same gate."""
+        name = self._resolve(pv_name)
+        return name if self._is_allowed(name) else None
+
+    def history_store(self, source: str = 'live'):
+        """Expose the configured history store (live or loaded h5) for reuse."""
+        return self._store(source)
+
     # ------------------------------------------------------------------
     # Tools
     # ------------------------------------------------------------------
