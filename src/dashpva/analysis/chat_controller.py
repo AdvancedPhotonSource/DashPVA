@@ -35,20 +35,65 @@ CHAT_SYSTEM_PROMPT = (
     "numbers."
 )
 
+# Deliberate mode: a rigorous plan -> investigate -> answer protocol with an
+# enforced final-answer contract. Backend-agnostic — it shapes behavior even on
+# models without native reasoning, so quality improves on ollama/GPT as well as
+# on Claude (where it composes with native extended thinking).
+DELIBERATE_SYSTEM_PROMPT = (
+    "You are an expert beamline scientist embedded in a live synchrotron "
+    "data-acquisition viewer, assisting a researcher who needs RIGOROUS, "
+    "evidence-backed analysis. Work like a careful investigator, not a "
+    "describer.\n\n"
+    "PROTOCOL — follow it every turn:\n"
+    "1. PLAN: call record_plan once with 1-3 concrete steps before other tools.\n"
+    "2. INVESTIGATE: gather evidence with tools. NEVER state a number you did "
+    "not read from a tool result this turn. To inspect how something evolves, "
+    "use get_feature_timeseries / get_feature_statistics / detect_anomalies; to "
+    "relate detector behavior to beamline conditions, use correlate_series; to "
+    "examine a specific frame, use compute_radial_profile / fit_peak / "
+    "get_roi_statistics / check_saturation; when the numbers are ambiguous and a "
+    "vision tool is available, look at the frame with describe_frame. Record "
+    "confirmed facts with record_finding (cite the exact tool/frame), and record "
+    "anything unconfirmed with note_hypothesis (state the test that would settle "
+    "it).\n"
+    "3. If a tool errors or returns no data, say so explicitly — do not paper "
+    "over gaps. Be honest about what you do not know.\n"
+    "4. ANSWER: end every substantive reply with exactly this structure:\n"
+    "## Answer\n"
+    "<direct answer; cite exact numbers and the tool/frame each came from>\n"
+    "## Confidence\n"
+    "<high|medium|low> - <one sentence why>\n"
+    "## What I did not verify / would need to check\n"
+    "<bullets: missing data, assumptions, PVs/frames not inspected>\n\n"
+    "Historical lookups default to the live in-memory cache (source='live'); use "
+    "source='h5' only if a history file is loaded. When a historical value is not "
+    "an exact match (exact=false), say so and report the matched_frame_id used."
+)
+
 EventKind = Literal[
-    'assistant_text', 'tool_call_requested', 'tool_call_result', 'error', 'done'
+    'assistant_text', 'tool_call_requested', 'tool_call_result', 'error', 'done',
+    # additive reasoning-surface events (older UIs silently drop unknown kinds):
+    'plan', 'thinking', 'finding', 'hypothesis', 'critique',
 ]
+
+# Scratchpad tool name -> the typed ControllerEvent kind it surfaces.
+REASONING_TOOL_KINDS = {
+    'record_plan': 'plan',
+    'record_finding': 'finding',
+    'note_hypothesis': 'hypothesis',
+}
 
 
 @dataclass
 class ControllerEvent:
     kind: EventKind
-    text: str = ''                          # assistant_text / error
+    text: str = ''                          # assistant_text / error / thinking / critique
     tool_name: str = ''                     # tool_*
     tool_call_id: str = ''
     tool_arguments: Optional[dict] = None   # tool_call_requested
     tool_result: Optional[dict] = None      # tool_call_result
     rounds_used: int = 0                    # done
+    detail: Optional[dict] = None           # plan / finding / hypothesis payload
 
 
 OnEvent = Callable[[ControllerEvent], None]
@@ -60,15 +105,34 @@ class ChatController:
     def __init__(self, *, pva_reader, backend: LLMBackend,
                  tool_registry: ToolRegistry,
                  system_prompt: str = CHAT_SYSTEM_PROMPT,
-                 max_tool_rounds: int = 5):
+                 max_tool_rounds: int = 5,
+                 mode: str = 'standard',
+                 max_tool_rounds_deliberate: int = 12,
+                 enable_self_critique: bool = False):
         self.reader = pva_reader
         self.backend = backend
         self.tools = tool_registry
-        self.system_prompt = system_prompt
+        self.mode = mode if mode in ('standard', 'deliberate') else 'standard'
+        # Track whether the caller supplied a custom prompt; if not, deliberate
+        # mode swaps in DELIBERATE_SYSTEM_PROMPT.
+        self._custom_prompt = system_prompt not in (CHAT_SYSTEM_PROMPT, '', None)
+        self.system_prompt = self._prompt_for_mode(system_prompt)
         self.max_tool_rounds = max(1, int(max_tool_rounds))
+        self.max_tool_rounds_deliberate = max(1, int(max_tool_rounds_deliberate))
+        self.enable_self_critique = bool(enable_self_critique)
         self.messages: list[dict] = []
-        if system_prompt:
-            self.messages.append({'role': 'system', 'content': system_prompt})
+        if self.system_prompt:
+            self.messages.append({'role': 'system', 'content': self.system_prompt})
+
+    def _prompt_for_mode(self, base_prompt: str) -> str:
+        if self._custom_prompt:
+            return base_prompt
+        return DELIBERATE_SYSTEM_PROMPT if self.mode == 'deliberate' else CHAT_SYSTEM_PROMPT
+
+    @property
+    def _effective_max_rounds(self) -> int:
+        return (self.max_tool_rounds_deliberate
+                if self.mode == 'deliberate' else self.max_tool_rounds)
 
     # ------------------------------------------------------------------
     # State management
@@ -86,6 +150,24 @@ class ChatController:
 
     def set_reader(self, pva_reader) -> None:
         self.reader = pva_reader
+
+    def set_mode(self, mode: str) -> None:
+        """Switch standard/deliberate. The system prompt is only swapped when the
+        conversation has not started yet (history is empty apart from the system
+        message); mid-conversation we keep the existing prompt and only the round
+        cap changes, to avoid rewriting an in-flight system message."""
+        if mode not in ('standard', 'deliberate') or mode == self.mode:
+            return
+        self.mode = mode
+        if self._custom_prompt:
+            return
+        history_started = any(m.get('role') != 'system' for m in self.messages)
+        if not history_started:
+            self.system_prompt = self._prompt_for_mode(self.system_prompt)
+            self.messages = (
+                [{'role': 'system', 'content': self.system_prompt}]
+                if self.system_prompt else []
+            )
 
     # ------------------------------------------------------------------
     # Turn execution
@@ -113,9 +195,11 @@ class ChatController:
         """
         self.messages.append({'role': 'user', 'content': text})
         tool_schemas = self.tools.openai_schemas() if self.tools else []
+        self._reset_turn_budgets()
 
+        max_rounds = self._effective_max_rounds
         rounds = 0
-        while rounds < self.max_tool_rounds:
+        while rounds < max_rounds:
             try:
                 result = self.backend.chat(self.messages, tools=tool_schemas or None)
             except Exception as e:
@@ -129,10 +213,17 @@ class ChatController:
             # them. Each backend re-serializes these tool_calls into its own wire
             # format at send time (OpenAI/Argo want JSON-string arguments, ollama
             # wants a dict), so we store the normalized shape verbatim here.
+            # ``_provider_blocks`` (when a backend supplies it, e.g. Anthropic
+            # native thinking) is carried verbatim so thinking blocks round-trip
+            # across tool rounds; other backends ignore it.
             self.messages.append({
                 k: v for k, v in result.items()
-                if k in ('role', 'content', 'tool_calls')
+                if k in ('role', 'content', 'tool_calls', '_provider_blocks')
             })
+
+            # Surface native reasoning ("thinking") before the visible answer.
+            if result.get('thinking'):
+                on_event(ControllerEvent('thinking', text=str(result['thinking'])))
 
             if result.get('content'):
                 on_event(ControllerEvent('assistant_text', text=result['content']))
@@ -152,6 +243,13 @@ class ChatController:
                 on_event(ControllerEvent(
                     'tool_call_result',
                     tool_name=cname, tool_call_id=cid, tool_result=tool_result))
+                # Scratchpad tools also surface as typed reasoning events so the
+                # plan/findings/hypotheses appear as first-class artifacts.
+                kind = REASONING_TOOL_KINDS.get(cname)
+                if kind and isinstance(tool_result, dict) and 'error' not in tool_result:
+                    on_event(ControllerEvent(
+                        kind, detail=tool_result,
+                        tool_name=cname, tool_call_id=cid))
                 self.messages.append({
                     'role': 'tool',
                     'tool_call_id': cid,
@@ -160,7 +258,50 @@ class ChatController:
                 })
             rounds += 1
 
+        # Round cap reached. In deliberate mode, close out gracefully: ask once
+        # for a final answer (no tools) so the scientist gets a rigorous summary
+        # of what was found rather than a bare failure. Standard mode keeps the
+        # original error for backward compatibility.
+        if self.mode == 'deliberate':
+            self.messages.append({
+                'role': 'user',
+                'content': ('You have used all available investigation rounds. '
+                            'Stop calling tools and give your final answer now, '
+                            'following the required answer contract, based only on '
+                            'evidence already gathered. State clearly what remains '
+                            'unverified.'),
+            })
+            try:
+                final = self.backend.chat(self.messages, tools=None)
+            except Exception as e:
+                on_event(ControllerEvent('error', text=f'{type(e).__name__}: {e}'))
+                return
+            self.messages.append({
+                k: v for k, v in final.items()
+                if k in ('role', 'content', '_provider_blocks')
+            })
+            if final.get('thinking'):
+                on_event(ControllerEvent('thinking', text=str(final['thinking'])))
+            on_event(ControllerEvent(
+                'assistant_text', text=final.get('content') or '(no final answer)'))
+            on_event(ControllerEvent('done', rounds_used=rounds))
+            return
+
         on_event(ControllerEvent(
             'error',
-            text=f'Reached max_tool_rounds ({self.max_tool_rounds}) without a '
+            text=f'Reached max_tool_rounds ({max_rounds}) without a '
                  f'final answer. The model may be stuck in a tool loop.'))
+
+    def _reset_turn_budgets(self) -> None:
+        """Give tool instances a chance to reset per-turn budgets (e.g. rate
+        limits on expensive frame/vision tools). Duck-typed so the registry and
+        controller stay decoupled from any specific tool class."""
+        if not self.tools:
+            return
+        for inst in self.tools.instances():
+            reset = getattr(inst, 'reset_turn_budgets', None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception:
+                    pass

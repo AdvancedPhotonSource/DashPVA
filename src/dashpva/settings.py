@@ -339,6 +339,14 @@ def reload() -> None:
     CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS', 5)
     CHAT_TOOLS.setdefault('TOOL_TIMEOUT_S', 5.0)
     CHAT_TOOLS.setdefault('HISTORY_MAX_POINTS', 500)
+    CHAT_TOOLS.setdefault('MODE', 'standard')
+    CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS_DELIBERATE', 12)
+    CHAT_TOOLS.setdefault('REASONING_EFFORT', None)
+    CHAT_TOOLS.setdefault('THINKING_BUDGET_TOKENS', None)
+    CHAT_TOOLS.setdefault('VLM_TOOL_ENABLED', False)
+    CHAT_TOOLS.setdefault('VLM_TOOL_MODEL', 'claudesonnet46')
+    CHAT_TOOLS.setdefault('VLM_TOOL_MAX_CALLS_PER_TURN', 3)
+    CHAT_TOOLS.setdefault('FRAME_TOOL_MAX_CALLS_PER_TURN', 20)
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
     try:
@@ -679,6 +687,14 @@ class Settings:
         self.CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS', 5)
         self.CHAT_TOOLS.setdefault('TOOL_TIMEOUT_S', 5.0)
         self.CHAT_TOOLS.setdefault('HISTORY_MAX_POINTS', 500)
+        self.CHAT_TOOLS.setdefault('MODE', 'standard')
+        self.CHAT_TOOLS.setdefault('MAX_TOOL_ROUNDS_DELIBERATE', 12)
+        self.CHAT_TOOLS.setdefault('REASONING_EFFORT', None)
+        self.CHAT_TOOLS.setdefault('THINKING_BUDGET_TOKENS', None)
+        self.CHAT_TOOLS.setdefault('VLM_TOOL_ENABLED', False)
+        self.CHAT_TOOLS.setdefault('VLM_TOOL_MODEL', 'claudesonnet46')
+        self.CHAT_TOOLS.setdefault('VLM_TOOL_MAX_CALLS_PER_TURN', 3)
+        self.CHAT_TOOLS.setdefault('FRAME_TOOL_MAX_CALLS_PER_TURN', 20)
 
         # AppSettings
         try:

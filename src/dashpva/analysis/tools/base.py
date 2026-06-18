@@ -131,13 +131,27 @@ class ToolRegistry:
 
     def __init__(self, instances: Iterable[BaseTool] | None = None):
         self._by_name = {}
+        self._instances: list[BaseTool] = []
         if instances:
             for inst in instances:
                 self.add(inst)
 
     def add(self, instance: BaseTool) -> None:
+        if instance not in self._instances:
+            self._instances.append(instance)
         for spec in discover_tools(instance):
             self._by_name[spec.name] = spec
+
+    def instances(self) -> list[BaseTool]:
+        """The tool-owning instances, in registration order. Lets callers
+        invoke cross-cutting hooks (e.g. ``reset_turn_budgets``) without the
+        registry knowing about any specific tool class."""
+        return list(self._instances)
+
+    def remove(self, name: str) -> None:
+        """Unregister a tool by name (no-op if absent). Used to gate optional
+        tools, e.g. hiding ``describe_frame`` when vision is toggled off."""
+        self._by_name.pop(name, None)
 
     def specs(self) -> list[ToolSpec]:
         return list(self._by_name.values())
