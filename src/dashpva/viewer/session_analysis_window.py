@@ -25,6 +25,7 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -53,8 +54,10 @@ from dashpva.analysis.chat_controller import ChatController, ControllerEvent
 from dashpva.analysis.experiment_context import ExperimentContext
 from dashpva.analysis.llm_backend import make_backend
 from dashpva.analysis.session_analyzer import SessionAnalyzer
+from dashpva.analysis.tools.analysis_tools import AnalysisTools
 from dashpva.analysis.tools.base import ToolRegistry
 from dashpva.analysis.tools.pv_tools import PvTools
+from dashpva.analysis.tools.reasoning_tools import ReasoningTools
 from dashpva.analysis.tools.session_tools import SessionTools
 
 # ======================================================================
@@ -75,6 +78,12 @@ class _ChatTurnWorker(QThread):
     tool_completed = pyqtSignal(str, dict)      # name, result
     turn_error = pyqtSignal(str)
     turn_done = pyqtSignal(int, float)          # rounds_used, elapsed_s
+    # Reasoning-surface signals (deliberate mode + native thinking).
+    plan_recorded = pyqtSignal(dict)
+    finding_recorded = pyqtSignal(dict)
+    hypothesis_noted = pyqtSignal(dict)
+    thinking_text = pyqtSignal(str)
+    critique_made = pyqtSignal(str)             # reserved (P3 self-critique)
 
     def __init__(self, runner: Callable[[Callable[[ControllerEvent], None]], None],
                  parent=None):
@@ -100,6 +109,17 @@ class _ChatTurnWorker(QThread):
             self.turn_error.emit(ev.text)
         elif ev.kind == 'done':
             self.turn_done.emit(ev.rounds_used, time.time() - self._t0)
+        elif ev.kind == 'plan':
+            self.plan_recorded.emit(ev.detail or {})
+        elif ev.kind == 'finding':
+            self.finding_recorded.emit(ev.detail or {})
+        elif ev.kind == 'hypothesis':
+            self.hypothesis_noted.emit(ev.detail or {})
+        elif ev.kind == 'thinking':
+            self.thinking_text.emit(ev.text)
+        elif ev.kind == 'critique':
+            self.critique_made.emit(ev.text)
+        # Unknown kinds are silently dropped (forward-compatible).
 
 
 # ======================================================================
@@ -183,6 +203,93 @@ class _ToolBubble(QFrame):
         return f"[tool {self._name}] args={json.dumps(self._arguments, default=str)} -> {res}"
 
 
+class _ReasoningBubble(QFrame):
+    """Collapsible, color-coded row for one reasoning artifact emitted by the
+    agent: a plan, a verified finding, an unverified hypothesis, native thinking,
+    or a self-critique. Mirrors :class:`_ToolBubble`'s collapse pattern."""
+
+    _STYLES = {
+        # kind: (color, label, collapsed_by_default)
+        'plan': ('#2b6cb0', 'plan', False),
+        'finding': ('#2f855a', 'finding', False),
+        'hypothesis': ('#b7791f', 'hypothesis', False),
+        'thinking': ('#777777', 'thinking', True),
+        'critique': ('#6b46c1', 'critique', False),
+    }
+
+    def __init__(self, kind: str, payload, parent=None):
+        super().__init__(parent)
+        self._kind = kind
+        self._payload = payload
+        color, label, collapsed = self._STYLES.get(kind, ('#555555', kind, False))
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet(
+            "_ReasoningBubble { background:#fbfbfd; border:1px solid #e0e0e8; "
+            "border-radius:6px; }"
+        )
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(2)
+
+        self._toggle = QToolButton()
+        self._toggle.setStyleSheet(f"QToolButton {{ border:none; color:{color}; }}")
+        self._toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self._toggle.setCheckable(True)
+        self._toggle.setText(f"▸  {label} · {self._headline()}")
+        self._toggle.clicked.connect(self._on_toggle)
+        lay.addWidget(self._toggle)
+
+        self._details = QLabel(self._body_text())
+        self._details.setWordWrap(True)
+        self._details.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._details.setStyleSheet("color:#444; font-family:monospace;")
+        self._details.setVisible(not collapsed)
+        lay.addWidget(self._details)
+        if not collapsed:
+            self._toggle.setChecked(True)
+            self._toggle.setText('▾' + self._toggle.text()[1:])
+
+    # -- rendering helpers --
+
+    def _headline(self) -> str:
+        p = self._payload
+        if self._kind == 'plan' and isinstance(p, dict):
+            return f"{len(p.get('steps') or [])} step(s)"
+        if self._kind == 'finding' and isinstance(p, dict):
+            return _truncate(p.get('statement', ''), 70) + f"  [{p.get('confidence', '')}]"
+        if self._kind == 'hypothesis' and isinstance(p, dict):
+            return _truncate(p.get('hypothesis', ''), 70)
+        if isinstance(p, str):
+            return _truncate(p.replace('\n', ' '), 70)
+        return ''
+
+    def _body_text(self) -> str:
+        p = self._payload
+        if self._kind == 'plan' and isinstance(p, dict):
+            return '\n'.join(f"{i}. {s}" for i, s in enumerate(p.get('steps') or [], 1))
+        if self._kind == 'finding' and isinstance(p, dict):
+            return (f"statement: {p.get('statement', '')}\n"
+                    f"confidence: {p.get('confidence', '')}\n"
+                    f"evidence: {p.get('evidence', '')}")
+        if self._kind == 'hypothesis' and isinstance(p, dict):
+            return (f"hypothesis: {p.get('hypothesis', '')}\n"
+                    f"test: {p.get('test', '')}")
+        return str(p)
+
+    def _on_toggle(self, checked: bool) -> None:
+        self._details.setVisible(checked)
+        self._toggle.setText(('▾' if checked else '▸') + self._toggle.text()[1:])
+
+    def transcript_line(self) -> str:
+        body = self._body_text().replace('\n', ' | ')
+        return f"[{self._kind}] {body}"
+
+
+def _truncate(text: str, n: int) -> str:
+    text = str(text)
+    return text if len(text) <= n else text[:n] + '…'
+
+
 class ConversationView(QScrollArea):
     """Vertical stack of chat bubbles (user / assistant / tool / error).
 
@@ -223,6 +330,26 @@ class ConversationView(QScrollArea):
         self._entries.append(('tool', bubble))
         return bubble
 
+    def add_plan(self, detail: dict) -> None:
+        self._add_reasoning('plan', detail)
+
+    def add_finding(self, detail: dict) -> None:
+        self._add_reasoning('finding', detail)
+
+    def add_hypothesis(self, detail: dict) -> None:
+        self._add_reasoning('hypothesis', detail)
+
+    def add_thinking(self, text: str) -> None:
+        self._add_reasoning('thinking', text)
+
+    def add_critique(self, text: str) -> None:
+        self._add_reasoning('critique', text)
+
+    def _add_reasoning(self, kind: str, payload) -> None:
+        bubble = _ReasoningBubble(kind, payload)
+        self._insert_widget(bubble)
+        self._entries.append(('reasoning', bubble))
+
     def clear(self) -> None:
         while self._vbox.count() > 1:   # keep the trailing stretch
             item = self._vbox.takeAt(0)
@@ -234,7 +361,7 @@ class ConversationView(QScrollArea):
     def to_plain_text(self) -> str:
         lines = []
         for role, payload in self._entries:
-            if role == 'tool':
+            if role in ('tool', 'reasoning'):
                 lines.append(payload.transcript_line())
             else:
                 label = {'user': 'You', 'assistant': 'Assistant', 'error': 'Error'}.get(role, role)
@@ -347,12 +474,19 @@ class SessionAnalysisWindow(QMainWindow):
 
         self.rb_ollama = QRadioButton("Local ollama")
         self.rb_argo = QRadioButton("Argo API")
+        self.rb_anthropic = QRadioButton("Argo (Claude, native thinking)")
+        self.rb_anthropic.setToolTip(
+            "Use Argo's native Anthropic Messages endpoint so Claude reasons with "
+            "real extended thinking between tool calls. Requires a Claude model "
+            "(e.g. claudesonnet46, claudeopus47).")
         self.rb_ollama.setChecked(True)
         self._backend_group = QButtonGroup(backend_box)
         self._backend_group.addButton(self.rb_ollama)
         self._backend_group.addButton(self.rb_argo)
+        self._backend_group.addButton(self.rb_anthropic)
         grid.addWidget(self.rb_ollama, 0, 0)
         grid.addWidget(self.rb_argo, 0, 1)
+        grid.addWidget(self.rb_anthropic, 0, 2)
 
         self.btn_reset = QPushButton("Reset chat")
         self.btn_reset.setMaximumWidth(110)
@@ -373,6 +507,20 @@ class SessionAnalysisWindow(QMainWindow):
             "prompt. Does not affect regular chat messages."
         )
         grid.addWidget(self.sb_snapshots, 2, 1)
+
+        self.cb_deliberate = QCheckBox("Deliberate (plan → investigate → verify)")
+        self.cb_deliberate.setToolTip(
+            "Rigorous mode: the agent plans, investigates with tools, records "
+            "findings/hypotheses, and answers with explicit confidence and a "
+            "'what I didn't verify' section. Uses more tool rounds.")
+        grid.addWidget(self.cb_deliberate, 3, 0, 1, 2)
+
+        self.cb_vision = QCheckBox("Allow vision (describe_frame)")
+        self.cb_vision.setToolTip(
+            "Let the agent send the actual cached detector image to a vision "
+            "model on demand. Toggle off for image-blind A/B comparison runs.")
+        grid.addWidget(self.cb_vision, 3, 2, 1, 2)
+
         grid.setColumnStretch(2, 1)
         outer.addWidget(backend_box)
 
@@ -467,7 +615,11 @@ class SessionAnalysisWindow(QMainWindow):
         """Seed the UI from SESSION_ANALYSIS so the user sees the TOML defaults."""
         cfg = getattr(app_settings, 'SESSION_ANALYSIS', {}) or {}
         backend = (cfg.get('BACKEND') or 'ollama').lower()
-        if backend == 'argo':
+        if backend == 'anthropic':
+            self.rb_anthropic.setChecked(True)
+            self.le_model.setText(str(cfg.get('ANTHROPIC_MODEL')
+                                      or cfg.get('ARGO_MODEL') or 'claudesonnet46'))
+        elif backend == 'argo':
             self.rb_argo.setChecked(True)
             self.le_model.setText(str(cfg.get('ARGO_MODEL') or 'claudesonnet46'))
         else:
@@ -483,6 +635,11 @@ class SessionAnalysisWindow(QMainWindow):
         prior = cfg.get('PRIOR_FILE')
         if prior:
             self.le_context.setText(str(prior))
+
+        chat_cfg = getattr(app_settings, 'CHAT_TOOLS', {}) or {}
+        self.cb_deliberate.setChecked(str(chat_cfg.get('MODE', 'standard')).lower()
+                                      == 'deliberate')
+        self.cb_vision.setChecked(bool(chat_cfg.get('VLM_TOOL_ENABLED', False)))
 
     # ------------------------------------------------------------------
     # File pickers
@@ -517,14 +674,23 @@ class SessionAnalysisWindow(QMainWindow):
 
     def _build_backend(self):
         cfg = dict(getattr(app_settings, 'SESSION_ANALYSIS', {}) or {})
-        if self.rb_argo.isChecked():
+        chat_cfg = getattr(app_settings, 'CHAT_TOOLS', {}) or {}
+        model = self.le_model.text().strip()
+        if self.rb_anthropic.isChecked():
+            cfg['BACKEND'] = 'anthropic'
+            cfg['ANTHROPIC_MODEL'] = model or cfg.get('ANTHROPIC_MODEL') or \
+                cfg.get('ARGO_MODEL', 'claudesonnet46')
+            # Pass the configured thinking budget through to the backend.
+            if chat_cfg.get('THINKING_BUDGET_TOKENS') is not None:
+                cfg.setdefault('THINKING_BUDGET_TOKENS', chat_cfg['THINKING_BUDGET_TOKENS'])
+        elif self.rb_argo.isChecked():
             cfg['BACKEND'] = 'argo'
-            cfg['ARGO_MODEL'] = (self.le_model.text().strip()
-                                 or cfg.get('ARGO_MODEL', 'claudesonnet46'))
+            cfg['ARGO_MODEL'] = model or cfg.get('ARGO_MODEL', 'claudesonnet46')
+            if chat_cfg.get('REASONING_EFFORT') is not None:
+                cfg.setdefault('REASONING_EFFORT', chat_cfg['REASONING_EFFORT'])
         else:
             cfg['BACKEND'] = 'ollama'
-            cfg['OLLAMA_MODEL'] = (self.le_model.text().strip()
-                                   or cfg.get('OLLAMA_MODEL', 'llama3.2'))
+            cfg['OLLAMA_MODEL'] = model or cfg.get('OLLAMA_MODEL', 'llama3.2')
         return make_backend(cfg)
 
     def _build_analyzer(self, backend) -> SessionAnalyzer:
@@ -537,16 +703,34 @@ class SessionAnalysisWindow(QMainWindow):
     def _ensure_controller(self, backend) -> None:
         if self.controller is not None:
             return
+        chat_cfg = getattr(app_settings, 'CHAT_TOOLS', {}) or {}
         self.pv_tools = PvTools(self.reader, app_settings)
         self._sync_history_file()
         self._analyzer = self._build_analyzer(backend)
         self.session_tools = SessionTools(self.reader, self._analyzer)
-        registry = ToolRegistry([self.pv_tools, self.session_tools])
-        rounds = int((getattr(app_settings, 'CHAT_TOOLS', {}) or {}).get('MAX_TOOL_ROUNDS', 5))
+        self.reasoning_tools = ReasoningTools()
+        self.analysis_tools = AnalysisTools(
+            self.reader, app_settings, pv_tools=self.pv_tools)
+        mode = 'deliberate' if self.cb_deliberate.isChecked() else 'standard'
         self.controller = ChatController(
             pva_reader=self.reader, backend=backend,
-            tool_registry=registry, max_tool_rounds=rounds,
+            tool_registry=self._build_registry(),
+            max_tool_rounds=int(chat_cfg.get('MAX_TOOL_ROUNDS', 5)),
+            max_tool_rounds_deliberate=int(chat_cfg.get('MAX_TOOL_ROUNDS_DELIBERATE', 12)),
+            mode=mode,
         )
+
+    def _build_registry(self) -> ToolRegistry:
+        """Build the tool registry honoring the current vision checkbox. When
+        vision is off, ``describe_frame`` is omitted entirely so image-blind A/B
+        runs cannot see frames."""
+        registry = ToolRegistry([
+            self.pv_tools, self.session_tools,
+            self.reasoning_tools, self.analysis_tools,
+        ])
+        if not self.cb_vision.isChecked():
+            registry.remove('describe_frame')
+        return registry
 
     # ------------------------------------------------------------------
     # Turn execution
@@ -589,6 +773,10 @@ class SessionAnalysisWindow(QMainWindow):
         self._analyzer = self._build_analyzer(backend)
         self.session_tools.set_analyzer(self._analyzer)
         self._sync_history_file()
+        # Honor live toggles: mode + which tools are exposed (vision on/off).
+        self.controller.set_mode(
+            'deliberate' if self.cb_deliberate.isChecked() else 'standard')
+        self.controller.tools = self._build_registry()
         return True
 
     def _start_worker(self, runner) -> None:
@@ -600,6 +788,11 @@ class SessionAnalysisWindow(QMainWindow):
         self._worker.tool_completed.connect(self._on_tool_completed)
         self._worker.turn_error.connect(self._on_turn_error)
         self._worker.turn_done.connect(self._on_turn_done)
+        self._worker.plan_recorded.connect(self._on_plan_recorded)
+        self._worker.finding_recorded.connect(self._on_finding_recorded)
+        self._worker.hypothesis_noted.connect(self._on_hypothesis_noted)
+        self._worker.thinking_text.connect(self._on_thinking_text)
+        self._worker.critique_made.connect(self._on_critique_made)
         self._worker.finished.connect(self._cleanup_worker)
         self._worker.start()
 
@@ -616,6 +809,21 @@ class SessionAnalysisWindow(QMainWindow):
     def _on_tool_completed(self, name: str, result: dict) -> None:
         if self._pending_tools:
             self._pending_tools.popleft().set_result(result)
+
+    def _on_plan_recorded(self, detail: dict) -> None:
+        self.conversation.add_plan(detail)
+
+    def _on_finding_recorded(self, detail: dict) -> None:
+        self.conversation.add_finding(detail)
+
+    def _on_hypothesis_noted(self, detail: dict) -> None:
+        self.conversation.add_hypothesis(detail)
+
+    def _on_thinking_text(self, text: str) -> None:
+        self.conversation.add_thinking(text)
+
+    def _on_critique_made(self, text: str) -> None:
+        self.conversation.add_critique(text)
 
     def _on_turn_error(self, msg: str) -> None:
         self.conversation.add_error(msg)
