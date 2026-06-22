@@ -3,10 +3,6 @@
    =================================================================
    Loaded once by configure_app() in gui/__init__.py.
    Color values must match theme_colors.py.
-
-   NOTE: bayesian_viewer.py applies its own Catppuccin dark theme
-   via self.setStyleSheet() which overrides these app-level rules.
-   Do not add bayesian-specific selectors here.
    ================================================================= */
 
 /* -- macOS dark mode text fix ---------------------------------------- */

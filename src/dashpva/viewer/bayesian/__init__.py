@@ -1,12 +1,17 @@
 """
 viewer.bayesian
 ===============
-2-D Bayesian Optimization scan package for APS 6-ID.
+Bayesian optimization for DashPVA, powered by Bluesky's **blop**
+(``blop.ax.Agent`` — an Ax/BoTorch Bayesian optimizer).
 
 Modules
 -------
-bayesian_engine   – GPyTorch-backed BayesianOptimizer (ask/tell API)
-bluesky_plan      – Bluesky ``bayesian2d`` plan generator
-bayesian_viewer   – PyQt5 GUI for real-time scan control & visualization
-bluesky_compat    – Compatibility layer for importing bluesky from 6idb-bits conda env
+blop_adapter   – DashPVA-owned adapter around ``blop.ax.Agent``: config
+                 dataclasses (DOFSpec/ObjectiveSpec/OptimizerConfig),
+                 device resolution, agent construction, and the Bluesky
+                 suggest/move/read/ingest optimization plan.
+bayesian_viewer – PyQt5 GUI: scalable DOF/objective tables (with GUI-editable
+                 limits) and live optimization plots.
+bluesky_compat  – Compatibility layer for importing bluesky/ophyd/blop from a
+                 beamline conda environment.
 """

@@ -99,8 +99,8 @@ def setup(ioc):
 
 @cli.command()
 def bayesian():
-    """Launch Bayesian 2-D Scan Viewer"""
-    click.echo('Running Bayesian 2-D Scan Viewer')
+    """Launch the Bayesian Optimization viewer (blop)"""
+    click.echo('Running Bayesian Optimization viewer (blop)')
     subprocess.run([sys.executable, '-m', 'dashpva.viewer.bayesian.bayesian_viewer'])
 
 
