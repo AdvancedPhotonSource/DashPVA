@@ -36,18 +36,21 @@ dependencies = [
 # NOTE: ssrl-xrd-tools (XRD Phase Fitter engine) is intentionally NOT in base.
 # It transitively pulls JupyterLab + pymatgen + holoviews/panel/bokeh/plotly +
 # pandas + ipywidgets (~100+ packages, the bulk of install time), so it lives in
-# the `notebooks` and `full` extras only. The lean `area-det` tier keeps pyFAI
+# the `standalone` and `full` extras only. The lean `area-det` tier keeps pyFAI
 # 1D integration but not the Phase Fitter.
 
+# Install tiers are additive layers; extras compose via self-references
+# (DashPVA[...]) so each tier pulls exactly its layer. Names match the
+# `install.sh` editions 1:1 (area-det / standalone / bayesian / full).
 [project.optional-dependencies]
-# Area detector viewer + live EPICS streaming (minimal beamline footprint).
+# Area detector viewer + live EPICS streaming (the streaming foundation).
 area-det = [
     "pvapy>=5.5.0",
     "pyepics>=3.5.0",
 ]
-# Post-analysis tools + Jupyter notebooks. The workbench, HKL 3D viewer, and the
-# notebook DashAnalysis API render via pyvista/VTK.
-notebooks = [
+# Post-analysis tools + Jupyter (no streaming). The workbench, HKL 3D viewer, and
+# the notebook DashAnalysis API render via pyvista/VTK.
+standalone = [
     "ssrl-xrd-tools>=0.35.0",
     "pyvista[jupyter]>=0.44.0",
     "pyvistaqt>=0.11.0",
@@ -58,28 +61,19 @@ notebooks = [
     "jupyterlab-widgets>=3.0.0",
     "jupyter-core>=5.7.0",
 ]
-# Everything except the interim torch/CUDA Bayesian stack: streaming + 3D + notebooks.
-full = [
-    "pvapy>=5.5.0",
-    "pyepics>=3.5.0",
-    "ssrl-xrd-tools>=0.35.0",
-    "pyvista[jupyter]>=0.44.0",
-    "pyvistaqt>=0.11.0",
-    "jupyter>=1.1.1",
-    "ipython>=9.0.0",
-    "ipywidgets>=8.1.0",
-    "ipympl>=0.9.8",
-    "jupyterlab-widgets>=3.0.0",
-    "jupyter-core>=5.7.0",
-]
-# INTERIM, opt-in only — no install.sh tier installs this. Pulls torch + ~15
-# NVIDIA/CUDA packages for the current Bayesian viewer, so it is deliberately kept
-# out of `full`. Deleted once the torch->BLOP migration (separate issue) lands.
+# Bayesian optimization = the area-detector foundation + the blop stack
+# (blop.ax.Agent — Ax/BoTorch). blop brings bluesky; ophyd adds EPICS device
+# classes (and reuses area-det's pyepics as the CA backend). Heavy: pulls torch.
 bayesian = [
-    "gpytorch>=1.11",
-    "linear-operator>=0.5.0",
-    "bluesky>=1.13.0",
+    "DashPVA[area-det]",
+    "blop[ax]>=1.0.0b1",
     "ophyd>=1.9.0",
+]
+# Everything: streaming + standalone analysis + Bayesian optimizer.
+full = [
+    "DashPVA[area-det]",
+    "DashPVA[standalone]",
+    "DashPVA[bayesian]",
 ]
 
 [project.scripts]

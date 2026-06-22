@@ -101,18 +101,20 @@ prompt_edition() {
     echo
     info "Which edition would you like to install?"
     echo
-    info "  [1] Full          — streaming + 3D (HKL) + notebooks"
+    info "  [1] Full          — everything (streaming + standalone + Bayesian)"
     info "  [2] Area Detector — area detector viewer + live EPICS streaming (lean)"
-    info "  [3] Standalone    — post-analysis tools + notebooks (no streaming)"
+    info "  [3] Standalone    — post-analysis tools + Jupyter (no streaming)"
+    info "  [4] Bayesian      — area detector + Bayesian optimization (blop)"
     echo
     while true; do
-        read -rp "  Enter 1, 2, or 3 [default: 1]: " choice
+        read -rp "  Enter 1, 2, 3, or 4 [default: 1]: " choice
         choice="${choice:-1}"
         case "$choice" in
             1) EDITION="full"; return ;;
             2) EDITION="area-det"; return ;;
             3) EDITION="standalone"; return ;;
-            *) info "Please enter 1, 2, or 3." ;;
+            4) EDITION="bayesian"; return ;;
+            *) info "Please enter 1, 2, 3, or 4." ;;
         esac
     done
 }
@@ -124,7 +126,8 @@ do_install() {
     case "$edition" in
         full)       uv sync --extra full ;;
         area-det)   uv sync --extra area-det ;;
-        standalone) uv sync --extra notebooks ;;
+        standalone) uv sync --extra standalone ;;
+        bayesian)   uv sync --extra bayesian ;;
         *)          err "Unknown edition: $edition"; exit 1 ;;
     esac
 }
@@ -183,9 +186,10 @@ main() {
             --full)       edition="full"; shift ;;
             --area-det)   edition="area-det"; shift ;;
             --standalone) edition="standalone"; shift ;;
+            --bayesian)   edition="bayesian"; shift ;;
             --update)     update=true; shift ;;
             -h|--help)
-                echo "Usage: bash install.sh [--full|--area-det|--standalone|--update]"
+                echo "Usage: bash install.sh [--full|--area-det|--standalone|--bayesian|--update]"
                 exit 0 ;;
             *)
                 err "Unknown option: $1"
@@ -215,7 +219,7 @@ main() {
     # mismatched env). Switching requires a fresh environment.
     if [[ -f "$EDITION_FILE" ]]; then
         prev="$(cat "$EDITION_FILE")"
-        if [[ "$prev" == "full" && ( "$edition" == "standalone" || "$edition" == "area-det" ) ]]; then
+        if [[ "$prev" == "full" && ( "$edition" == "standalone" || "$edition" == "area-det" || "$edition" == "bayesian" ) ]]; then
             err "Cannot downgrade from Full to $edition."
             err "To switch, create a fresh environment."
             exit 1

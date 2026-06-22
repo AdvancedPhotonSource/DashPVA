@@ -49,14 +49,21 @@ The installer will ask which edition to set up:
 
 | Edition | What's included | Use case |
 | --- | --- | --- |
-| **Full** | All tools — live streaming, pvaccess/EPICS, Bayesian | Beamline deployment |
-| **Standalone** | Post-analysis tools — Workbench, File Convert, Phase Fitter | Offline analysis |
+| **Full** | Everything — streaming, standalone analysis, Bayesian | Beamline deployment |
+| **Area Detector** | Area detector viewer + live EPICS streaming (lean) | Live detector at the beamline |
+| **Standalone** | Post-analysis tools — Workbench, File Convert, Phase Fitter (no streaming) | Offline analysis |
+| **Bayesian** | Area detector + Bayesian optimization (blop) | Live optimization / alignment |
+
+Tiers are additive on the area-detector foundation: **Bayesian = Area Detector + blop**,
+and **Full = Area Detector + Standalone + Bayesian**.
 
 You can skip the prompt with a flag:
 
 ```bash
-bash install.sh --full        # Full edition (live + analysis)
-bash install.sh --standalone  # Standalone edition (analysis only)
+bash install.sh --full        # everything (streaming + analysis + Bayesian)
+bash install.sh --area-det    # area detector viewer + live EPICS streaming (lean)
+bash install.sh --standalone  # post-analysis tools only (no streaming)
+bash install.sh --bayesian    # area detector + Bayesian optimization (blop)
 ```
 
 ### Updating
@@ -297,4 +304,4 @@ DashPVA provides several analysis modules, each targeting a different experiment
 DashPVA spawns each analysis tool as an independent process (node). Data flows from the detector through metadata association, collection, and analysis stages. Each node can be a viewer, a data reducer, or an analysis engine. You compose different chains depending on what you need — for example, detector → pyFAI integration → live phase fitting, or detector → RSM calculation → HKL 3D viewer.
 
 **What is the difference between Full and Standalone editions?**
-Full includes everything — live streaming via pvaccess/EPICS, all real-time analysis tools, and Bayesian scanning. Standalone is a lighter install for offline post-analysis: Workbench, File Convert, Metadata Converter, and Phase Fitter (file mode only). Use `bash install.sh --full` or `bash install.sh --standalone` to choose.
+Full includes everything — live streaming via pvaccess/EPICS, all real-time analysis tools, and Bayesian optimization. Area Detector is the lean streaming foundation (detector viewer + EPICS). Bayesian adds the blop optimizer on top of Area Detector. Standalone is a lighter install for offline post-analysis: Workbench, File Convert, Metadata Converter, and Phase Fitter (file mode only). Use `bash install.sh --full`, `--area-det`, `--standalone`, or `--bayesian` to choose.
