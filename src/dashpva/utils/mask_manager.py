@@ -181,12 +181,30 @@ class MaskManager:
         logger.info(f"Saved active mask: {save_path} ({self.num_masked_pixels} masked pixels)")
         return save_path
 
+    @staticmethod
+    def _unphysical_negative_mask(stack):
+        """Flag pixels that read negative in any frame.
+
+        Detector intensities are photon/event counts and cannot be physically
+        negative, so a negative value (e.g. the ``-1`` bad-pixel sentinel some
+        detectors emit) marks an unphysical/bad pixel. Zero is intentionally left
+        unmasked — it is a valid reading (notably in dark frames).
+
+        Args:
+            stack: 3D array (N frames, H, W)
+
+        Returns:
+            boolean mask (True = pixel is negative in at least one frame)
+        """
+        return np.any(stack < 0, axis=0)
+
     def detect_dead_pixels(self, frames, variance_threshold=1.0):
         """
         Detect stuck/dead pixels using temporal variance (illuminated mode).
 
         Pixels with variance below threshold across N frames are flagged.
-        These are pixels that don't respond to changing illumination.
+        These are pixels that don't respond to changing illumination. Pixels that
+        read negative (unphysical, e.g. the -1 bad-pixel sentinel) are also masked.
 
         Args:
             frames: list of 2D numpy arrays (N frames)
@@ -202,9 +220,13 @@ class MaskManager:
         stack = np.stack(frames, axis=0).astype(np.float64)
         pixel_variance = np.var(stack, axis=0)
         dead_mask = pixel_variance < variance_threshold
-        num_dead = np.sum(dead_mask)
-        logger.info(f"Dead pixel detection (illuminated): {num_dead} pixels with "
-                    f"variance < {variance_threshold} (from {len(frames)} frames)")
+        # Also flag unphysical negative pixels (counts can't be < 0).
+        neg_mask = self._unphysical_negative_mask(stack)
+        dead_mask = dead_mask | neg_mask
+        num_dead = int(np.sum(dead_mask))
+        logger.info(f"Dead pixel detection (illuminated): {num_dead} pixels masked "
+                    f"(variance < {variance_threshold} or negative; "
+                    f"{int(np.sum(neg_mask))} negative, from {len(frames)} frames)")
         return dead_mask
 
     def detect_hot_pixels(self, frames, sigma=5.0):
@@ -252,10 +274,16 @@ class MaskManager:
             threshold = global_median + sigma * mad_std
             hot_mask = pixel_median > threshold
 
+        # Also flag unphysical negative pixels (dark frames may read zero, but
+        # never below zero); catches the -1 bad-pixel sentinel that the hot/high
+        # threshold above would otherwise miss.
+        neg_mask = self._unphysical_negative_mask(stack)
+        hot_mask = hot_mask | neg_mask
         num_hot = int(np.sum(hot_mask))
-        logger.info(f"Hot pixel detection (dark): {num_hot} pixels above threshold "
-                    f"{threshold:.1f} (median={global_median:.1f}, MAD_std={mad_std:.1f}, "
-                    f"sigma={sigma}, from {len(frames)} frames)")
+        logger.info(f"Hot pixel detection (dark): {num_hot} pixels masked (above "
+                    f"threshold {threshold:.1f} or negative; median={global_median:.1f}, "
+                    f"MAD_std={mad_std:.1f}, sigma={sigma}, "
+                    f"{int(np.sum(neg_mask))} negative, from {len(frames)} frames)")
         return hot_mask
 
     def apply_to_image(self, image):
