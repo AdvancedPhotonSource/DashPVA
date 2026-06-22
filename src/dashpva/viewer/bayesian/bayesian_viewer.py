@@ -57,6 +57,9 @@ from dashpva.viewer.bayesian.blop_adapter import (
 logger = logging.getLogger(__name__)
 
 _SETTINGS_KEY = "bayesian/optimizer_config"
+# The Bluesky conda-env path is persisted on its own (it is a per-machine setup
+# detail, not part of the portable optimizer config blob).
+_SETTINGS_BLUESKY_ENV = "bayesian/bluesky_env"
 
 
 def _action_button_style(bg: str) -> str:
@@ -928,11 +931,22 @@ class BayesianViewer(QtWidgets.QMainWindow):
                 objectives=[ObjectiveSpec()],
             )
         self._apply_config(cfg)
+        # Restore the Bluesky conda-env path (its own key, separate from the
+        # optimizer config); fall back to the get_bluesky_root() default set at
+        # construction when nothing was saved.
+        env = self._settings.value(_SETTINGS_BLUESKY_ENV, "", type=str)
+        if env:
+            self._bluesky_env.setText(env)
+        # Simulate is intentionally never persisted: always start OFF so the viewer
+        # never reopens in simulation mode at the beamline.
+        self._simulate.setChecked(False)
 
     def _save_config(self) -> None:
         try:
             cfg = self._gather_config()
             self._settings.setValue(_SETTINGS_KEY, json.dumps(cfg.to_dict()))
+            self._settings.setValue(
+                _SETTINGS_BLUESKY_ENV, self._bluesky_env.text().strip())
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not save config: %s", exc)
 
