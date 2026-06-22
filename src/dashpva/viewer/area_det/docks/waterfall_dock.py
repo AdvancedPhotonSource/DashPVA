@@ -1,9 +1,11 @@
 """Live waterfall-plot dock for the area detector viewer.
 
-Each plotting tick, the dock averages a rectangular region of the current
-detector frame down to a 1D profile and stacks those profiles over time into a
-scrolling waterfall (frame/time on the vertical axis, ROI position on the
-horizontal axis).
+On each plotting tick *for which a new detector frame has arrived*, the dock
+averages a rectangular region of the current (processed/masked) image — exactly
+as shown in the viewer — down to a 1D profile and stacks those profiles over time
+into a scrolling waterfall (frame/time on the vertical axis, ROI position on the
+horizontal axis). The new-frame guard means the stack does not keep growing while
+acquisition is idle even though the plot timer keeps firing.
 
 The averaged region comes from one of two sources, selected in the dock:
   * an EPICS detector ROI (ROI1..ROI4) when those PVs are available, reusing the
@@ -52,6 +54,10 @@ _DEFAULT_DEPTH = 300
 _MIN_DEPTH = 10
 _MAX_DEPTH = 10000
 
+# Sentinel for "no frame stacked yet" — distinct from any real frame counter
+# (including 0 and None) so the first tick always appends.
+_UNSET = object()
+
 
 class WaterfallDock(BaseDock):
     """Dockable live waterfall of an ROI-averaged 1D profile over time."""
@@ -64,13 +70,19 @@ class WaterfallDock(BaseDock):
         # detect when the ROI/averaging change resizes the row and reset.
         self._buffer: deque[np.ndarray] = deque(maxlen=_DEFAULT_DEPTH)
         self._row_len = None
+        # Frame counter of the most recently stacked row. The plot timer can fire
+        # faster than frames arrive, so we only append when this changes — this
+        # stops the waterfall from piling duplicate rows when no new frame is in.
+        self._last_frame_id = _UNSET
         # The interactive manual rectangle (created lazily, removed on teardown)
         # plus its child arrow that shows the averaging (collapse) direction.
         self._manual_roi = None
         self._avg_arrow = None
         self._build()
-        # Drive updates from the host's plot timer so the waterfall refreshes in
-        # lockstep with the image, at the user's chosen plotting frequency.
+        # Drive updates from the host's plot timer (same cadence as the image),
+        # but _on_tick only stacks a row when a new frame has arrived since the
+        # last one, so a fast plot timer can't pile duplicate rows when no new
+        # frame is coming in.
         try:
             self.main_window.timer_plot.timeout.connect(self._on_tick)
         except Exception:
@@ -208,6 +220,7 @@ class WaterfallDock(BaseDock):
     def _reset_buffer(self) -> None:
         self._buffer.clear()
         self._row_len = None
+        self._last_frame_id = _UNSET
         self.waterfall_img.clear()
 
     # ------------------------------------------------------------- manual ROI
@@ -360,9 +373,19 @@ class WaterfallDock(BaseDock):
         # because the dock opened before streaming began.
         if self._selected_source() == _MANUAL and self._manual_roi is None:
             self._ensure_manual_roi()
+        # Only stack a row when a genuinely new frame has arrived. The plot timer
+        # may fire faster than frames stream in (or keep firing while acquisition
+        # is stopped); without this the waterfall would pile copies of the same
+        # frame. When frames arrive faster than the plot rate we just sample the
+        # latest one at the plot rate.
+        frame_id = self._current_frame_id()
+        if frame_id == self._last_frame_id:
+            return
         roi = self._active_roi()
         if roi is None:
             return
+        # Use the processed/masked image exactly as shown in the viewer, so the
+        # waterfall matches the display (no separate re-processing per frame).
         frame = np.asarray(image_item.image)
         sub = _extract_roi_subarray(frame, roi, image_item)
         if sub is None or sub.ndim != 2 or sub.size == 0:
@@ -372,7 +395,19 @@ class WaterfallDock(BaseDock):
         row = np.nanmean(sub, axis=axis)
         if row.size == 0:
             return
+        self._last_frame_id = frame_id
         self._append_row(np.asarray(row, dtype=np.float32))
+
+    def _current_frame_id(self):
+        """Monotonic count of frames received, used to detect a new frame.
+
+        Returns None when no reader is connected; combined with the ``_UNSET``
+        sentinel this still appends once for a static/test image but then stops.
+        """
+        reader = getattr(self.main_window, "reader", None)
+        if reader is None:
+            return None
+        return getattr(reader, "frames_received", None)
 
     def _append_row(self, row: np.ndarray) -> None:
         if self._row_len is None:
