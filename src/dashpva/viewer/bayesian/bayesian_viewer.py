@@ -153,7 +153,7 @@ class ScanWorker(QThread):
                 resolve_devices,
             )
 
-            actuators, detector, simulated = resolve_devices(
+            actuators, readables, simulated = resolve_devices(
                 self.config, simulate=self.simulate
             )
             # Reuse the existing agent to resume (keeps the Ax trial history);
@@ -179,7 +179,7 @@ class ScanWorker(QThread):
                 blop_optimize_plan(
                     agent=agent,
                     actuators=actuators,
-                    detector=detector,
+                    readables=readables,
                     config=self.config,
                     on_point=_on_point,
                 )
@@ -598,7 +598,7 @@ class _DOFTable(QtWidgets.QTableWidget):
 class _ObjectiveTable(QtWidgets.QTableWidget):
     """Editable table of objectives (usually one)."""
 
-    COLS = ["Name", "Signal key (blank = auto)", "Direction"]
+    COLS = ["Name", "Read PV", "Direction"]
 
     def __init__(self, parent=None):
         super().__init__(0, len(self.COLS), parent)
@@ -620,7 +620,7 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         r = self.rowCount()
         self.insertRow(r)
         self.setItem(r, 0, QtWidgets.QTableWidgetItem(spec.name))
-        self.setItem(r, 1, QtWidgets.QTableWidgetItem(spec.signal_key))
+        self.setItem(r, 1, QtWidgets.QTableWidgetItem(spec.pv))
         direction = QtWidgets.QComboBox()
         direction.addItems(["maximize", "minimize"])
         direction.setCurrentText("minimize" if spec.minimize else "maximize")
@@ -650,11 +650,11 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         out: List[ObjectiveSpec] = []
         for r in range(self.rowCount()):
             name_item = self.item(r, 0)
-            key_item = self.item(r, 1)
+            pv_item = self.item(r, 1)
             out.append(
                 ObjectiveSpec(
                     name=(name_item.text() if name_item else "").strip(),
-                    signal_key=(key_item.text() if key_item else "").strip(),
+                    pv=(pv_item.text() if pv_item else "").strip(),
                     minimize=self.cellWidget(r, 2).currentText() == "minimize",
                 )
             )
@@ -730,14 +730,6 @@ class BayesianViewer(QtWidgets.QMainWindow):
         dof_btns.addWidget(rm_dof)
         dof_btns.addStretch(1)
         outer.addLayout(dof_btns)
-
-        # Detector
-        det_row = QtWidgets.QFormLayout()
-        det_row.setLabelAlignment(Qt.AlignRight)
-        self._det_pv = QtWidgets.QLineEdit()
-        self._det_pv.setPlaceholderText("e.g. 6IDD:det  or  my_detector")
-        det_row.addRow("Detector PV / Name:", self._det_pv)
-        outer.addLayout(det_row)
 
         # Objective table + buttons
         outer.addWidget(self._section_label("Objectives"))
@@ -891,7 +883,6 @@ class BayesianViewer(QtWidgets.QMainWindow):
         return OptimizerConfig(
             dofs=self._dof_table.specs(),
             objectives=self._obj_table.specs(),
-            detector_pv=self._det_pv.text().strip(),
             iterations=self._iterations.value(),
             n_points=self._n_points.value(),
             acq_kwargs=_parse_kwargs(self._acq_kwargs.text()),
@@ -908,7 +899,6 @@ class BayesianViewer(QtWidgets.QMainWindow):
             self._obj_table.add_objective(o)
         if self._obj_table.rowCount() == 0:
             self._obj_table.add_objective()
-        self._det_pv.setText(cfg.detector_pv)
         self._iterations.setValue(cfg.iterations)
         self._n_points.setValue(cfg.n_points)
         self._acq_kwargs.setText(_format_kwargs(cfg.acq_kwargs))

@@ -95,21 +95,22 @@ class DOFSpec:
 
 @dataclass
 class ObjectiveSpec:
-    """One optimization objective read from the detector reading.
+    """One optimization objective, read from its own EPICS PV.
 
     Attributes
     ----------
     name : str
         Objective name reported to the optimizer (must be unique per config).
-    signal_key : str
-        Full or trailing signal name to pull from the detector reading
-        (e.g. ``"stats1_total"``).  Blank → auto-detect via PREFERRED_SUFFIXES.
+        Also names the readable, so the value is looked up by this name.
+    pv : str
+        The full read PV for this objective's scalar value
+        (e.g. ``"detPV:Stats1:Total_RBV"`` or ``"12idc:scaler1.S2"``).
     minimize : bool
         ``False`` maximizes (peak/align), ``True`` minimizes.
     """
 
     name: str = "intensity"
-    signal_key: str = ""
+    pv: str = ""
     minimize: bool = False
 
 
@@ -119,7 +120,6 @@ class OptimizerConfig:
 
     dofs: List[DOFSpec] = field(default_factory=list)
     objectives: List[ObjectiveSpec] = field(default_factory=list)
-    detector_pv: str = ""
     iterations: int = 30
     n_points: int = 1
     acq_kwargs: Dict[str, Any] = field(default_factory=dict)
@@ -156,8 +156,6 @@ class OptimizerConfig:
                 return f"DOF {d.name!r}: low limit must be < high limit."
             if d.kind not in ("float", "int"):
                 return f"DOF {d.name!r}: kind must be 'float' or 'int'."
-        if require_devices and not self.detector_pv.strip():
-            return "A detector PV/name is required."
         objs = self.active_objectives()
         onames = set()
         for o in objs:
@@ -166,6 +164,8 @@ class OptimizerConfig:
             if o.name in onames:
                 return f"Duplicate objective name: {o.name!r}."
             onames.add(o.name)
+            if require_devices and not o.pv.strip():
+                return f"Objective {o.name!r} is missing a read PV."
         if self.iterations < 1:
             return "Iterations must be >= 1."
         if self.n_points < 1:
@@ -177,7 +177,6 @@ class OptimizerConfig:
         return {
             "DOFS": [vars(d).copy() for d in self.dofs],
             "OBJECTIVES": [vars(o).copy() for o in self.objectives],
-            "DETECTOR_PV": self.detector_pv,
             "ITERATIONS": self.iterations,
             "N_POINTS": self.n_points,
             "ACQ_KWARGS": dict(self.acq_kwargs),
@@ -200,7 +199,7 @@ class OptimizerConfig:
         objs = [
             ObjectiveSpec(
                 name=o.get("name", "intensity"),
-                signal_key=o.get("signal_key", ""),
+                pv=o.get("pv", ""),
                 minimize=bool(o.get("minimize", False)),
             )
             for o in data.get("OBJECTIVES", [])
@@ -208,7 +207,6 @@ class OptimizerConfig:
         return cls(
             dofs=dofs,
             objectives=objs,
-            detector_pv=data.get("DETECTOR_PV", ""),
             iterations=int(data.get("ITERATIONS", 30)),
             n_points=int(data.get("N_POINTS", 1)),
             acq_kwargs=dict(data.get("ACQ_KWARGS", {})),
@@ -295,56 +293,61 @@ def resolve_devices(
     config: OptimizerConfig,
     *,
     simulate: bool = False,
-) -> Tuple[Dict[str, Any], Any, bool]:
-    """Resolve the config's DOF/detector names to ophyd objects.
+) -> Tuple[Dict[str, Any], Dict[str, Any], bool]:
+    """Resolve the config's DOF + objective PVs to ophyd objects.
 
-    Strategy, per the old viewer ``_resolve_devices``:
-      1. Look the names up in the live IPython namespace (beamline session).
-      2. Construct EPICS devices (``EpicsMotor`` / ``EpicsSignalRO``).
-      3. Fall back to ``ophyd.sim`` devices (a multi-Gaussian detector over the
-         motors) so the GUI is fully testable offline.
+    Every field is a full PV:
+      1. Look names up in the live IPython namespace (beamline session) first.
+      2. Construct EPICS devices: each DOF as a settable ``EpicsSignal`` on the
+         exact PV typed (write == read; put-completion is the move-wait), each
+         objective as an ``EpicsSignalRO`` on its own read PV.
+      3. Fall back to ``ophyd.sim`` devices so the GUI is testable offline.
 
     Returns
     -------
-    (actuators, detector, simulated)
-        ``actuators`` maps DOF name -> ophyd movable; ``detector`` is the
-        readable; ``simulated`` is ``True`` when sim devices were used.
+    (actuators, readables, simulated)
+        ``actuators`` maps DOF name -> ophyd movable; ``readables`` maps objective
+        name -> ophyd readable; ``simulated`` is ``True`` when sim devices were used.
     """
     dofs = config.active_dofs()
+    objectives = config.active_objectives()
 
     if not simulate:
         ns = _ipython_ns()
         if ns is not None:
             acts = {d.name: ns.get(d.pv) for d in dofs}
-            det = ns.get(config.detector_pv)
-            if all(acts.values()) and det is not None:
+            reads = {o.name: ns.get(o.pv) for o in objectives}
+            if all(acts.values()) and all(reads.values()):
                 logger.info("Resolved blop devices from IPython namespace.")
-                return acts, det, False
+                return acts, reads, False
 
         try:
-            from ophyd import Device, EpicsMotor, EpicsSignalRO
+            from ophyd import EpicsSignal, EpicsSignalRO
 
-            acts = {d.name: EpicsMotor(d.pv, name=d.name) for d in dofs}
-            det_pv = config.detector_pv
-
-            class _SimpleDetector(Device):
-                total = EpicsSignalRO(det_pv, name="total", kind="hinted")
-
-            det = _SimpleDetector(name="detector")
+            acts = {
+                d.name: EpicsSignal(d.pv, name=d.name, put_complete=True)
+                for d in dofs
+            }
+            reads = {
+                o.name: EpicsSignalRO(o.pv, name=o.name, kind="hinted")
+                for o in objectives
+            }
             logger.info("Constructed EPICS devices from PV strings.")
-            return acts, det, False
+            return acts, reads, False
         except Exception as exc:  # noqa: BLE001 - fall back to sim
             logger.warning("EPICS construction failed (%s); using simulation.", exc)
 
-    motors, detector = _build_sim_devices(dofs)
-    return motors, detector, True
+    motors, readables = _build_sim_devices(dofs, objectives)
+    return motors, readables, True
 
 
-def _build_sim_devices(dofs: List["DOFSpec"]):
-    """Build ``ophyd.sim`` motors + a multi-Gaussian detector for offline tests.
+def _build_sim_devices(dofs: List["DOFSpec"], objectives: List["ObjectiveSpec"]):
+    """Build ``ophyd.sim`` motors + one synthetic readable per objective.
 
-    The detector returns a product of Gaussians peaked at the midpoint of each
-    DOF's range, so a *maximize* run has a well-defined optimum to converge to.
+    Each objective readable returns a product of Gaussians peaked at the midpoint
+    of every DOF's range, so a *maximize* run has a well-defined optimum to
+    converge to (a *minimize* run heads for the edges).  Each readable is named by
+    its objective, so the plan looks values up via ``reading[obj_name]``.
     """
     from ophyd.sim import SynAxis, SynSignal
 
@@ -360,8 +363,11 @@ def _build_sim_devices(dofs: List["DOFSpec"]):
         # Deterministic product-of-Gaussians peaked at the range midpoints.
         return 1000.0 * val
 
-    detector = SynSignal(func=_peak, name="stats1_total", labels={"detectors"})
-    return motors, detector
+    readables = {
+        o.name: SynSignal(func=_peak, name=o.name, labels={"detectors"})
+        for o in (objectives or [ObjectiveSpec()])
+    }
+    return motors, readables
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +427,7 @@ def build_agent(config: OptimizerConfig, actuators: Dict[str, Any]):
 def blop_optimize_plan(
     agent,
     actuators: Dict[str, Any],
-    detector,
+    readables: Dict[str, Any],
     config: OptimizerConfig,
     on_point: Optional[Callable[[dict], None]] = None,
 ):
@@ -429,8 +435,8 @@ def blop_optimize_plan(
 
     For each of ``config.iterations`` iterations it asks the agent for
     ``config.n_points`` suggestions, moves the motors to each, triggers and
-    reads the detector, extracts the objective scalar(s), and ingests the
-    outcomes back into the agent.
+    reads the objective readables, extracts each objective's scalar, and ingests
+    the outcomes back into the agent.
 
     Parameters
     ----------
@@ -438,8 +444,8 @@ def blop_optimize_plan(
         Built via :func:`build_agent`.
     actuators : dict
         DOF name -> ophyd movable.  Keys must match the agent's DOF names.
-    detector : ophyd readable
-        Triggered/read at each point.
+    readables : dict
+        Objective name -> ophyd readable; all triggered/read at each point.
     config : OptimizerConfig
     on_point : callable, optional
         Called (in the RunEngine thread) after every measured point with a
@@ -457,14 +463,14 @@ def blop_optimize_plan(
 
     active_dofs = config.active_dofs()
     objectives = config.active_objectives()
-    read_devices = [detector] + [actuators[d.name] for d in active_dofs]
+    read_devices = list(readables.values()) + [actuators[d.name] for d in active_dofs]
 
     _md = {
         "plan_name": "blop_optimize",
         "dofs": [d.name for d in active_dofs],
         "dof_pvs": [d.pv for d in active_dofs],
         "objectives": [o.name for o in objectives],
-        "detector": getattr(detector, "name", config.detector_pv),
+        "objective_pvs": [o.pv for o in objectives],
         "iterations": config.iterations,
         "n_points": config.n_points,
     }
@@ -492,7 +498,12 @@ def blop_optimize_plan(
                 outcome = {"_id": sug["_id"]}
                 obj_values: Dict[str, float] = {}
                 for o in objectives:
-                    val = extract_scalar(reading, o.signal_key or None)
+                    # Each objective has its own readable, named by objective name,
+                    # so its value is an exact key in the merged reading.
+                    if o.name in reading:
+                        val = float(reading[o.name]["value"])
+                    else:
+                        val = extract_scalar(reading, o.name)
                     outcome[o.name] = val
                     obj_values[o.name] = val
                 outcomes.append(outcome)

@@ -46,19 +46,19 @@ from dashpva.viewer.bayesian.blop_adapter import (  # noqa: E402
 # Helpers: build simulated devices whose detector = analytic test function
 # ---------------------------------------------------------------------------
 
-def _make_devices(dof_names, func):
-    """SynAxis motors + a detector that reads ``func({motor: pos})`` each trigger."""
+def _make_devices(dof_names, func, obj_name="intensity"):
+    """SynAxis motors + one readable (named ``obj_name``) reading ``func({motor: pos})``."""
     motors = {n: SynAxis(name=n) for n in dof_names}
 
     def _read() -> float:
         pos = {n: motors[n].read()[n]["value"] for n in dof_names}
         return float(func(pos))
 
-    detector = SynSignal(func=_read, name="stats1_total", labels={"detectors"})
-    return motors, detector
+    readable = SynSignal(func=_read, name=obj_name, labels={"detectors"})
+    return motors, {obj_name: readable}
 
 
-def _run(cfg, motors, detector):
+def _run(cfg, motors, readables):
     """Run the full DashPVA blop plan; return (points, agent)."""
     # Reduce run-to-run variance for stable assertions.
     np.random.seed(0)
@@ -72,7 +72,7 @@ def _run(cfg, motors, detector):
     agent = build_agent(cfg, motors)
     points: list = []
     RE = RunEngine()
-    RE(blop_optimize_plan(agent, motors, detector, cfg, on_point=points.append))
+    RE(blop_optimize_plan(agent, motors, readables, cfg, on_point=points.append))
     return points, agent
 
 
@@ -106,13 +106,11 @@ class TestHimmelblau2D:
                 DOFSpec(name="x", pv="x", lo=-5.0, hi=5.0),
                 DOFSpec(name="y", pv="y", lo=-5.0, hi=5.0),
             ],
-            objectives=[ObjectiveSpec(name="himmelblau", minimize=True)],
-            detector_pv="det",
-            iterations=30,
+            objectives=[ObjectiveSpec(name="himmelblau", minimize=True)],            iterations=30,
             n_points=1,
         )
-        motors, detector = _make_devices(["x", "y"], _himmelblau)
-        points, _ = _run(cfg, motors, detector)
+        motors, readables = _make_devices(["x", "y"], _himmelblau, "himmelblau")
+        points, _ = _run(cfg, motors, readables)
 
         assert len(points) == cfg.total_points()
         for p in points:
@@ -149,13 +147,11 @@ class TestGaussianPeak2D:
                 DOFSpec(name="x", pv="x", lo=0.0, hi=10.0),
                 DOFSpec(name="y", pv="y", lo=0.0, hi=10.0),
             ],
-            objectives=[ObjectiveSpec(name="intensity", minimize=False)],
-            detector_pv="det",
-            iterations=25,
+            objectives=[ObjectiveSpec(name="intensity", minimize=False)],            iterations=25,
             n_points=1,
         )
-        motors, detector = _make_devices(["x", "y"], gauss)
-        points, agent = _run(cfg, motors, detector)
+        motors, readables = _make_devices(["x", "y"], gauss, "intensity")
+        points, agent = _run(cfg, motors, readables)
 
         best = _best(points, minimize=False)
         assert best["primary"] > 100.0, f"did not climb the peak: {best['primary']:.3g}"
@@ -183,13 +179,11 @@ class TestHighDimensionalSphere:
 
         cfg = OptimizerConfig(
             dofs=[DOFSpec(name=n, pv=n, lo=0.0, hi=10.0) for n in names],
-            objectives=[ObjectiveSpec(name="sphere", minimize=True)],
-            detector_pv="det",
-            iterations=40,
+            objectives=[ObjectiveSpec(name="sphere", minimize=True)],            iterations=40,
             n_points=1,
         )
-        motors, detector = _make_devices(names, sphere)
-        points, _ = _run(cfg, motors, detector)
+        motors, readables = _make_devices(names, sphere, "sphere")
+        points, _ = _run(cfg, motors, readables)
 
         assert len(points) == cfg.total_points()  # n_points=1 -> one per iteration
         primaries = [p["primary"] for p in points]
@@ -219,13 +213,11 @@ class TestBatchAcquisition:
                 DOFSpec(name="x", pv="x", lo=0.0, hi=10.0),
                 DOFSpec(name="y", pv="y", lo=0.0, hi=10.0),
             ],
-            objectives=[ObjectiveSpec(name="intensity", minimize=False)],
-            detector_pv="det",
-            iterations=8,
+            objectives=[ObjectiveSpec(name="intensity", minimize=False)],            iterations=8,
             n_points=3,
         )
-        motors, detector = _make_devices(["x", "y"], gauss)
-        points, _ = _run(cfg, motors, detector)
+        motors, readables = _make_devices(["x", "y"], gauss, "intensity")
+        points, _ = _run(cfg, motors, readables)
 
         # Up to 8 iterations * 3 points = 24, but Ax may return fewer than
         # n_points in early (Sobol) batches, so total is an upper bound.
@@ -247,20 +239,18 @@ class TestDirection:
         def _cfg(minimize):
             return OptimizerConfig(
                 dofs=[DOFSpec(name="x", pv="x", lo=0.0, hi=10.0)],
-                objectives=[ObjectiveSpec(name="f", minimize=minimize)],
-                detector_pv="det",
-                iterations=18,
+                objectives=[ObjectiveSpec(name="f", minimize=minimize)],                iterations=18,
                 n_points=1,
             )
 
-        m1, d1 = _make_devices(["x"], parabola)
-        min_points, _ = _run(_cfg(True), m1, d1)
+        m1, r1 = _make_devices(["x"], parabola, "f")
+        min_points, _ = _run(_cfg(True), m1, r1)
         best_min = _best(min_points, minimize=True)
         assert best_min["primary"] < 1.0
         assert abs(best_min["params"]["x"] - 3.0) < 1.0
 
-        m2, d2 = _make_devices(["x"], parabola)
-        max_points, _ = _run(_cfg(False), m2, d2)
+        m2, r2 = _make_devices(["x"], parabola, "f")
+        max_points, _ = _run(_cfg(False), m2, r2)
         best_max = _best(max_points, minimize=False)
         assert best_max["primary"] > 30.0
         assert best_max["params"]["x"] > 8.0
@@ -285,13 +275,11 @@ class TestModelSurface:
                 DOFSpec(name="x", pv="x", lo=0.0, hi=10.0),
                 DOFSpec(name="y", pv="y", lo=0.0, hi=10.0),
             ],
-            objectives=[ObjectiveSpec(name="intensity", minimize=False)],
-            detector_pv="det",
-            iterations=20,
+            objectives=[ObjectiveSpec(name="intensity", minimize=False)],            iterations=20,
             n_points=1,
         )
-        motors, detector = _make_devices(["x", "y"], gauss)
-        _, agent = _run(cfg, motors, detector)
+        motors, readables = _make_devices(["x", "y"], gauss, "intensity")
+        _, agent = _run(cfg, motors, readables)
 
         s = predict_surface(agent, cfg, "x", "y", grid_n=25)
 

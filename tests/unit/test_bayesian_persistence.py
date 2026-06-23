@@ -47,8 +47,7 @@ def test_bluesky_env_persists_and_simulate_resets(app, tmp_path):
                 DOFSpec(name="th", pv="6IDB:th", lo=-1.0, hi=1.0),
                 DOFSpec(name="chi", pv="6IDB:chi", lo=0.0, hi=10.0, kind="int"),
             ],
-            objectives=[ObjectiveSpec(name="flux", signal_key="stats1_total")],
-            detector_pv="6IDB:det",
+            objectives=[ObjectiveSpec(name="flux", pv="6IDB:det:Stats1:Total_RBV")],
             iterations=42,
             n_points=3,
         )
@@ -68,14 +67,13 @@ def test_bluesky_env_persists_and_simulate_resets(app, tmp_path):
 
     # The optimizer config (DOFs / objective / detector / run controls) round-trips.
     cfg = v2._gather_config()
-    assert cfg.detector_pv == "6IDB:det"
     assert cfg.iterations == 42
     assert cfg.n_points == 3
     assert [d.name for d in cfg.dofs] == ["th", "chi"]
     assert [d.pv for d in cfg.dofs] == ["6IDB:th", "6IDB:chi"]
     assert cfg.dofs[1].kind == "int"
     assert cfg.objectives[0].name == "flux"
-    assert cfg.objectives[0].signal_key == "stats1_total"
+    assert cfg.objectives[0].pv == "6IDB:det:Stats1:Total_RBV"
 
     # Simulate is never persisted -- it always reopens OFF.
     assert v2._simulate.isChecked() is False

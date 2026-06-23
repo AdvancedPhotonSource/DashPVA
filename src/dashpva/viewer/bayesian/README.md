@@ -61,7 +61,7 @@ DashPVA bayesian          # or: python -m dashpva.viewer.bayesian.bayesian_viewe
 The fastest way to try the optimizer is the built-in **Simulate (offline, no EPICS)**
 checkbox in *Run controls*:
 
-1. Add the DOFs you want (names + limits). In simulate mode the **motor/detector
+1. Add the DOFs you want (names + limits). In simulate mode the **motor/objective
    PV fields are ignored**, so you can leave them blank.
 2. Tick **Simulate (offline, no EPICS)**.
 3. Click **Start**.
@@ -71,60 +71,54 @@ midpoint of each DOF's range) entirely in-process — no IOC or PVs required —
 *maximize* run visibly climbs to the centre of your ranges and the live plots update.
 
 ### Testing against a real simulation IOC
-To exercise the live-EPICS path instead, point the DOF rows at real motor PVs and
-the detector at a scalar PV served by a soft IOC (e.g. an `epics` motorsim IOC plus
-an areaDetector sim, or `DashPVA sim` for the detector image). Leave **Simulate**
-unticked. The viewer connects via ophyd exactly as it will at the beamline.
+To exercise the live-EPICS path instead, point the DOF rows at real settable PVs and
+each objective at a scalar PV served by a soft IOC (e.g. an `epics` motorsim IOC plus
+an areaDetector sim exposing ROI-stat PVs). Leave **Simulate** unticked. The viewer
+connects via ophyd exactly as it will at the beamline.
 
 In the GUI:
 
-1. **Degrees of freedom** — add a row per motor (PV/name), set the search **Low/High
-   limits** (editable spinboxes), and the type (`float`/`int`). Add as many motors
-   as needed.
-2. **Detector PV / Name** — the device whose signal you optimize.
-3. **Objectives** — what to optimize, read from the detector (see
-   [Adding objectives](#adding-objectives) below).
-4. **Run controls** — how long to run (see
+1. **Degrees of freedom** — add a row per motor (full settable PV), set the search
+   **Low/High limits** (editable spinboxes), and the type (`float`/`int`). Add as
+   many motors as needed.
+2. **Objectives** — what to optimize: each objective is a full **Read PV** with a
+   direction (see [Adding objectives](#adding-objectives) below).
+3. **Run controls** — how long to run (see
    [Run controls](#run-controls-iterations--points-per-iteration) below).
-5. **Simulate (offline)** — tick to run without EPICS using `ophyd.sim` devices
+4. **Simulate (offline)** — tick to run without EPICS using `ophyd.sim` devices
    (handy for trying the UI).
-6. **Start** — live plots show the objective vs. evaluation (with best-so-far) and a
+5. **Start** — live plots show the objective vs. evaluation (with best-so-far) and a
    2-D projection scatter for a selectable DOF pair.
 
 The configuration is remembered between launches (via `QSettings`).
 
 ### Adding objectives
-An **objective** is a scalar value pulled from the detector reading that the
-optimizer drives up or down. Edit objectives in the **Objectives** table:
+An **objective** is a scalar value read from an EPICS PV that the optimizer drives up
+or down. Edit objectives in the **Objectives** table:
 
 | Column | Meaning |
 |--------|---------|
-| **Name** | A unique label for the objective (e.g. `intensity`). This is what the live plot and the "Best so far" readout report. |
-| **Signal key** | The detector field to read (e.g. `stats1_total`). **Leave blank to auto-detect** — it tries common AreaDetector ROI-stat suffixes (`stats1_total`, `stats1_net`, `stats1_mean_value`, `total`, `net`, `mean_value`, `intensity`, `value`) and otherwise falls back to the first numeric field in the reading. |
+| **Name** | A unique label for the objective (e.g. `intensity`). This is what the live plot and the "Best so far" readout report, and it names the readable. |
+| **Read PV** | The full PV to read for this objective's value (e.g. `detPV:Stats1:Total_RBV` or `12idc:scaler1.S2`). |
 | **Direction** | `maximize` (e.g. peak intensity / flux / alignment) or `minimize` (e.g. beam width / background). |
 
 Steps:
 1. Click **＋ Add objective** to add a row; **－ Remove selected** deletes the
    highlighted row (at least one objective is always kept).
-2. Fill in **Name**, optionally a **Signal key** (blank = auto-detect), and pick a
-   **Direction**.
+2. Fill in **Name**, the **Read PV**, and pick a **Direction**.
 3. Click **Start**.
 
 Notes:
 - **Single objective** (the common case): one row — the optimizer maximizes or
   minimizes it, and the live plots track it.
 - **Names must be unique.** Each new row is auto-named uniquely (`intensity`, then
-  `objective2`, …); duplicate names are rejected at Start. So you can't have two
-  objectives both literally named `intensity`.
-- **Two of the *same* signal makes no sense** — optimizing the identical detector
-  value twice adds nothing. Multiple objectives are for trading off *different*
-  quantities, e.g. **maximize** `stats1_total` (flux) **and minimize** a width/FWHM
-  signal. Give each a distinct *Name* and *Signal key*.
-- **Multiple objectives:** add more rows. blop optimizes them jointly
+  `objective2`, …); duplicate names are rejected at Start.
+- **Multiple objectives:** add more rows, each with its **own Read PV** — e.g.
+  **maximize** a flux PV **and minimize** a width/FWHM PV. blop optimizes them jointly
   (multi-objective / Pareto); the **first** row drives the live
   convergence/best-so-far plot.
-- All objective signals are read from the **same Detector PV** at each point, so
-  each *Signal key* must exist in that detector's reading.
+- Each objective reads its **own PV**, so objectives can come from different IOCs
+  (ROI stats, scalers, fit results, …) — no shared detector device.
 
 ### Run controls: iterations & points per iteration
 The optimizer runs in **rounds (iterations)**. Each round it (1) suggests one or

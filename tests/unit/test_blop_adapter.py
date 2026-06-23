@@ -70,8 +70,7 @@ def _valid_config(**overrides) -> OptimizerConfig:
             DOFSpec(name="x", pv="6IDA:m1", lo=0.0, hi=5.0),
             DOFSpec(name="y", pv="6IDA:m2", lo=0.0, hi=5.0),
         ],
-        objectives=[ObjectiveSpec(name="intensity", signal_key="stats1_total")],
-        detector_pv="6IDD:det",
+        objectives=[ObjectiveSpec(name="intensity", pv="6IDD:det:Stats1:Total_RBV")],
         iterations=20,
         n_points=1,
     )
@@ -115,12 +114,16 @@ class TestConfigValidate:
         cfg = _valid_config(dofs=[DOFSpec(name="x", pv="m1", lo=0, hi=1, kind="double")])
         assert "kind" in cfg.validate()
 
-    def test_missing_detector(self):
-        assert "detector" in _valid_config(detector_pv="").validate()
+    def test_missing_objective_pv(self):
+        cfg = _valid_config(objectives=[ObjectiveSpec(name="intensity", pv="")])
+        assert "read PV" in cfg.validate()
 
     def test_duplicate_objective(self):
         cfg = _valid_config(
-            objectives=[ObjectiveSpec(name="i"), ObjectiveSpec(name="i")]
+            objectives=[
+                ObjectiveSpec(name="i", pv="a"),
+                ObjectiveSpec(name="i", pv="b"),
+            ]
         )
         assert "Duplicate objective" in cfg.validate()
 
@@ -135,7 +138,7 @@ class TestConfigValidate:
         # even with empty PVs, while the strict check still flags them.
         cfg = _valid_config(
             dofs=[DOFSpec(name="x", pv="", lo=0.0, hi=1.0)],
-            detector_pv="",
+            objectives=[ObjectiveSpec(name="intensity", pv="")],
         )
         assert cfg.validate(require_devices=False) is None
         assert cfg.validate() is not None
@@ -166,11 +169,10 @@ class TestConfigSerialization:
         assert [d.name for d in restored.dofs] == [d.name for d in cfg.dofs]
         assert [d.lo for d in restored.dofs] == [d.lo for d in cfg.dofs]
         assert [d.hi for d in restored.dofs] == [d.hi for d in cfg.dofs]
-        assert restored.detector_pv == cfg.detector_pv
         assert restored.iterations == 42
         assert restored.n_points == 2
         assert restored.acq_kwargs == {"name": "demo", "flag": True}
-        assert restored.objectives[0].signal_key == "stats1_total"
+        assert restored.objectives[0].pv == cfg.objectives[0].pv
 
     def test_3dof_2objective_config_builds(self):
         # Proves the N-D / multi-objective shape is just a config change.
@@ -180,10 +182,9 @@ class TestConfigSerialization:
                 for i in range(3)
             ],
             objectives=[
-                ObjectiveSpec(name="flux", minimize=False),
-                ObjectiveSpec(name="width", minimize=True),
+                ObjectiveSpec(name="flux", pv="det:Stats1:Total_RBV", minimize=False),
+                ObjectiveSpec(name="width", pv="det:Stats2:Total_RBV", minimize=True),
             ],
-            detector_pv="det",
         )
         assert cfg.validate() is None
         assert len(cfg.active_dofs()) == 3
@@ -256,14 +257,13 @@ class TestBlopIntegration:
                 DOFSpec(name="y", pv="y", lo=0.0, hi=10.0),
             ],
             objectives=[
-                ObjectiveSpec(name="intensity", signal_key="stats1_total"),
+                ObjectiveSpec(name="intensity", pv="det:Stats1:Total_RBV"),
             ],
-            detector_pv="det",
             iterations=12,
             n_points=1,
         )
 
-        actuators, detector, simulated = resolve_devices(cfg, simulate=True)
+        actuators, readables, simulated = resolve_devices(cfg, simulate=True)
         assert simulated is True
         assert set(actuators) == {"x", "y"}
 
@@ -273,7 +273,7 @@ class TestBlopIntegration:
         RE = bluesky.RunEngine()
         RE(
             blop_optimize_plan(
-                agent, actuators, detector, cfg,
+                agent, actuators, readables, cfg,
                 on_point=lambda p: points.append(p),
             )
         )
