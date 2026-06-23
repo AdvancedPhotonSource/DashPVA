@@ -208,6 +208,33 @@ def sim_pyfai(**kwargs):
     sys.exit(subprocess.run(cmd).returncode)
 
 
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument('agent_args', nargs=-1, type=click.UNPROCESSED)
+def agent(agent_args):
+    """Launch the standalone beamline-analysis agent (Claude Agent SDK).
+
+    With no `-q/--question`, opens the standalone chat UI:
+
+    \b
+      DashPVA agent                       # open the window
+      DashPVA agent --scan OUTPUT.h5      # open + preload a scan
+
+    With `-q/--question`, runs headless (one-shot) and prints the answer:
+
+    \b
+      DashPVA agent --scan OUTPUT.h5 -q "Characterize this scan."
+
+    Requires the `agent` extra (`uv sync --extra agent`) and reaches Argo via a
+    local argo-proxy sidecar (auto-launched).
+    """
+    headless = any(a in ('-q', '--question') for a in agent_args)
+    target = 'dashpva.agent.run' if headless else 'dashpva.agent'
+    click.echo('Running Beamline Analysis Agent' + (' (headless)' if headless else ''))
+    cmd = [sys.executable, '-m', target, *agent_args]
+    exit_code = subprocess.run(cmd).returncode
+    sys.exit(exit_code)
+
+
 @cli.command()
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
