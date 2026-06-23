@@ -62,6 +62,14 @@ full = [
     "torch>=2.9.1",
     "gpytorch>=1.11",
     "linear-operator>=0.5.0",
+    "anthropic>=0.40.0",
+]
+# Standalone beamline-analysis agent (saved-scan analysis on the Claude Agent
+# SDK). Lightweight on purpose: saved-scan reasoning needs only h5py/numpy
+# (already core) plus the SDK and the Argo proxy sidecar — NOT torch/pvapy/pyepics.
+agent = [
+    "claude-agent-sdk>=0.2.105",
+    "argo-proxy>=3.1.1",
 ]
 
 [project.scripts]
