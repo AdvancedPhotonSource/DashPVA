@@ -18,6 +18,18 @@ import numpy as np
 from dashpva.analysis.experiment_context import ExperimentContext
 from dashpva.analysis.llm_backend import LLMBackend
 
+
+def _peak_to_median(frame: dict) -> float:
+    """Read the peak-to-median ratio from a frame dict, tolerating the legacy
+    ``snr`` key emitted by older recorded scans (the field was renamed because
+    peak/median is not a true signal-to-noise ratio)."""
+    v = frame.get('peak_to_median', frame.get('snr', 0.0))
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 _SYSTEM_PROMPT = (
     "You are an expert beamline scientist analyzing data from a synchrotron "
     "X-ray experiment.  You will receive quantitative measurements from a "
@@ -98,7 +110,7 @@ class SessionAnalyzer:
     def _section_trend_stats(self, fv_cache: list[dict]) -> str:
         n = len(fv_cache)
         n_blobs = [int(fv.get('n_blobs', 0)) for fv in fv_cache]
-        snrs = [float(fv.get('frame', {}).get('snr', 0.0)) for fv in fv_cache]
+        peak_med = [_peak_to_median(fv.get('frame', {})) for fv in fv_cache]
         totals = [float(fv.get('frame', {}).get('total_intensity', 0.0)) for fv in fv_cache]
         active = [float(fv.get('frame', {}).get('active_fraction', 0.0)) for fv in fv_cache]
         bg_tex = [float(fv.get('frame', {}).get('background_texture', 0.0)) for fv in fv_cache]
@@ -120,9 +132,9 @@ class SessionAnalyzer:
             common_r = f"; most common radius ≈ {most}px"
 
         lines = [f"Scan statistics over {n} frames:"]
-        lines.append(self._fmt_stat("Blob count",         n_blobs, fmt='{:.1f}'))
-        lines.append(self._fmt_stat("SNR",                snrs,    fmt='{:.2f}'))
-        lines.append(self._fmt_stat("Total intensity",    totals,  fmt='{:.0f}'))
+        lines.append(self._fmt_stat("Blob count",         n_blobs,  fmt='{:.1f}'))
+        lines.append(self._fmt_stat("Peak/median",        peak_med, fmt='{:.2f}'))
+        lines.append(self._fmt_stat("Total intensity",    totals,   fmt='{:.0f}'))
         lines.append(self._fmt_stat("Active fraction",    active,  fmt='{:.4f}'))
         lines.append(self._fmt_stat("Background texture", bg_tex,  fmt='{:.2f}'))
         lines.append(f"  Radial ring peaks:  {ring_count}/{n} frames had ring peaks"
@@ -150,7 +162,7 @@ class SessionAnalyzer:
                         if peaks else 'none')
             lines.append(
                 f"  Frame {idx}: blobs={fv.get('n_blobs', 0)}, "
-                f"SNR={frame.get('snr', 0)}, "
+                f"peak/med={_peak_to_median(frame):.2f}, "
                 f"total={frame.get('total_intensity', 0):,.0f}, "
                 f"bg={frame.get('background', 0)}, "
                 f"peak=({frame.get('peak_x', '?')},{frame.get('peak_y', '?')}), "
@@ -166,23 +178,23 @@ class SessionAnalyzer:
             return events
 
         prev_blobs = int(fv_cache[0].get('n_blobs', 0))
-        prev_snr = float(fv_cache[0].get('frame', {}).get('snr', 0.0))
+        prev_ptm = _peak_to_median(fv_cache[0].get('frame', {}))
         for i in range(1, len(fv_cache)):
             fv = fv_cache[i]
             n = int(fv.get('n_blobs', 0))
-            snr = float(fv.get('frame', {}).get('snr', 0.0))
+            ptm = _peak_to_median(fv.get('frame', {}))
             if abs(n - prev_blobs) > 2:
                 events.append(
                     f"Frame {i}: blob count changed from {prev_blobs} → {n} "
                     f"(possible sample drift or beam intensity change)"
                 )
-            if prev_snr > 0 and (prev_snr - snr) / prev_snr > 0.30:
+            if prev_ptm > 0 and (prev_ptm - ptm) / prev_ptm > 0.30:
                 events.append(
-                    f"Frame {i}: SNR dropped from {prev_snr:.2f} → {snr:.2f} "
-                    f"({(prev_snr - snr) / prev_snr * 100:.0f}% loss)"
+                    f"Frame {i}: peak/median dropped from {prev_ptm:.2f} → {ptm:.2f} "
+                    f"({(prev_ptm - ptm) / prev_ptm * 100:.0f}% loss)"
                 )
             prev_blobs = n
-            prev_snr = snr
+            prev_ptm = ptm
         return events
 
     def _section_vlm(self, vlm: list[dict]) -> str:

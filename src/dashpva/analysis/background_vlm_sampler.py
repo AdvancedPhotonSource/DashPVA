@@ -111,10 +111,12 @@ class BackgroundVlmSampler(QThread):
 
         n = features.get('n_blobs', 0)
         frame_feats = features.get('frame', {}) or {}
-        snr = frame_feats.get('snr', 0)
+        # 'peak_to_median' is the current key; fall back to legacy 'snr'.
+        peak_med = frame_feats.get('peak_to_median', frame_feats.get('snr', 0))
         prompt = (
             f"This is an X-ray area detector frame from a synchrotron experiment. "
-            f"Deterministic analysis found {n} bright spots with overall SNR={snr}. "
+            f"Deterministic analysis found {n} bright spots with a peak-to-median "
+            f"ratio of {peak_med}. "
             f"In one or two sentences, briefly describe what you observe in the "
             f"image (spots, rings, diffuse scatter, halo, edges, artifacts)."
         )

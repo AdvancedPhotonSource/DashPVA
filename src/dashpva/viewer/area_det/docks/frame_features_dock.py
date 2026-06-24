@@ -72,7 +72,7 @@ class FrameFeaturesDock(BaseDock):
             QSizePolicy.Preferred, QSizePolicy.Preferred)
 
         feat_layout.addRow("Blobs detected:",          self.lbl_n_blobs)
-        feat_layout.addRow("SNR:",                     self.lbl_snr)
+        feat_layout.addRow("Peak/median:",             self.lbl_snr)
         feat_layout.addRow("Total intensity:",         self.lbl_total_int)
         feat_layout.addRow("Background (median):",     self.lbl_background)
         feat_layout.addRow("Active area fraction:",    self.lbl_active_frac)
@@ -144,7 +144,8 @@ class FrameFeaturesDock(BaseDock):
         n = fv.get('n_blobs', '—')
 
         self.lbl_n_blobs.setText(str(n))
-        self.lbl_snr.setText(str(frame.get('snr', '—')))
+        # 'peak_to_median' is the current key; fall back to legacy 'snr'.
+        self.lbl_snr.setText(str(frame.get('peak_to_median', frame.get('snr', '—'))))
 
         total = frame.get('total_intensity')
         self.lbl_total_int.setText(f"{total:,.0f}" if isinstance(total, (int, float)) else '—')

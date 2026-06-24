@@ -93,26 +93,36 @@ class FrameFeatureExtractor:
         total = float(np.sum(img))
         background = float(np.median(img))
         peak_val = float(np.max(img))
-        snr = round(peak_val / background, 3) if background > 0 else 0.0
+        # Peak-to-median ratio. NOTE: this is NOT signal-to-noise — there is no
+        # noise term — so it is named honestly. A true SNR needs the detector's
+        # read/shot noise, which we don't have here.
+        peak_to_median = round(peak_val / background, 3) if background > 0 else 0.0
 
         peak_flat = int(np.argmax(img))
         peak_y, peak_x = divmod(peak_flat, w)
 
-        if total > 0:
+        # Center of mass of the *signal*, not the whole frame. A whole-frame COM
+        # is dominated by the background pedestal and tracks background gradients
+        # rather than the diffraction signal, so we mask to pixels above the
+        # active threshold and weight by background-subtracted intensity. This is
+        # what makes "COM drift" a meaningful diagnostic.
+        threshold = max(1.0, background * 2.0)
+        mask = img > threshold
+        active_fraction = round(float(mask.sum() / img.size), 6)
+        signal = (img - background) * mask
+        signal_total = float(signal.sum())
+        if signal_total > 0:
             ys = np.arange(h, dtype=np.float64)
             xs = np.arange(w, dtype=np.float64)
-            com_y = float(np.dot(ys, img.sum(axis=1)) / total)
-            com_x = float(np.dot(xs, img.sum(axis=0)) / total)
+            com_y = float(np.dot(ys, signal.sum(axis=1)) / signal_total)
+            com_x = float(np.dot(xs, signal.sum(axis=0)) / signal_total)
         else:
             com_y, com_x = h / 2.0, w / 2.0
-
-        threshold = max(1.0, background * 2.0)
-        active_fraction = round(float(np.sum(img > threshold) / img.size), 6)
 
         return {
             'total_intensity': round(total, 2),
             'background': round(background, 4),
-            'snr': snr,
+            'peak_to_median': peak_to_median,
             'peak_x': int(peak_x),
             'peak_y': int(peak_y),
             'com_x': round(com_x, 2),
@@ -144,8 +154,8 @@ class FrameFeatureExtractor:
         # Beam dropped, shutter closed, or a missed frame: essentially no signal
         # above background.
         active_fraction = base.get('active_fraction', 0.0)
-        snr = base.get('snr', 0.0)
-        blank_frame = bool(active_fraction < 1e-4 and snr < 1.5)
+        peak_to_median = base.get('peak_to_median', 0.0)
+        blank_frame = bool(active_fraction < 1e-4 and peak_to_median < 1.5)
 
         # --- Edge clipping ---------------------------------------------
         # Fraction of total intensity in the outer 5% border. A high value means

@@ -39,22 +39,43 @@ def _fv_cache(reader) -> list:
     return list(getattr(reader, 'feature_vector_cache', None) or [])
 
 
+# Feature aliases: fields renamed over the project's life. Either spelling
+# resolves to the other so older recorded scans and either name keep working.
+# 'snr' was renamed to 'peak_to_median' (it is a peak/median ratio, not SNR).
+_FEATURE_ALIASES = {
+    'snr': 'peak_to_median',
+    'peak_to_median': 'snr',
+}
+
+
+def _frame_value(frame: dict, key: str):
+    """Look up a frame metric by ``key``, honoring renamed-field aliases. Uses
+    membership (not truthiness) so a legitimate 0 is preserved. Returns None if
+    neither the key nor its alias is present."""
+    if key in frame:
+        return frame[key]
+    alias = _FEATURE_ALIASES.get(key)
+    if alias is not None and alias in frame:
+        return frame[alias]
+    return None
+
+
 def _get_path(fv: dict, path: str):
     """Pull a dotted feature path from one feature-vector dict.
 
-    Frame-level metrics live under ``fv['frame']`` (e.g. ``snr``, ``com_x``);
-    ``n_blobs`` is top-level. Bare names resolve against the frame dict first,
-    then the top level. Returns None if absent.
+    Frame-level metrics live under ``fv['frame']`` (e.g. ``peak_to_median``,
+    ``com_x``); ``n_blobs`` is top-level. Bare names resolve against the frame
+    dict first (with alias support), then the top level. Returns None if absent.
     """
     if not isinstance(fv, dict):
         return None
     if path == 'n_blobs':
         return fv.get('n_blobs')
     if path.startswith('frame.'):
-        return (fv.get('frame') or {}).get(path[len('frame.'):])
-    frame = fv.get('frame') or {}
-    if path in frame:
-        return frame[path]
+        return _frame_value(fv.get('frame') or {}, path[len('frame.'):])
+    val = _frame_value(fv.get('frame') or {}, path)
+    if val is not None:
+        return val
     return fv.get(path)
 
 
@@ -186,9 +207,11 @@ class AnalysisTools(BaseTool):
 
     @tool(description="Pull a per-frame feature over a window as aligned "
                       "(frame_ids, timestamps, values). Feature paths: 'n_blobs', "
-                      "'snr', 'total_intensity', 'com_x', 'com_y', 'background', "
-                      "'active_fraction', 'background_texture', 'peak_x', 'peak_y', "
-                      "or any frame metric. Use this to see how something evolves.")
+                      "'peak_to_median' (peak/median ratio, NOT true SNR; legacy "
+                      "alias 'snr' also works), 'total_intensity', 'com_x', 'com_y', "
+                      "'background', 'active_fraction', 'background_texture', "
+                      "'peak_x', 'peak_y', or any frame metric. Use to see how "
+                      "something evolves.")
     def get_feature_timeseries(self, feature_path: str,
                                start: float | None = None,
                                end: float | None = None,
@@ -196,7 +219,7 @@ class AnalysisTools(BaseTool):
         """Return a feature's time-series.
 
         Args:
-            feature_path: dotted feature name (e.g. 'snr', 'frame.com_x').
+            feature_path: dotted feature name (e.g. 'peak_to_median', 'frame.com_x').
             start: window start (frame id if by='frame', else POSIX time).
             end: window end. Omit start/end for the whole cache.
             by: 'frame' or 'time'.
@@ -229,7 +252,7 @@ class AnalysisTools(BaseTool):
         """Compute statistics for a feature path.
 
         Args:
-            feature_path: dotted feature name (e.g. 'snr').
+            feature_path: dotted feature name (e.g. 'peak_to_median').
             window: number of most-recent frames to include (default: all).
         """
         fids, ts, vals = _aligned_series(self.reader, feature_path)
@@ -267,9 +290,9 @@ class AnalysisTools(BaseTool):
         return out
 
     @tool(description="Correlate two series over a window (Pearson + Spearman). "
-                      "Each side is a feature path (e.g. 'snr') OR a PV prefixed "
-                      "'pv:' (e.g. 'pv:energy'). Aligns by frame id. Use to relate "
-                      "detector response to beamline conditions.")
+                      "Each side is a feature path (e.g. 'peak_to_median') OR a PV "
+                      "prefixed 'pv:' (e.g. 'pv:energy'). Aligns by frame id. Use to "
+                      "relate detector response to beamline conditions.")
     def correlate_series(self, a: str, b: str,
                          start: float | None = None,
                          end: float | None = None,
@@ -336,7 +359,7 @@ class AnalysisTools(BaseTool):
         """Detect anomalies in a feature path.
 
         Args:
-            feature_path: dotted feature name (e.g. 'snr').
+            feature_path: dotted feature name (e.g. 'peak_to_median').
             window: number of most-recent frames to include (default: all).
             sensitivity: robust z threshold for spikes (default 3.0).
         """
