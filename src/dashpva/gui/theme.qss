@@ -117,7 +117,8 @@ QLabel#lblLockBanner {
 }
 
 /* -- Colored action buttons ------------------------------------------ */
-QPushButton#btn_plot_cache {
+QPushButton#btn_plot_cache,
+QPushButton#bayesian_start_btn {
     background-color: #27AE60;
     color: white;
     font-weight: bold;
@@ -125,10 +126,13 @@ QPushButton#btn_plot_cache {
     border-radius: 4px;
     padding: 6px 14px;
 }
-QPushButton#btn_plot_cache:hover { background-color: #2ECC71; }
-QPushButton#btn_plot_cache:pressed { background-color: #1E8449; }
+QPushButton#btn_plot_cache:hover,
+QPushButton#bayesian_start_btn:hover { background-color: #2ECC71; }
+QPushButton#btn_plot_cache:pressed,
+QPushButton#bayesian_start_btn:pressed { background-color: #1E8449; }
 
-QPushButton#btn_save_h5 {
+QPushButton#btn_save_h5,
+QPushButton#bayesian_stop_btn {
     background-color: #E74C3C;
     color: white;
     font-weight: bold;
@@ -136,8 +140,18 @@ QPushButton#btn_save_h5 {
     border-radius: 4px;
     padding: 6px 14px;
 }
-QPushButton#btn_save_h5:hover { background-color: #C0392B; }
-QPushButton#btn_save_h5:pressed { background-color: #A93226; }
+QPushButton#btn_save_h5:hover,
+QPushButton#bayesian_stop_btn:hover { background-color: #C0392B; }
+QPushButton#btn_save_h5:pressed,
+QPushButton#bayesian_stop_btn:pressed { background-color: #A93226; }
+
+/* Start/Stop reuse the green/red action-button rules above; they only add a
+   muted disabled state (Stop starts disabled; Start disables during a run). */
+QPushButton#bayesian_start_btn:disabled,
+QPushButton#bayesian_stop_btn:disabled {
+    background-color: palette(button);
+    color: palette(mid);
+}
 
 QPushButton#btn_segment {
     background-color: #27AE60;

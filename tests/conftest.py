@@ -1,4 +1,10 @@
+import os
+
 import pytest
+
+# Run Qt-based GUI tests headless so they don't fatally abort on machines without
+# a display (CI / headless servers). Set before any test module imports Qt.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture()

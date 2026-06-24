@@ -68,17 +68,6 @@ _SETTINGS_LAST_SETUP = "bayesian/last_setup"
 _SETTINGS_LOCAL_SETUPS = "bayesian/local_setups"
 
 
-def _action_button_style(bg: str) -> str:
-    """Colored primary-action button matching the app's colored buttons, with a
-    native-looking disabled state (so disabled Start/Stop don't look active)."""
-    return (
-        f"QPushButton {{ background-color: {bg}; color: white; font-weight: 600; "
-        f"border: none; border-radius: 4px; padding: 7px 16px; }}"
-        f"QPushButton:disabled {{ background-color: palette(button); "
-        f"color: palette(mid); }}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Scan worker thread
 # ---------------------------------------------------------------------------
@@ -829,12 +818,12 @@ class BayesianViewer(QtWidgets.QMainWindow):
         fl.addWidget(sep)
 
         btn_row = QtWidgets.QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(12)
         self._start_btn = QtWidgets.QPushButton("▶  Start")
-        self._start_btn.setStyleSheet(_action_button_style(SUCCESS))
+        self._start_btn.setObjectName("bayesian_start_btn")
         self._start_btn.setMinimumHeight(34)
         self._stop_btn = QtWidgets.QPushButton("■  Stop")
-        self._stop_btn.setStyleSheet(_action_button_style(ERROR))
+        self._stop_btn.setObjectName("bayesian_stop_btn")
         self._stop_btn.setMinimumHeight(34)
         self._stop_btn.setEnabled(False)
         self._reset_btn = QtWidgets.QPushButton("↺  Reset")
@@ -844,9 +833,11 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._start_btn.clicked.connect(self._on_start)
         self._stop_btn.clicked.connect(self._on_stop)
         self._reset_btn.clicked.connect(self._on_reset)
-        btn_row.addWidget(self._start_btn)
-        btn_row.addWidget(self._stop_btn)
-        btn_row.addWidget(self._reset_btn)
+        # Equal stretch so the three actions share the row width evenly (not
+        # clustered/crowded) regardless of label length.
+        btn_row.addWidget(self._start_btn, 1)
+        btn_row.addWidget(self._stop_btn, 1)
+        btn_row.addWidget(self._reset_btn, 1)
         fl.addLayout(btn_row)
 
         self._status_lbl = QtWidgets.QLabel("Status: Idle")
@@ -1367,6 +1358,15 @@ class BayesianViewer(QtWidgets.QMainWindow):
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_abort()
             self._worker.wait(3000)
+        # Stop the model-surface thread too, and drop its signals, so it can't fire
+        # into a destroyed widget if the window is closed mid "Update surface".
+        if self._surface_worker is not None and self._surface_worker.isRunning():
+            try:
+                self._surface_worker.done.disconnect()
+                self._surface_worker.failed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._surface_worker.wait(2000)
         event.accept()
 
 
