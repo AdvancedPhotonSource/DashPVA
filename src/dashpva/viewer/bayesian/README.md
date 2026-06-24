@@ -90,7 +90,29 @@ In the GUI:
 5. **Start** — live plots show the objective vs. evaluation (with best-so-far) and a
    2-D projection scatter for a selectable DOF pair.
 
-The configuration is remembered between launches (via `QSettings`).
+### Profiles & setups
+The optimizer's DOF/objective PVs are **exportable** config, so they live in the app's
+**central profile** (the one selected in the Workflow editor — `dashpva.db` / TOML),
+not in a private store. The optimizer **follows the selected profile** (shown read-only
+at the top; press **↻** to re-read after switching it in the Workflow editor).
+
+A profile can hold **several named setups** under a `[BAYESIAN]` table (e.g.
+`beam_collimation`, `crl_focusing`). Use the **Setup** dropdown + buttons:
+
+- **Load** — load the selected setup into the form (also happens when you pick it).
+- **Save** — overwrite the current named setup.
+- **Save As…** — store the current form under a new name.
+- **Delete** — remove a setup from the profile.
+
+On launch the **last-used setup** is reloaded. Named profile setups are written to the
+shared profile only on explicit **Save** / **Save As** (never silently on close). When
+**no profile/DB is available** (offline sim, fresh machine) the optimizer keeps the
+same named setups **locally** in `QSettings` (full Load/Save/Save As/Delete — they're
+just not exportable). **Save / Save As are explicit in both modes** — closing or
+starting a run never auto-saves a setup, so name and Save the ones you want to keep.
+Other local, non-exportable state — window size, the per-machine **Bluesky Conda Env**
+path, and which setup you last had open — also lives in `QSettings`; **Simulate** is
+never persisted (it always reopens OFF).
 
 ### Adding objectives
 An **objective** is a scalar value read from an EPICS PV that the optimizer drives up

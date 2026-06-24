@@ -48,6 +48,7 @@ from dashpva.gui.theme_colors import (
     WARNING,
     status_style,
 )
+from dashpva.viewer.bayesian import profile_store
 from dashpva.viewer.bayesian.blop_adapter import (
     DOFSpec,
     ObjectiveSpec,
@@ -56,10 +57,15 @@ from dashpva.viewer.bayesian.blop_adapter import (
 
 logger = logging.getLogger(__name__)
 
+# Legacy single local config blob (pre-named-setups); migrated to a "default" local
+# setup on first launch, then unused.
 _SETTINGS_KEY = "bayesian/optimizer_config"
-# The Bluesky conda-env path is persisted on its own (it is a per-machine setup
-# detail, not part of the portable optimizer config blob).
+# Per-machine, non-exportable local state (never part of the portable profile).
 _SETTINGS_BLUESKY_ENV = "bayesian/bluesky_env"
+# Last-used named setup, keyed per profile/local: f"{_SETTINGS_LAST_SETUP}/{label}".
+_SETTINGS_LAST_SETUP = "bayesian/last_setup"
+# Named local setups (QSettings JSON table) used when no central profile is active.
+_SETTINGS_LOCAL_SETUPS = "bayesian/local_setups"
 
 
 def _action_button_style(bg: str) -> str:
@@ -683,6 +689,11 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._agent_config: Optional[OptimizerConfig] = None
         self._surface_worker: Optional[_SurfaceWorker] = None
         self._stopping = False  # True between a Stop request and the worker ending
+        # Central-profile config source (None -> local QSettings fallback) and the
+        # name of the currently-loaded named setup within that profile.
+        self._source = None
+        self._source_label = ""
+        self._current_setup: Optional[str] = None
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -694,7 +705,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         root.addWidget(self._build_display_panel(), 1)
         self._plots.surface_requested.connect(self._on_surface_requested)
 
-        self._load_config()
+        self._load_initial()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -708,6 +719,9 @@ class BayesianViewer(QtWidgets.QMainWindow):
         outer = QtWidgets.QVBoxLayout(content)
         outer.setContentsMargins(4, 4, 4, 4)
         outer.setSpacing(8)
+
+        # Profile + named-setup picker (follows the app-selected profile)
+        outer.addLayout(self._build_profile_row())
 
         # Bluesky env
         env_row = QtWidgets.QFormLayout()
@@ -904,41 +918,263 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._acq_kwargs.setText(_format_kwargs(cfg.acq_kwargs))
         self._update_total()
 
-    def _load_config(self) -> None:
-        raw = self._settings.value(_SETTINGS_KEY, "")
-        cfg = None
-        if raw:
-            try:
-                cfg = OptimizerConfig.from_dict(json.loads(raw))
-            except (ValueError, TypeError) as exc:
-                logger.warning("Could not load saved config: %s", exc)
-        if cfg is None or not cfg.dofs:
-            cfg = OptimizerConfig(
-                dofs=[
-                    DOFSpec(name="x", pv="", lo=0.0, hi=5.0),
-                    DOFSpec(name="y", pv="", lo=0.0, hi=5.0),
-                ],
-                objectives=[ObjectiveSpec()],
-            )
+    def _build_profile_row(self) -> QtWidgets.QVBoxLayout:
+        """Active-profile label + named-setup picker (Load/Save/Save As/Delete)."""
+        box = QtWidgets.QVBoxLayout()
+        box.setSpacing(4)
+
+        prow = QtWidgets.QHBoxLayout()
+        prow.addWidget(QtWidgets.QLabel("Profile:"))
+        self._profile_label = QtWidgets.QLabel("—")
+        self._profile_label.setStyleSheet("font-weight: 600;")
+        self._profile_label.setToolTip(
+            "The app-selected profile (set in the Workflow editor). The optimizer "
+            "follows it; switch profiles there, then ↻ to re-read.")
+        prow.addWidget(self._profile_label, 1)
+        refresh = self._small_button("↻")
+        refresh.setToolTip("Re-read the selected profile and its setups")
+        refresh.clicked.connect(self._on_refresh_profile)
+        prow.addWidget(refresh)
+        box.addLayout(prow)
+
+        srow = QtWidgets.QHBoxLayout()
+        srow.addWidget(QtWidgets.QLabel("Setup:"))
+        self._setup_combo = QtWidgets.QComboBox()
+        self._setup_combo.setMinimumWidth(150)
+        self._setup_combo.setToolTip("Named Bayesian setups stored in this profile")
+        self._setup_combo.activated[str].connect(self._on_setup_selected)
+        srow.addWidget(self._setup_combo, 1)
+        self._btn_load = self._small_button("Load")
+        self._btn_save = self._small_button("Save")
+        self._btn_save_as = self._small_button("Save As…")
+        self._btn_delete = self._small_button("Delete")
+        self._btn_load.clicked.connect(self._on_load_setup)
+        self._btn_save.clicked.connect(self._on_save_setup)
+        self._btn_save_as.clicked.connect(self._on_save_as_setup)
+        self._btn_delete.clicked.connect(self._on_delete_setup)
+        for b in (self._btn_load, self._btn_save, self._btn_save_as, self._btn_delete):
+            srow.addWidget(b)
+        box.addLayout(srow)
+        return box
+
+    # ------------------------------------------------------------------
+    # Config persistence: follow the selected profile, else local QSettings
+    # ------------------------------------------------------------------
+
+    def _default_config(self) -> OptimizerConfig:
+        return OptimizerConfig(
+            dofs=[
+                DOFSpec(name="x", pv="", lo=0.0, hi=5.0),
+                DOFSpec(name="y", pv="", lo=0.0, hi=5.0),
+            ],
+            objectives=[ObjectiveSpec()],
+        )
+
+    def _last_setup_key(self) -> str:
+        label = (self._source_label or "local").replace("/", "_")
+        return f"{_SETTINGS_LAST_SETUP}/{label}"
+
+    def _refresh_source(self) -> None:
+        """Resolve the app's active profile (None -> local QSettings setups)."""
+        try:
+            self._source, self._source_label = profile_store.active_source()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not resolve config source: %s", exc)
+            self._source, self._source_label = None, ""
+        self._profile_label.setText(
+            self._source_label or "Local (no profile selected)")
+        # Both profile and local modes hold named setups, so all controls apply.
+        for b in (self._btn_load, self._btn_save, self._btn_save_as, self._btn_delete):
+            b.setEnabled(True)
+
+    def _populate_setups(self, names: list, pick: str) -> None:
+        self._setup_combo.blockSignals(True)
+        self._setup_combo.clear()
+        self._setup_combo.addItems(names)
+        if pick and pick in names:
+            self._setup_combo.setCurrentText(pick)
+        self._setup_combo.blockSignals(False)
+
+    def _load_initial(self) -> None:
+        """On launch: list the active store's setups and reload the last-used one."""
+        self._refresh_source()
+        if self._source is None:
+            self._migrate_local_blob()
+        names = self._store_list()
+        last = self._settings.value(self._last_setup_key(), "", type=str)
+        pick = last if last in names else (names[0] if names else "")
+        self._populate_setups(names, pick)
+        if pick:
+            cfg = self._store_load(pick) or self._default_config()
+            self._current_setup = pick
+        else:
+            cfg = self._default_config()
+            self._current_setup = None
         self._apply_config(cfg)
-        # Restore the Bluesky conda-env path (its own key, separate from the
-        # optimizer config); fall back to the get_bluesky_root() default set at
-        # construction when nothing was saved.
+        self._restore_local_ui()
+
+    def _restore_local_ui(self) -> None:
+        # Bluesky conda-env path (per-machine, local).
         env = self._settings.value(_SETTINGS_BLUESKY_ENV, "", type=str)
         if env:
             self._bluesky_env.setText(env)
-        # Simulate is intentionally never persisted: always start OFF so the viewer
-        # never reopens in simulation mode at the beamline.
+        # Simulate is never persisted: always start OFF (beamline safety).
         self._simulate.setChecked(False)
 
-    def _save_config(self) -> None:
+    # ---- setup store: profile (ConfigSource) or local (QSettings) ----------
+
+    def _local_table(self) -> dict:
+        raw = self._settings.value(_SETTINGS_LOCAL_SETUPS, "")
+        if raw:
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+            except (ValueError, TypeError):
+                pass
+        return {}
+
+    def _write_local_table(self, table: dict) -> None:
+        self._settings.setValue(_SETTINGS_LOCAL_SETUPS, json.dumps(table))
+
+    def _migrate_local_blob(self) -> None:
+        """One-time: fold a legacy single local config into a named 'default' setup."""
+        if self._local_table():
+            return
+        raw = self._settings.value(_SETTINGS_KEY, "")
+        if not raw:
+            return
         try:
-            cfg = self._gather_config()
-            self._settings.setValue(_SETTINGS_KEY, json.dumps(cfg.to_dict()))
-            self._settings.setValue(
-                _SETTINGS_BLUESKY_ENV, self._bluesky_env.text().strip())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not save config: %s", exc)
+            cfg = OptimizerConfig.from_dict(json.loads(raw))
+        except (ValueError, TypeError):
+            return
+        if cfg.dofs:
+            self._write_local_table({"default": cfg.to_dict()})
+
+    def _store_list(self) -> list:
+        if self._source is not None:
+            return profile_store.list_setups(self._source)
+        return sorted(self._local_table().keys())
+
+    def _store_load(self, name: str) -> Optional[OptimizerConfig]:
+        if self._source is not None:
+            return profile_store.load_setup(self._source, name)
+        data = self._local_table().get(name)
+        if not isinstance(data, dict):
+            return None
+        try:
+            return OptimizerConfig.from_dict(data)
+        except (ValueError, TypeError) as exc:
+            logger.warning("Could not parse local setup %r: %s", name, exc)
+            return None
+
+    def _store_save(self, name: str, cfg: OptimizerConfig) -> bool:
+        if self._source is not None:
+            return profile_store.save_setup(self._source, name, cfg)
+        table = self._local_table()
+        table[name] = cfg.to_dict()
+        self._write_local_table(table)
+        return True
+
+    def _store_delete(self, name: str) -> bool:
+        if self._source is not None:
+            return profile_store.delete_setup(self._source, name)
+        table = self._local_table()
+        if name not in table:
+            return False
+        table.pop(name)
+        self._write_local_table(table)
+        return True
+
+    def _save_env(self) -> None:
+        self._settings.setValue(
+            _SETTINGS_BLUESKY_ENV, self._bluesky_env.text().strip())
+
+    def _persist_local_state(self) -> None:
+        """Save local, non-exportable UI state: the env path + the last-used pick.
+
+        Named setups (profile *and* local) are written only on explicit Save /
+        Save As — closing or starting a run never auto-saves a setup.
+        """
+        self._save_env()
+        if self._current_setup:
+            self._settings.setValue(self._last_setup_key(), self._current_setup)
+
+    # ---- setup actions ----------------------------------------------------
+
+    def _on_refresh_profile(self) -> None:
+        self._load_initial()
+        self.statusBar().showMessage(
+            f"Profile: {self._source_label or 'Local'}", 4000)
+
+    def _on_setup_selected(self, name: str) -> None:
+        if not name:
+            return
+        cfg = self._store_load(name)
+        if cfg is None:
+            return
+        self._apply_config(cfg)
+        self._current_setup = name
+        self._settings.setValue(self._last_setup_key(), name)
+        self.statusBar().showMessage(f"Loaded setup '{name}'", 4000)
+
+    def _on_load_setup(self) -> None:
+        name = self._setup_combo.currentText()
+        if name:
+            self._on_setup_selected(name)
+
+    def _on_save_setup(self) -> None:
+        if not self._current_setup:
+            self._on_save_as_setup()
+            return
+        if self._store_save(self._current_setup, self._gather_config()):
+            self._settings.setValue(self._last_setup_key(), self._current_setup)
+            self.statusBar().showMessage(f"Saved setup '{self._current_setup}'", 4000)
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "Save failed", "Could not save the setup.")
+
+    def _on_save_as_setup(self) -> None:
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save setup as", "Setup name:", text=self._current_setup or "")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name in self._store_list():
+            if QtWidgets.QMessageBox.question(
+                    self, "Overwrite?",
+                    f"Setup '{name}' already exists. Overwrite?"
+            ) != QtWidgets.QMessageBox.Yes:
+                return
+        if self._store_save(name, self._gather_config()):
+            self._current_setup = name
+            self._populate_setups(self._store_list(), name)
+            self._settings.setValue(self._last_setup_key(), name)
+            self.statusBar().showMessage(f"Saved setup '{name}'", 4000)
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "Save failed", "Could not save the setup.")
+
+    def _on_delete_setup(self) -> None:
+        name = self._setup_combo.currentText()
+        if not name:
+            return
+        where = self._source_label or "Local"
+        if QtWidgets.QMessageBox.question(
+                self, "Delete setup",
+                f"Delete setup '{name}' from {where}?"
+        ) != QtWidgets.QMessageBox.Yes:
+            return
+        self._store_delete(name)
+        names = self._store_list()
+        newpick = names[0] if names else ""
+        self._populate_setups(names, newpick)
+        if newpick:
+            self._on_setup_selected(newpick)
+        else:
+            self._current_setup = None
+            self._apply_config(self._default_config())
+        self.statusBar().showMessage(f"Deleted setup '{name}'", 4000)
 
     # ------------------------------------------------------------------
     # Start / stop
@@ -984,7 +1220,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
             )
             self._best_lbl.setText("")
 
-        self._save_config()
+        self._persist_local_state()
         self._stopping = False
         self._plots.set_update_enabled(False)  # can't query the model mid-scan
 
@@ -1127,7 +1363,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
             "+ Total evaluations:" if resuming else "Total evaluations:")
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        self._save_config()
+        self._persist_local_state()
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_abort()
             self._worker.wait(3000)
