@@ -119,7 +119,7 @@ QLabel#lblLockBanner {
 /* -- Colored action buttons ------------------------------------------ */
 QPushButton#btn_plot_cache,
 QPushButton#bayesian_start_btn {
-    background-color: #27AE60;
+    background-color: $SUCCESS;
     color: white;
     font-weight: bold;
     border: none;
@@ -127,13 +127,13 @@ QPushButton#bayesian_start_btn {
     padding: 6px 14px;
 }
 QPushButton#btn_plot_cache:hover,
-QPushButton#bayesian_start_btn:hover { background-color: #2ECC71; }
+QPushButton#bayesian_start_btn:hover { background-color: $SUCCESS_HOVER; }
 QPushButton#btn_plot_cache:pressed,
-QPushButton#bayesian_start_btn:pressed { background-color: #1E8449; }
+QPushButton#bayesian_start_btn:pressed { background-color: $SUCCESS_PRESSED; }
 
 QPushButton#btn_save_h5,
 QPushButton#bayesian_stop_btn {
-    background-color: #E74C3C;
+    background-color: $ERROR;
     color: white;
     font-weight: bold;
     border: none;
@@ -141,9 +141,9 @@ QPushButton#bayesian_stop_btn {
     padding: 6px 14px;
 }
 QPushButton#btn_save_h5:hover,
-QPushButton#bayesian_stop_btn:hover { background-color: #C0392B; }
+QPushButton#bayesian_stop_btn:hover { background-color: $ERROR_HOVER; }
 QPushButton#btn_save_h5:pressed,
-QPushButton#bayesian_stop_btn:pressed { background-color: #A93226; }
+QPushButton#bayesian_stop_btn:pressed { background-color: $ERROR_PRESSED; }
 
 /* Start/Stop reuse the green/red action-button rules above; they only add a
    muted disabled state (Stop starts disabled; Start disables during a run). */
@@ -154,7 +154,7 @@ QPushButton#bayesian_stop_btn:disabled {
 }
 
 QPushButton#btn_segment {
-    background-color: #27AE60;
+    background-color: $SUCCESS;
     color: white;
     font-weight: bold;
     border: none;
@@ -169,7 +169,7 @@ QPushButton#btn_get_2d_docks {
     font-weight: bold;
 }
 QPushButton#btn_get_3d_docks {
-    background-color: #27AE60;
+    background-color: $SUCCESS;
     color: white;
     font-weight: bold;
 }
@@ -179,7 +179,7 @@ QPushButton#btn_send_2d_docks {
     font-weight: bold;
 }
 QPushButton#btn_send_3d_docks {
-    background-color: #E74C3C;
+    background-color: $ERROR;
     color: white;
     font-weight: bold;
 }
@@ -187,7 +187,7 @@ QPushButton#btn_send_3d_docks {
 /* -- ROI delete button ----------------------------------------------- */
 QPushButton#btn_delete_roi {
     color: white;
-    background-color: #E74C3C;
+    background-color: $ERROR;
 }
 
 /* -- PV config input channel ---------------------------------------- */

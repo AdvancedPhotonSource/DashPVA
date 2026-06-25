@@ -9,7 +9,17 @@ def ui_path(*parts: str) -> str:
 
 
 def configure_app(app):
-    """Apply the global theme stylesheet to a QApplication."""
+    """Apply the global theme stylesheet to a QApplication.
+
+    Colors come from ``theme_colors`` via ``$NAME`` substitution so the stylesheet
+    keeps a single source of truth (e.g. ``background-color: $SUCCESS;``). Unknown
+    ``$NAME`` tokens are left untouched (``safe_substitute``).
+    """
+    from string import Template
+
+    from dashpva.gui import theme_colors
+
     qss_file = _GUI_DIR / "theme.qss"
     if qss_file.is_file():
-        app.setStyleSheet(qss_file.read_text(encoding="utf-8"))
+        qss = Template(qss_file.read_text(encoding="utf-8"))
+        app.setStyleSheet(qss.safe_substitute(vars(theme_colors)))
