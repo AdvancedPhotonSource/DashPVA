@@ -28,3 +28,13 @@ dashpva.db
 .dashpva_edition
 logs/
 .ruff_cache/
+
+AGENT*
+HANDOFF*
+blob_tracking_test.toml
+frame_analysis_test.toml
+pv_configs/sample_config.toml
+.dashpva_data.json
+.dashpva_locator
+argo_backend.py
+ClAUDE.md
