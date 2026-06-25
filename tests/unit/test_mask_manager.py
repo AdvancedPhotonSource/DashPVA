@@ -134,3 +134,28 @@ class TestDeadHotPixelDetection:
         frames = np.ones((2, 50, 50), dtype=np.float32)
         result = mm.detect_dead_pixels(frames)
         assert result is None
+
+    def test_dead_detection_masks_negative_pixels(self, tmp_path):
+        # A high-variance pixel (not "dead") that reads negative in any frame is
+        # still masked as unphysical (e.g. a -1 bad-pixel sentinel).
+        mm = MaskManager(masks_dir=str(tmp_path / "masks"))
+        rng = np.random.default_rng(0)
+        frames = rng.normal(1000, 200, size=(10, 20, 20)).astype(np.float32)
+        frames[3, 7, 7] = -1.0  # one unphysical reading; variance stays high
+        result = mm.detect_dead_pixels(frames)
+        assert result is not None
+        assert result[7, 7]        # masked because it went negative
+        assert not result[0, 1]    # a normal varying pixel stays unmasked
+
+    def test_hot_detection_masks_negative_but_not_zero(self, tmp_path):
+        # Dark frames: hot detection flags HIGH pixels, so the low -1 sentinel is
+        # only caught by the negative rule. A valid dark zero must stay unmasked.
+        mm = MaskManager(masks_dir=str(tmp_path / "masks"))
+        rng = np.random.default_rng(1)
+        frames = np.abs(rng.normal(0, 1, size=(10, 20, 20))).astype(np.float32)
+        frames[:, 2, 2] = -1.0   # persistent bad-pixel sentinel -> mask
+        frames[:, 4, 4] = 0.0    # valid dark zero -> do NOT mask
+        result = mm.detect_hot_pixels(frames)
+        assert result is not None
+        assert result[2, 2]        # negative -> masked
+        assert not result[4, 4]    # zero -> not masked

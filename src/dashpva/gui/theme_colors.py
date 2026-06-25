@@ -9,8 +9,10 @@ When changing a value, update theme.qss to match.
 # -- Status colors ------------------------------------------------------------
 SUCCESS = "#27AE60"
 SUCCESS_HOVER = "#2ECC71"
+SUCCESS_PRESSED = "#1E8449"
 ERROR = "#E74C3C"
 ERROR_HOVER = "#C0392B"
+ERROR_PRESSED = "#A93226"
 WARNING = "#E67E22"
 WARNING_HOVER = "#D35400"
 INFO = "#2980B9"

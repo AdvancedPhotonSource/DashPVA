@@ -26,5 +26,6 @@ masks/
 dashpva.db
 *.egg-info/
 .dashpva_edition
+.dashpva_locator
 logs/
 .ruff_cache/

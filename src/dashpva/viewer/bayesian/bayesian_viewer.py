@@ -1,130 +1,71 @@
 """
 bayesian_viewer.py
 ==================
-PyQt5 DashPVA-compatible GUI for the 2-D Bayesian Optimization scan at
-APS 6-ID.
+PyQt5 DashPVA GUI for Bayesian optimization driven by Bluesky's **blop**
+(``blop.ax.Agent`` — an Ax/BoTorch Bayesian optimizer).
 
-Architecture
-------------
-- **Main thread** : Qt event loop + all UI rendering
-- **Scan thread** : A ``QThread`` subclass that owns the Bluesky
-  ``RunEngine`` and calls ``RE(bayesian2d(...))`` in a blocking loop.
-  Cross-thread communication uses only Qt signals (thread-safe).
+This viewer is a thin UI shell over :mod:`dashpva.viewer.bayesian.blop_adapter`:
 
-The scan thread emits a ``scan_update`` signal after each ``tell()``
-call; the main thread's slot refreshes the Matplotlib heatmap.
+* The control panel is **scalable** — add as many degrees of freedom (motors)
+  as the experiment needs (tested to a dozen+), each with **GUI-editable search
+  limits**, plus one or more objectives read from the detector.
+* A background :class:`ScanWorker` owns the Bluesky ``RunEngine`` and runs
+  :func:`~dashpva.viewer.bayesian.blop_adapter.blop_optimize_plan`, which asks
+  the agent for points, moves the motors, reads the detector, and ingests the
+  result.  After every measured point it emits ``point_measured`` so the GUI can
+  update live (Qt signals are the only cross-thread channel).
+* Because the search space can be high-dimensional, the live plots are a
+  **convergence trace** (objective vs. evaluation, with best-so-far) and a
+  **2-D projection** scatter where the user picks which DOF pair to view.
 
-Panel layout::
-
-    ┌────────────────────────── BayesianViewer ───────────────────────────┐
-    │  ┌── Control Panel ─────────────────────┐  ┌── Live Plot ─────────┐ │
-    │  │  X Motor PV     [___________]        │  │                      │ │
-    │  │  Y Motor PV     [___________]        │  │   2-D GP Mean Map    │ │
-    │  │  Detector PV    [___________]        │  │   (Matplotlib axes)  │ │
-    │  │  Scalar Key     [___________]        │  │                      │ │
-    │  │  x_lo / x_hi   [____] / [____]      │  │  • scanned X markers │ │
-    │  │  y_lo / y_hi   [____] / [____]      │  │                      │ │
-    │  │  Max Points     [____]              │  │                      │ │
-    │  │  N Initial      [____]              │  └──────────────────────┘ │
-    │  │                                     │                           │
-    │  │  [ Start Scan ]  [ Stop / Abort ]   │                           │
-    │  │  Status: Idle                       │                           │
-    │  └─────────────────────────────────────┘                           │
-    └─────────────────────────────────────────────────────────────────────┘
+Configuration is persisted between launches via ``QSettings`` (the same store the
+area-detector viewer uses), so the experiment setup is remembered.
 
 Usage
 -----
-    python bayesian_viewer.py
-
-Dependencies
-------------
-    PyQt5, matplotlib, numpy, bluesky, ophyd, gpytorch, torch
-    plus bayesian_engine and bluesky_plan from this package.
+    python -m dashpva.viewer.bayesian.bayesian_viewer
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import traceback
-from typing import Optional
+from typing import List, Optional
 
-import matplotlib
 import numpy as np
-from PyQt5 import QtGui, QtWidgets
+import pyqtgraph as pg
+from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
-matplotlib.use("Qt5Agg")  # noqa: E402 – must be before pyplot import
-import matplotlib.pyplot as plt  # noqa: F401 – kept for colormaps
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
 from dashpva.gui import configure_app
+from dashpva.gui.theme_colors import (
+    ERROR,
+    INFO,
+    SUCCESS,
+    TEXT_MUTED,
+    WARNING,
+    status_style,
+)
+from dashpva.viewer.bayesian import profile_store
+from dashpva.viewer.bayesian.blop_adapter import (
+    DOFSpec,
+    ObjectiveSpec,
+    OptimizerConfig,
+)
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Stylesheet (dark, modern)
-# ---------------------------------------------------------------------------
-_STYLE = """
-QMainWindow, QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
-    font-family: "Inter", "Segoe UI", sans-serif;
-    font-size: 10pt;
-}
-QGroupBox {
-    border: 1px solid #45475a;
-    border-radius: 6px;
-    margin-top: 10px;
-    padding: 10px;
-    font-weight: bold;
-    color: #89b4fa;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    top: -7px;
-    color: #89b4fa;
-}
-QLineEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #313244;
-    border: 1px solid #585b70;
-    border-radius: 4px;
-    padding: 4px 6px;
-    color: #cdd6f4;
-}
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 1px solid #89b4fa;
-}
-QPushButton {
-    background-color: #89b4fa;
-    color: #1e1e2e;
-    border: none;
-    border-radius: 5px;
-    padding: 7px 20px;
-    font-weight: bold;
-}
-QPushButton:hover { background-color: #b4befe; }
-QPushButton:pressed { background-color: #74c7ec; }
-QPushButton:disabled {
-    background-color: #45475a;
-    color: #6c7086;
-}
-QPushButton#stop_btn {
-    background-color: #f38ba8;
-}
-QPushButton#stop_btn:hover { background-color: #eba0ac; }
-QPushButton#stop_btn:disabled {
-    background-color: #45475a;
-    color: #6c7086;
-}
-QLabel#status_label {
-    color: #a6e3a1;
-    font-style: italic;
-}
-"""
+# Legacy single local config blob (pre-named-setups); migrated to a "default" local
+# setup on first launch, then unused.
+_SETTINGS_KEY = "bayesian/optimizer_config"
+# Per-machine, non-exportable local state (never part of the portable profile).
+_SETTINGS_BLUESKY_ENV = "bayesian/bluesky_env"
+# Last-used named setup, keyed per profile/local: f"{_SETTINGS_LAST_SETUP}/{label}".
+_SETTINGS_LAST_SETUP = "bayesian/last_setup"
+# Named local setups (QSettings JSON table) used when no central profile is active.
+_SETTINGS_LOCAL_SETUPS = "bayesian/local_setups"
 
 
 # ---------------------------------------------------------------------------
@@ -132,81 +73,66 @@ QLabel#status_label {
 # ---------------------------------------------------------------------------
 
 class ScanWorker(QThread):
-    """
-    Runs the Bluesky RunEngine in a background thread.
+    """Owns the Bluesky ``RunEngine`` and runs the blop optimization plan.
 
     Signals
     -------
-    scan_update(int, np.ndarray, np.ndarray, list, list)
-        Emitted after each ``optimizer.tell()`` call (i.e., after each
-        measurement) with:
-            n_pts    : int   – total measurements so far
-            mean_grid: 2-D np.ndarray – GP predictive mean
-            std_grid : 2-D np.ndarray – GP predictive std
-            xs       : list[float]    – all physical X coords measured
-            ys       : list[float]    – all physical Y coords measured
+    point_measured(object)
+        Emitted after every measured point with the payload dict produced by
+        :func:`blop_optimize_plan`'s ``on_point`` callback.
     scan_error(str)
         Emitted if an exception propagates out of the RunEngine.
     scan_finished()
-        Emitted when the plan completes normally.
+        Emitted when the plan completes (normally or via abort).
     """
 
-    # Qt signals (must be class-level attributes)
-    scan_update = pyqtSignal(int, object, object, list, list)
+    point_measured = pyqtSignal(object)
     scan_error = pyqtSignal(str)
     scan_finished = pyqtSignal()
+    agent_ready = pyqtSignal(object)  # the built blop agent (for model surfaces)
 
     def __init__(
         self,
-        optimizer,
-        detector,
-        x_motor,
-        x_lo: float,
-        x_hi: float,
-        y_motor,
-        y_lo: float,
-        y_hi: float,
-        maxpts: int,
-        n_initial: int,
-        scalar_key: Optional[str],
-        bluesky_root: Optional[str] = None,
+        config: OptimizerConfig,
+        bluesky_root: Optional[str],
+        simulate: bool,
+        agent=None,
         parent=None,
     ):
         super().__init__(parent)
-
-        self.optimizer = optimizer
-        self.detector = detector
-        self.x_motor = x_motor
-        self.x_lo = x_lo
-        self.x_hi = x_hi
-        self.y_motor = y_motor
-        self.y_lo = y_lo
-        self.y_hi = y_hi
-        self.maxpts = maxpts
-        self.n_initial = n_initial
-        self.scalar_key = scalar_key
+        self.config = config
         self.bluesky_root = bluesky_root
+        self.simulate = simulate
+        self._existing_agent = agent  # reuse to resume; None builds a fresh agent
         self._abort = False
+        self._re = None
 
     def request_abort(self) -> None:
-        """Thread-safe abort request.  The RunEngine is stopped via RE.abort()."""
+        """Thread-safe abort request; stops the RunEngine via ``RE.abort()``."""
         self._abort = True
-        if hasattr(self, "_re") and self._re is not None:
+        if self._re is not None:
             try:
                 self._re.abort(reason="User requested abort from GUI")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
-    def run(self) -> None:
-        """Entry point executed in the background thread."""
-        # ----------------------------------------------------------------
-        # Lazy import of bluesky inside the thread so that the RE and its
-        # asyncio event loop are created on the worker thread (not the GUI
-        # thread), which avoids cross-thread event-loop conflicts.
-        # ----------------------------------------------------------------
+    def _ensure_bluesky(self) -> None:
+        """Make ``bluesky`` importable.
+
+        Prefer whatever is already on ``sys.path`` (e.g. the uv venv during
+        offline development); only fall back to injecting the beamline conda
+        env when bluesky is not already importable.
+        """
         try:
-            from .bluesky_compat import ensure_bluesky
+            import bluesky  # noqa: F401
+        except ImportError:
+            from dashpva.viewer.bayesian.bluesky_compat import ensure_bluesky
+
             ensure_bluesky(root=self.bluesky_root)
+
+    def run(self) -> None:
+        try:
+            self._ensure_bluesky()
             from bluesky import RunEngine
         except (ImportError, RuntimeError) as exc:
             self.scan_error.emit(
@@ -216,191 +142,518 @@ class ScanWorker(QThread):
             return
 
         try:
-            from .bluesky_plan import _extract_scalar, bayesian2d  # noqa: F401
-        except ImportError as exc:
-            self.scan_error.emit(f"bluesky_plan import failed: {exc}")
+            from dashpva.viewer.bayesian.blop_adapter import (
+                blop_optimize_plan,
+                build_agent,
+                resolve_devices,
+            )
+
+            actuators, readables, simulated = resolve_devices(
+                self.config, simulate=self.simulate
+            )
+            # Reuse the existing agent to resume (keeps the Ax trial history);
+            # otherwise build a fresh one.
+            agent = self._existing_agent or build_agent(self.config, actuators)
+            # Expose the agent so the GUI can keep it for resume + model surfaces
+            # (used only after the scan; never while this worker mutates it).
+            self.agent_ready.emit(agent)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("blop setup failed:\n%s", traceback.format_exc())
+            self.scan_error.emit(f"Failed to set up optimizer/devices:\n{exc}")
             return
 
-        # Wrap the optimizer's tell() to emit the update signal after each call
-        original_tell = self.optimizer.tell
+        def _on_point(payload: dict) -> None:
+            self.point_measured.emit(payload)
 
-        def _patched_tell(x, y, value):
-            original_tell(x, y, value)
-            # Fetch the updated prediction grid
-            try:
-                mean_g, std_g, _, _ = self.optimizer.get_prediction_grid()
-            except RuntimeError:
-                mean_g = np.zeros((self.optimizer.grid_nx, self.optimizer.grid_ny))
-                std_g = mean_g.copy()
-
-            self.scan_update.emit(
-                self.optimizer.n_observations,
-                mean_g,
-                std_g,
-                list(self.optimizer.observed_x),
-                list(self.optimizer.observed_y),
-            )
-
-        self.optimizer.tell = _patched_tell
-
-        # Build RunEngine
-        self._re = RunEngine()
-        # Subscribe to documents for debugging (optional)
-        self._re.subscribe(lambda name, doc: logger.debug("RE doc: %s", name))
-
+        # context_managers=[] disables RunEngine's default SIGINT handler, which
+        # can only be installed on the main thread; we run the RE in this worker
+        # thread and drive aborts via request_abort() -> RE.abort() instead.
+        self._re = RunEngine(context_managers=[])
         try:
             self._re(
-                bayesian2d(
-                    optimizer=self.optimizer,
-                    detector=self.detector,
-                    x_motor=self.x_motor,
-                    x_lo=self.x_lo,
-                    x_hi=self.x_hi,
-                    y_motor=self.y_motor,
-                    y_lo=self.y_lo,
-                    y_hi=self.y_hi,
-                    maxpts=self.maxpts,
-                    n_initial=self.n_initial,
-                    scalar_key=self.scalar_key or None,
+                blop_optimize_plan(
+                    agent=agent,
+                    actuators=actuators,
+                    readables=readables,
+                    config=self.config,
+                    on_point=_on_point,
                 )
             )
-        except Exception as exc:
-            tb = traceback.format_exc()
-            logger.error("Scan failed:\n%s", tb)
-            self.scan_error.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            # A user-requested abort surfaces as a RunEngine exception; that's a
+            # clean stop, not an error — don't raise an error dialog for it.
+            if self._abort:
+                logger.info("Scan aborted by user.")
+            else:
+                logger.error("Scan failed:\n%s", traceback.format_exc())
+                self.scan_error.emit(str(exc))
         finally:
-            # Restore original tell method
-            self.optimizer.tell = original_tell
             self.scan_finished.emit()
 
 
+class _SurfaceWorker(QThread):
+    """Computes a model-prediction surface off the GUI thread (GP compute)."""
+
+    done = pyqtSignal(object)   # surface payload dict
+    failed = pyqtSignal(str)
+
+    def __init__(self, agent, config, x_name, y_name, parent=None):
+        super().__init__(parent)
+        self._agent = agent
+        self._config = config
+        self._x = x_name
+        self._y = y_name
+
+    def run(self) -> None:
+        try:
+            from dashpva.viewer.bayesian.blop_adapter import predict_surface
+
+            payload = predict_surface(self._agent, self._config, self._x, self._y)
+            self.done.emit(payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Surface prediction failed:\n%s", traceback.format_exc())
+            self.failed.emit(str(exc))
+
+
 # ---------------------------------------------------------------------------
-# Matplotlib canvas (embedded in Qt)
+# Live plot panel (pyqtgraph)
 # ---------------------------------------------------------------------------
 
-class _MplCanvas(FigureCanvas):
-    """
-    A Matplotlib figure embedded in a Qt widget.
+_MODE_POINTS = "Measured points"
+_MODE_MEAN = "Predicted surface"
+_MODE_SIGMA = "Uncertainty (σ)"
+_MODE_ACQ = "Acquisition (UCB)"
+_SURFACE_MODES = (_MODE_MEAN, _MODE_SIGMA, _MODE_ACQ)
+_MODE_TO_GRID = {_MODE_MEAN: "mean", _MODE_SIGMA: "sem", _MODE_ACQ: "acq"}
 
-    Displays:
-    - A 2-D colourmap of the GP predictive mean (``pcolor`` / ``imshow``).
-    - Red 'X' scatter markers at every physically sampled point.
+
+class _PlotPanel(QtWidgets.QWidget):
+    """Convergence trace + a 2-D projection of the search space for a DOF pair.
+
+    The projection shows either the measured points (colored by objective) or a
+    model **surface** — predicted objective, uncertainty (σ), or an acquisition
+    (UCB) proxy — computed on demand via the "Update surface" button.
     """
 
-    def __init__(self, parent=None, width: int = 6, height: int = 5):
-        # Dark background to match the overall stylesheet
-        self.fig = Figure(figsize=(width, height), facecolor="#1e1e2e")
-        self.ax = self.fig.add_subplot(111)
-        self._style_axes()
-        super().__init__(self.fig)
-        self.setParent(parent)
-        self.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+    # Emitted when the user requests a model surface for (x_dof, y_dof).
+    surface_requested = pyqtSignal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Light plot theme (white bg / black foreground), matching the rest of
+        # DashPVA's analysis plots (e.g. the phase fitter) rather than a dark theme.
+        pg.setConfigOptions(antialias=True, background="w", foreground="k")
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        # Resizable split so the convergence plot isn't squished by the
+        # projection panel (drag the divider to rebalance).
+        splitter = QtWidgets.QSplitter(Qt.Vertical)
+        lay.addWidget(splitter, 1)
+
+        # ---- convergence plot -------------------------------------------
+        self._conv = pg.PlotWidget(title="Objective vs. evaluation")
+        self._conv.showGrid(x=True, y=True, alpha=0.2)
+        self._conv.setLabel("bottom", "Evaluation #")
+        self._conv.setLabel("left", "Objective")
+        self._conv.setMinimumHeight(170)
+        self._measured_curve = self._conv.plot(
+            [], [], pen=None, symbol="o", symbolSize=6,
+            symbolBrush=INFO, name="measured",
         )
+        self._best_curve = self._conv.plot(
+            [], [], pen=pg.mkPen(SUCCESS, width=2), name="best so far",
+        )
+        splitter.addWidget(self._conv)
 
-        # State
-        self._im = None     # imshow AxesImage
-        self._cbar = None   # colorbar
-        self._scatter = None  # scanned points scatter
+        # ---- 2-D projection ---------------------------------------------
+        proj_box = QtWidgets.QGroupBox("2-D projection")
+        proj_lay = QtWidgets.QVBoxLayout(proj_box)
 
-    def _style_axes(self) -> None:
-        self.ax.set_facecolor("#181825")
-        self.ax.tick_params(colors="#cdd6f4")
-        for spine in self.ax.spines.values():
-            spine.set_edgecolor("#45475a")
-        self.ax.set_xlabel("X (motor units)", color="#cdd6f4")
-        self.ax.set_ylabel("Y (motor units)", color="#cdd6f4")
-        self.ax.set_title("GP Predictive Mean  (awaiting data…)", color="#89b4fa", pad=10)
+        # View mode + on-demand surface update.
+        row1 = QtWidgets.QHBoxLayout()
+        row1.addWidget(QtWidgets.QLabel("View:"))
+        self._mode_combo = QtWidgets.QComboBox()
+        self._mode_combo.addItems([_MODE_POINTS, _MODE_MEAN, _MODE_SIGMA, _MODE_ACQ])
+        self._mode_combo.setToolTip(
+            "Measured points: where you sampled (color = objective value).\n"
+            "Predicted surface: the model's learned objective landscape.\n"
+            "Uncertainty (σ): where the model is unsure.\n"
+            "Acquisition (UCB): optimistic estimate the optimizer is drawn toward."
+        )
+        row1.addWidget(self._mode_combo)
+        self._update_btn = QtWidgets.QPushButton("Update surface")
+        self._update_btn.setToolTip(
+            "Compute the model surface for the selected DOF pair from the current "
+            "model (run an optimization first; other DOFs are fixed at the best point)."
+        )
+        self._update_btn.setEnabled(False)  # enabled once a model exists (after a run)
+        row1.addWidget(self._update_btn)
+        row1.addStretch(1)
+        proj_lay.addLayout(row1)
 
-    def update_plot(
-        self,
-        mean_grid: np.ndarray,
-        xi: np.ndarray,
-        yi: np.ndarray,
-        xs: list,
-        ys: list,
-        n_pts: int,
-    ) -> None:
-        """
-        Refresh the 2-D heatmap and the scatter of sampled points.
+        # Axis selectors — populated with the user's DOF names.
+        row2 = QtWidgets.QHBoxLayout()
+        row2.addWidget(QtWidgets.QLabel("X axis:"))
+        self._x_combo = QtWidgets.QComboBox()
+        row2.addWidget(self._x_combo)
+        row2.addWidget(QtWidgets.QLabel("Y axis:"))
+        self._y_combo = QtWidgets.QComboBox()
+        row2.addWidget(self._y_combo)
+        row2.addStretch(1)
+        proj_lay.addLayout(row2)
 
-        Parameters
-        ----------
-        mean_grid : np.ndarray, shape (Nx, Ny)
-            GP predictive mean values.
-        xi : np.ndarray, shape (Nx,)
-            Physical X axis coordinates.
-        yi : np.ndarray, shape (Ny,)
-            Physical Y axis coordinates.
-        xs, ys : list of float
-            Physical coordinates of all measurements so far.
-        n_pts : int
-            Total number of measurements (used in title).
-        """
-        extent = [xi[0], xi[-1], yi[0], yi[-1]]
+        self._proj = pg.PlotWidget()
+        self._proj.showGrid(x=True, y=True, alpha=0.2)
+        self._cmap = pg.colormap.get("viridis")
 
-        # ---- heatmap ---------------------------------------------------
-        if self._im is None:
-            # First call: create the image
-            self._im = self.ax.imshow(
-                mean_grid.T,          # transpose: imshow expects (rows=Y, cols=X)
-                aspect="auto",
-                origin="lower",
-                extent=extent,
-                cmap="viridis",
-                vmin=0.0,
-                vmax=1.0,
-                interpolation="bilinear",
-            )
-            # Colorbar
-            self._cbar = self.fig.colorbar(
-                self._im, ax=self.ax, fraction=0.046, pad=0.04
-            )
-            self._cbar.set_label(
-                "Predicted Mean\n(0 = region 0, 1 = region 1, 0.5 = boundary)",
-                color="#cdd6f4",
-                fontsize=10,
-            )
-            self._cbar.ax.yaxis.set_tick_params(color="#cdd6f4")
-            plt.setp(self._cbar.ax.yaxis.get_ticklabels(), color="#cdd6f4")
+        # Surface heatmap (behind the points) + colorbar.
+        self._surface_img = pg.ImageItem()
+        self._surface_img.setOpts(axisOrder="row-major")
+        self._surface_img.setZValue(-10)
+        self._surface_img.setVisible(False)
+        self._proj.addItem(self._surface_img)
+        try:
+            self._colorbar = pg.ColorBarItem(colorMap=self._cmap)
+            self._colorbar.setImageItem(self._surface_img,
+                                        insert_in=self._proj.getPlotItem())
+            self._colorbar.setVisible(False)
+        except Exception:  # noqa: BLE001 - colorbar is a nicety, not essential
+            self._colorbar = None
+
+        self._scatter = pg.ScatterPlotItem(size=11, pen=pg.mkPen(None))
+        self._proj.addItem(self._scatter)
+        self._best_marker = pg.ScatterPlotItem(
+            size=20, symbol="star",
+            pen=pg.mkPen(WARNING, width=2), brush=pg.mkBrush(None),
+        )
+        self._proj.addItem(self._best_marker)
+        proj_lay.addWidget(self._proj, 1)
+
+        self._proj_hint = QtWidgets.QLabel("")
+        self._proj_hint.setStyleSheet(status_style(TEXT_MUTED))
+        self._proj_hint.setWordWrap(True)
+        proj_lay.addWidget(self._proj_hint)
+        splitter.addWidget(proj_box)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([320, 380])
+
+        self._x_combo.currentIndexChanged.connect(self._render_projection)
+        self._y_combo.currentIndexChanged.connect(self._render_projection)
+        self._mode_combo.currentIndexChanged.connect(self._render_projection)
+        self._update_btn.clicked.connect(self._on_update_clicked)
+
+        # data state
+        self._dof_names: List[str] = []
+        self._records: List[dict] = []   # each: {"params": {...}, "primary": float}
+        self._best_idx: Optional[int] = None
+        self._minimize = False
+        self._surface: Optional[dict] = None        # last computed surface payload
+        self._surface_key: Optional[tuple] = None   # (x_name, y_name) it was for
+
+    # -- setup ------------------------------------------------------------
+    def reset(self, dof_names: List[str], minimize: bool) -> None:
+        self._dof_names = list(dof_names)
+        self._records = []
+        self._best_idx = None
+        self._minimize = minimize
+        self._surface = None
+        self._surface_key = None
+        self._measured_curve.setData([], [])
+        self._best_curve.setData([], [])
+        self._scatter.clear()
+        self._best_marker.clear()
+        self._surface_img.clear()
+        self._surface_img.setVisible(False)
+        if self._colorbar is not None:
+            self._colorbar.setVisible(False)
+        for combo in (self._x_combo, self._y_combo):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(self._dof_names)
+            combo.blockSignals(False)
+        if len(self._dof_names) > 1:
+            self._y_combo.setCurrentIndex(1)
+        self._render_projection()
+
+    def current_dof_pair(self) -> tuple:
+        return self._x_combo.currentText(), self._y_combo.currentText()
+
+    def set_update_enabled(self, enabled: bool) -> None:
+        self._update_btn.setEnabled(enabled)
+
+    # -- live update ------------------------------------------------------
+    def add_point(self, payload: dict) -> None:
+        self._records.append(payload)
+        primaries = [r["primary"] for r in self._records]
+
+        # best-so-far trace
+        if self._minimize:
+            best_run = np.minimum.accumulate(primaries)
+            self._best_idx = int(np.argmin(primaries))
         else:
-            # Subsequent calls: update array only (faster than re-creating)
-            self._im.set_data(mean_grid.T)
-            self._im.set_extent(extent)
+            best_run = np.maximum.accumulate(primaries)
+            self._best_idx = int(np.argmax(primaries))
+        xs = list(range(1, len(primaries) + 1))
+        self._measured_curve.setData(xs, primaries)
+        self._best_curve.setData(xs, list(best_run))
 
-        # ---- scatter of scanned points ---------------------------------
-        if self._scatter is not None:
-            self._scatter.remove()
-            self._scatter = None
+        self._render_projection()
 
-        if len(xs) > 0:
-            self._scatter = self.ax.scatter(
-                xs, ys,
-                marker="x",
-                color="#f38ba8",    # Catppuccin red
-                s=60,
-                linewidths=2,
-                zorder=5,
-                label=f"Measured (n={n_pts})",
+    def best_record(self) -> Optional[dict]:
+        if self._best_idx is None:
+            return None
+        return self._records[self._best_idx]
+
+    def set_surface(self, payload: dict) -> None:
+        """Store a computed model surface and display it (if axes/mode match)."""
+        self._surface = payload
+        self._surface_key = (payload["x_name"], payload["y_name"])
+        self._render_projection()
+
+    # -- projection -------------------------------------------------------
+    def _on_update_clicked(self) -> None:
+        xname, yname = self.current_dof_pair()
+        if not xname or not yname or xname == yname:
+            self._proj_hint.setText("Pick two different DOFs for X and Y first.")
+            return
+        self.surface_requested.emit(xname, yname)
+
+    def _surface_matches_axes(self) -> bool:
+        return self._surface is not None and self._surface_key == self.current_dof_pair()
+
+    def _render_projection(self) -> None:
+        xname, yname = self.current_dof_pair()
+        self._proj.setLabel("bottom", xname or "")
+        self._proj.setLabel("left", yname or "")
+        mode = self._mode_combo.currentText()
+        surface_mode = mode in _SURFACE_MODES
+
+        self._draw_points_overlay(xname, yname, surface_mode=surface_mode)
+
+        show_surface = surface_mode and self._surface_matches_axes()
+        if show_surface:
+            grid = np.asarray(self._surface[_MODE_TO_GRID[mode]], dtype=float)
+            s = self._surface
+            self._surface_img.setImage(grid)
+            self._surface_img.setRect(QtCore.QRectF(
+                s["x_lo"], s["y_lo"], s["x_hi"] - s["x_lo"], s["y_hi"] - s["y_lo"]))
+            zmin, zmax = float(np.nanmin(grid)), float(np.nanmax(grid))
+            if zmax <= zmin:
+                zmax = zmin + 1e-9
+            self._surface_img.setVisible(True)
+            if self._colorbar is not None:
+                self._colorbar.setLevels((zmin, zmax))
+                self._colorbar.setVisible(True)
+        else:
+            self._surface_img.setVisible(False)
+            if self._colorbar is not None:
+                self._colorbar.setVisible(False)
+
+        self._update_proj_hint()
+
+    def _draw_points_overlay(self, xname, yname, *, surface_mode: bool) -> None:
+        if not self._records or not xname or not yname:
+            self._scatter.clear()
+            self._best_marker.clear()
+            return
+        xs = np.array([r["params"].get(xname, np.nan) for r in self._records])
+        ys = np.array([r["params"].get(yname, np.nan) for r in self._records])
+        if surface_mode:
+            # On a colored surface, draw plain outlined points so they stay visible.
+            self._scatter.setData(
+                x=xs, y=ys, brush=pg.mkBrush(255, 255, 255, 150),
+                pen=pg.mkPen("k", width=0.5),
             )
-            # Rebuild legend each time so count stays updated
-            self.ax.legend(
-                loc="upper right",
-                facecolor="#313244",
-                edgecolor="#45475a",
-                labelcolor="#cdd6f4",
-            )
+        else:
+            vals = np.array([r["primary"] for r in self._records], dtype=float)
+            vmin, vmax = np.nanmin(vals), np.nanmax(vals)
+            norm = (vals - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(vals)
+            brushes = [pg.mkBrush(*self._cmap.map(float(n), mode="byte")) for n in norm]
+            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pg.mkPen(None))
+        if self._best_idx is not None:
+            self._best_marker.setData(x=[xs[self._best_idx]], y=[ys[self._best_idx]])
 
-        self.ax.set_title(
-            f"GP Predictive Mean  |  Measurements: {n_pts}",
-            color="#89b4fa",
-            pad=10,
+    def _update_proj_hint(self) -> None:
+        mode = self._mode_combo.currentText()
+        if mode not in _SURFACE_MODES:
+            self._proj_hint.setText("Color = objective value at each sampled point.")
+        elif not self._surface_matches_axes():
+            self._proj_hint.setText(
+                "Click “Update surface” to compute the model surface for this DOF pair.")
+        else:
+            s = self._surface
+            extra = ""
+            if s.get("fixed"):
+                extra = "; other DOFs fixed at best (" + ", ".join(
+                    f"{k}={v:.4g}" for k, v in s["fixed"].items()) + ")"
+            self._proj_hint.setText(f"{mode} of “{s['objective']}”{extra}.")
+
+
+# ---------------------------------------------------------------------------
+# DOF table
+# ---------------------------------------------------------------------------
+
+class _DOFTable(QtWidgets.QTableWidget):
+    """Editable table of degrees of freedom (one motor per row)."""
+
+    COLS = ["On", "Name", "Motor PV / Name", "Low limit", "High limit", "Type"]
+
+    def __init__(self, parent=None):
+        super().__init__(0, len(self.COLS), parent)
+        self.setHorizontalHeaderLabels(self.COLS)
+        self.verticalHeader().setVisible(False)
+        hdr = self.horizontalHeader()
+        hdr.setMinimumSectionSize(50)
+        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)    # On
+        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)  # Name
+        hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)  # Motor PV
+        hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)    # Low limit
+        hdr.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)    # High limit
+        hdr.setSectionResizeMode(5, QtWidgets.QHeaderView.Fixed)    # Type
+        self.setColumnWidth(0, 44)
+        self.setColumnWidth(3, 98)
+        self.setColumnWidth(4, 98)
+        self.setColumnWidth(5, 80)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.setMinimumHeight(150)
+
+    def add_dof(self, spec: Optional[DOFSpec] = None) -> None:
+        spec = spec or DOFSpec(
+            name=f"dof{self.rowCount() + 1}", pv="", lo=0.0, hi=1.0
         )
-        self.ax.set_xlabel("X (motor units)", color="#cdd6f4")
-        self.ax.set_ylabel("Y (motor units)", color="#cdd6f4")
+        r = self.rowCount()
+        self.insertRow(r)
 
-        self.fig.tight_layout()
-        self.draw()
+        # enable checkbox (centered)
+        chk = QtWidgets.QCheckBox()
+        chk.setChecked(spec.enabled)
+        wrap = QtWidgets.QWidget()
+        wl = QtWidgets.QHBoxLayout(wrap)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.setAlignment(Qt.AlignCenter)
+        wl.addWidget(chk)
+        self.setCellWidget(r, 0, wrap)
+
+        self.setItem(r, 1, QtWidgets.QTableWidgetItem(spec.name))
+        self.setItem(r, 2, QtWidgets.QTableWidgetItem(spec.pv))
+
+        lo = self._make_spin(spec.lo)
+        hi = self._make_spin(spec.hi)
+        self.setCellWidget(r, 3, lo)
+        self.setCellWidget(r, 4, hi)
+
+        kind = QtWidgets.QComboBox()
+        kind.addItems(["float", "int"])
+        kind.setCurrentText(spec.kind)
+        self.setCellWidget(r, 5, kind)
+
+    @staticmethod
+    def _make_spin(value: float) -> QtWidgets.QDoubleSpinBox:
+        sb = QtWidgets.QDoubleSpinBox()
+        sb.setDecimals(4)
+        sb.setRange(-1e9, 1e9)
+        sb.setValue(value)
+        sb.setSingleStep(0.1)
+        sb.setMinimumWidth(90)
+        return sb
+
+    def remove_selected(self) -> None:
+        rows = sorted({i.row() for i in self.selectedIndexes()}, reverse=True)
+        if not rows and self.rowCount():
+            rows = [self.rowCount() - 1]
+        for r in rows:
+            self.removeRow(r)
+
+    def specs(self) -> List[DOFSpec]:
+        out: List[DOFSpec] = []
+        for r in range(self.rowCount()):
+            chk = self.cellWidget(r, 0).findChild(QtWidgets.QCheckBox)
+            name_item = self.item(r, 1)
+            pv_item = self.item(r, 2)
+            out.append(
+                DOFSpec(
+                    name=(name_item.text() if name_item else "").strip(),
+                    pv=(pv_item.text() if pv_item else "").strip(),
+                    lo=self.cellWidget(r, 3).value(),
+                    hi=self.cellWidget(r, 4).value(),
+                    kind=self.cellWidget(r, 5).currentText(),
+                    enabled=chk.isChecked(),
+                )
+            )
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Objective table
+# ---------------------------------------------------------------------------
+
+class _ObjectiveTable(QtWidgets.QTableWidget):
+    """Editable table of objectives (usually one)."""
+
+    COLS = ["Name", "Read PV", "Direction"]
+
+    def __init__(self, parent=None):
+        super().__init__(0, len(self.COLS), parent)
+        self.setHorizontalHeaderLabels(self.COLS)
+        self.verticalHeader().setVisible(False)
+        hdr = self.horizontalHeader()
+        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.setMaximumHeight(120)
+
+    def add_objective(self, spec: Optional[ObjectiveSpec] = None) -> None:
+        # When the user clicks "Add objective" (no spec), give the new row a
+        # unique default name so it doesn't collide with an existing objective
+        # (objective names must be distinct; duplicates fail validation).
+        if spec is None:
+            spec = ObjectiveSpec(name=self._unique_default_name())
+        r = self.rowCount()
+        self.insertRow(r)
+        self.setItem(r, 0, QtWidgets.QTableWidgetItem(spec.name))
+        self.setItem(r, 1, QtWidgets.QTableWidgetItem(spec.pv))
+        direction = QtWidgets.QComboBox()
+        direction.addItems(["maximize", "minimize"])
+        direction.setCurrentText("minimize" if spec.minimize else "maximize")
+        self.setCellWidget(r, 2, direction)
+
+    def _unique_default_name(self) -> str:
+        existing = {
+            (self.item(r, 0).text().strip() if self.item(r, 0) else "")
+            for r in range(self.rowCount())
+        }
+        if "intensity" not in existing:
+            return "intensity"
+        i = 2
+        while f"objective{i}" in existing:
+            i += 1
+        return f"objective{i}"
+
+    def remove_selected(self) -> None:
+        rows = sorted({i.row() for i in self.selectedIndexes()}, reverse=True)
+        if not rows and self.rowCount() > 1:
+            rows = [self.rowCount() - 1]
+        for r in rows:
+            if self.rowCount() > 1:  # always keep at least one objective
+                self.removeRow(r)
+
+    def specs(self) -> List[ObjectiveSpec]:
+        out: List[ObjectiveSpec] = []
+        for r in range(self.rowCount()):
+            name_item = self.item(r, 0)
+            pv_item = self.item(r, 1)
+            out.append(
+                ObjectiveSpec(
+                    name=(name_item.text() if name_item else "").strip(),
+                    pv=(pv_item.text() if pv_item else "").strip(),
+                    minimize=self.cellWidget(r, 2).currentText() == "minimize",
+                )
+            )
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -408,280 +661,681 @@ class _MplCanvas(FigureCanvas):
 # ---------------------------------------------------------------------------
 
 class BayesianViewer(QtWidgets.QMainWindow):
-    """
-    Main application window.
-
-    Provides:
-    - A control panel (left) for entering scan parameters.
-    - A live 2-D GP prediction display (right).
-    - Start / Stop buttons tied to the ScanWorker thread.
-    """
+    """Main application window for blop-driven Bayesian optimization."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Bayesian 2-D Scan Viewer  –  APS 6-ID")
-        self.resize(1200, 700)
-        self.setStyleSheet(_STYLE)
+        self.setWindowTitle("Bayesian Optimization  (blop)  –  DashPVA")
+        self.resize(1320, 800)
+        # No per-window stylesheet: inherit the global theme (theme.qss applied by
+        # configure_app) so this viewer matches the rest of DashPVA.
 
-        # Worker thread (created fresh each scan)
         self._worker: Optional[ScanWorker] = None
+        self._settings = QtCore.QSettings("DashPVA", "Viewer")
+        # Model + config kept after a scan so model surfaces can be computed on
+        # demand (the agent persists once the scan worker has finished).
+        self._agent = None
+        self._agent_config: Optional[OptimizerConfig] = None
+        self._surface_worker: Optional[_SurfaceWorker] = None
+        self._stopping = False  # True between a Stop request and the worker ending
+        # Central-profile config source (None -> local QSettings fallback) and the
+        # name of the currently-loaded named setup within that profile.
+        self._source = None
+        self._source_label = ""
+        self._current_setup: Optional[str] = None
 
-        # Build UI
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
-        root_layout = QtWidgets.QHBoxLayout(central)
-        root_layout.setSpacing(12)
-        root_layout.setContentsMargins(12, 12, 12, 12)
+        root = QtWidgets.QHBoxLayout(central)
+        root.setSpacing(12)
+        root.setContentsMargins(12, 12, 12, 12)
 
-        root_layout.addWidget(self._build_control_panel(), 0)
-        root_layout.addWidget(self._build_display_panel(), 1)
+        root.addWidget(self._build_control_panel(), 0)
+        root.addWidget(self._build_display_panel(), 1)
+        self._plots.surface_requested.connect(self._on_surface_requested)
+
+        self._load_initial()
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
 
-    def _build_control_panel(self) -> QtWidgets.QGroupBox:
-        grp = QtWidgets.QGroupBox("Scan Parameters")
-        form = QtWidgets.QFormLayout(grp)
-        form.setSpacing(8)
-        form.setLabelAlignment(Qt.AlignRight)
+    def _build_control_panel(self) -> QtWidgets.QWidget:
+        from dashpva.viewer.bayesian.bluesky_compat import get_bluesky_root
 
-        def _line(placeholder=""):
-            w = QtWidgets.QLineEdit()
-            w.setPlaceholderText(placeholder)
-            return w
+        # ---- scrollable setup area -------------------------------------
+        content = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(content)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(8)
 
-        def _dspin(lo, hi, val, dec=3, step=0.1):
-            w = QtWidgets.QDoubleSpinBox()
-            w.setRange(lo, hi)
-            w.setValue(val)
-            w.setDecimals(dec)
-            w.setSingleStep(step)
-            return w
+        # Profile + named-setup picker (follows the app-selected profile)
+        outer.addLayout(self._build_profile_row())
 
-        def _spin(lo, hi, val):
-            w = QtWidgets.QSpinBox()
-            w.setRange(lo, hi)
-            w.setValue(val)
-            return w
+        # Bluesky env
+        env_row = QtWidgets.QFormLayout()
+        env_row.setLabelAlignment(Qt.AlignRight)
+        self._bluesky_env = QtWidgets.QLineEdit(get_bluesky_root())
+        self._bluesky_env.setPlaceholderText("path to conda env with bluesky/ophyd")
+        env_row.addRow("Bluesky Conda Env:", self._bluesky_env)
+        outer.addLayout(env_row)
 
-        # Bluesky environment
-        from .bluesky_compat import get_bluesky_root
-        self._bluesky_env = _line("path to conda env with bluesky/ophyd")
-        self._bluesky_env.setText(get_bluesky_root())
+        # DOF table + buttons
+        outer.addWidget(self._section_label("Degrees of freedom (motors)"))
+        self._dof_table = _DOFTable()
+        outer.addWidget(self._dof_table)
+        dof_btns = QtWidgets.QHBoxLayout()
+        add_dof = self._small_button("＋ Add DOF")
+        rm_dof = self._small_button("－ Remove selected")
+        add_dof.clicked.connect(lambda: self._dof_table.add_dof())
+        rm_dof.clicked.connect(self._dof_table.remove_selected)
+        dof_btns.addWidget(add_dof)
+        dof_btns.addWidget(rm_dof)
+        dof_btns.addStretch(1)
+        outer.addLayout(dof_btns)
 
-        # PV / device name fields
-        self._x_pv = _line("e.g. 6IDA:m1  or  sample_x")
-        self._y_pv = _line("e.g. 6IDA:m2  or  sample_y")
-        self._det_pv = _line("e.g. 6IDD:det  or  my_detector")
-        self._scalar_key = _line("e.g. stats1_total  (blank = auto)")
+        # Objective table + buttons
+        outer.addWidget(self._section_label("Objectives"))
+        self._obj_table = _ObjectiveTable()
+        outer.addWidget(self._obj_table)
+        obj_btns = QtWidgets.QHBoxLayout()
+        add_obj = self._small_button("＋ Add objective")
+        rm_obj = self._small_button("－ Remove selected")
+        add_obj.clicked.connect(lambda: self._obj_table.add_objective())
+        rm_obj.clicked.connect(self._obj_table.remove_selected)
+        obj_btns.addWidget(add_obj)
+        obj_btns.addWidget(rm_obj)
+        obj_btns.addStretch(1)
+        outer.addLayout(obj_btns)
 
-        # Bounds
-        self._x_lo = _dspin(-100, 100, 0.0)
-        self._x_hi = _dspin(-100, 100, 5.0)
-        self._y_lo = _dspin(-100, 100, 0.0)
-        self._y_hi = _dspin(-100, 100, 5.0)
+        # Run controls
+        outer.addWidget(self._section_label("Run controls"))
+        run_form = QtWidgets.QFormLayout()
+        run_form.setLabelAlignment(Qt.AlignRight)
+        self._iterations = QtWidgets.QSpinBox()
+        self._iterations.setRange(1, 100000)
+        self._iterations.setValue(30)
+        self._iterations.setToolTip(
+            "Number of optimization rounds. Each round: the model suggests "
+            "point(s), the motors move there, the detector is read, and the model "
+            "is updated with the result(s)."
+        )
+        self._n_points = QtWidgets.QSpinBox()
+        self._n_points.setRange(1, 1000)
+        self._n_points.setValue(1)
+        self._n_points.setToolTip(
+            "Batch size: how many points are suggested and measured each round "
+            "BEFORE the model updates.\n"
+            "• 1 = standard sequential optimization (measure one, learn, repeat) — "
+            "most sample-efficient; recommended.\n"
+            "• >1 = propose a batch of points from the current model at once "
+            "(fewer model updates; useful for parallel/faster acquisition)."
+        )
+        self._total_lbl = QtWidgets.QLabel()
+        self._total_lbl.setToolTip(
+            "Total measurements ≈ iterations × points/iteration (an upper bound; "
+            "the initial exploration rounds may return slightly fewer)."
+        )
+        self._iterations.valueChanged.connect(self._update_total)
+        self._n_points.valueChanged.connect(self._update_total)
+        # Captions kept as refs so they can switch to additive wording on resume.
+        self._iter_caption = QtWidgets.QLabel("Iterations (rounds):")
+        self._total_caption = QtWidgets.QLabel("Total evaluations:")
+        run_form.addRow(self._iter_caption, self._iterations)
+        run_form.addRow("Points / iteration (batch):", self._n_points)
+        run_form.addRow(self._total_caption, self._total_lbl)
+        self._acq_kwargs = QtWidgets.QLineEdit()
+        self._acq_kwargs.setPlaceholderText("advanced: key=value, key2=value2")
+        run_form.addRow("Acquisition options:", self._acq_kwargs)
+        self._simulate = QtWidgets.QCheckBox("Simulate (offline, no EPICS)")
+        run_form.addRow("", self._simulate)
+        outer.addLayout(run_form)
+        self._update_total()
 
-        # Scan parameters
-        self._maxpts = _spin(5, 10000, 100)
-        self._n_init = _spin(1, 1000, 10)
-        self._grid_nx = _spin(8, 256, 64)
-        self._grid_ny = _spin(8, 256, 64)
+        hint = QtWidgets.QLabel(
+            "Ax auto-explores (Sobol) the first trials, then switches to the GP "
+            "model. Limits above bound each motor's search range."
+        )
+        hint.setStyleSheet(status_style(TEXT_MUTED))
+        hint.setWordWrap(True)
+        outer.addWidget(hint)
+        outer.addStretch(1)
 
-        form.addRow("Bluesky Conda Env:", self._bluesky_env)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
 
-        sep_env = QtWidgets.QFrame()
-        sep_env.setFrameShape(QtWidgets.QFrame.HLine)
-        sep_env.setStyleSheet("color: #45475a;")
-        form.addRow(sep_env)
+        # ---- fixed footer: Start/Stop/status always visible ------------
+        footer = QtWidgets.QWidget()
+        fl = QtWidgets.QVBoxLayout(footer)
+        fl.setContentsMargins(6, 8, 6, 6)
+        fl.setSpacing(8)
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.HLine)
+        sep.setStyleSheet("color: palette(mid);")
+        fl.addWidget(sep)
 
-        form.addRow("X Motor PV / Name:", self._x_pv)
-        form.addRow("Y Motor PV / Name:", self._y_pv)
-        form.addRow("Detector PV / Name:", self._det_pv)
-        form.addRow("Scalar Signal Key:", self._scalar_key)
-
-        sep_bounds = QtWidgets.QFrame()
-        sep_bounds.setFrameShape(QtWidgets.QFrame.HLine)
-        sep_bounds.setStyleSheet("color: #45475a;")
-        form.addRow(sep_bounds)
-
-        # X bounds in one row
-        x_row = QtWidgets.QWidget()
-        x_lay = QtWidgets.QHBoxLayout(x_row)
-        x_lay.setContentsMargins(0, 0, 0, 0)
-        x_lay.addWidget(self._x_lo)
-        x_lay.addWidget(QtWidgets.QLabel("→"))
-        x_lay.addWidget(self._x_hi)
-        form.addRow("X Range:", x_row)
-
-        y_row = QtWidgets.QWidget()
-        y_lay = QtWidgets.QHBoxLayout(y_row)
-        y_lay.setContentsMargins(0, 0, 0, 0)
-        y_lay.addWidget(self._y_lo)
-        y_lay.addWidget(QtWidgets.QLabel("→"))
-        y_lay.addWidget(self._y_hi)
-        form.addRow("Y Range:", y_row)
-
-        sep2 = QtWidgets.QFrame()
-        sep2.setFrameShape(QtWidgets.QFrame.HLine)
-        sep2.setStyleSheet("color: #45475a;")
-        form.addRow(sep2)
-
-        form.addRow("Max Points:", self._maxpts)
-        form.addRow("N Initial Random:", self._n_init)
-        form.addRow("Grid Nx:", self._grid_nx)
-        form.addRow("Grid Ny:", self._grid_ny)
-
-        sep3 = QtWidgets.QFrame()
-        sep3.setFrameShape(QtWidgets.QFrame.HLine)
-        sep3.setStyleSheet("color: #45475a;")
-        form.addRow(sep3)
-
-        # Buttons
-        btn_row = QtWidgets.QWidget()
-        btn_lay = QtWidgets.QHBoxLayout(btn_row)
-        btn_lay.setContentsMargins(0, 0, 0, 0)
-
-        self._start_btn = QtWidgets.QPushButton("▶  Start Scan")
-        self._stop_btn = QtWidgets.QPushButton("■  Stop / Abort")
-        self._stop_btn.setObjectName("stop_btn")
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(12)
+        self._start_btn = QtWidgets.QPushButton("▶  Start")
+        self._start_btn.setObjectName("bayesian_start_btn")
+        self._start_btn.setMinimumHeight(34)
+        self._stop_btn = QtWidgets.QPushButton("■  Stop")
+        self._stop_btn.setObjectName("bayesian_stop_btn")
+        self._stop_btn.setMinimumHeight(34)
         self._stop_btn.setEnabled(False)
-
-        btn_lay.addWidget(self._start_btn)
-        btn_lay.addWidget(self._stop_btn)
-        form.addRow(btn_row)
-
-        # Status label
-        self._status_lbl = QtWidgets.QLabel("Status: Idle")
-        self._status_lbl.setObjectName("status_label")
-        form.addRow(self._status_lbl)
-
-        # Connect buttons
+        self._reset_btn = QtWidgets.QPushButton("↺  Reset")
+        self._reset_btn.setMinimumHeight(34)
+        self._reset_btn.setToolTip(
+            "Stop any run and clear everything (plots, model, status) back to scratch.")
         self._start_btn.clicked.connect(self._on_start)
         self._stop_btn.clicked.connect(self._on_stop)
+        self._reset_btn.clicked.connect(self._on_reset)
+        # Equal stretch so the three actions share the row width evenly (not
+        # clustered/crowded) regardless of label length.
+        btn_row.addWidget(self._start_btn, 1)
+        btn_row.addWidget(self._stop_btn, 1)
+        btn_row.addWidget(self._reset_btn, 1)
+        fl.addLayout(btn_row)
 
-        return grp
+        self._status_lbl = QtWidgets.QLabel("Status: Idle")
+        self._status_lbl.setStyleSheet(status_style(TEXT_MUTED))
+        fl.addWidget(self._status_lbl)
+        self._best_lbl = QtWidgets.QLabel("")
+        self._best_lbl.setWordWrap(True)
+        fl.addWidget(self._best_lbl)
+
+        # ---- assemble: scroll (stretch) + fixed footer -----------------
+        container = QtWidgets.QWidget()
+        container.setFixedWidth(610)
+        col = QtWidgets.QVBoxLayout(container)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(2)
+        col.addWidget(scroll, 1)
+        col.addWidget(footer, 0)
+        return container
 
     def _build_display_panel(self) -> QtWidgets.QGroupBox:
-        grp = QtWidgets.QGroupBox("Live GP Prediction Map")
+        grp = QtWidgets.QGroupBox("Live optimization")
         lay = QtWidgets.QVBoxLayout(grp)
-
-        self._canvas = _MplCanvas(width=7, height=6)
-        lay.addWidget(self._canvas)
-
+        self._plots = _PlotPanel()
+        lay.addWidget(self._plots)
         return grp
 
+    # -- small UI helpers -------------------------------------------------
+    @staticmethod
+    def _section_label(text: str) -> QtWidgets.QLabel:
+        lbl = QtWidgets.QLabel(text)
+        lbl.setStyleSheet(f"color: {INFO}; font-weight: bold; margin-top: 6px;")
+        return lbl
+
+    @staticmethod
+    def _small_button(text: str) -> QtWidgets.QPushButton:
+        # Native button — inherits the global theme so it matches the rest of the app.
+        return QtWidgets.QPushButton(text)
+
+    def _update_total(self) -> None:
+        total = self._iterations.value() * self._n_points.value()
+        self._total_lbl.setText(f"{total}")
+
     # ------------------------------------------------------------------
-    # Slot: Start scan
+    # Config <-> UI
+    # ------------------------------------------------------------------
+
+    def _gather_config(self) -> OptimizerConfig:
+        return OptimizerConfig(
+            dofs=self._dof_table.specs(),
+            objectives=self._obj_table.specs(),
+            iterations=self._iterations.value(),
+            n_points=self._n_points.value(),
+            acq_kwargs=_parse_kwargs(self._acq_kwargs.text()),
+        )
+
+    def _apply_config(self, cfg: OptimizerConfig) -> None:
+        self._dof_table.setRowCount(0)
+        for d in cfg.dofs:
+            self._dof_table.add_dof(d)
+        if self._dof_table.rowCount() == 0:
+            self._dof_table.add_dof()
+        self._obj_table.setRowCount(0)
+        for o in cfg.objectives:
+            self._obj_table.add_objective(o)
+        if self._obj_table.rowCount() == 0:
+            self._obj_table.add_objective()
+        self._iterations.setValue(cfg.iterations)
+        self._n_points.setValue(cfg.n_points)
+        self._acq_kwargs.setText(_format_kwargs(cfg.acq_kwargs))
+        self._update_total()
+
+    def _build_profile_row(self) -> QtWidgets.QVBoxLayout:
+        """Active-profile label + named-setup picker (Load/Save/Save As/Delete)."""
+        box = QtWidgets.QVBoxLayout()
+        box.setSpacing(4)
+
+        prow = QtWidgets.QHBoxLayout()
+        prow.addWidget(QtWidgets.QLabel("Profile:"))
+        self._profile_label = QtWidgets.QLabel("—")
+        self._profile_label.setStyleSheet("font-weight: 600;")
+        self._profile_label.setToolTip(
+            "The app-selected profile (set in the Workflow editor). The optimizer "
+            "follows it; switch profiles there, then ↻ to re-read.")
+        prow.addWidget(self._profile_label, 1)
+        refresh = self._small_button("↻")
+        refresh.setToolTip("Re-read the selected profile and its setups")
+        refresh.clicked.connect(self._on_refresh_profile)
+        prow.addWidget(refresh)
+        box.addLayout(prow)
+
+        srow = QtWidgets.QHBoxLayout()
+        srow.addWidget(QtWidgets.QLabel("Setup:"))
+        self._setup_combo = QtWidgets.QComboBox()
+        self._setup_combo.setMinimumWidth(150)
+        self._setup_combo.setToolTip("Named Bayesian setups stored in this profile")
+        self._setup_combo.activated[str].connect(self._on_setup_selected)
+        srow.addWidget(self._setup_combo, 1)
+        self._btn_load = self._small_button("Load")
+        self._btn_save = self._small_button("Save")
+        self._btn_save_as = self._small_button("Save As…")
+        self._btn_delete = self._small_button("Delete")
+        self._btn_load.clicked.connect(self._on_load_setup)
+        self._btn_save.clicked.connect(self._on_save_setup)
+        self._btn_save_as.clicked.connect(self._on_save_as_setup)
+        self._btn_delete.clicked.connect(self._on_delete_setup)
+        for b in (self._btn_load, self._btn_save, self._btn_save_as, self._btn_delete):
+            srow.addWidget(b)
+        box.addLayout(srow)
+        return box
+
+    # ------------------------------------------------------------------
+    # Config persistence: follow the selected profile, else local QSettings
+    # ------------------------------------------------------------------
+
+    def _default_config(self) -> OptimizerConfig:
+        return OptimizerConfig(
+            dofs=[
+                DOFSpec(name="x", pv="", lo=0.0, hi=5.0),
+                DOFSpec(name="y", pv="", lo=0.0, hi=5.0),
+            ],
+            objectives=[ObjectiveSpec()],
+        )
+
+    def _last_setup_key(self) -> str:
+        label = (self._source_label or "local").replace("/", "_")
+        return f"{_SETTINGS_LAST_SETUP}/{label}"
+
+    def _refresh_source(self) -> None:
+        """Resolve the app's active profile (None -> local QSettings setups)."""
+        try:
+            self._source, self._source_label = profile_store.active_source()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not resolve config source: %s", exc)
+            self._source, self._source_label = None, ""
+        self._profile_label.setText(
+            self._source_label or "Local (no profile selected)")
+        # Both profile and local modes hold named setups, so all controls apply.
+        for b in (self._btn_load, self._btn_save, self._btn_save_as, self._btn_delete):
+            b.setEnabled(True)
+
+    def _populate_setups(self, names: list, pick: str) -> None:
+        self._setup_combo.blockSignals(True)
+        self._setup_combo.clear()
+        self._setup_combo.addItems(names)
+        if pick and pick in names:
+            self._setup_combo.setCurrentText(pick)
+        self._setup_combo.blockSignals(False)
+
+    def _load_initial(self) -> None:
+        """On launch: list the active store's setups and reload the last-used one."""
+        self._refresh_source()
+        if self._source is None:
+            self._migrate_local_blob()
+        names = self._store_list()
+        last = self._settings.value(self._last_setup_key(), "", type=str)
+        pick = last if last in names else (names[0] if names else "")
+        self._populate_setups(names, pick)
+        if pick:
+            cfg = self._store_load(pick) or self._default_config()
+            self._current_setup = pick
+        else:
+            cfg = self._default_config()
+            self._current_setup = None
+        self._apply_config(cfg)
+        self._restore_local_ui()
+
+    def _restore_local_ui(self) -> None:
+        # Bluesky conda-env path (per-machine, local).
+        env = self._settings.value(_SETTINGS_BLUESKY_ENV, "", type=str)
+        if env:
+            self._bluesky_env.setText(env)
+        # Simulate is never persisted: always start OFF (beamline safety).
+        self._simulate.setChecked(False)
+
+    # ---- setup store: profile (ConfigSource) or local (QSettings) ----------
+
+    def _local_table(self) -> dict:
+        raw = self._settings.value(_SETTINGS_LOCAL_SETUPS, "")
+        if raw:
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+            except (ValueError, TypeError):
+                pass
+        return {}
+
+    def _write_local_table(self, table: dict) -> None:
+        self._settings.setValue(_SETTINGS_LOCAL_SETUPS, json.dumps(table))
+
+    def _migrate_local_blob(self) -> None:
+        """One-time: fold a legacy single local config into a named 'default' setup."""
+        if self._local_table():
+            return
+        raw = self._settings.value(_SETTINGS_KEY, "")
+        if not raw:
+            return
+        try:
+            cfg = OptimizerConfig.from_dict(json.loads(raw))
+        except (ValueError, TypeError):
+            return
+        if cfg.dofs:
+            self._write_local_table({"default": cfg.to_dict()})
+
+    def _store_list(self) -> list:
+        if self._source is not None:
+            return profile_store.list_setups(self._source)
+        return sorted(self._local_table().keys())
+
+    def _store_load(self, name: str) -> Optional[OptimizerConfig]:
+        if self._source is not None:
+            return profile_store.load_setup(self._source, name)
+        data = self._local_table().get(name)
+        if not isinstance(data, dict):
+            return None
+        try:
+            return OptimizerConfig.from_dict(data)
+        except (ValueError, TypeError) as exc:
+            logger.warning("Could not parse local setup %r: %s", name, exc)
+            return None
+
+    def _store_save(self, name: str, cfg: OptimizerConfig) -> bool:
+        if self._source is not None:
+            return profile_store.save_setup(self._source, name, cfg)
+        table = self._local_table()
+        table[name] = cfg.to_dict()
+        self._write_local_table(table)
+        return True
+
+    def _store_delete(self, name: str) -> bool:
+        if self._source is not None:
+            return profile_store.delete_setup(self._source, name)
+        table = self._local_table()
+        if name not in table:
+            return False
+        table.pop(name)
+        self._write_local_table(table)
+        return True
+
+    def _save_env(self) -> None:
+        self._settings.setValue(
+            _SETTINGS_BLUESKY_ENV, self._bluesky_env.text().strip())
+
+    def _persist_local_state(self) -> None:
+        """Save local, non-exportable UI state: the env path + the last-used pick.
+
+        Named setups (profile *and* local) are written only on explicit Save /
+        Save As — closing or starting a run never auto-saves a setup.
+        """
+        self._save_env()
+        if self._current_setup:
+            self._settings.setValue(self._last_setup_key(), self._current_setup)
+
+    # ---- setup actions ----------------------------------------------------
+
+    def _on_refresh_profile(self) -> None:
+        self._load_initial()
+        self.statusBar().showMessage(
+            f"Profile: {self._source_label or 'Local'}", 4000)
+
+    def _on_setup_selected(self, name: str) -> None:
+        if not name:
+            return
+        cfg = self._store_load(name)
+        if cfg is None:
+            return
+        self._apply_config(cfg)
+        self._current_setup = name
+        self._settings.setValue(self._last_setup_key(), name)
+        self.statusBar().showMessage(f"Loaded setup '{name}'", 4000)
+
+    def _on_load_setup(self) -> None:
+        name = self._setup_combo.currentText()
+        if name:
+            self._on_setup_selected(name)
+
+    def _on_save_setup(self) -> None:
+        if not self._current_setup:
+            self._on_save_as_setup()
+            return
+        if self._store_save(self._current_setup, self._gather_config()):
+            self._settings.setValue(self._last_setup_key(), self._current_setup)
+            self.statusBar().showMessage(f"Saved setup '{self._current_setup}'", 4000)
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "Save failed", "Could not save the setup.")
+
+    def _on_save_as_setup(self) -> None:
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save setup as", "Setup name:", text=self._current_setup or "")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name in self._store_list():
+            if QtWidgets.QMessageBox.question(
+                    self, "Overwrite?",
+                    f"Setup '{name}' already exists. Overwrite?"
+            ) != QtWidgets.QMessageBox.Yes:
+                return
+        if self._store_save(name, self._gather_config()):
+            self._current_setup = name
+            self._populate_setups(self._store_list(), name)
+            self._settings.setValue(self._last_setup_key(), name)
+            self.statusBar().showMessage(f"Saved setup '{name}'", 4000)
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "Save failed", "Could not save the setup.")
+
+    def _on_delete_setup(self) -> None:
+        name = self._setup_combo.currentText()
+        if not name:
+            return
+        where = self._source_label or "Local"
+        if QtWidgets.QMessageBox.question(
+                self, "Delete setup",
+                f"Delete setup '{name}' from {where}?"
+        ) != QtWidgets.QMessageBox.Yes:
+            return
+        self._store_delete(name)
+        names = self._store_list()
+        newpick = names[0] if names else ""
+        self._populate_setups(names, newpick)
+        if newpick:
+            self._on_setup_selected(newpick)
+        else:
+            self._current_setup = None
+            self._apply_config(self._default_config())
+        self.statusBar().showMessage(f"Deleted setup '{name}'", 4000)
+
+    # ------------------------------------------------------------------
+    # Start / stop
     # ------------------------------------------------------------------
 
     def _on_start(self) -> None:
-        """
-        Validate inputs, construct Ophyd objects, create BayesianOptimizer,
-        and launch ScanWorker.
-        """
-        # --- Validate bounds ---
-        if self._x_lo.value() >= self._x_hi.value():
-            self._show_error("X range error", "x_lo must be less than x_hi.")
-            return
-        if self._y_lo.value() >= self._y_hi.value():
-            self._show_error("Y range error", "y_lo must be less than y_hi.")
-            return
-        if self._n_init.value() >= self._maxpts.value():
-            self._show_error(
-                "Parameter error", "n_initial must be less than maxpts."
+        simulate = self._simulate.isChecked()
+        # If a previous run is still tearing down, finish stopping it first so we
+        # never run two RunEngines at once.
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.request_abort()
+            if not self._worker.wait(5000):
+                QtWidgets.QMessageBox.warning(
+                    self, "Still stopping",
+                    "The previous run is still stopping — try again in a moment.")
+                return
+
+        # Resume the existing run if a model is loaded (Stop→Start, or add more
+        # iterations after a finish). Reset clears the model to force a fresh run.
+        resuming = self._agent is not None and self._agent_config is not None
+        if resuming:
+            # Keep the model + plot history; pick up the current Iterations /
+            # Points-per-iteration so you can add more. DOFs/objectives stay as
+            # the running model's (use Reset to change the problem).
+            run_cfg = self._agent_config
+            run_cfg.iterations = self._iterations.value()
+            run_cfg.n_points = self._n_points.value()
+            if run_cfg.iterations < 1 or run_cfg.n_points < 1:
+                QtWidgets.QMessageBox.warning(
+                    self, "Invalid", "Iterations and points/iteration must be >= 1.")
+                return
+        else:
+            cfg = self._gather_config()
+            err = cfg.validate(require_devices=not simulate)
+            if err:
+                QtWidgets.QMessageBox.warning(self, "Invalid configuration", err)
+                return
+            run_cfg = cfg
+            self._agent_config = cfg
+            self._plots.reset(
+                [d.name for d in cfg.active_dofs()],
+                cfg.active_objectives()[0].minimize,
             )
-            return
+            self._best_lbl.setText("")
 
-        # --- Resolve Ophyd objects ---
-        x_motor, y_motor, detector = self._resolve_devices()
-        if x_motor is None:
-            return  # error already shown
+        self._persist_local_state()
+        self._stopping = False
+        self._plots.set_update_enabled(False)  # can't query the model mid-scan
 
-        scalar_key = self._scalar_key.text().strip() or None
-
-        # --- Build optimizer ---
-        from .bayesian_engine import BayesianOptimizer
-
-        optimizer = BayesianOptimizer(
-            x_bounds=(self._x_lo.value(), self._x_hi.value()),
-            y_bounds=(self._y_lo.value(), self._y_hi.value()),
-            grid_nx=self._grid_nx.value(),
-            grid_ny=self._grid_ny.value(),
-        )
-        # Cache xi/yi for plot axis ticks
-        self._xi = optimizer._xi
-        self._yi = optimizer._yi
-
-        # --- Launch worker ---
-        bluesky_root = self._bluesky_env.text().strip() or None
         self._worker = ScanWorker(
-            optimizer=optimizer,
-            detector=detector,
-            x_motor=x_motor,
-            x_lo=self._x_lo.value(),
-            x_hi=self._x_hi.value(),
-            y_motor=y_motor,
-            y_lo=self._y_lo.value(),
-            y_hi=self._y_hi.value(),
-            maxpts=self._maxpts.value(),
-            n_initial=self._n_init.value(),
-            scalar_key=scalar_key,
-            bluesky_root=bluesky_root,
+            config=run_cfg,
+            bluesky_root=self._bluesky_env.text().strip() or None,
+            simulate=simulate,
+            agent=self._agent if resuming else None,
         )
-        self._worker.scan_update.connect(self._on_scan_update)
+        self._worker.point_measured.connect(self._on_point)
         self._worker.scan_error.connect(self._on_scan_error)
         self._worker.scan_finished.connect(self._on_scan_finished)
+        self._worker.agent_ready.connect(self._on_agent_ready)
         self._worker.start()
 
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
-        self._status_lbl.setText("Status: Scanning…")
-        self._status_lbl.setStyleSheet("color: #fab387;")   # orange while running
+        self._status_lbl.setText("Status: Resuming…" if resuming else "Status: Optimizing…")
+        self._status_lbl.setStyleSheet(status_style(WARNING))
 
-    # ------------------------------------------------------------------
-    # Slot: Stop / Abort  
-    # ------------------------------------------------------------------
+    def _on_agent_ready(self, agent) -> None:
+        self._agent = agent
 
     def _on_stop(self) -> None:
         if self._worker is not None and self._worker.isRunning():
-            self._status_lbl.setText("Status: Aborting…")
+            self._stopping = True
+            self._stop_btn.setEnabled(False)  # avoid repeated abort clicks
+            self._status_lbl.setText("Status: Stopping…")
+            self._status_lbl.setStyleSheet(status_style(WARNING))
             self._worker.request_abort()
 
+    def _on_reset(self) -> None:
+        """Stop any run and clear everything (plots, model, surface) to scratch."""
+        if self._worker is not None and self._worker.isRunning():
+            self._stopping = True
+            self._worker.request_abort()
+            self._worker.wait(5000)
+        self._worker = None
+        self._stopping = False
+        self._agent = None
+        self._agent_config = None
+        self._plots.reset([], minimize=False)   # clear plots, surface, and axes
+        self._plots.set_update_enabled(False)
+        self._best_lbl.setText("")
+        self._status_lbl.setText("Status: Idle")
+        self._status_lbl.setStyleSheet(status_style(TEXT_MUTED))
+        self._reset_buttons()
+
     # ------------------------------------------------------------------
-    # Slots: scan feedback
+    # Worker slots
     # ------------------------------------------------------------------
 
-    def _on_scan_update(
-        self, n_pts: int, mean_grid, std_grid, xs: list, ys: list
-    ) -> None:
-        """Slot called (in the GUI thread) after each optimizer.tell()."""
-        self._status_lbl.setText(f"Status: Measuring… ({n_pts}/{self._maxpts.value()})")
-        self._canvas.update_plot(
-            mean_grid=mean_grid,
-            xi=self._xi,
-            yi=self._yi,
-            xs=xs,
-            ys=ys,
-            n_pts=n_pts,
-        )
+    def _on_point(self, payload: dict) -> None:
+        self._plots.add_point(payload)
+        total = self._iterations.value() * self._n_points.value()
+        self._status_lbl.setText(f"Status: Measuring… ({payload['index']}/{total})")
+        best = self._plots.best_record()
+        if best is not None:
+            params = ", ".join(f"{k}={v:.4g}" for k, v in best["params"].items())
+            self._best_lbl.setText(
+                f"Best so far: {best['primary']:.5g}  @  {params}"
+            )
 
     def _on_scan_error(self, msg: str) -> None:
-        """Slot called if the RunEngine raises an exception."""
         self._status_lbl.setText("Status: Error")
-        self._status_lbl.setStyleSheet("color: #f38ba8;")
+        self._status_lbl.setStyleSheet(status_style(ERROR))
         self._reset_buttons()
+        # Surfaces can be computed if a model was built before the failure.
+        self._plots.set_update_enabled(self._agent is not None)
         QtWidgets.QMessageBox.critical(
             self, "Scan Error",
-            f"The scan encountered an error:\n\n{msg}\n\n"
+            f"The optimization encountered an error:\n\n{msg}\n\n"
             "Check the terminal / log for the full traceback.",
         )
 
     def _on_scan_finished(self) -> None:
-        """Slot called when the plan completes normally or is aborted."""
-        self._status_lbl.setText("Status: Complete ✓")
-        self._status_lbl.setStyleSheet("color: #a6e3a1;")
+        if self._stopping:
+            self._status_lbl.setText("Status: Stopped")
+            self._status_lbl.setStyleSheet(status_style(TEXT_MUTED))
+        else:
+            self._status_lbl.setText("Status: Complete ✓")
+            self._status_lbl.setStyleSheet(status_style(SUCCESS))
+        self._stopping = False
         self._reset_buttons()
+        # Model is settled and no longer being mutated -> allow surface compute.
+        self._plots.set_update_enabled(self._agent is not None)
+
+    # ------------------------------------------------------------------
+    # Model-surface slots (2-D projection)
+    # ------------------------------------------------------------------
+
+    def _on_surface_requested(self, x_name: str, y_name: str) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            QtWidgets.QMessageBox.information(
+                self, "Optimization running",
+                "Wait for the current run to finish before computing a surface.")
+            return
+        if self._agent is None or self._agent_config is None:
+            QtWidgets.QMessageBox.information(
+                self, "No model yet",
+                "Run an optimization first, then click “Update surface”.")
+            return
+        self._plots.set_update_enabled(False)
+        self._status_lbl.setText("Status: Computing surface…")
+        self._status_lbl.setStyleSheet(status_style(WARNING))
+        self._surface_worker = _SurfaceWorker(
+            self._agent, self._agent_config, x_name, y_name)
+        self._surface_worker.done.connect(self._on_surface_done)
+        self._surface_worker.failed.connect(self._on_surface_failed)
+        self._surface_worker.start()
+
+    def _on_surface_done(self, payload: dict) -> None:
+        self._plots.set_surface(payload)
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Surface updated ✓")
+        self._status_lbl.setStyleSheet(status_style(SUCCESS))
+
+    def _on_surface_failed(self, msg: str) -> None:
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Surface failed")
+        self._status_lbl.setStyleSheet(status_style(ERROR))
+        QtWidgets.QMessageBox.warning(
+            self, "Surface error",
+            f"Could not compute the model surface:\n\n{msg}")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -690,116 +1344,67 @@ class BayesianViewer(QtWidgets.QMainWindow):
     def _reset_buttons(self) -> None:
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-
-    def _show_error(self, title: str, msg: str) -> None:
-        QtWidgets.QMessageBox.warning(self, title, msg)
-
-    def _resolve_devices(self):
-        """
-        Resolve the text-field entries to Ophyd device objects.
-
-        Strategy:
-        1. Try importing the name from the current IPython namespace via
-           ``get_ipython().user_ns``.
-        2. Fall back to creating an EpicsMotor / EpicsSignal from the PV
-           string directly (requires EPICS connection).
-        3. In **offline / demo** mode (no EPICS, no IPython), create
-           ``ophyd.sim`` equivalents so the GUI can be tested.
-
-        Returns (x_motor, y_motor, detector) or (None, None, None) on fail.
-        """
-        x_name = self._x_pv.text().strip()
-        y_name = self._y_pv.text().strip()
-        d_name = self._det_pv.text().strip()
-
-        if not x_name or not y_name or not d_name:
-            self._show_error(
-                "Input error",
-                "Please fill in all three device PV / name fields.",
-            )
-            return None, None, None
-
-        # --- Try IPython namespace first (beamline session) ---
-        try:
-            ip = get_ipython()  # type: ignore[name-defined]
-            ns = ip.user_ns
-            x_motor = ns.get(x_name)
-            y_motor = ns.get(y_name)
-            detector = ns.get(d_name)
-            if x_motor and y_motor and detector:
-                logger.info("Resolved devices from IPython namespace.")
-                return x_motor, y_motor, detector
-        except NameError:
-            pass  # not running inside IPython
-
-        # --- Try direct EPICS construction ---
-        try:
-            from .bluesky_compat import ensure_bluesky
-            ensure_bluesky(root=self._bluesky_env.text().strip() or None)
-            from ophyd import Device, EpicsMotor
-
-            x_motor = EpicsMotor(x_name, name="x_motor")
-            y_motor = EpicsMotor(y_name, name="y_motor")
-
-            # Detector: if it looks like a PV, wrap with EpicsSignal
-            # Real code would import the beamline-specific detector class.
-            from ophyd import EpicsSignalRO
-
-            class _SimpleDetector(Device):
-                total = EpicsSignalRO(d_name, name="total", kind="hinted")
-
-            detector = _SimpleDetector(name="detector")
-            logger.info("Constructed Ophyd devices from PV strings.")
-            return x_motor, y_motor, detector
-
-        except Exception as exc:
-            logger.warning("EPICS construction failed: %s – falling back to sim.", exc)
-
-        # --- Offline / demo mode: ophyd.sim ---
-        try:
-            from .bluesky_compat import ensure_bluesky
-            ensure_bluesky(root=self._bluesky_env.text().strip() or None)
-            from ophyd.sim import SynAxis, SynSignal
-
-            x_motor = SynAxis(name=x_name or "sim_x")
-            y_motor = SynAxis(name=y_name or "sim_y")
-
-            # Use ophyd.sim.SynSignal which fully satisfies the Bluesky
-            # protocol (trigger, read, describe, name, hints) so that
-            # trigger_and_read works correctly.
-            import random as _rng
-
-            detector = SynSignal(
-                func=lambda: _rng.uniform(0.0, 1.0),
-                name="stats1_total",
-                labels={"detectors"},
-            )
-            logger.warning(
-                "Using SIMULATION devices – no real hardware connected."
-            )
-            QtWidgets.QMessageBox.information(
-                self,
-                "Simulation Mode",
-                "Could not connect to EPICS or find devices in IPython namespace.\n"
-                "Running in OFFLINE SIMULATION MODE.\n\n"
-                "PV names entered are used as device names only.",
-            )
-            return x_motor, y_motor, detector
-
-        except Exception as exc:
-            self._show_error(
-                "Device error",
-                f"Could not resolve devices:\n{exc}\n\n"
-                "Please check PV names and EPICS connection.",
-            )
-            return None, None, None
+        # When a model is loaded, the next Start *resumes* and the iteration/total
+        # counts are additions to the existing run — reflect that in the labels.
+        resuming = self._agent is not None
+        self._start_btn.setText("▶  Resume" if resuming else "▶  Start")
+        self._iter_caption.setText(
+            "+ Iterations (rounds):" if resuming else "Iterations (rounds):")
+        self._total_caption.setText(
+            "+ Total evaluations:" if resuming else "Total evaluations:")
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        """Ensure the worker thread is stopped before the window closes."""
+        self._persist_local_state()
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_abort()
-            self._worker.wait(3000)  # 3-second grace period
+            self._worker.wait(3000)
+        # Stop the model-surface thread too, and drop its signals, so it can't fire
+        # into a destroyed widget if the window is closed mid "Update surface".
+        if self._surface_worker is not None and self._surface_worker.isRunning():
+            try:
+                self._surface_worker.done.disconnect()
+                self._surface_worker.failed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._surface_worker.wait(2000)
         event.accept()
+
+
+# ---------------------------------------------------------------------------
+# kwargs parsing helpers (acquisition options field)
+# ---------------------------------------------------------------------------
+
+def _parse_kwargs(text: str) -> dict:
+    """Parse a ``key=value, key2=value2`` string into a dict (typed)."""
+    out: dict = {}
+    for chunk in text.split(","):
+        chunk = chunk.strip()
+        if not chunk or "=" not in chunk:
+            continue
+        key, _, value = chunk.partition("=")
+        key, value = key.strip(), value.strip()
+        if not key:
+            continue
+        # try int -> float -> bool -> str
+        try:
+            out[key] = int(value)
+            continue
+        except ValueError:
+            pass
+        try:
+            out[key] = float(value)
+            continue
+        except ValueError:
+            pass
+        if value.lower() in ("true", "false"):
+            out[key] = value.lower() == "true"
+        else:
+            out[key] = value
+    return out
+
+
+def _format_kwargs(kwargs: dict) -> str:
+    return ", ".join(f"{k}={v}" for k, v in kwargs.items())
 
 
 # ---------------------------------------------------------------------------
@@ -813,7 +1418,7 @@ def main() -> None:
     )
     app = QtWidgets.QApplication(sys.argv)
     configure_app(app)
-    app.setApplicationName("Bayesian 2-D Scan Viewer")
+    app.setApplicationName("Bayesian Optimization (blop)")
     window = BayesianViewer()
     window.show()
     sys.exit(app.exec_())
