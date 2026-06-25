@@ -340,6 +340,7 @@ class Workflow(QDialog, LogMixin):
         self._db_available = False
         self._tree_snapshot: dict = {}
         self._edited_item_ids: set = set()
+        self._structural_changed: bool = False
         self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
 
         # Sim Server Tab
@@ -1564,12 +1565,18 @@ class Workflow(QDialog, LogMixin):
         self._unmark_item_edited(item)
 
     def _update_config_action_state(self):
-        has_changes = bool(self._edited_item_ids)
+        has_changes = bool(self._edited_item_ids) or self._structural_changed
         self.buttonApplySave.setEnabled(has_changes)
         self.buttonClearChanges.setEnabled(has_changes)
 
     def _on_clear_changes(self):
-        self._revert_all_edited(self.treeWidgetConfig.invisibleRootItem())
+        if self.radioViewSettings.isChecked():
+            self._load_settings_tree()
+        elif self.radioDatabase.isChecked() and self._db_available:
+            self.load_profile_to_tree()
+        elif app_settings.TOML_FILE:
+            self._load_toml_into_tree(app_settings.TOML_FILE)
+        self._structural_changed = False
         self._update_config_action_state()
 
     def _revert_all_edited(self, node):
@@ -1804,6 +1811,7 @@ class Workflow(QDialog, LogMixin):
         else:
             self._save_tree_to_active_profile()
         self._tree_snapshot = self._snapshot_tree()
+        self._structural_changed = False
         self._clear_edit_markers()
 
     def _on_reseed(self):
