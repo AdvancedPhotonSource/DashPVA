@@ -707,14 +707,22 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
               </spacer>
              </item>
              <item>
+              <widget class="QPushButton" name="buttonClearChanges">
+               <property name="text">
+                <string>Clear</string>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
               <widget class="QPushButton" name="buttonApplySave">
                <property name="text">
                 <string>Apply / Save</string>
                </property>
-               <property name="styleSheet">
-                <string>QPushButton { background-color: #2980B9; color: white; border-radius: 3px; padding: 3px 14px; font-weight: bold; }
-QPushButton:hover { background-color: #3498DB; }
-QPushButton:disabled { background-color: #BDC3C7; color: #7F8C8D; border: none; }</string>
+               <property name="enabled">
+                <bool>false</bool>
                </property>
               </widget>
              </item>

@@ -23,6 +23,9 @@ TEXT_PRIMARY = "#2C3E50"
 TEXT_SECONDARY = "#7A8394"
 TEXT_MUTED = "#9BA5B5"
 
+# -- Disabled state ------------------------------------------------------------
+DISABLED_BG = "#9E9E9E"
+
 # -- Surface / border ----------------------------------------------------------
 SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
