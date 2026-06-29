@@ -113,9 +113,6 @@
              <property name="toolTip">
               <string>Time to compute voxelization/interpolation for the current render.</string>
              </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0</string>
              </property>
@@ -153,9 +150,6 @@
              <property name="toolTip">
               <string>Preset plane orientation (HK/HL/KL or Custom).</string>
              </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>-</string>
              </property>
@@ -172,9 +166,6 @@
             <widget class="QLabel" name="lbSliceNormalVal">
              <property name="toolTip">
               <string>Normalized normal vector of the slice plane in HKL coordinates.</string>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
              </property>
              <property name="text">
               <string>[0.000, 0.000, 1.000]</string>
@@ -196,9 +187,6 @@
              <property name="toolTip">
               <string>Slice plane origin in HKL coordinates.</string>
              </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>[0.00000, 0.00000, 0.00000]</string>
              </property>
@@ -213,9 +201,6 @@
            </item>
            <item row="6" column="1">
             <widget class="QLabel" name="lbSlicePositionVal">
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>-</string>
              </property>
@@ -232,9 +217,6 @@
             <widget class="QLabel" name="lbInfoImageSizeOrigVal">
              <property name="toolTip">
               <string>Original image dimensions (H × K) before any reduction.</string>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
              </property>
              <property name="text">
               <string>0 x 0</string>
@@ -256,9 +238,6 @@
              <property name="toolTip">
               <string>Current image dimensions (H × K) after reduction.</string>
              </property>
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0 x 0</string>
              </property>
@@ -276,9 +255,6 @@
            </item>
            <item row="0" column="1">
             <widget class="QLabel" name="lbInfoPointsOrigVal">
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0</string>
              </property>
@@ -299,9 +275,6 @@
            </item>
            <item row="9" column="1">
             <widget class="QLabel" name="lbInfoPointsCurrVal">
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0</string>
              </property>
@@ -335,9 +308,6 @@
            </item>
            <item row="1" column="1">
             <widget class="QLabel" name="lbOriginalPointSizeNum">
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0</string>
              </property>
@@ -403,9 +373,6 @@
            </item>
            <item row="6" column="1">
             <widget class="QLabel" name="lbCurrentPointSizeNum">
-             <property name="frameShape">
-              <enum>QFrame::Box</enum>
-             </property>
              <property name="text">
               <string>0</string>
              </property>

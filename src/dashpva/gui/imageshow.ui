@@ -242,9 +242,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -279,9 +276,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -318,9 +312,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -356,9 +347,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -393,9 +381,6 @@
                   <width>0</width>
                   <height>25</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -566,9 +551,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -616,9 +598,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -663,9 +642,6 @@
                   <height>25</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -700,9 +676,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -739,9 +712,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -776,9 +746,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -864,9 +831,6 @@
                   <height>0</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -925,9 +889,6 @@
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -956,9 +917,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -1198,9 +1156,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -1219,9 +1174,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -1242,9 +1194,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -1264,9 +1213,6 @@
                   <height>30</height>
                  </size>
                 </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
-                </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
                 </property>
@@ -1285,9 +1231,6 @@
                   <width>0</width>
                   <height>30</height>
                  </size>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::Box</enum>
                 </property>
                 <property name="frameShadow">
                  <enum>QFrame::Sunken</enum>
@@ -1506,9 +1449,6 @@
               <height>0</height>
              </size>
             </property>
-            <property name="frameShape">
-             <enum>QFrame::Box</enum>
-            </property>
             <property name="frameShadow">
              <enum>QFrame::Sunken</enum>
             </property>
@@ -1570,9 +1510,6 @@
               <width>100</width>
               <height>40</height>
              </size>
-            </property>
-            <property name="frameShape">
-             <enum>QFrame::Box</enum>
             </property>
             <property name="frameShadow">
              <enum>QFrame::Sunken</enum>

@@ -180,15 +180,6 @@ QLineEdit#le_input_channel {
     border-radius: 3px;
 }
 
-/* -- Area detector editable QLineEdit (palette(midlight) gives a visible
-      non-white grey, adapts to dark mode). ------------- */
-QLineEdit#pv_prefix {
-    background-color: palette(midlight);
-    border: 1px solid palette(mid);
-    border-radius: 3px;
-    padding: 2px 6px;
-}
-
 /* -- Area detector Start/Stop Live View buttons ----------------------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
     font-size: $FONT_SUBHEADING;

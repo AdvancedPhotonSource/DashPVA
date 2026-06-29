@@ -26,8 +26,7 @@ class StatsDock(BaseDock):
 
         def _val_label(default="0"):
             lbl = QLabel(default)
-            lbl.setFrameShape(QLabel.Box)
-            lbl.setFrameShadow(QLabel.Sunken)
+            lbl.setProperty("valueLabel", True)
             lbl.setMinimumHeight(25)
             lbl.setMaximumWidth(150)
             return lbl
