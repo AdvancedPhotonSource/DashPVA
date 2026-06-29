@@ -21,10 +21,6 @@
        <pointsize>12</pointsize>
       </font>
      </property>
-     <property name="styleSheet">
-      <string notr="true">QTabBar::tab:first { background-color: #BDE0F7; }
-QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
-     </property>
      <property name="currentIndex">
       <number>1</number>
      </property>
@@ -32,9 +28,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
       <attribute name="title">
        <string>Sim Server Processor</string>
       </attribute>
-      <property name="styleSheet">
-       <string notr="true">background-color: #D6EEF8;</string>
-      </property>
       <layout class="QVBoxLayout" name="verticalLayoutSimServer">
        <item>
         <layout class="QGridLayout" name="gridLayout_2">
@@ -285,9 +278,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
            <property name="text">
             <string>Source:</string>
            </property>
-           <property name="styleSheet">
-            <string>QLabel { font-weight: bold; color: #555; }</string>
-           </property>
           </widget>
          </item>
          <item>
@@ -298,9 +288,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
            <property name="checked">
             <bool>true</bool>
            </property>
-           <property name="styleSheet">
-            <string>QRadioButton { color: #E67E22; font-weight: bold; }</string>
-           </property>
           </widget>
          </item>
          <item>
@@ -308,18 +295,12 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
            <property name="text">
             <string>Database</string>
            </property>
-           <property name="styleSheet">
-            <string>QRadioButton { color: #2980B9; font-weight: bold; }</string>
-           </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="labelDbStatus">
            <property name="text">
             <string>● Checking…</string>
-           </property>
-           <property name="styleSheet">
-            <string>QLabel { color: #999999; font-size: 8pt; }</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeft|Qt::AlignVCenter</set>
@@ -334,9 +315,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
            <property name="toolTip">
             <string>Attempt to create the database file and tables</string>
            </property>
-           <property name="styleSheet">
-            <string>QPushButton { font-size: 8pt; padding: 1px 6px; }</string>
-           </property>
            <property name="visible">
             <bool>false</bool>
            </property>
@@ -349,9 +327,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
            </property>
            <property name="toolTip">
             <string>Reload the database and refresh the current view</string>
-           </property>
-           <property name="styleSheet">
-            <string>QPushButton { font-size: 8pt; padding: 1px 6px; }</string>
            </property>
           </widget>
          </item>
@@ -370,16 +345,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
         <widget class="QLabel" name="labelTomlHeader">
          <property name="text">
           <string>Legacy TOML</string>
-         </property>
-         <property name="styleSheet">
-          <string>QLabel {
-  color: #E67E22;
-  font-weight: bold;
-  font-size: 9pt;
-  background-color: #FDF2E9;
-  border-left: 3px solid #E67E22;
-  padding: 2px 6px;
-}</string>
          </property>
         </widget>
        </item>
@@ -434,9 +399,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
          <property name="frameShadow">
           <enum>QFrame::Sunken</enum>
          </property>
-         <property name="styleSheet">
-          <string>QFrame { color: #BDC3C7; }</string>
-         </property>
         </widget>
        </item>
 
@@ -475,9 +437,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
              <property name="toolTip">
               <string>Add missing default values to settings and the current profile — never overwrites existing values</string>
              </property>
-             <property name="styleSheet">
-              <string>QPushButton { background-color: #E67E22; color: white; font-weight: bold; border-radius: 3px; padding: 3px 6px; } QPushButton:hover { background-color: #D35400; }</string>
-             </property>
             </widget>
            </item>
            <item>
@@ -500,16 +459,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
              <property name="text">
               <string>Database</string>
              </property>
-             <property name="styleSheet">
-              <string>QLabel {
-  color: #2980B9;
-  font-weight: bold;
-  font-size: 9pt;
-  background-color: #EBF5FB;
-  border-left: 3px solid #2980B9;
-  padding: 2px 6px;
-}</string>
-             </property>
             </widget>
            </item>
 
@@ -521,9 +470,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                <property name="text">
                 <string>Profile:</string>
                </property>
-               <property name="styleSheet">
-                <string>QLabel { color: #2980B9; font-weight: bold; }</string>
-               </property>
               </widget>
              </item>
              <item>
@@ -533,9 +479,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                </property>
                <property name="minimumWidth">
                 <number>220</number>
-               </property>
-               <property name="styleSheet">
-                <string>QComboBox { border: 1px solid #2980B9; border-radius: 3px; padding: 2px 6px; }</string>
                </property>
               </widget>
              </item>
@@ -554,9 +497,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                <property name="text">
                 <string>Default</string>
                </property>
-               <property name="styleSheet">
-                <string>QCheckBox { color: #E67E22; font-size: 9pt; }</string>
-               </property>
               </widget>
              </item>
              <item>
@@ -566,9 +506,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                </property>
                <property name="text">
                 <string>Selected</string>
-               </property>
-               <property name="styleSheet">
-                <string>QCheckBox { color: #27AE60; font-size: 9pt; }</string>
                </property>
               </widget>
              </item>
@@ -583,9 +520,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                <property name="text">
                 <string>Description:</string>
                </property>
-               <property name="styleSheet">
-                <string>QLabel { color: #2980B9; font-weight: bold; }</string>
-               </property>
               </widget>
              </item>
              <item>
@@ -595,9 +529,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                </property>
                <property name="placeholderText">
                 <string>No description</string>
-               </property>
-               <property name="styleSheet">
-                <string>QLineEdit { color: #555; background: transparent; border: none; }</string>
                </property>
               </widget>
              </item>
@@ -615,11 +546,6 @@ QTabBar::tab:first:selected { background-color: #A0D4F5; }</string>
                <property name="text">
                 <string>Add Profile</string>
                </property>
-               <property name="styleSheet">
-                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
-QPushButton:hover { background-color: #D6EAF8; }
-QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
-               </property>
               </widget>
              </item>
              <item>
@@ -629,11 +555,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
                <property name="text">
                 <string>Delete Profile</string>
-               </property>
-               <property name="styleSheet">
-                <string>QPushButton { color: #E74C3C; border: 1px solid #E74C3C; border-radius: 3px; padding: 3px 8px; }
-QPushButton:hover { background-color: #FADBD8; }
-QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
               </widget>
              </item>
@@ -645,11 +566,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                <property name="text">
                 <string>Edit Profile</string>
                </property>
-               <property name="styleSheet">
-                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
-QPushButton:hover { background-color: #D6EAF8; }
-QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
-               </property>
               </widget>
              </item>
              <item>
@@ -659,11 +575,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
                <property name="text">
                 <string>Duplicate Profile</string>
-               </property>
-               <property name="styleSheet">
-                <string>QPushButton { color: #2980B9; border: 1px solid #2980B9; border-radius: 3px; padding: 3px 8px; }
-QPushButton:hover { background-color: #D6EAF8; }
-QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
               </widget>
              </item>
@@ -684,11 +595,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
               <widget class="QPushButton" name="buttonImportToml">
                <property name="text">
                 <string>Import TOML</string>
-               </property>
-               <property name="styleSheet">
-                <string>QPushButton { color: #E67E22; border: 1px solid #E67E22; border-radius: 3px; padding: 3px 8px; }
-QPushButton:hover { background-color: #FDEBD0; }
-QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
               </widget>
              </item>
@@ -757,9 +663,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                <property name="toolTip">
                 <string>Collapse all</string>
                </property>
-               <property name="styleSheet">
-                <string>QPushButton { font-size: 10pt; padding: 1px 6px; }</string>
-               </property>
                <property name="maximumWidth">
                 <number>32</number>
                </property>
@@ -773,9 +676,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                <property name="toolTip">
                 <string>Expand all</string>
                </property>
-               <property name="styleSheet">
-                <string>QPushButton { font-size: 10pt; padding: 1px 6px; }</string>
-               </property>
                <property name="maximumWidth">
                 <number>32</number>
                </property>
@@ -788,9 +688,6 @@ QPushButton:disabled { color: #BDC3C7; border-color: #BDC3C7; }</string>
                </property>
                <property name="toolTip">
                 <string>Add a top-level key to the config tree</string>
-               </property>
-               <property name="styleSheet">
-                <string>QPushButton { font-size: 8pt; padding: 1px 8px; }</string>
                </property>
                <property name="maximumWidth">
                 <number>60</number>

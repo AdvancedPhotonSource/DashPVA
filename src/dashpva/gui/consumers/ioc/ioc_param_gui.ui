@@ -56,13 +56,11 @@
            <item row="0" column="0">
             <widget class="QLabel" name="labelHeaderAxis">
              <property name="text"><string>Axis / Channel</string></property>
-             <property name="styleSheet"><string>font-weight: bold;</string></property>
             </widget>
            </item>
            <item row="0" column="1">
             <widget class="QLabel" name="labelHeaderSource">
              <property name="text"><string>Source PV or static value (editable)</string></property>
-             <property name="styleSheet"><string>font-weight: bold;</string></property>
             </widget>
            </item>
 
