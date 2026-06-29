@@ -136,6 +136,7 @@ class DiffractionImageWindow(BaseWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
+        self._set_connection_label(False)
 
         # Mask management
         self.mask_manager = MaskManager()

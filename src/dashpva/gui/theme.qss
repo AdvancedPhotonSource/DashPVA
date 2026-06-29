@@ -80,6 +80,9 @@ QLabel#file_status_label {
     padding: 10px;
 }
 
+/* -- Dropdown text (force palette delegation — fixes black text on dark bg) */
+QComboBox, QComboBox QAbstractItemView { color: palette(text); }
+
 /* -- Connection state labels ----------------------------------------- */
 QLabel[connectionState="connected"] { color: $SUCCESS; font-weight: bold; }
 QLabel[connectionState="disconnected"] { color: $ERROR; font-weight: bold; }

@@ -76,6 +76,7 @@ class HKLImageWindow(BaseWindow):
         self.image_is_transposed = False
         self._input_channel = input_channel or app_settings.get_input_channel_hkl3d()
         self.pv_prefix.setText(self._input_channel)
+        self._set_connection_label(False)
 
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
