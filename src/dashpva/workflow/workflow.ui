@@ -297,29 +297,6 @@
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="buttonInitDb">
-           <property name="text">
-            <string>Initialize DB</string>
-           </property>
-           <property name="toolTip">
-            <string>Attempt to create the database file and tables</string>
-           </property>
-           <property name="visible">
-            <bool>false</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="buttonRefreshDb">
-           <property name="text">
-            <string>↻ Refresh</string>
-           </property>
-           <property name="toolTip">
-            <string>Reload the database and refresh the current view</string>
-           </property>
-          </widget>
-         </item>
-         <item>
           <spacer name="horizontalSpacerConfigSource">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -391,6 +368,15 @@
         </widget>
        </item>
 
+       <!-- Database section header (spans full width like labelTomlHeader) -->
+       <item>
+        <widget class="QLabel" name="labelDatabaseHeader">
+         <property name="text">
+          <string>Database</string>
+         </property>
+        </widget>
+       </item>
+
        <!-- View toggle column + content area -->
        <item>
         <layout class="QHBoxLayout" name="viewContentSplitLayout">
@@ -398,6 +384,13 @@
          <!-- Left column: Profile / Settings toggle -->
          <item>
           <layout class="QVBoxLayout" name="viewModeLayout">
+           <item>
+            <widget class="QLabel" name="labelViewMode">
+             <property name="text">
+              <string>View</string>
+             </property>
+            </widget>
+           </item>
            <item>
             <widget class="QRadioButton" name="radioViewProfile">
              <property name="text">
@@ -419,6 +412,29 @@
             </widget>
            </item>
            <item>
+            <spacer name="verticalSpacerViewMode">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>0</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonRefreshDb">
+             <property name="text">
+              <string>↻ Refresh</string>
+             </property>
+             <property name="toolTip">
+              <string>Reload the database and refresh the current view</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="buttonReseed">
              <property name="text">
               <string>Reseed</string>
@@ -429,11 +445,17 @@
             </widget>
            </item>
            <item>
-            <spacer name="verticalSpacerViewMode">
-             <property name="orientation">
-              <enum>Qt::Vertical</enum>
+            <widget class="QPushButton" name="buttonInitDb">
+             <property name="text">
+              <string>Initialize DB</string>
              </property>
-            </spacer>
+             <property name="toolTip">
+              <string>Attempt to create the database file and tables</string>
+             </property>
+             <property name="visible">
+              <bool>false</bool>
+             </property>
+            </widget>
            </item>
           </layout>
          </item>
@@ -441,15 +463,6 @@
          <!-- Right column: database content + search + tree -->
          <item>
           <layout class="QVBoxLayout" name="treeContentLayout">
-
-           <!-- Database section header -->
-           <item>
-            <widget class="QLabel" name="labelDatabaseHeader">
-             <property name="text">
-              <string>Database</string>
-             </property>
-            </widget>
-           </item>
 
            <!-- Database Profile row -->
            <item>
@@ -929,6 +942,16 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonClearOutputMeta">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear the output log below</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacerAssoc">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -1186,6 +1209,16 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="buttonClearOutputCollector">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear the output log below</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacerCollector">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -1416,6 +1449,16 @@
            </property>
            <property name="toolTip">
             <string>Load a saved configuration</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="buttonClearOutputAnalysis">
+           <property name="text">
+            <string>Clear</string>
+           </property>
+           <property name="toolTip">
+            <string>Clear the output log below</string>
            </property>
           </widget>
          </item>

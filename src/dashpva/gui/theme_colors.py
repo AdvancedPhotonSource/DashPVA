@@ -30,7 +30,7 @@ DISABLED_BG = "#9E9E9E"
 SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
 BORDER = "#DEE2E6"
-SIM_BG = "#D6EAF8"
+SIM_BG = "rgba(52, 152, 219, 25)"
 
 # -- Dock title bar (slate header + white text; mirrored in theme.qss) ---------
 DOCK_HEADER_BG = "#2C3E50"
@@ -63,6 +63,7 @@ LOG_DEFAULT = TEXT_PRIMARY
 
 # -- Font sizes (use pt to avoid QFont warnings on macOS high-DPI) -------------
 FONT_HEADING = "17pt"
+FONT_LARGE = "13pt"
 FONT_SUBHEADING = "11pt"
 FONT_BODY = "10pt"
 FONT_CAPTION = "9pt"

@@ -183,14 +183,16 @@ QPushButton[role="warning"]:disabled { background-color: palette(button); color:
 
 /* -- PV config input channel ---------------------------------------- */
 QLineEdit#le_input_channel {
+    color: $TEXT_PRIMARY;
     border: 1px solid palette(mid);
     border-radius: 3px;
 }
 
 /* -- Area detector Start/Stop Live View buttons ----------------------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
-    font-size: $FONT_SUBHEADING;
+    font-size: $FONT_BODY;
     min-height: 50px;
+    padding: 6px 20px;
 }
 
 /* -- imageshow.ui Stats buttons (ROI identity text colors) ------------ */
@@ -274,7 +276,7 @@ QLabel#labelConfigSourceTitle { font-weight: bold; color: $TEXT_SECONDARY; }
 QRadioButton#radioLegacyToml { color: $WARNING; font-weight: bold; }
 QRadioButton#radioDatabase { color: $INFO; font-weight: bold; }
 QLabel#labelDbStatus { color: $DISABLED_BG; font-size: $FONT_SMALL; }
-QPushButton#buttonInitDb, QPushButton#buttonRefreshDb { font-size: $FONT_SMALL; padding: 1px 6px; }
+QPushButton#buttonInitDb, QPushButton#buttonRefreshDb { font-size: $FONT_BODY; padding: 4px 12px; min-height: 28px; }
 QLabel#labelTomlHeader {
     color: $WARNING;
     font-weight: bold;
@@ -284,6 +286,14 @@ QLabel#labelTomlHeader {
     padding: 2px 6px;
 }
 QFrame#separatorLine { color: palette(mid); }
+QLabel#labelViewMode {
+    color: palette(text);
+    font-weight: bold;
+    font-size: $FONT_CAPTION;
+    background-color: palette(button);
+    border-left: 3px solid palette(mid);
+    padding: 2px 6px;
+}
 QLabel#labelDatabaseHeader {
     color: $INFO;
     font-weight: bold;
@@ -292,6 +302,16 @@ QLabel#labelDatabaseHeader {
     border-left: 3px solid $INFO;
     padding: 2px 6px;
 }
+QLabel#labelTomlHeader[sectionActive="false"],
+QLabel#labelDatabaseHeader[sectionActive="false"] {
+    background-color: palette(button);
+    color: palette(mid);
+    border-left: 3px solid palette(mid);
+}
+QTreeWidget#treeWidgetConfig[sectionActive="false"] {
+    background-color: palette(button);
+    color: palette(mid);
+}
 QLabel#labelProfile, QLabel#labelProfileDescription { color: $INFO; font-weight: bold; }
 QComboBox#comboBoxProfile { border: 1px solid $INFO; border-radius: 3px; padding: 2px 6px; }
 QCheckBox#checkBoxDefaultProfile { color: $WARNING; font-size: $FONT_CAPTION; }
@@ -299,6 +319,10 @@ QCheckBox#checkBoxSelectedProfile { color: $SUCCESS; font-size: $FONT_CAPTION; }
 QLineEdit#lineEditProfileDescription { color: $TEXT_SECONDARY; background: transparent; border: none; }
 QPushButton#buttonCollapseAll, QPushButton#buttonExpandAll { font-size: $FONT_BODY; padding: 1px 6px; }
 QPushButton#buttonAddTopLevel { font-size: $FONT_SMALL; padding: 1px 8px; }
+QPushButton#buttonAddProfile { color: $SUCCESS; border: 1px solid $SUCCESS; border-radius: 4px; padding: 6px 14px; }
+QPushButton#buttonAddProfile:disabled { color: palette(mid); border-color: palette(mid); }
+QPushButton#buttonDeleteProfile { color: $ERROR; border: 1px solid $ERROR; border-radius: 4px; padding: 6px 14px; }
+QPushButton#buttonDeleteProfile:disabled { color: palette(mid); border-color: palette(mid); }
 
 /* -- Settings dialog (SettingsDialog) --------------------------------------- */
 QLabel#lbl_placeholder { font-size: $FONT_SUBHEADING; color: $TEXT_SECONDARY; }
