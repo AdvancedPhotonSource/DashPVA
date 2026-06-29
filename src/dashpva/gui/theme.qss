@@ -80,6 +80,10 @@ QLabel#file_status_label {
     padding: 10px;
 }
 
+/* -- Connection state labels ----------------------------------------- */
+QLabel[connectionState="connected"] { color: $SUCCESS; font-weight: bold; }
+QLabel[connectionState="disconnected"] { color: $ERROR; font-weight: bold; }
+
 /* -- Stats labels (ROI docks, controls) ------------------------------ */
 QLabel#stats_label, QLabel#roi_stats_label {
     color: palette(text);

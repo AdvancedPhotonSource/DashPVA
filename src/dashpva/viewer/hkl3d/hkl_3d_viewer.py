@@ -231,8 +231,8 @@ class HKLImageWindow(BaseWindow):
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
-            self.is_connected.setText('Disconnected')
-        
+            self._set_connection_label(False)
+
         if self.reader is not None:
             self._first_plot = True
             self.actor = None
@@ -264,7 +264,7 @@ class HKLImageWindow(BaseWindow):
                     pass
             self.stop_timers()
             self.provider_name.setText('N/A')
-            self.is_connected.setText('Disconnected')
+            self._set_connection_label(False)
 
     def trigger_save_caches(self, clear_caches:bool=True) -> None:
         if not self.file_writer_thread.isRunning():
@@ -304,15 +304,21 @@ class HKLImageWindow(BaseWindow):
         """
         self._input_channel = self.pv_prefix.text()
 
+    def _set_connection_label(self, connected: bool) -> None:
+        state = "connected" if connected else "disconnected"
+        self.is_connected.setText("Connected" if connected else "Disconnected")
+        self.is_connected.setProperty("connectionState", state)
+        self.is_connected.style().unpolish(self.is_connected)
+        self.is_connected.style().polish(self.is_connected)
+
     def update_labels(self) -> None:
         """
         Updates the UI labels with current connection and cached data.
         """
         if self.reader is not None:
             provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-            is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
             self.provider_name.setText(provider_name)
-            self.is_connected.setText(is_connected)
+            self._set_connection_label(self.reader.channel.isMonitorActive())
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
 
