@@ -190,7 +190,7 @@ QLineEdit#le_input_channel {
 
 /* -- Area detector Start/Stop Live View buttons ----------------------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
-    font-size: $FONT_BODY;
+    font-size: $FONT_LARGE;
     min-height: 50px;
     padding: 6px 20px;
 }
