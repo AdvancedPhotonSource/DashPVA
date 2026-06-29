@@ -269,8 +269,8 @@ QPlainTextEdit#txt_notes {
 }
 
 /* -- Workflow dialog --------------------------------------------------------- */
-QTabWidget#tabWidget QTabBar::tab:first { background-color: $SURFACE_ALT; }
-QTabWidget#tabWidget QTabBar::tab:first:selected { background-color: $SURFACE; }
+QTabWidget#tabWidget QTabBar::tab:first { background-color: palette(button); }
+QTabWidget#tabWidget QTabBar::tab:first:selected { background-color: palette(base); }
 QWidget#simServerTab { background-color: $SIM_BG; }
 QLabel#labelConfigSourceTitle { font-weight: bold; color: $TEXT_SECONDARY; }
 QRadioButton#radioLegacyToml { color: $WARNING; font-weight: bold; }
