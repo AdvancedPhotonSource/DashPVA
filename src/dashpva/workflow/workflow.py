@@ -329,6 +329,7 @@ class Workflow(QDialog, LogMixin):
     def __init__(self, parent=None):
         super(Workflow, self).__init__(parent)
         uic.loadUi(str(pathlib.Path(__file__).parent / 'workflow.ui'), self)
+        self.buttonApplySave.setProperty("role", "info")
         try:
             self.set_log_manager(viewer_name="Workflow")
         except Exception:

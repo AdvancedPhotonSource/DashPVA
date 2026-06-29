@@ -10,11 +10,6 @@
     <height>1188</height>
    </rect>
   </property>
-  <property name="font">
-   <font>
-    <pointsize>12</pointsize>
-   </font>
-  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -80,11 +75,6 @@
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QGroupBox" name="fgbLoadData">
-          <property name="font">
-           <font>
-            <pointsize>14</pointsize>
-           </font>
-          </property>
           <property name="title">
            <string>Load Data</string>
           </property>
@@ -106,11 +96,6 @@
             <horstretch>0</horstretch>
             <verstretch>0</verstretch>
            </sizepolicy>
-          </property>
-          <property name="font">
-           <font>
-            <pointsize>14</pointsize>
-           </font>
           </property>
           <property name="title">
            <string>Info</string>
@@ -330,22 +315,12 @@
         </item>
         <item>
          <widget class="QGroupBox" name="formGroupBox">
-          <property name="font">
-           <font>
-            <pointsize>14</pointsize>
-           </font>
-          </property>
           <property name="title">
            <string>Image Resolution</string>
           </property>
           <layout class="QFormLayout" name="formLayout_2">
            <item row="0" column="0">
             <widget class="QLabel" name="lbOriginal">
-             <property name="font">
-              <font>
-               <pointsize>14</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Original</string>
              </property>
@@ -353,11 +328,6 @@
            </item>
            <item row="1" column="0">
             <widget class="QLabel" name="lbOriginalPointSize">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Point Size:</string>
              </property>
@@ -365,11 +335,6 @@
            </item>
            <item row="1" column="1">
             <widget class="QLabel" name="lbOriginalPointSizeNum">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="frameShape">
               <enum>QFrame::Box</enum>
              </property>
@@ -380,11 +345,6 @@
            </item>
            <item row="2" column="0">
             <widget class="QLabel" name="lbOriginalResolution">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Resolution:</string>
              </property>
@@ -394,11 +354,6 @@
             <layout class="QHBoxLayout" name="horizontalLayout_8">
              <item>
               <widget class="QLabel" name="lbOriginalResolutionX">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -412,11 +367,6 @@
              </item>
              <item alignment="Qt::AlignHCenter">
               <widget class="QLabel" name="label_3">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -427,11 +377,6 @@
              </item>
              <item alignment="Qt::AlignHCenter">
               <widget class="QLabel" name="lbOriginalResolutionY">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -444,11 +389,6 @@
            </item>
            <item row="4" column="0">
             <widget class="QLabel" name="lbCurrent">
-             <property name="font">
-              <font>
-               <pointsize>14</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Current</string>
              </property>
@@ -456,11 +396,6 @@
            </item>
            <item row="6" column="0">
             <widget class="QLabel" name="lbCurrentPointSize">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Point Size:</string>
              </property>
@@ -468,11 +403,6 @@
            </item>
            <item row="6" column="1">
             <widget class="QLabel" name="lbCurrentPointSizeNum">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="frameShape">
               <enum>QFrame::Box</enum>
              </property>
@@ -483,11 +413,6 @@
            </item>
            <item row="7" column="0">
             <widget class="QLabel" name="lbCurrentResolution">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="text">
               <string>Resolution:</string>
              </property>
@@ -497,11 +422,6 @@
             <layout class="QHBoxLayout" name="horizontalLayout_13">
              <item>
               <widget class="QLabel" name="lbCurrentResolutionX">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -515,11 +435,6 @@
              </item>
              <item alignment="Qt::AlignHCenter">
               <widget class="QLabel" name="label_4">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -530,11 +445,6 @@
              </item>
              <item alignment="Qt::AlignHCenter">
               <widget class="QLabel" name="lbCurrentResolutionY">
-               <property name="font">
-                <font>
-                 <pointsize>11</pointsize>
-                </font>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
                </property>
@@ -547,11 +457,6 @@
            </item>
            <item row="5" column="0">
             <widget class="QLabel" name="lbTargetCells">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="toolTip">
               <string>Auto target cells per axis. Leave blank for auto (adaptive). Smaller = faster; larger = more detail.</string>
              </property>
@@ -562,11 +467,6 @@
            </item>
            <item row="5" column="1">
             <widget class="QLineEdit" name="leTargetCells">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-              </font>
-             </property>
              <property name="placeholderText">
               <string>Auto (adaptive)</string>
              </property>
@@ -580,11 +480,6 @@
         </item>
         <item>
          <widget class="QGroupBox" name="formGroupBox">
-          <property name="font">
-           <font>
-            <pointsize>14</pointsize>
-           </font>
-          </property>
           <property name="title">
            <string>Toggle Visibility</string>
           </property>
@@ -782,11 +677,6 @@
     </rect>
    </property>
    <widget class="QMenu" name="menuData">
-    <property name="font">
-     <font>
-      <pointsize>14</pointsize>
-     </font>
-    </property>
     <property name="title">
      <string>Data</string>
     </property>
@@ -795,22 +685,12 @@
     <addaction name="actionExtractSlice"/>
    </widget>
    <widget class="QMenu" name="menuControls">
-    <property name="font">
-     <font>
-      <pointsize>14</pointsize>
-     </font>
-    </property>
     <property name="title">
      <string>Controls</string>
     </property>
     <addaction name="actionSlice"/>
    </widget>
    <widget class="QMenu" name="menuTools">
-    <property name="font">
-     <font>
-      <pointsize>14</pointsize>
-     </font>
-    </property>
     <property name="title">
      <string>Tools</string>
     </property>
@@ -823,11 +703,6 @@
     <addaction name="menuView"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
-    <property name="font">
-     <font>
-      <pointsize>14</pointsize>
-     </font>
-    </property>
     <property name="title">
      <string>Settings</string>
     </property>
