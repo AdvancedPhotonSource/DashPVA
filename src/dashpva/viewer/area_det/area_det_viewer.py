@@ -1711,12 +1711,6 @@ def main():
     args, _ = parser.parse_known_args()
 
     app = QApplication(sys.argv)
-    # Fusion is scoped to this viewer because the dock-title QSS rules only
-    # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
-    # titles in native code and ignore stylesheets. Other viewers keep the
-    # platform's native style.
-    from PyQt5.QtWidgets import QStyleFactory
-    app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
     if args.channel:
         window = DiffractionImageWindow(input_channel=args.channel)

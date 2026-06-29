@@ -46,6 +46,14 @@ QTextEdit[readOnly="true"] {
     font-size: $FONT_CAPTION;
 }
 
+/* -- Readonly line inputs (display-only fields) ----------------------- */
+QLineEdit[readOnly="true"] {
+    background-color: palette(button);
+    border: none;
+    padding: 2px 6px;
+    color: palette(text);
+}
+
 /* -- Workbench info tabs --------------------------------------------- */
 QTabWidget#info_tabs::pane {
     border: 1px solid palette(mid);
