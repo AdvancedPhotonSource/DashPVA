@@ -26,15 +26,9 @@ from dashpva.gui.theme_colors import (
 )
 
 # ── Lock categories ────────────────────────────────────────────────────────────
-# Change these lists to control which fields fall into each category.
-#
-#   ALWAYS_EDITABLE  – editable regardless of lock state
-#   UNLOCKABLE       – locked by default; user must toggle unlock to edit
-#   ALWAYS_LOCKED    – read-only display only, never editable
-# ──────────────────────────────────────────────────────────────────────────────
 ALWAYS_EDITABLE = ['output_path', 'log_path']
 UNLOCKABLE      = ['toml_config']
-ALWAYS_LOCKED   = []   # e.g. add 'output_path' here to make it read-only forever
+ALWAYS_LOCKED   = []
 
 
 class _ToggleLock(QPushButton):
@@ -95,7 +89,12 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(420)
         self._build_ui()
         self._prepopulate()
-        self._apply_lock()   # enforce initial (locked) state
+        self._apply_lock()
+        # Record baseline after prepopulate; connect change tracking after that
+        self._initial = self._current_values()
+        for edit in (self.edit_output, self.edit_log, self.edit_toml):
+            edit.textChanged.connect(self._update_action_state)
+        self._update_action_state()
         self.adjustSize()
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -138,24 +137,35 @@ class SettingsDialog(QDialog):
         row3.addWidget(self.btn_browse_toml)
         form.addRow("TOML Config", row3)
 
-        # Apply / Cancel / Reseed buttons
-        self.btn_apply = QPushButton("Apply / Save", self)
-        self.btn_apply.setDefault(True)
-        self.btn_cancel = QPushButton("Cancel", self)
+        # Re-seed row (separate from the action bar)
         self.btn_reseed = QPushButton("Re-seed", self)
         self.btn_reseed.setToolTip("Re-seed missing default values for the currently selected profile")
+        reseed_row = QHBoxLayout()
+        reseed_row.addWidget(self.btn_reseed)
+        reseed_row.addStretch()
 
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(self.btn_reseed)
-        btn_row.addWidget(self.btn_cancel)
-        btn_row.addWidget(self.btn_apply)
+        # Action bar — Clear and Apply / Save only
+        self.btn_clear = QPushButton("Clear", self)
+        self.btn_clear.setObjectName("btn_settings_clear")
+        self.btn_clear.setEnabled(False)
+        self.btn_apply = QPushButton("Apply / Save", self)
+        self.btn_apply.setObjectName("btn_settings_apply")
+        self.btn_apply.setEnabled(False)
+
+        action_bar = QFrame(self)
+        action_bar.setObjectName("action_bar")
+        bar_layout = QHBoxLayout(action_bar)
+        bar_layout.setContentsMargins(8, 6, 8, 6)
+        bar_layout.addStretch()
+        bar_layout.addWidget(self.btn_clear)
+        bar_layout.addWidget(self.btn_apply)
 
         root = QVBoxLayout()
         root.addLayout(lock_row)
         root.addWidget(sep)
         root.addLayout(form)
-        root.addLayout(btn_row)
+        root.addLayout(reseed_row)
+        root.addWidget(action_bar)
         self.setLayout(root)
 
         # Connections
@@ -165,8 +175,24 @@ class SettingsDialog(QDialog):
             lambda: self._pick_dir(self.edit_log, "Select LOG_PATH"))
         self.btn_browse_toml.clicked.connect(self._pick_toml)
         self.btn_apply.clicked.connect(self._on_apply)
-        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_clear.clicked.connect(self._on_clear)
         self.btn_reseed.clicked.connect(self._on_reseed)
+
+    # ── Change tracking ───────────────────────────────────────────────────────
+
+    def _current_values(self) -> dict:
+        return {
+            'output': self.edit_output.text(),
+            'log':    self.edit_log.text(),
+            'toml':   self.edit_toml.text(),
+        }
+
+    def _update_action_state(self):
+        if not hasattr(self, '_initial'):
+            return
+        changed = self._current_values() != self._initial
+        self.btn_apply.setEnabled(changed)
+        self.btn_clear.setEnabled(changed)
 
     # ── Prepopulate from current settings ────────────────────────────────────
 
@@ -235,6 +261,13 @@ class SettingsDialog(QDialog):
         if path:
             self.edit_toml.setText(path)
 
+    # ── Clear (reset to saved) ────────────────────────────────────────────────
+
+    def _on_clear(self):
+        self.edit_output.setText(self._initial['output'])
+        self.edit_log.setText(self._initial['log'])
+        self.edit_toml.setText(self._initial['toml'])
+
     # ── Apply / Save ──────────────────────────────────────────────────────────
 
     def _on_apply(self):
@@ -249,7 +282,6 @@ class SettingsDialog(QDialog):
             self._save()
 
     def _save(self):
-        # Write values back to the settings module globals
         output = self.edit_output.text().strip()
         log = self.edit_log.text().strip()
         toml = self.edit_toml.text().strip()
@@ -260,7 +292,6 @@ class SettingsDialog(QDialog):
             settings.LOG_PATH = log
         settings.TOML_FILE = toml or None
 
-        # Reload config from TOML if path changed
         if toml:
             try:
                 settings.set_locator(toml)

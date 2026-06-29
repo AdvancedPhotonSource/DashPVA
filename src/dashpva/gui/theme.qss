@@ -190,6 +190,13 @@ QPushButton#btn_delete_roi {
     background-color: $ERROR;
 }
 
+/* -- Config tab Apply / Save button ---------------------------------- */
+QPushButton#buttonApplySave {
+    background-color: $INFO;
+}
+QPushButton#buttonApplySave:hover { background-color: $INFO_HOVER; }
+QPushButton#buttonApplySave:disabled { background-color: $DISABLED_BG; color: white; }
+
 /* -- PV config input channel ---------------------------------------- */
 QLineEdit#le_input_channel {
     border: 1px solid palette(mid);
