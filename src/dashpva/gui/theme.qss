@@ -168,7 +168,7 @@ QPushButton[role="info"] {
     padding: 6px 14px;
 }
 QPushButton[role="info"]:hover { background-color: $INFO_HOVER; }
-QPushButton[role="info"]:disabled { background-color: palette(mid); color: palette(midlight); }
+QPushButton[role="info"]:disabled { background-color: palette(button); color: palette(mid); }
 
 QPushButton[role="warning"] {
     background-color: $WARNING;
@@ -281,7 +281,7 @@ QLabel#labelTomlHeader {
     color: $WARNING;
     font-weight: bold;
     font-size: $FONT_CAPTION;
-    background-color: $SURFACE_ALT;
+    background-color: palette(button);
     border-left: 3px solid $WARNING;
     padding: 2px 6px;
 }
@@ -298,7 +298,7 @@ QLabel#labelDatabaseHeader {
     color: $INFO;
     font-weight: bold;
     font-size: $FONT_CAPTION;
-    background-color: $SURFACE_ALT;
+    background-color: palette(button);
     border-left: 3px solid $INFO;
     padding: 2px 6px;
 }
@@ -336,7 +336,7 @@ QLabel#label_header { font-size: $FONT_SUBHEADING; font-weight: bold; color: $TE
 QLabel#label_status { color: $SUCCESS; font-weight: bold; }
 QLabel#image_info_label { color: palette(text); font-size: $FONT_BODY; font-weight: bold; }
 QTextEdit#dataset_info_text, QTextEdit#file_info_text {
-    background-color: $SURFACE;
+    background-color: palette(base);
     border: none;
     padding: 6px;
     font-family: 'Consolas', monospace;
