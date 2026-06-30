@@ -136,6 +136,7 @@ class DiffractionImageWindow(BaseWindow):
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
+        self._set_connection_label(False)
 
         # Mask management
         self.mask_manager = MaskManager()
@@ -839,7 +840,7 @@ class DiffractionImageWindow(BaseWindow):
             del self.reader
             self.reader = None
             self.provider_name.setText('N/A')
-            self.is_connected.setText('Disconnected')
+            self._set_connection_label(False)
             self.file_writer_thread.terminate()
         
         try:
@@ -877,7 +878,7 @@ class DiffractionImageWindow(BaseWindow):
             self.hkl_pvs = {}
             self.hkl_data = {}
             self.provider_name.setText('N/A')
-            self.is_connected.setText('Disconnected')
+            self._set_connection_label(False)
 
     def stats_button_clicked(self) -> None:
         """
@@ -1421,6 +1422,13 @@ class DiffractionImageWindow(BaseWindow):
         """
         self.image_view.update()
 
+    def _set_connection_label(self, connected: bool) -> None:
+        state = "connected" if connected else "disconnected"
+        self.is_connected.setText("Connected" if connected else "Disconnected")
+        self.is_connected.setProperty("connectionState", state)
+        self.is_connected.style().unpolish(self.is_connected)
+        self.is_connected.style().polish(self.is_connected)
+
     def update_pv_prefix(self) -> None:
         self._input_channel = self.pv_prefix.text()
     
@@ -1488,9 +1496,8 @@ class DiffractionImageWindow(BaseWindow):
         """
         if self.reader is not None:
             provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-            is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
             self.provider_name.setText(provider_name)
-            self.is_connected.setText(is_connected)
+            self._set_connection_label(self.reader.channel.isMonitorActive())
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             self.plot_call_id.setText(f'{self.call_id_plot:d}')
@@ -1711,12 +1718,6 @@ def main():
     args, _ = parser.parse_known_args()
 
     app = QApplication(sys.argv)
-    # Fusion is scoped to this viewer because the dock-title QSS rules only
-    # take effect under Fusion — native Linux styles (Breeze/GTK) draw dock
-    # titles in native code and ignore stylesheets. Other viewers keep the
-    # platform's native style.
-    from PyQt5.QtWidgets import QStyleFactory
-    app.setStyle(QStyleFactory.create("Fusion"))
     configure_app(app)
     if args.channel:
         window = DiffractionImageWindow(input_channel=args.channel)

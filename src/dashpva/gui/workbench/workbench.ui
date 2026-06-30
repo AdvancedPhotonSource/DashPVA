@@ -95,9 +95,6 @@
         </property>
         <item>
          <widget class="QLabel" name="label_header">
-          <property name="styleSheet">
-           <string notr="true">font-size: 12pt; font-weight: bold; color: #2c3e50;</string>
-          </property>
           <property name="text">
            <string>Analysis Workbench</string>
           </property>
@@ -125,9 +122,6 @@
            <widget class="QLabel" name="label_status">
             <property name="text">
              <string>Ready</string>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">color: #27ae60; font-weight: bold;</string>
             </property>
            </widget>
           </item>
@@ -159,9 +153,6 @@
                 <widget class="QLabel" name="image_info_label">
                  <property name="text">
                   <string>Image Dimensions: -</string>
-                 </property>
-                 <property name="styleSheet">
-                  <string notr="true">color: #000000; font-size: 10pt; font-weight: bold;</string>
                  </property>
                  <property name="alignment">
                   <set>Qt::AlignCenter</set>
@@ -600,9 +591,6 @@
                  <property name="text">
                   <string>No HDF5 file loaded</string>
                  </property>
-                 <property name="styleSheet">
-                  <string notr="true">font-size: 11pt; font-weight: bold; color: #2c3e50; padding: 10px;</string>
-                 </property>
                  <property name="alignment">
                   <set>Qt::AlignCenter</set>
                  </property>
@@ -639,15 +627,6 @@
                      <property name="readOnly">
                       <bool>true</bool>
                      </property>
-                     <property name="styleSheet">
-                      <string notr="true">QTextEdit {
-    background-color: #f8f9fa;
-    border: none;
-    padding: 6px;
-    font-family: 'Consolas', monospace;
-    font-size: 9pt;
-}</string>
-                     </property>
                      <property name="plainText">
                       <string>Select a dataset from the tree to view detailed information.</string>
                      </property>
@@ -664,15 +643,6 @@
                     <widget class="QTextEdit" name="file_info_text">
                      <property name="readOnly">
                       <bool>true</bool>
-                     </property>
-                     <property name="styleSheet">
-                      <string notr="true">QTextEdit {
-    background-color: #f8f9fa;
-    border: none;
-    padding: 6px;
-    font-family: 'Consolas', monospace;
-    font-size: 9pt;
-}</string>
                      </property>
                      <property name="plainText">
                       <string>Load an HDF5 file to view file information.</string>

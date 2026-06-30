@@ -329,6 +329,12 @@ class Workflow(QDialog, LogMixin):
     def __init__(self, parent=None):
         super(Workflow, self).__init__(parent)
         uic.loadUi(str(pathlib.Path(__file__).parent / 'workflow.ui'), self)
+        self.viewModeLayout.setAlignment(Qt.AlignTop)
+        # Pre-set sectionActive so QSS property selectors fire on first _on_config_source_changed
+        self.labelTomlHeader.setProperty("sectionActive", "true")
+        self.labelDatabaseHeader.setProperty("sectionActive", "true")
+        self.treeWidgetConfig.setProperty("sectionActive", "true")
+        self.buttonApplySave.setProperty("role", "info")
         try:
             self.set_log_manager(viewer_name="Workflow")
         except Exception:
@@ -417,18 +423,21 @@ class Workflow(QDialog, LogMixin):
         self.buttonLoadConfigMeta.clicked.connect(
             lambda: self._load_named_config_dialog(self._META_ASSOC_PATH, self._apply_meta_assoc_config)
         )
+        self.buttonClearOutputMeta.clicked.connect(self.textEditAssociatorConsumersOutput.clear)
         self.buttonSaveConfigCollector.clicked.connect(
             lambda: self._save_named_config_dialog(self._COLLECTOR_PATH, self._collect_collector_config)
         )
         self.buttonLoadConfigCollector.clicked.connect(
             lambda: self._load_named_config_dialog(self._COLLECTOR_PATH, self._apply_collector_config)
         )
+        self.buttonClearOutputCollector.clicked.connect(self.textEditCollectorOutput.clear)
         self.buttonSaveConfigAnalysis.clicked.connect(
             lambda: self._save_named_config_dialog(self._ANALYSIS_PATH, self._collect_analysis_config)
         )
         self.buttonLoadConfigAnalysis.clicked.connect(
             lambda: self._load_named_config_dialog(self._ANALYSIS_PATH, self._apply_analysis_config)
         )
+        self.buttonClearOutputAnalysis.clicked.connect(self.textEditAnalysisConsumerOutput.clear)
 
         # Check DB availability, populate combo, then switch to DB mode if possible
         self._check_db_availability()
@@ -450,14 +459,14 @@ class Workflow(QDialog, LogMixin):
             self._db = DatabaseInterface()
             self._db.get_all_profiles()  # confirm tables are queryable
             self._db_available = True
-            self.labelDbStatus.setText('● Available')
+            self.labelDbStatus.setText('● DB Available')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {SUCCESS}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip('')
             self.radioDatabase.setEnabled(True)
             self.buttonInitDb.setVisible(False)
         except Exception as e:
             self._db_available = False
-            self.labelDbStatus.setText('● Unavailable')
+            self.labelDbStatus.setText('● DB Unavailable')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {ERROR}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip(f'Error: {e}')
             self.radioDatabase.setEnabled(False)
@@ -558,19 +567,39 @@ class Workflow(QDialog, LogMixin):
         self.lineEditConfigUploadPath.setEnabled(legacy)
         self.buttonBrowseConfigUpload.setEnabled(legacy)
 
-        # Import TOML is available in both modes
-        self.buttonImportToml.setEnabled(True)
-
         # Database controls (only enable if DB is also available)
         db_active = not legacy and self._db_available
+
+        # TOML import/export operate on the database — only active in DB mode
+        self.buttonImportToml.setEnabled(db_active)
+        self.buttonExportConfigToFile.setEnabled(db_active)
+        self.labelProfile.setEnabled(db_active)
         self.comboBoxProfile.setEnabled(db_active)
+        self.labelProfileDescription.setEnabled(db_active)
+        self.lineEditProfileDescription.setEnabled(db_active)
         self.checkBoxDefaultProfile.setEnabled(db_active)
         self.checkBoxSelectedProfile.setEnabled(db_active)
+        self.radioViewProfile.setEnabled(db_active)
         self.radioViewSettings.setEnabled(db_active)
+        self.buttonReseed.setEnabled(db_active)
+        self.buttonRefreshDb.setEnabled(db_active)
         self.buttonAddProfile.setEnabled(db_active)
         self.buttonRenameProfile.setEnabled(db_active)
         self.buttonDeleteProfile.setEnabled(db_active)
         self.buttonDuplicateProfile.setEnabled(db_active)
+
+        # Grey overlay on inactive section headers and config tree
+        state_toml = "true" if legacy else "false"
+        state_db = "true" if db_active else "false"
+        for widget, state in (
+            (self.labelTomlHeader, state_toml),
+            (self.labelDatabaseHeader, state_db),
+            (self.treeWidgetConfig, state_db),
+        ):
+            widget.setProperty("sectionActive", state)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
 
         # When first activating DB mode, auto-select the first profile as default+selected
         if db_active:
@@ -811,7 +840,6 @@ class Workflow(QDialog, LogMixin):
 
     def _set_profile_widgets_visible(self, visible: bool):
         for w in (
-            self.labelDatabaseHeader,
             self.labelProfile, self.comboBoxProfile,
             self.checkBoxDefaultProfile, self.checkBoxSelectedProfile,
             self.labelProfileDescription, self.lineEditProfileDescription,

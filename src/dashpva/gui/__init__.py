@@ -17,7 +17,11 @@ def configure_app(app):
     """
     from string import Template
 
+    from PyQt5.QtWidgets import QStyleFactory
+
     from dashpva.gui import theme_colors
+
+    app.setStyle(QStyleFactory.create("Fusion"))
 
     qss_file = _GUI_DIR / "theme.qss"
     if qss_file.is_file():

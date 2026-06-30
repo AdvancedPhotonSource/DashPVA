@@ -16,9 +16,6 @@
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QLabel" name="lbl_description">
-     <property name="styleSheet">
-      <string notr="true">color: #666;</string>
-     </property>
      <property name="text">
       <string>Convert metadata in an HDF5 file or all .h5 files in a folder recursively. Files already in the format are skipped. Defaults: modify files in place, include data/constants, base group entry/data/metadata. Select a TOML mapping file; change options if you don&apos;t want the defaults.</string>
      </property>
@@ -144,9 +141,6 @@
         </property>
         <property name="toolTip">
          <string>This will force a conversion on files and a directory</string>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">color: red;</string>
         </property>
        </widget>
       </item>
