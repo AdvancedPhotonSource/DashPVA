@@ -31,6 +31,7 @@ from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
+    BeamFitDock,
     ImageDock,
     MaskDock,
     MousePosDock,
@@ -49,7 +50,7 @@ _PERF_TIMER_INTERVAL_MS = 1000
 # Bump when the dock set changes — restoreState silently rejects mismatched
 # versions so users with a stale saved layout fall back to defaults instead
 # of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 2
+_DOCK_STATE_VERSION = 3
 
 
 def _settings() -> QSettings:
@@ -301,6 +302,7 @@ class DiffractionImageWindow(BaseWindow):
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
         self.waterfall_dock = WaterfallDock(main_window=self, show=False)
+        self.beam_fit_dock  = BeamFitDock(main_window=self, show=False)
 
         self._apply_default_layout()
         # Restore the user's last layout if one was saved; falls through to
@@ -400,17 +402,19 @@ class DiffractionImageWindow(BaseWindow):
         self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
         # Waterfall shares the large lower-left region with Image when shown.
         self.tabifyDockWidget(self.image_dock, self.waterfall_dock)
+        self.tabifyDockWidget(self.image_dock, self.beam_fit_dock)
         self.image_dock.raise_()
         self.roi_dock.hide()
         self.analysis_dock.hide()
         self.waterfall_dock.hide()
+        self.beam_fit_dock.hide()
 
     def _reset_layout(self) -> None:
         _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock,
-                  self.waterfall_dock):
+                  self.waterfall_dock, self.beam_fit_dock):
             self.removeDockWidget(d)
             d.setFloating(False)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
@@ -792,6 +796,8 @@ class DiffractionImageWindow(BaseWindow):
             # Tear down the waterfall's manual ROI + buffer for the new channel.
             if hasattr(self, 'waterfall_dock'):
                 self.waterfall_dock.on_channel_changed()
+            if hasattr(self, 'beam_fit_dock'):
+                self.beam_fit_dock.on_channel_changed()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
