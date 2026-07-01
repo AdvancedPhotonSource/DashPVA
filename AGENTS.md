@@ -168,6 +168,18 @@ All standalone viewer windows must inherit from `BaseWindow` (`src/dashpva/viewe
 
    The dialog auto-discovers either file next to the viewer's module. For a non-standard location, set `self.doc_path = "<absolute or relative path>"` on the viewer instance after `super().__init__(...)`.
 
+## Architecture — components own their domain (all viewers)
+
+This applies to **every** viewer (Workbench, Area Detector, HKL, Scan, …), not just the Workbench. Each viewer window is a **thin coordinator**, not a god object: it instantiates components, wires cross-cutting signals, and holds only genuinely shared state. Every dock and workspace owns the functionality specific to *its* concern; domain logic must live in the component, never as a blob inside the window (or the workspace).
+
+**Rules (follow these in all viewers):**
+- **Docks own their panel.** A dock computes and formats its own content. `Info2DDock` owns 2D-info presentation (dims, current-frame details, pixel readout), `Info3DDock` owns 3D info (HKL/volume/slice), `AnnotationDock` owns per-frame notes, `ROICalcDock` owns ROI math, the Area Detector's waterfall/stats docks own their own analysis, etc. A change to "how 2D info is shown" touches `info_2d_dock.py` alone.
+- **Workspaces own their viewer, not their docks.** `Workspace2D` owns the 2D image view, controls, playback, levels, hover; `Workspace3D` owns the 3D view. A workspace may *notify* a dock that data changed (coordination), but must not contain that dock's presentation/analysis logic. Keep dock-specific behavior out of the workspace.
+- **Components reach shared state via `self.main_window.<x>`** (e.g. `main_window.roi_manager`, `main_window.get_current_frame_data()`) — they do not duplicate it or reach into another component's internals.
+- **The window exposes thin forwards for its own data**, so components need no edits when logic is relocated. Example: `WorkbenchWindow` provides read-only `@property` forwards (`image_view`, `plot_item`, `frame_spinbox`, `current_2d_data`) and passthrough methods (`display_2d_data`, `clear_2d_plot`, `get_current_frame_data`, `start_playback`, `open_roi_2d_plot_dock`) that delegate to `self.tab_2d`. This is the template: when a component moves out of the window, add a guarded forward rather than editing every caller.
+
+When extending any viewer, put the code in the owning component. If it needs window-owned data, add/extend a forward — don't grow the window or push dock logic into a workspace.
+
 ## Adding a dock
 
 All dockable panels must inherit from `BaseDock` (`src/dashpva/viewer/core/docks/base_dock.py`), not raw `QDockWidget`. `BaseDock.setup()` handles `addDockWidget`, sets a namespaced `objectName` for `saveState`/`restoreState`, and registers a toggle action under the Windows menu automatically.
@@ -208,6 +220,7 @@ self.info_dock.raise_()   # bring the default tab forward
 ```
 
 **Key rules:**
+- A dock owns the logic for its own concern (see *Workbench architecture* above). Compute/format the dock's content inside the dock, pulling shared data via `main_window` forwards — do not put dock-specific logic in the viewer window.
 - `segment_name` groups related docks under a Windows submenu (e.g. `"2d"`, `"3d"`, `"analysis"`). Use a consistent name across docks that belong together.
 - Bump the module-level `_DOCK_STATE_VERSION` integer in the viewer whenever the dock set changes — `restoreState` silently rejects mismatched versions.
 - Use `splitDockWidget` / `tabifyDockWidget` / `resizeDocks` after all docks are created to establish the initial layout.
