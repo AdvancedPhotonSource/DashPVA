@@ -19,14 +19,17 @@ from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QDockWidget,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMenu,
     QMessageBox,
+    QSlider,
     QTableWidgetItem,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from dashpva.gui import configure_app
@@ -1249,6 +1252,31 @@ class WorkbenchWindow(BaseWindow):
                 self.layout1DPlotHost.addWidget(self.plot_widget_1d)
             else:
                 print("Warning: layout1DPlotHost not found, 1D plot may not display correctly")
+
+            # Vertical marker + slider to read off the y value at any index.
+            self._x_1d = None
+            self._y_1d = None
+            self._marker_1d = pg.InfiniteLine(
+                angle=90, movable=False, pen=pg.mkPen(color=(0, 200, 255), width=1))
+            self._marker_1d.hide()
+            self.plot_item_1d.addItem(self._marker_1d)
+
+            slider_row = QWidget()
+            slider_row.setObjectName("oneDSliderRow")
+            row_lay = QHBoxLayout(slider_row)
+            row_lay.setContentsMargins(6, 0, 6, 4)
+            row_lay.setSpacing(8)
+            self.slider_1d = QSlider(Qt.Horizontal)
+            self.slider_1d.setObjectName("oneDValueSlider")
+            self.slider_1d.setEnabled(False)
+            self.label_1d_value = QLabel("")
+            self.label_1d_value.setObjectName("oneDValueLabel")
+            row_lay.addWidget(self.slider_1d, 1)
+            row_lay.addWidget(self.label_1d_value)
+            self.slider_1d.valueChanged.connect(self.on_1d_slider_changed)
+            if hasattr(self, 'layout1DPlotHost'):
+                self.layout1DPlotHost.addWidget(slider_row)
+
             self.clear_1d_plot()
             # Setup 1D controls connections (delegated)
             self.controls_1d.setup()
@@ -3413,8 +3441,35 @@ class WorkbenchWindow(BaseWindow):
         try:
             if hasattr(self, 'plot_item_1d'):
                 self.plot_item_1d.clear()
+            self._x_1d = None
+            self._y_1d = None
+            if hasattr(self, '_marker_1d'):
+                self._marker_1d.hide()
+            if hasattr(self, 'slider_1d'):
+                self.slider_1d.blockSignals(True)
+                self.slider_1d.setValue(0)
+                self.slider_1d.setEnabled(False)
+                self.slider_1d.blockSignals(False)
+            if hasattr(self, 'label_1d_value'):
+                self.label_1d_value.setText("")
         except Exception as e:
             self.update_status(f"Error clearing 1D plot: {e}")
+
+    def on_1d_slider_changed(self, index):
+        """Move the 1D marker to the selected index and show its y value."""
+        try:
+            if self._y_1d is None or len(self._y_1d) == 0:
+                return
+            index = max(0, min(int(index), len(self._y_1d) - 1))
+            xval = float(self._x_1d[index])
+            yval = float(self._y_1d[index])
+            if hasattr(self, '_marker_1d'):
+                self._marker_1d.setValue(xval)
+                self._marker_1d.show()
+            if hasattr(self, 'label_1d_value'):
+                self.label_1d_value.setText(f"index {index}    y = {yval:.6g}")
+        except Exception as e:
+            self.update_status(f"Error updating 1D slider: {e}")
 
     def display_1d_data(self, data):
         """Display 1D numeric data in the 1D View."""
@@ -3424,8 +3479,23 @@ class WorkbenchWindow(BaseWindow):
                 return
             y = np.asarray(data, dtype=np.float32).ravel()
             x = np.arange(len(y))
+            self._x_1d = x
+            self._y_1d = y
             self.plot_item_1d.clear()
             self.plot_item_1d.plot(x, y, pen='y')
+            # plot_item.clear() removed the marker — re-add and configure the slider
+            if hasattr(self, '_marker_1d'):
+                self.plot_item_1d.addItem(self._marker_1d)
+            if hasattr(self, 'slider_1d'):
+                n = len(y)
+                self.slider_1d.blockSignals(True)
+                self.slider_1d.setMinimum(0)
+                self.slider_1d.setMaximum(max(0, n - 1))
+                self.slider_1d.setValue(0)
+                self.slider_1d.setEnabled(n > 0)
+                self.slider_1d.blockSignals(False)
+                if n > 0:
+                    self.on_1d_slider_changed(0)
             # Switch to 1D view tab
             if hasattr(self, 'tabWidget_analysis'):
                 for i in range(self.tabWidget_analysis.count()):
