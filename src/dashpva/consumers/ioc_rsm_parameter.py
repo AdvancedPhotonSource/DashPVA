@@ -269,23 +269,44 @@ def _run_ioc(prefix: str) -> None:
     _stop      = threading.Event()
     _pv_mons   = {}          # pv_name -> epics.PV object
     _pv_mons_lock = threading.Lock()
+    _pv_down   = set()       # source PVs currently failing — dedup so we log once
     signal.signal(signal.SIGTERM, lambda *_: _stop.set())
 
     def _get(src):
-        """Return float: static if src parses as float, else latest CA monitor value."""
+        """Return float: static if src parses as float, else latest CA monitor value.
+           Empty/blank input means "unused" → 0.0 (no PV lookup, no logging).
+           A PV that fails to come up is logged once and treated as 0.0 so one bad
+           source does not stall the whole publish loop."""
+        src = (src or '').strip()
+        if not src:
+            return 0.0
         try:
             return float(src)
         except ValueError:
-            with _pv_mons_lock:
-                if src not in _pv_mons:
-                    _pv_mons[src] = _PV(src, auto_monitor=True)
-                v = _pv_mons[src].get(use_monitor=True)
-            return float(v) if v is not None else 0.0
+            pass
+        with _pv_mons_lock:
+            if src not in _pv_mons:
+                _pv_mons[src] = _PV(src, auto_monitor=True)
+            v = _pv_mons[src].get(use_monitor=True)
+        try:
+            if v is None:
+                raise ValueError('no connection / no value')
+            result = float(v)
+        except (TypeError, ValueError) as e:
+            if src not in _pv_down:
+                _pv_down.add(src)
+                print(f'[IOC] PV not coming up: {src!r} ({e})', flush=True)
+            return 0.0
+        if src in _pv_down:
+            _pv_down.discard(src)
+            print(f'[IOC] PV recovered: {src!r}', flush=True)
+        return result
 
     # ── Background caget poll for static IOC records (2 Hz) ──────────────
     # Uses caget on our own IOC's PV names so external CA writes (caput from
     # scan software, alignment tools, etc.) are reflected in the snapshot.
     _static_pv_names = list(_current_vals.keys())   # all keys populated by startup ioc_puts
+    _static_down = set()     # IOC records currently not responding — dedup logging
 
     def _poll_static():
         while not _stop.is_set():
@@ -293,14 +314,22 @@ def _run_ioc(prefix: str) -> None:
                 try:
                     v = _caget(pv_name, timeout=0.3)
                     if v is None:
+                        if pv_name not in _static_down:
+                            _static_down.add(pv_name)
+                            print(f'[IOC] PV not coming up: {pv_name!r} (caget timeout)', flush=True)
                         continue
                     if hasattr(v, 'tolist'):          # numpy array → plain list
                         v = v.tolist()
                     elif hasattr(v, 'item'):          # numpy scalar → Python scalar
                         v = v.item()
                     _current_vals[pv_name] = v
-                except Exception:
-                    pass
+                    if pv_name in _static_down:
+                        _static_down.discard(pv_name)
+                        print(f'[IOC] PV recovered: {pv_name!r}', flush=True)
+                except Exception as e:
+                    if pv_name not in _static_down:
+                        _static_down.add(pv_name)
+                        print(f'[IOC] PV not coming up: {pv_name!r} ({e})', flush=True)
             _stop.wait(0.5)   # 2 Hz is plenty for slowly-changing values
 
     threading.Thread(target=_poll_static, daemon=True).start()
