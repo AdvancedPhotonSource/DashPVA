@@ -506,7 +506,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             self._progress.setVisible(False)
             self.statusBar().addPermanentWidget(self._progress)
             self.statusBar().showMessage('Starting…')
-            self.resize(780, 820)
+            self.resize(780, 980)
 
         def _flash_applying(self):
             self._progress.setRange(0, 0)   # indeterminate "busy" sweep
@@ -560,6 +560,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                     item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     self._pv_table.setItem(row, 1, item)
                     self._pv_val_items.append(item)
+                self._fit_pv_table_height()
                 self._worker = PollWorker(_all_pv_names(new_prefix))
                 self._worker.results_ready.connect(self._apply_results)
                 self._worker.start()
@@ -625,6 +626,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                 1, QHeaderView.ResizeToContents)
             self._pv_table.verticalHeader().setVisible(False)
             self._pv_table.setEditTriggers(QTableWidget.NoEditTriggers)
+            self._pv_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self._pv_val_items = []
             for row, (pv, _) in enumerate(self._all_pvs):
                 self._pv_table.setItem(row, 0, QTableWidgetItem(pv))
@@ -632,8 +634,18 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 self._pv_table.setItem(row, 1, item)
                 self._pv_val_items.append(item)
+            self._fit_pv_table_height()
             lay.addWidget(self._pv_table)
             return grp
+
+        def _fit_pv_table_height(self):
+            """Size the records table to show every row; the window scroll area
+               handles overflow instead of an inner scrollbar."""
+            t = self._pv_table
+            vh = t.verticalHeader()
+            row_total = vh.length() or (vh.defaultSectionSize() * t.rowCount())
+            header = t.horizontalHeader().height() or 24
+            t.setMinimumHeight(row_total + header + 2 * t.frameWidth())
 
         def _apply_results(self, values):
             for item, text in zip(self._pv_val_items, values):
