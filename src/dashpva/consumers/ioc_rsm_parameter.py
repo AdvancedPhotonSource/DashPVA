@@ -410,7 +410,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
     init_energy          : energy source restored from config.
     on_config_change     : called with (motor_sources, energy_source) on any edit.
     """
-    from PyQt5.QtCore import Qt, QThread, pyqtSignal
+    from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
     from PyQt5.QtWidgets import (
         QApplication,
         QGridLayout,
@@ -420,6 +420,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
         QLabel,
         QLineEdit,
         QMainWindow,
+        QProgressBar,
         QPushButton,
         QScrollArea,
         QStatusBar,
@@ -499,8 +500,21 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             root.addWidget(self._build_pv_table_group())
             root.addStretch()
             self.setStatusBar(QStatusBar())
+            self._progress = QProgressBar()
+            self._progress.setFixedWidth(170)
+            self._progress.setTextVisible(False)
+            self._progress.setVisible(False)
+            self.statusBar().addPermanentWidget(self._progress)
             self.statusBar().showMessage('Starting…')
             self.resize(780, 820)
+
+        def _flash_applying(self):
+            self._progress.setRange(0, 0)   # indeterminate "busy" sweep
+            self._progress.setVisible(True)
+            QTimer.singleShot(800, self._hide_progress)
+
+        def _hide_progress(self):
+            self._progress.setVisible(False)
 
         def _build_input_group(self):
             grp = QGroupBox('Source PV Inputs  —  enter a PV name or a static number')
@@ -518,6 +532,11 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             btn_apply_prefix = QPushButton('Apply')
             btn_apply_prefix.setFixedWidth(60)
             def _on_apply_prefix():
+                self._progress.setRange(0, 100)
+                self._progress.setValue(0)
+                self._progress.setVisible(True)
+                self.statusBar().showMessage('Applying prefix…')
+                QApplication.processEvents()
                 new_prefix = self._prefix_edit.text().strip()
                 if not new_prefix.endswith(':'):
                     new_prefix += ':'
@@ -525,23 +544,29 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                 self._prefix = new_prefix
                 grp.setTitle(f'Source PV Inputs  —  prefix: {new_prefix}')
                 restart_ioc(new_prefix)
+                self._progress.setValue(40)
+                QApplication.processEvents()
                 # Restart the PV poll worker with the new prefix PV names
                 self._worker.stop()
                 self._worker.wait(2000)
+                self._progress.setValue(70)
+                QApplication.processEvents()
                 self._all_pvs = _all_pv_names(new_prefix)
                 self._pv_table.setRowCount(len(self._all_pvs))
                 self._pv_val_items = []
                 for row, (pv, _) in enumerate(self._all_pvs):
                     self._pv_table.setItem(row, 0, QTableWidgetItem(pv))
-                    from PyQt5.QtCore import Qt as _Qt
                     item = QTableWidgetItem('—')
-                    item.setTextAlignment(_Qt.AlignLeft | _Qt.AlignVCenter)
+                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     self._pv_table.setItem(row, 1, item)
                     self._pv_val_items.append(item)
                 self._worker = PollWorker(_all_pv_names(new_prefix))
                 self._worker.results_ready.connect(self._apply_results)
                 self._worker.start()
+                self._progress.setValue(100)
+                QApplication.processEvents()
                 self.statusBar().showMessage(f'IOC restarted with prefix: {new_prefix}')
+                self._progress.setVisible(False)
             btn_apply_prefix.clicked.connect(_on_apply_prefix)
             prefix_lay.addWidget(self._prefix_edit)
             prefix_lay.addWidget(btn_apply_prefix)
@@ -569,6 +594,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                     self._cur_motors[name] = val
                     send_cmd({'type': 'motor', 'name': name, 'value': val})
                     _notify()
+                    self._flash_applying()
                 edit.editingFinished.connect(_on_motor)
                 grid.addWidget(edit, row, 1)
                 self._motor_pv_edits.append(edit)
@@ -581,6 +607,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
                 self._cur_energy = val
                 send_cmd({'type': 'energy', 'value': val})
                 _notify()
+                self._flash_applying()
             self._energy_edit.editingFinished.connect(_on_energy)
             grid.addWidget(self._energy_edit, energy_row, 1)
             grid.setColumnStretch(1, 1)
