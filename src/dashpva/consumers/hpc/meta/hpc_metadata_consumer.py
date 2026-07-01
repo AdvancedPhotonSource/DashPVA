@@ -249,6 +249,22 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
     def _process_frame(self, pvObject):
         t0 = time.time()
         frameId = pvObject['uniqueId']
+        # One-time diagnostic: confirms process() is actually being called and
+        # shows how many metadata channels the framework attached (empty => there
+        # is nothing to associate). Also printed to stdout so it shows in the
+        # workflow associator output box, not just the general.log file.
+        if not getattr(self, '_loggedFirstFrame', False):
+            self._loggedFirstFrame = True
+            chans = list(getattr(self, 'metadataQueueMap', {}) or {})
+            msg = (f'[Metadata Associator] first frame id={frameId}; '
+                   f'{len(chans)} metadata channel(s) attached: {chans}')
+            self.logger.info(msg)
+            print(msg, flush=True)
+            if not chans:
+                warn = ('[Metadata Associator] no metadata channels attached — '
+                        'nothing will associate; check --metadata-channels / config.')
+                self.logger.warning(warn)
+                print(warn, flush=True)
         dims = pvObject['dimension']
         nDims = len(dims)
 

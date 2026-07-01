@@ -2464,7 +2464,9 @@ class Workflow(QDialog, LogMixin):
             self.spinBoxDistributorUpdatesAnalysis.setValue(int(cfg['distributor_updates']))
 
     def run_associator_consumers(self):
+        self.logger.info('Start Metadata Associator requested')
         if 'associator_consumers' in self.processes:
+            self.logger.warning('Start Metadata Associator ignored — already running')
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
         self._save_meta_assoc_last()
@@ -2487,7 +2489,12 @@ class Workflow(QDialog, LogMixin):
         metadata_pvs = self._build_metadata_channels()
         if metadata_pvs:
             cmd.extend(['--metadata-channels', metadata_pvs])
+        else:
+            self.logger.warning(
+                'Start Metadata Associator: no metadata channels built — '
+                'associator will have nothing to attach')
         self._associator_metadata_channels = metadata_pvs
+        self.logger.info(f'Launching associator: {" ".join(cmd)}')
 
         try:
             process = subprocess.Popen(
@@ -2507,7 +2514,9 @@ class Workflow(QDialog, LogMixin):
             self.buttonRunAssociatorConsumers.setEnabled(False)
             self.buttonStopAssociatorConsumers.setEnabled(True)
             self.labelStatusAssociatorConsumers.setText(f'Process ID: {process.pid}')
+            self.logger.info(f'Metadata Associator started (PID {process.pid})')
         except Exception as e:
+            self.logger.exception('Failed to start Metadata Associator')
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Associator Consumers: {str(e)}')
 
     def stop_associator_consumers(self):
