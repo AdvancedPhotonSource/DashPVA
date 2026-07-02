@@ -336,6 +336,11 @@ class DiffractionImageWindow(BaseWindow):
         self._corner_grip = _CornerGrip(self.start_live_view, self._grip_press, self._grip_move)
         self._corner_grip.hide()
         self.start_live_view.installEventFilter(self)
+        # Clamp the profile thickness up to at least the toggle button's themed
+        # width so the left plot and the button line up in column 0 from the start
+        # (idle) — not only after the grip is dragged during live view. Deferred
+        # one event-loop pass so the button's themed sizeHint is available.
+        QTimer.singleShot(0, self._align_avg_side)
         self._analysis_menu = QMenu(self)
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
@@ -1609,6 +1614,12 @@ class DiffractionImageWindow(BaseWindow):
         if abs(ra.width() - hist_w) > 0.5:
             ra.setWidth(hist_w)
 
+    def _align_avg_side(self) -> None:
+        """Re-apply the profile thickness, which clamps it up to at least the
+        toggle button's themed width — so the left plot and the button share the
+        same column width (aligned) from startup, not only after a grip drag."""
+        self._apply_avg_side(self._avg_side)
+
     def _avg_side_bounds(self):
         """(min, max) px for the profile thickness: min keeps the Start/Stop
         button usable; max stops the profiles from crowding out the image."""
@@ -1669,7 +1680,9 @@ class DiffractionImageWindow(BaseWindow):
         self._pv_row.hide()
         self.bottom_avg_plot.show()
         self._corner_grip.show()
-        self._reposition_grip()
+        # Re-assert column-0 alignment for live mode: the button text/width just
+        # changed, and platform polish timing (Linux) can differ from startup.
+        self._align_avg_side()
         self._update_title()
 
     def _enter_idle_state(self) -> None:
