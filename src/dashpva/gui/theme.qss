@@ -2,7 +2,10 @@
    DashPVA Global Stylesheet
    =================================================================
    Loaded once by configure_app() in gui/__init__.py.
-   Color values must match theme_colors.py.
+   $VARIABLE tokens are substituted from theme_colors.py before
+   the sheet is applied.  All inline styleSheet properties have
+   been removed from .ui files — this file is the single place
+   to edit colors and font sizes.
    ================================================================= */
 
 /* -- macOS dark mode text fix ---------------------------------------- */
@@ -40,7 +43,15 @@ QTextEdit[readOnly="true"] {
     border: none;
     padding: 6px;
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 9pt;
+    font-size: $FONT_CAPTION;
+}
+
+/* -- Readonly line inputs (display-only fields) ----------------------- */
+QLineEdit[readOnly="true"] {
+    background-color: palette(button);
+    border: none;
+    padding: 2px 6px;
+    color: palette(text);
 }
 
 /* -- Workbench info tabs --------------------------------------------- */
@@ -54,7 +65,7 @@ QTabWidget#info_tabs QTabBar::tab {
     border: 1px solid palette(mid);
     padding: 6px 12px;
     margin-right: 2px;
-    font-size: 9pt;
+    font-size: $FONT_CAPTION;
 }
 QTabWidget#info_tabs QTabBar::tab:selected {
     background-color: palette(base);
@@ -63,62 +74,68 @@ QTabWidget#info_tabs QTabBar::tab:selected {
 
 /* -- File status label (workbench) ----------------------------------- */
 QLabel#file_status_label {
-    font-size: 11pt;
+    font-size: $FONT_SUBHEADING;
     font-weight: bold;
     color: palette(text);
     padding: 10px;
 }
 
+/* -- Dropdown text (force palette delegation — fixes black text on dark bg) */
+QComboBox, QComboBox QAbstractItemView { color: palette(text); }
+
+/* -- Connection state labels ----------------------------------------- */
+QLabel[connectionState="connected"] { color: $SUCCESS; font-weight: bold; }
+QLabel[connectionState="disconnected"] { color: $ERROR; font-weight: bold; }
+
 /* -- Stats labels (ROI docks, controls) ------------------------------ */
 QLabel#stats_label, QLabel#roi_stats_label {
     color: palette(text);
-    font-size: 9pt;
+    font-size: $FONT_CAPTION;
 }
 
 /* -- Mode labels ----------------------------------------------------- */
 QLabel#mode_label {
-    color: #7A8394;
-    font-size: 8pt;
+    color: $TEXT_SECONDARY;
+    font-size: $FONT_SMALL;
     font-weight: bold;
 }
 
 /* -- Range / muted labels -------------------------------------------- */
 QLabel#z_range_label, QLabel#val_label {
-    color: #9BA5B5;
-    font-size: 8pt;
+    color: $TEXT_MUTED;
+    font-size: $FONT_SMALL;
 }
 
 /* -- Hint labels (vmin/vmax) ----------------------------------------- */
 QLabel#lblVminHint, QLabel#lblVmaxHint {
-    color: #7A8394;
-    font-size: 8pt;
+    color: $TEXT_SECONDARY;
+    font-size: $FONT_SMALL;
     padding-right: 6px;
 }
 
 /* -- Placeholder labels (phase fitter, base window) ------------------ */
 QLabel#phase_placeholder, QLabel#label_placeholder {
-    color: #7A8394;
+    color: $TEXT_SECONDARY;
     font-style: italic;
 }
 
 /* -- Log viewer ------------------------------------------------------ */
 QLabel#lbl_log_path {
-    color: #7A8394;
-    font-size: 9pt;
+    color: $TEXT_SECONDARY;
+    font-size: $FONT_CAPTION;
 }
 
 /* -- Lock banner (ROI calculator) ------------------------------------ */
 QLabel#lblLockBanner {
-    background-color: #FFD6D6;
-    color: #A94442;
-    border: 1px solid #A94442;
+    background-color: $LOCK_BG;
+    color: $LOCK_BORDER;
+    border: 1px solid $LOCK_BORDER;
     font-weight: bold;
     padding: 4px;
 }
 
-/* -- Colored action buttons ------------------------------------------ */
-QPushButton#btn_plot_cache,
-QPushButton#bayesian_start_btn {
+/* -- Semantic button roles ------------------------------------------- */
+QPushButton[role="success"] {
     background-color: $SUCCESS;
     color: white;
     font-weight: bold;
@@ -126,13 +143,11 @@ QPushButton#bayesian_start_btn {
     border-radius: 4px;
     padding: 6px 14px;
 }
-QPushButton#btn_plot_cache:hover,
-QPushButton#bayesian_start_btn:hover { background-color: $SUCCESS_HOVER; }
-QPushButton#btn_plot_cache:pressed,
-QPushButton#bayesian_start_btn:pressed { background-color: $SUCCESS_PRESSED; }
+QPushButton[role="success"]:hover { background-color: $SUCCESS_HOVER; }
+QPushButton[role="success"]:pressed { background-color: $SUCCESS_PRESSED; }
+QPushButton[role="success"]:disabled { background-color: palette(button); color: palette(mid); }
 
-QPushButton#btn_save_h5,
-QPushButton#bayesian_stop_btn {
+QPushButton[role="error"] {
     background-color: $ERROR;
     color: white;
     font-weight: bold;
@@ -140,75 +155,44 @@ QPushButton#bayesian_stop_btn {
     border-radius: 4px;
     padding: 6px 14px;
 }
-QPushButton#btn_save_h5:hover,
-QPushButton#bayesian_stop_btn:hover { background-color: $ERROR_HOVER; }
-QPushButton#btn_save_h5:pressed,
-QPushButton#bayesian_stop_btn:pressed { background-color: $ERROR_PRESSED; }
+QPushButton[role="error"]:hover { background-color: $ERROR_HOVER; }
+QPushButton[role="error"]:pressed { background-color: $ERROR_PRESSED; }
+QPushButton[role="error"]:disabled { background-color: palette(button); color: palette(mid); }
 
-/* Start/Stop reuse the green/red action-button rules above; they only add a
-   muted disabled state (Stop starts disabled; Start disables during a run). */
-QPushButton#bayesian_start_btn:disabled,
-QPushButton#bayesian_stop_btn:disabled {
-    background-color: palette(button);
-    color: palette(mid);
-}
-
-QPushButton#btn_segment {
-    background-color: $SUCCESS;
+QPushButton[role="info"] {
+    background-color: $INFO;
     color: white;
     font-weight: bold;
     border: none;
     border-radius: 4px;
     padding: 6px 14px;
 }
+QPushButton[role="info"]:hover { background-color: $INFO_HOVER; }
+QPushButton[role="info"]:disabled { background-color: palette(button); color: palette(mid); }
 
-/* -- Dock window transfer buttons ------------------------------------ */
-QPushButton#btn_get_2d_docks {
-    background-color: #2980B9;
+QPushButton[role="warning"] {
+    background-color: $WARNING;
     color: white;
     font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
 }
-QPushButton#btn_get_3d_docks {
-    background-color: $SUCCESS;
-    color: white;
-    font-weight: bold;
-}
-QPushButton#btn_send_2d_docks {
-    background-color: #E67E22;
-    color: white;
-    font-weight: bold;
-}
-QPushButton#btn_send_3d_docks {
-    background-color: $ERROR;
-    color: white;
-    font-weight: bold;
-}
-
-/* -- ROI delete button ----------------------------------------------- */
-QPushButton#btn_delete_roi {
-    color: white;
-    background-color: $ERROR;
-}
+QPushButton[role="warning"]:hover { background-color: $WARNING_HOVER; }
+QPushButton[role="warning"]:disabled { background-color: palette(button); color: palette(mid); }
 
 /* -- PV config input channel ---------------------------------------- */
 QLineEdit#le_input_channel {
+    color: $TEXT_PRIMARY;
     border: 1px solid palette(mid);
     border-radius: 3px;
 }
 
-/* -- Area detector editable QLineEdit (palette(midlight) gives a visible
-      non-white grey, adapts to dark mode). ------------- */
-QLineEdit#pv_prefix {
-    background-color: palette(midlight);
-    border: 1px solid palette(mid);
-    border-radius: 3px;
-    padding: 2px 6px;
-}
-
-/* -- imageshow.ui Start/Stop Live View buttons (sizing only) ---------- */
+/* -- Area detector Start/Stop Live View buttons ----------------------- */
 QPushButton#start_live_view, QPushButton#stop_live_view {
-    font-size: 11pt;
+    font-size: $FONT_LARGE;
     min-height: 50px;
+    padding: 6px 20px;
 }
 
 /* -- imageshow.ui Stats buttons (ROI identity text colors) ------------ */
@@ -217,10 +201,10 @@ QPushButton#btn_Stats3, QPushButton#btn_Stats4,
 QPushButton#btn_Stats5 {
     font-weight: bold;
 }
-QPushButton#btn_Stats1 { color: #E05A5A; }
-QPushButton#btn_Stats2 { color: #4A90D9; }
-QPushButton#btn_Stats3 { color: #3EAF8E; }
-QPushButton#btn_Stats4 { color: #A878D0; }
+QPushButton#btn_Stats1 { color: $ROI_1; }
+QPushButton#btn_Stats2 { color: $ROI_2; }
+QPushButton#btn_Stats3 { color: $ROI_3; }
+QPushButton#btn_Stats4 { color: $ROI_4; }
 QPushButton#btn_Stats5 { font-weight: normal; }
 
 /* -- Area detector read-only value labels (monospace fixed-width keeps
@@ -236,13 +220,128 @@ QLabel[valueLabel="true"] {
 }
 
 /* -- ROI identity labels (instrument convention colors) -------------- */
-QLabel#lbl_ROI1, QLabel#roi1_total_value { color: #E05A5A; }
-QLabel#lbl_ROI2, QLabel#roi2_total_value { color: #4A90D9; }
-QLabel#lbl_ROI3, QLabel#roi3_total_value { color: #3EAF8E; }
-QLabel#lbl_ROI4, QLabel#roi4_total_value { color: #A878D0; }
+QLabel#lbl_ROI1, QLabel#roi1_total_value { color: $ROI_1; }
+QLabel#lbl_ROI2, QLabel#roi2_total_value { color: $ROI_2; }
+QLabel#lbl_ROI3, QLabel#roi3_total_value { color: $ROI_3; }
+QLabel#lbl_ROI4, QLabel#roi4_total_value { color: $ROI_4; }
 
 /* -- Per-ROI show/hide checkboxes (indicator fills with ROI color) --- */
-QCheckBox#chk_show_roi1::indicator:checked { background-color: #E05A5A; }
-QCheckBox#chk_show_roi2::indicator:checked { background-color: #4A90D9; }
-QCheckBox#chk_show_roi3::indicator:checked { background-color: #3EAF8E; }
-QCheckBox#chk_show_roi4::indicator:checked { background-color: #A878D0; }
+QCheckBox#chk_show_roi1::indicator:checked { background-color: $ROI_1; }
+QCheckBox#chk_show_roi2::indicator:checked { background-color: $ROI_2; }
+QCheckBox#chk_show_roi3::indicator:checked { background-color: $ROI_3; }
+QCheckBox#chk_show_roi4::indicator:checked { background-color: $ROI_4; }
+
+/* =================================================================
+   Styles migrated from .ui file inline styleSheet properties
+   ================================================================= */
+
+/* -- Launcher dialog (DashPVALauncher) --------------------------------------- */
+QDialog#DashPVALauncher {
+    background-color: palette(window);
+}
+QDialog#DashPVALauncher QLabel#lbl_header {
+    font-size: $FONT_HEADING;
+    font-weight: 700;
+    color: palette(window-text);
+}
+QDialog#DashPVALauncher QLabel#lbl_subtitle {
+    font-size: $FONT_BODY;
+    color: palette(dark);
+}
+QDialog#DashPVALauncher QLabel#lbl_status {
+    font-size: $FONT_CAPTION;
+    color: palette(dark);
+}
+
+/* -- Update dialog (UpdateDialog) ------------------------------------------- */
+QDialog#UpdateDialog QLabel#lbl_status {
+    font-size: $FONT_BODY;
+    color: $TEXT_SECONDARY;
+    padding: 6px 0;
+}
+QPlainTextEdit#txt_notes {
+    background-color: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    font-size: $FONT_CAPTION;
+    font-family: monospace;
+    color: palette(text);
+}
+
+/* -- Workflow dialog --------------------------------------------------------- */
+QTabWidget#tabWidget QTabBar::tab:first { background-color: palette(button); }
+QTabWidget#tabWidget QTabBar::tab:first:selected { background-color: palette(base); }
+QWidget#simServerTab { background-color: $SIM_BG; }
+QLabel#labelConfigSourceTitle { font-weight: bold; color: $TEXT_SECONDARY; }
+QRadioButton#radioLegacyToml { color: $WARNING; font-weight: bold; }
+QRadioButton#radioDatabase { color: $INFO; font-weight: bold; }
+QLabel#labelDbStatus { color: $DISABLED_BG; font-size: $FONT_SMALL; }
+QPushButton#buttonInitDb, QPushButton#buttonRefreshDb { font-size: $FONT_BODY; padding: 4px 12px; min-height: 28px; }
+QLabel#labelTomlHeader {
+    color: $WARNING;
+    font-weight: bold;
+    font-size: $FONT_CAPTION;
+    background-color: palette(button);
+    border-left: 3px solid $WARNING;
+    padding: 2px 6px;
+}
+QFrame#separatorLine { color: palette(mid); }
+QLabel#labelViewMode {
+    color: palette(text);
+    font-weight: bold;
+    font-size: $FONT_CAPTION;
+    background-color: palette(button);
+    border-left: 3px solid palette(mid);
+    padding: 2px 6px;
+}
+QLabel#labelDatabaseHeader {
+    color: $INFO;
+    font-weight: bold;
+    font-size: $FONT_CAPTION;
+    background-color: palette(button);
+    border-left: 3px solid $INFO;
+    padding: 2px 6px;
+}
+QLabel#labelTomlHeader[sectionActive="false"],
+QLabel#labelDatabaseHeader[sectionActive="false"] {
+    background-color: palette(button);
+    color: palette(mid);
+    border-left: 3px solid palette(mid);
+}
+QTreeWidget#treeWidgetConfig[sectionActive="false"] {
+    background-color: palette(button);
+    color: palette(mid);
+}
+QLabel#labelProfile, QLabel#labelProfileDescription { color: $INFO; font-weight: bold; }
+QComboBox#comboBoxProfile { border: 1px solid $INFO; border-radius: 3px; padding: 2px 6px; }
+QCheckBox#checkBoxDefaultProfile { color: $WARNING; font-size: $FONT_CAPTION; }
+QCheckBox#checkBoxSelectedProfile { color: $SUCCESS; font-size: $FONT_CAPTION; }
+QLineEdit#lineEditProfileDescription { color: $TEXT_SECONDARY; background: transparent; border: none; }
+QPushButton#buttonCollapseAll, QPushButton#buttonExpandAll { font-size: $FONT_BODY; padding: 1px 6px; }
+QPushButton#buttonAddTopLevel { font-size: $FONT_SMALL; padding: 1px 8px; }
+QPushButton#buttonAddProfile { color: $SUCCESS; border: 1px solid $SUCCESS; border-radius: 4px; padding: 6px 14px; }
+QPushButton#buttonAddProfile:disabled { color: palette(mid); border-color: palette(mid); }
+QPushButton#buttonDeleteProfile { color: $ERROR; border: 1px solid $ERROR; border-radius: 4px; padding: 6px 14px; }
+QPushButton#buttonDeleteProfile:disabled { color: palette(mid); border-color: palette(mid); }
+
+/* -- Settings dialog (SettingsDialog) --------------------------------------- */
+QLabel#lbl_placeholder { font-size: $FONT_SUBHEADING; color: $TEXT_SECONDARY; }
+
+/* -- Metadata converter dialog (MetadataConverterDialog) -------------------- */
+QLabel#lbl_description { color: $TEXT_SECONDARY; }
+QCheckBox#chk_force_convert { color: $ERROR; }
+
+/* -- Workbench main window (Workbench) --------------------------------------- */
+QLabel#label_header { font-size: $FONT_SUBHEADING; font-weight: bold; color: $TEXT_PRIMARY; }
+QLabel#label_status { color: $SUCCESS; font-weight: bold; }
+QLabel#image_info_label { color: palette(text); font-size: $FONT_BODY; font-weight: bold; }
+QTextEdit#dataset_info_text, QTextEdit#file_info_text {
+    background-color: palette(base);
+    border: none;
+    padding: 6px;
+    font-family: 'Consolas', monospace;
+    font-size: $FONT_CAPTION;
+}
+
+/* -- IOC parameter window (IocParamWindow) ----------------------------------- */
+QLabel#labelHeaderAxis, QLabel#labelHeaderSource { font-weight: bold; }

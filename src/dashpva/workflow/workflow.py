@@ -22,6 +22,8 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QLineEdit,
     QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QTreeWidgetItem,
 )
@@ -327,6 +329,12 @@ class Workflow(QDialog, LogMixin):
     def __init__(self, parent=None):
         super(Workflow, self).__init__(parent)
         uic.loadUi(str(pathlib.Path(__file__).parent / 'workflow.ui'), self)
+        self.viewModeLayout.setAlignment(Qt.AlignTop)
+        # Pre-set sectionActive so QSS property selectors fire on first _on_config_source_changed
+        self.labelTomlHeader.setProperty("sectionActive", "true")
+        self.labelDatabaseHeader.setProperty("sectionActive", "true")
+        self.treeWidgetConfig.setProperty("sectionActive", "true")
+        self.buttonApplySave.setProperty("role", "info")
         try:
             self.set_log_manager(viewer_name="Workflow")
         except Exception:
@@ -336,6 +344,10 @@ class Workflow(QDialog, LogMixin):
         self.workers = {}
         self._db = None
         self._db_available = False
+        self._tree_snapshot: dict = {}
+        self._edited_item_ids: set = set()
+        self._structural_changed: bool = False
+        self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
 
         # Sim Server Tab
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
@@ -374,6 +386,7 @@ class Workflow(QDialog, LogMixin):
 
         # Config Tab — apply/save / reseed
         self.buttonApplySave.clicked.connect(self._on_apply_save)
+        self.buttonClearChanges.clicked.connect(self._on_clear_changes)
         self.buttonReseed.clicked.connect(self._on_reseed)
 
         self.treeWidgetConfig.itemChanged.connect(self._on_tree_item_changed)
@@ -410,18 +423,21 @@ class Workflow(QDialog, LogMixin):
         self.buttonLoadConfigMeta.clicked.connect(
             lambda: self._load_named_config_dialog(self._META_ASSOC_PATH, self._apply_meta_assoc_config)
         )
+        self.buttonClearOutputMeta.clicked.connect(self.textEditAssociatorConsumersOutput.clear)
         self.buttonSaveConfigCollector.clicked.connect(
             lambda: self._save_named_config_dialog(self._COLLECTOR_PATH, self._collect_collector_config)
         )
         self.buttonLoadConfigCollector.clicked.connect(
             lambda: self._load_named_config_dialog(self._COLLECTOR_PATH, self._apply_collector_config)
         )
+        self.buttonClearOutputCollector.clicked.connect(self.textEditCollectorOutput.clear)
         self.buttonSaveConfigAnalysis.clicked.connect(
             lambda: self._save_named_config_dialog(self._ANALYSIS_PATH, self._collect_analysis_config)
         )
         self.buttonLoadConfigAnalysis.clicked.connect(
             lambda: self._load_named_config_dialog(self._ANALYSIS_PATH, self._apply_analysis_config)
         )
+        self.buttonClearOutputAnalysis.clicked.connect(self.textEditAnalysisConsumerOutput.clear)
 
         # Check DB availability, populate combo, then switch to DB mode if possible
         self._check_db_availability()
@@ -443,14 +459,14 @@ class Workflow(QDialog, LogMixin):
             self._db = DatabaseInterface()
             self._db.get_all_profiles()  # confirm tables are queryable
             self._db_available = True
-            self.labelDbStatus.setText('● Available')
+            self.labelDbStatus.setText('● DB Available')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {SUCCESS}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip('')
             self.radioDatabase.setEnabled(True)
             self.buttonInitDb.setVisible(False)
         except Exception as e:
             self._db_available = False
-            self.labelDbStatus.setText('● Unavailable')
+            self.labelDbStatus.setText('● DB Unavailable')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {ERROR}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip(f'Error: {e}')
             self.radioDatabase.setEnabled(False)
@@ -551,19 +567,39 @@ class Workflow(QDialog, LogMixin):
         self.lineEditConfigUploadPath.setEnabled(legacy)
         self.buttonBrowseConfigUpload.setEnabled(legacy)
 
-        # Import TOML is available in both modes
-        self.buttonImportToml.setEnabled(True)
-
         # Database controls (only enable if DB is also available)
         db_active = not legacy and self._db_available
+
+        # TOML import/export operate on the database — only active in DB mode
+        self.buttonImportToml.setEnabled(db_active)
+        self.buttonExportConfigToFile.setEnabled(db_active)
+        self.labelProfile.setEnabled(db_active)
         self.comboBoxProfile.setEnabled(db_active)
+        self.labelProfileDescription.setEnabled(db_active)
+        self.lineEditProfileDescription.setEnabled(db_active)
         self.checkBoxDefaultProfile.setEnabled(db_active)
         self.checkBoxSelectedProfile.setEnabled(db_active)
+        self.radioViewProfile.setEnabled(db_active)
         self.radioViewSettings.setEnabled(db_active)
+        self.buttonReseed.setEnabled(db_active)
+        self.buttonRefreshDb.setEnabled(db_active)
         self.buttonAddProfile.setEnabled(db_active)
         self.buttonRenameProfile.setEnabled(db_active)
         self.buttonDeleteProfile.setEnabled(db_active)
         self.buttonDuplicateProfile.setEnabled(db_active)
+
+        # Grey overlay on inactive section headers and config tree
+        state_toml = "true" if legacy else "false"
+        state_db = "true" if db_active else "false"
+        for widget, state in (
+            (self.labelTomlHeader, state_toml),
+            (self.labelDatabaseHeader, state_db),
+            (self.treeWidgetConfig, state_db),
+        ):
+            widget.setProperty("sectionActive", state)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
 
         # When first activating DB mode, auto-select the first profile as default+selected
         if db_active:
@@ -707,6 +743,7 @@ class Workflow(QDialog, LogMixin):
             return
         self.treeWidgetConfig.clear()
         self._populate_tree_node(data, parent=None)
+        self._store_snapshot()
         # Update settings module so the rest of the app uses this TOML
         try:
             app_settings.set_locator(path)
@@ -762,6 +799,7 @@ class Workflow(QDialog, LogMixin):
         self.treeWidgetConfig.blockSignals(True)
         self.treeWidgetConfig.clear()
         self._populate_tree_node(data, parent=None)
+        self._store_snapshot()
         self.treeWidgetConfig.blockSignals(False)
         # Update settings module so the rest of the app uses this profile
         try:
@@ -802,7 +840,6 @@ class Workflow(QDialog, LogMixin):
 
     def _set_profile_widgets_visible(self, visible: bool):
         for w in (
-            self.labelDatabaseHeader,
             self.labelProfile, self.comboBoxProfile,
             self.checkBoxDefaultProfile, self.checkBoxSelectedProfile,
             self.labelProfileDescription, self.lineEditProfileDescription,
@@ -853,6 +890,7 @@ class Workflow(QDialog, LogMixin):
         for root in roots:
             self._add_setting_node(root.id, root.name, root.type, parent=None)
         self.treeWidgetConfig.blockSignals(False)
+        self._store_snapshot()
 
     def _add_setting_node(self, setting_id: int, name: str, type_: str, parent):
         if parent is None:
@@ -1190,7 +1228,8 @@ class Workflow(QDialog, LogMixin):
             return
         item = self._make_tree_item(None, key, value)
         self.treeWidgetConfig.scrollToItem(item)
-        self._save_tree_to_active_profile()
+        self._structural_changed = True
+        self._update_config_action_state()
 
     def _add_settings_view_key(self):
         """Create a new root-level Settings record (and optional value) via two-step dialog."""
@@ -1263,7 +1302,8 @@ class Workflow(QDialog, LogMixin):
                 parent_item.setFlags(parent_item.flags() | Qt.ItemIsEditable)
             self._make_tree_item(parent_item, key, value)
             parent_item.setExpanded(True)
-            self._save_tree_to_active_profile()
+            self._structural_changed = True
+            self._update_config_action_state()
 
     def _add_section(self, parent_item):
         """Create a new child Settings record under parent_item's setting (settings view only)."""
@@ -1357,7 +1397,8 @@ class Workflow(QDialog, LogMixin):
             parent.removeChild(item)
 
         if not self.radioViewSettings.isChecked():
-            self._save_tree_to_active_profile()
+            self._structural_changed = True
+            self._update_config_action_state()
 
     def _delete_settings_item_from_db(self, item):
         """Delete a settings tree item from the DB immediately."""
@@ -1415,7 +1456,8 @@ class Workflow(QDialog, LogMixin):
             parent.insertChild(idx + 1, clone)
 
         self.treeWidgetConfig.scrollToItem(clone)
-        self._save_tree_to_active_profile()
+        self._structural_changed = True
+        self._update_config_action_state()
 
     def _show_tree_context_menu(self, pos):
         item = self.treeWidgetConfig.itemAt(pos)
@@ -1424,8 +1466,13 @@ class Workflow(QDialog, LogMixin):
         if item is None:
             act = menu.addAction('Add top-level key')
             act.triggered.connect(self._add_top_level_key)
+            if not in_settings and self._clipboard_item is not None:
+                menu.addSeparator()
+                act_paste = menu.addAction(f'Paste "{self._clipboard_item["key"]}"')
+                act_paste.triggered.connect(lambda checked=False: self._paste_item(None))
         else:
             is_section = in_settings and not (item.flags() & Qt.ItemIsEditable)
+            is_leaf = not in_settings and item.childCount() == 0 and bool(item.text(1))
             if in_settings and item.text(2) == 'json':
                 act_json = menu.addAction('Edit JSON…')
                 act_json.triggered.connect(lambda checked=False, i=item: self._open_json_editor(i))
@@ -1434,13 +1481,26 @@ class Workflow(QDialog, LogMixin):
                 act_edit_sec = menu.addAction('Edit section…')
                 act_edit_sec.triggered.connect(lambda checked=False, i=item: self._edit_section(i))
                 menu.addSeparator()
-            act_child = menu.addAction('Add child key')
-            act_child.triggered.connect(lambda checked=False, i=item: self._add_child_key(i))
+            if not is_leaf:
+                act_child = menu.addAction('Add child key')
+                act_child.triggered.connect(lambda checked=False, i=item: self._add_child_key(i))
             act_dup = menu.addAction('Duplicate')
             act_dup.triggered.connect(lambda checked=False, i=item: self._duplicate_tree_item(i))
             menu.addSeparator()
             act_del = menu.addAction('Delete')
             act_del.triggered.connect(lambda checked=False, i=item: self._delete_tree_item(i))
+            if not in_settings and is_leaf:
+                menu.addSeparator()
+                act_copy = menu.addAction('Copy')
+                act_copy.triggered.connect(lambda checked=False, i=item: self._copy_item(i))
+            if not in_settings and not is_leaf and self._clipboard_item is not None:
+                menu.addSeparator()
+                act_paste = menu.addAction(f'Paste "{self._clipboard_item["key"]}"')
+                act_paste.triggered.connect(lambda checked=False, i=item: self._paste_item(i))
+            if id(item) in self._edited_item_ids:
+                menu.addSeparator()
+                act_revert = menu.addAction('Revert to original')
+                act_revert.triggered.connect(lambda checked=False, i=item: self._revert_item(i))
         menu.exec_(self.treeWidgetConfig.viewport().mapToGlobal(pos))
 
     # ------------------------------------------------------------------ #
@@ -1448,23 +1508,339 @@ class Workflow(QDialog, LogMixin):
     # ------------------------------------------------------------------ #
 
     # ------------------------------------------------------------------ #
+    # Edit tracking
+    # ------------------------------------------------------------------ #
+
+    def _store_snapshot(self):
+        self._tree_snapshot = {}
+        self._edited_item_ids.clear()
+        self.treeWidgetConfig.blockSignals(True)
+        self._walk_store(self.treeWidgetConfig.invisibleRootItem(), [])
+        self.treeWidgetConfig.blockSignals(False)
+        self._update_config_action_state()
+
+    def _walk_store(self, node, path):
+        for i in range(node.childCount()):
+            item = node.child(i)
+            raw = item.text(0)
+            key = raw[:-1] if raw.endswith('*') else raw
+            if raw.endswith('*'):
+                item.setText(0, key)
+            item.setForeground(0, QtGui.QBrush())
+            cur = path + [key]
+            if item.childCount() == 0:
+                val = item.text(1)
+                self._tree_snapshot['.'.join(cur)] = val
+                item.setData(0, Qt.UserRole + 1, val)
+            else:
+                self._walk_store(item, cur)
+
+    def _clear_edit_markers(self, node=None):
+        if node is None:
+            node = self.treeWidgetConfig.invisibleRootItem()
+        self.treeWidgetConfig.blockSignals(True)
+        self._strip_markers(node)
+        self.treeWidgetConfig.blockSignals(False)
+        self._edited_item_ids.clear()
+        self._update_config_action_state()
+
+    def _strip_markers(self, node):
+        for i in range(node.childCount()):
+            item = node.child(i)
+            if item.text(0).endswith('*'):
+                item.setText(0, item.text(0)[:-1])
+            item.setForeground(0, QtGui.QBrush())
+            self._strip_markers(item)
+
+    def _mark_item_edited(self, item):
+        self._edited_item_ids.add(id(item))
+        self._update_config_action_state()
+        warn = QtGui.QBrush(QtGui.QColor(WARNING))
+        self.treeWidgetConfig.blockSignals(True)
+        if not item.text(0).endswith('*'):
+            item.setText(0, item.text(0) + '*')
+        item.setForeground(0, warn)
+        parent = item.parent()
+        while parent:
+            if not parent.text(0).endswith('*'):
+                parent.setText(0, parent.text(0) + '*')
+            parent.setForeground(0, warn)
+            parent = parent.parent()
+        self.treeWidgetConfig.blockSignals(False)
+
+    def _unmark_item_edited(self, item):
+        self._edited_item_ids.discard(id(item))
+        self.treeWidgetConfig.blockSignals(True)
+        if item.text(0).endswith('*'):
+            item.setText(0, item.text(0)[:-1])
+        item.setForeground(0, QtGui.QBrush())
+        parent = item.parent()
+        while parent:
+            if not any(id(parent.child(i)) in self._edited_item_ids for i in range(parent.childCount())):
+                if parent.text(0).endswith('*'):
+                    parent.setText(0, parent.text(0)[:-1])
+                parent.setForeground(0, QtGui.QBrush())
+            parent = parent.parent()
+        self.treeWidgetConfig.blockSignals(False)
+
+    def _revert_item(self, item):
+        original = item.data(0, Qt.UserRole + 1)
+        if original is None:
+            return
+        self.treeWidgetConfig.blockSignals(True)
+        item.setText(1, original)
+        self.treeWidgetConfig.blockSignals(False)
+        self._unmark_item_edited(item)
+
+    def _update_config_action_state(self):
+        has_changes = bool(self._edited_item_ids) or self._structural_changed
+        self.buttonApplySave.setEnabled(has_changes)
+        self.buttonClearChanges.setEnabled(has_changes)
+
+    def _on_clear_changes(self):
+        if self.radioViewSettings.isChecked():
+            self._load_settings_tree()
+        elif self.radioDatabase.isChecked() and self._db_available:
+            self.load_profile_to_tree()
+        elif app_settings.TOML_FILE:
+            self._load_toml_into_tree(app_settings.TOML_FILE)
+        self._structural_changed = False
+        self._update_config_action_state()
+
+    def _revert_all_edited(self, node):
+        for i in range(node.childCount()):
+            item = node.child(i)
+            if item.childCount() == 0:
+                original = item.data(0, Qt.UserRole + 1)
+                if original is not None and item.text(1) != original:
+                    self._revert_item(item)
+            else:
+                self._revert_all_edited(item)
+
+    def _copy_item(self, item):
+        self._clipboard_item = {'key': item.text(0), 'value': item.text(1)}
+
+    def _paste_item(self, parent_item):
+        if self._clipboard_item is None:
+            return
+        new_item = self._make_tree_item(parent_item, self._clipboard_item['key'], self._clipboard_item['value'])
+        if parent_item is not None:
+            parent_item.setExpanded(True)
+        self.treeWidgetConfig.scrollToItem(new_item)
+        self._structural_changed = True
+        self._update_config_action_state()
+
+    def _snapshot_tree(self) -> dict:
+        result = {}
+        self._collect_flat(self.treeWidgetConfig.invisibleRootItem(), [], result)
+        return result
+
+    def _collect_flat(self, node, path, result):
+        for i in range(node.childCount()):
+            item = node.child(i)
+            raw = item.text(0)
+            key = raw[:-1] if raw.endswith('*') else raw
+            cur = path + [key]
+            if item.childCount() == 0:
+                result['.'.join(cur)] = item.text(1)
+            else:
+                self._collect_flat(item, cur, result)
+
+    def _find_item_at_path(self, parts):
+        node = self.treeWidgetConfig.invisibleRootItem()
+        for part in parts:
+            found = None
+            for i in range(node.childCount()):
+                child = node.child(i)
+                raw = child.text(0)
+                key = raw[:-1] if raw.endswith('*') else raw
+                if key == part:
+                    found = child
+                    break
+            if found is None:
+                return None
+            node = found
+        return node
+
+    def _compute_diff(self, before: dict, after: dict) -> list:
+        rows = []
+        for k in sorted(set(before) & set(after)):
+            if before[k] != after[k]:
+                rows.append(('change', k, before[k], after[k]))
+        for k in sorted(set(after) - set(before)):
+            rows.append(('add', k, '', after[k]))
+        for k in sorted(set(before) - set(after)):
+            rows.append(('remove', k, before[k], ''))
+        return rows
+
+    def _show_diff_dialog(self, rows: list):
+        if not rows:
+            reply = QMessageBox.question(
+                self, 'Save Changes', 'No changes detected. Save anyway?',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            return ([], []) if reply == QMessageBox.Yes else None
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Confirm Changes')
+        dlg.setMinimumSize(720, 420)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.addWidget(QtWidgets.QLabel(
+            f'{len(rows)} pending change(s). Edit a NEW value, or ✕ to drop a change.'
+        ))
+
+        table = QTableWidget(len(rows), 4, dlg)
+        table.setHorizontalHeaderLabels(['Key', 'Old', 'New', 'Action'])
+        table.verticalHeader().setVisible(False)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        hdr = table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+
+        dropped_flags = [False] * len(rows)
+
+        def _drop(idx):
+            if dropped_flags[idx]:
+                return
+            dropped_flags[idx] = True
+            muted = QtGui.QColor(TEXT_MUTED)
+            for c in range(3):
+                cell = table.item(idx, c)
+                if cell is None:
+                    continue
+                f = cell.font()
+                f.setStrikeOut(True)
+                cell.setFont(f)
+                cell.setForeground(muted)
+                cell.setFlags(cell.flags() & ~Qt.ItemIsEditable)
+            w = table.cellWidget(idx, 3)
+            if w is not None:
+                w.setEnabled(False)
+
+        for r, (kind, key, old, new) in enumerate(rows):
+            key_item = QTableWidgetItem(
+                f'+ {key}' if kind == 'add' else f'- {key}' if kind == 'remove' else key
+            )
+            key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)
+            if kind == 'add':
+                key_item.setForeground(QtGui.QColor(SUCCESS))
+            elif kind == 'remove':
+                key_item.setForeground(QtGui.QColor(ERROR))
+            table.setItem(r, 0, key_item)
+
+            old_item = QTableWidgetItem(old or '')
+            old_item.setFlags(old_item.flags() & ~Qt.ItemIsEditable)
+            if kind == 'change':
+                old_item.setForeground(QtGui.QColor(WARNING))
+            elif kind == 'remove':
+                old_item.setForeground(QtGui.QColor(ERROR))
+            table.setItem(r, 1, old_item)
+
+            new_item = QTableWidgetItem(new or '')
+            if kind in ('change', 'add'):
+                new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
+                new_item.setForeground(QtGui.QColor(SUCCESS))
+            else:
+                new_item.setFlags(new_item.flags() & ~Qt.ItemIsEditable)
+            table.setItem(r, 2, new_item)
+
+            btn = QtWidgets.QToolButton()
+            btn.setText('✕')
+            btn.setToolTip('Drop this change')
+            btn.setAutoRaise(True)
+            btn.clicked.connect(lambda checked=False, idx=r: _drop(idx))
+            table.setCellWidget(r, 3, btn)
+
+        layout.addWidget(table)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec_() != QDialog.Accepted:
+            return None
+
+        kept, dropped = [], []
+        for r, (kind, key, old, new) in enumerate(rows):
+            if dropped_flags[r]:
+                dropped.append((kind, key, old, new))
+            else:
+                tweaked = table.item(r, 2).text() if table.item(r, 2) else new
+                kept.append((kind, key, old, tweaked))
+        return kept, dropped
+
+    def _apply_dialog_decisions(self, kept, dropped):
+        self.treeWidgetConfig.blockSignals(True)
+        try:
+            for kind, key, _old, new in kept:
+                if kind not in ('change', 'add'):
+                    continue
+                item = self._find_item_at_path(key.split('.'))
+                if item is not None and item.text(1) != new:
+                    item.setText(1, new)
+            for kind, key, old, _new in dropped:
+                parts = key.split('.')
+                if kind == 'change':
+                    item = self._find_item_at_path(parts)
+                    if item is not None:
+                        item.setText(1, old)
+                elif kind == 'add':
+                    item = self._find_item_at_path(parts)
+                    if item is not None:
+                        (item.parent() or self.treeWidgetConfig.invisibleRootItem()).removeChild(item)
+                elif kind == 'remove':
+                    parent_parts, leaf_key = parts[:-1], parts[-1]
+                    parent_item = self._find_item_at_path(parent_parts) if parent_parts else None
+                    self._make_tree_item(parent_item, leaf_key, old)
+        finally:
+            self.treeWidgetConfig.blockSignals(False)
+
+    # ------------------------------------------------------------------ #
     # Apply / Save
     # ------------------------------------------------------------------ #
 
+    def _save_toml_from_tree(self) -> bool:
+        path = app_settings.TOML_FILE
+        if not path:
+            QMessageBox.critical(self, 'Save Error', 'No TOML file loaded. Load a config file first.')
+            return False
+        data = self._extract_tree_to_dict()
+        try:
+            with open(path, 'w') as f:
+                toml.dump(data, f)
+        except Exception as e:
+            QMessageBox.critical(self, 'Save Error', f'Failed to write TOML:\n{e}')
+            return False
+        try:
+            app_settings.set_locator(path)
+            app_settings.reload()
+            self._sync_associator_metadata()
+        except Exception:
+            pass
+        return True
+
     def _on_apply_save(self):
-        reply = QMessageBox.question(
-            self,
-            'Save Changes',
-            'Are you sure you want to save these changes?',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
+        before = dict(self._tree_snapshot)
+        after = self._snapshot_tree()
+        diff_lines = self._compute_diff(before, after)
+        result = self._show_diff_dialog(diff_lines)
+        if result is None:
             return
+        kept, dropped = result
+        if kept or dropped:
+            self._apply_dialog_decisions(kept, dropped)
         if self.radioViewSettings.isChecked():
             self._save_settings_from_tree()
+        elif self.radioLegacyToml.isChecked():
+            if not self._save_toml_from_tree():
+                return
         else:
             self._save_tree_to_active_profile()
+        self._tree_snapshot = self._snapshot_tree()
+        self._structural_changed = False
+        self._clear_edit_markers()
 
     def _on_reseed(self):
         reply = QMessageBox.question(
@@ -1485,7 +1861,13 @@ class Workflow(QDialog, LogMixin):
             if _sample.exists():
                 try:
                     defaults = self.parse_toml(str(_sample))
-                    current = self._extract_tree_to_dict()
+                    _idx = self.comboBoxProfile.currentIndex()
+                    _pid = self.comboBoxProfile.itemData(_idx) if _idx >= 0 else None
+                    current = (
+                        self._db.export_profile_to_toml(_pid)
+                        if _pid is not None
+                        else self._extract_tree_to_dict()
+                    )
                     merged = self._deep_merge(defaults, current, added)
                     self.treeWidgetConfig.blockSignals(True)
                     self.treeWidgetConfig.clear()
@@ -1571,8 +1953,13 @@ class Workflow(QDialog, LogMixin):
     def _on_tree_item_changed(self, item, column):
         if self.radioViewSettings.isChecked():
             self._save_settings_view_item(item, column)
-        else:
-            self._save_tree_to_active_profile()
+        if column == 1:
+            original = item.data(0, Qt.UserRole + 1)
+            if original is not None:
+                if item.text(1) != original:
+                    self._mark_item_edited(item)
+                else:
+                    self._unmark_item_edited(item)
 
     def _save_settings_view_item(self, item, column):
         """Save an edited value in the Settings view back to the DB."""
@@ -1618,6 +2005,7 @@ class Workflow(QDialog, LogMixin):
         try:
             app_settings.set_locator(profile_id)
             app_settings.reload()
+            self._sync_associator_metadata()
         except Exception:
             pass
 
@@ -2099,6 +2487,7 @@ class Workflow(QDialog, LogMixin):
         metadata_pvs = self._build_metadata_channels()
         if metadata_pvs:
             cmd.extend(['--metadata-channels', metadata_pvs])
+        self._associator_metadata_channels = metadata_pvs
 
         try:
             process = subprocess.Popen(
@@ -2131,6 +2520,19 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopAssociatorConsumers.setEnabled(False)
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
+
+    def _sync_associator_metadata(self) -> None:
+        """Restart the associator if it is running and metadata channels changed."""
+        if 'associator_consumers' not in self.processes:
+            return
+        new_channels = self._build_metadata_channels()
+        if new_channels == getattr(self, '_associator_metadata_channels', None):
+            return
+        self.textEditAssociatorConsumersOutput.appendPlainText(
+            '[Config] Metadata channels changed — restarting associator...'
+        )
+        self.stop_associator_consumers()
+        self.run_associator_consumers()
 
     def _format_and_append_output(self, text: str, target_widget: QTextEdit):
         timestamp = datetime.now().strftime('%H:%M:%S')
@@ -2345,6 +2747,19 @@ class Workflow(QDialog, LogMixin):
     # ------------------------------------------------------------------ #
 
     def closeEvent(self, event):
+        has_changes = bool(self._edited_item_ids) or self._structural_changed
+        if has_changes:
+            msg = QMessageBox(self)
+            msg.setWindowTitle('Unsaved Changes')
+            msg.setText('You have unsaved changes in the Config tab.')
+            msg.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            msg.setDefaultButton(QMessageBox.Save)
+            result = msg.exec_()
+            if result == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if result == QMessageBox.Save:
+                self._on_apply_save()
         for key in list(self.processes.keys()):
             self.workers[key][0].stop()
             self.processes[key].wait()

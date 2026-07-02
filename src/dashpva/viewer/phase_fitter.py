@@ -2231,7 +2231,6 @@ def main():
 
     app = QApplication(sys.argv)
     configure_app(app)
-    app.setStyle('Fusion')
     pg.setConfigOptions(antialias=True, background='w', foreground='k')
 
     window = PhaseFitApp(

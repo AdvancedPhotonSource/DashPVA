@@ -68,6 +68,7 @@ class UpdateDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         uic.loadUi(ui_path("install", "update_dialog.ui"), self)
+        self.btn_update.setProperty("role", "info")
 
         self._check_worker = None
         self._pull_worker = None

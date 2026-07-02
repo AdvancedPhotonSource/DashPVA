@@ -1,9 +1,9 @@
 """
 Single source of truth for DashPVA UI colors and font sizes.
 
-Static styles live in theme.qss (loaded by configure_app).
-Dynamic styles (runtime state changes) import constants from here.
-When changing a value, update theme.qss to match.
+Static styles live in theme.qss, which is loaded by configure_app() and
+templated against this module via $VARIABLE substitution.  Dynamic styles
+(runtime state changes) import constants from here directly.
 """
 
 # -- Status colors ------------------------------------------------------------
@@ -23,10 +23,14 @@ TEXT_PRIMARY = "#2C3E50"
 TEXT_SECONDARY = "#7A8394"
 TEXT_MUTED = "#9BA5B5"
 
+# -- Disabled state ------------------------------------------------------------
+DISABLED_BG = "#9E9E9E"
+
 # -- Surface / border ----------------------------------------------------------
 SURFACE = "#F8F9FA"
 SURFACE_ALT = "#E9ECEF"
 BORDER = "#DEE2E6"
+SIM_BG = "rgba(52, 152, 219, 25)"
 
 # -- Dock title bar (slate header + white text; mirrored in theme.qss) ---------
 DOCK_HEADER_BG = "#2C3E50"
@@ -40,6 +44,15 @@ ROI_STATS_COLORS = {
     'Stats3': ROI_COLORS[2],
     'Stats4': ROI_COLORS[3],
 }
+# Individual aliases for $VARIABLE substitution in theme.qss
+ROI_1 = ROI_COLORS[0]
+ROI_2 = ROI_COLORS[1]
+ROI_3 = ROI_COLORS[2]
+ROI_4 = ROI_COLORS[3]
+
+# -- Lock banner (ROI calculator locked state) ---------------------------------
+LOCK_BG = "#FFD6D6"
+LOCK_BORDER = "#A94442"
 
 # -- Log level colors (reuse status palette for consistency) -------------------
 LOG_ERROR = ERROR
@@ -50,6 +63,7 @@ LOG_DEFAULT = TEXT_PRIMARY
 
 # -- Font sizes (use pt to avoid QFont warnings on macOS high-DPI) -------------
 FONT_HEADING = "17pt"
+FONT_LARGE = "13pt"
 FONT_SUBHEADING = "11pt"
 FONT_BODY = "10pt"
 FONT_CAPTION = "9pt"
