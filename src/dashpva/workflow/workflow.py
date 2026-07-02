@@ -505,43 +505,19 @@ class Workflow(QDialog, LogMixin):
             self._load_analysis_last()
 
     def _populate_processor_file_combos(self):
-        """Populate processor file dropdowns from CONSUMERS > hpc in the DB."""
-        if not self._db_available:
-            return
-        try:
-            # Look up CONSUMERS by name — works whether it's root or under PATHS
-            consumers_setting = self._db.get_setting_by_name('CONSUMERS')
-            if consumers_setting is None:
-                return
-            consumers_base = self._db.get_setting_value(consumers_setting.id, 'BASE') or ''
+        """Populate processor file dropdowns from DASHPVA_ROOT consumers/hpc subdirectories."""
 
-            hpc_setting = next(
-                (c for c in self._db.get_setting_children(consumers_setting.id) if c.name == 'hpc'),
-                None
-            )
-            if hpc_setting is None:
-                return
-            hpc_base     = self._db.get_setting_value(hpc_setting.id, 'BASE')     or ''
-            meta_dir     = self._db.get_setting_value(hpc_setting.id, 'meta')     or ''
-            analysis_dir = self._db.get_setting_value(hpc_setting.id, 'analysis') or ''
-        except Exception:
-            return
-
-        # Resolve relative to the package root (src/dashpva/) where consumers/ lives
-        pkg_root = pathlib.Path(__file__).parent.parent
+        hpc_root = app_settings.DASHPVA_ROOT / 'consumers' / 'hpc'
 
         def list_py_files(subdir):
-            try:
-                d = pkg_root / consumers_base / hpc_base / subdir if subdir else pkg_root / consumers_base / hpc_base
-                if not d.is_dir():
-                    return []
-                rel_base = d.relative_to(app_settings.PROJECT_ROOT)
-                return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
-            except Exception:
+            d = hpc_root / subdir
+            if not d.is_dir():
                 return []
+            rel_base = d.relative_to(app_settings.PROJECT_ROOT)
+            return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')) if f.name != '__init__.py')
 
-        meta_files     = list_py_files(meta_dir)
-        analysis_files = list_py_files(analysis_dir)
+        meta_files     = list_py_files('meta')
+        analysis_files = list_py_files('analysis')
 
         for combo, files in [
             (self.comboBoxProcessorFileAssociator, meta_files),

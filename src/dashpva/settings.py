@@ -152,6 +152,7 @@ BEAMLINE_NAME: Optional[str] = None
 
 # Core
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DASHPVA_ROOT = Path(__file__).resolve().parent
 DETECTOR_PREFIX: Optional[str] = None
 IOC_PREFIX: Optional[str] = None
 INPUT_CHANNEL: Optional[str] = None
