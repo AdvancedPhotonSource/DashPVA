@@ -202,6 +202,10 @@ QLineEdit#pv_prefix {
     min-height: 50px;
     padding: 8px 12px;
 }
+QLabel#pv_label {
+    font-size: $FONT_LARGE;
+    font-weight: bold;
+}
 
 /* -- imageshow.ui Stats buttons (ROI identity text colors) ------------ */
 QPushButton#btn_Stats1, QPushButton#btn_Stats2,

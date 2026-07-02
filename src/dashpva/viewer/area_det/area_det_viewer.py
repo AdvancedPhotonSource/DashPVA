@@ -9,18 +9,20 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMenu,
     QMessageBox,
     QProgressBar,
     QSizePolicy,
     QSlider,
+    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -85,6 +87,43 @@ class ConfigDialog(QDialog):
         _settings().setValue("area_det_prefix", self.prefix)
         self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
+
+
+class _CornerGrip(QWidget):
+    """Small diagonal drag handle that resizes the side + bottom profile plots
+    together. Lives at the toggle button's top-right corner (where the 2D image
+    meets the two 1D profiles). Dragging toward the image enlarges the profiles;
+    toward the corner shrinks them. The drag is mapped to a single value so the
+    left-plot width and bottom-plot height stay coupled (corner stays square)."""
+
+    def __init__(self, parent, on_press, on_move):
+        super().__init__(parent)
+        self._on_press = on_press
+        self._on_move = on_move
+        self._start = None
+        self.setFixedSize(16, 16)
+        self.setCursor(Qt.SizeBDiagCursor)
+        self.setToolTip("Drag to resize the side/bottom average plots")
+
+    def mousePressEvent(self, event):
+        self._start = event.globalPos()
+        self._on_press()
+
+    def mouseMoveEvent(self, event):
+        if self._start is not None:
+            d = event.globalPos() - self._start
+            self._on_move((d.x() - d.y()) / 2.0)
+
+    def mouseReleaseEvent(self, event):
+        self._start = None
+
+    def paintEvent(self, event):
+        from PyQt5.QtGui import QColor, QPainter
+        p = QPainter(self)
+        p.setPen(QColor(160, 160, 160))
+        w, h = self.width(), self.height()
+        for off in (3, 7, 11):
+            p.drawLine(w - 1, off, off, h - 1)
 
 
 class DiffractionImageWindow(BaseWindow):
@@ -211,13 +250,19 @@ class DiffractionImageWindow(BaseWindow):
         self.crosshair_v.hide()
         self.crosshair_h.hide()
         self.crosshair_visible = False
+        # Profile-plot thickness: left-plot width == bottom-plot height == corner
+        # button size. Adjustable at runtime via the corner grip. Always starts at
+        # this default (not persisted) so the initial layout is stable.
+        self._avg_side = self.fontMetrics().averageCharWidth() * 25
+        self._grip_start_side = self._avg_side
         # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        # Cap width by font metrics so the side plot stays narrow regardless
-        # of DPI / system font size — pg.PlotWidget's default sizeHint is
-        # generous, so QSizePolicy alone won't constrain it.
-        self.horizontal_avg_plot.setMaximumWidth(self.fontMetrics().averageCharWidth() * 25)
+        # Fixed width (min == max) driven by self._avg_side so the column tracks
+        # it — mirrors the bottom plot's fixed height. (max alone left the column
+        # pinned by the corner button, so the left plot never resized.)
+        self.horizontal_avg_plot.setMinimumWidth(self._avg_side)
+        self.horizontal_avg_plot.setMaximumWidth(self._avg_side)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
@@ -231,11 +276,10 @@ class DiffractionImageWindow(BaseWindow):
         # right margins so its plot area lines up with the image's (which is
         # narrowed on the right by the HistogramLUT). Hidden until live view.
         self.bottom_avg_plot = pg.PlotWidget()
-        # Height == the left plot's width so the two profiles look symmetric and
-        # the bottom-left corner button becomes a square.
-        _avg_side = self.fontMetrics().averageCharWidth() * 25
-        self.bottom_avg_plot.setMinimumHeight(_avg_side)
-        self.bottom_avg_plot.setMaximumHeight(_avg_side)
+        # Height == the left plot's width (self._avg_side) so the two profiles
+        # stay symmetric and the corner button stays square.
+        self.bottom_avg_plot.setMinimumHeight(self._avg_side)
+        self.bottom_avg_plot.setMaximumHeight(self._avg_side)
         self.bottom_avg_plot.getAxis('left').setLabel(text='Vertical Avg.')
         self.bottom_avg_plot.hideAxis('bottom')
         self.bottom_avg_plot.showAxis('right')
@@ -273,10 +317,25 @@ class DiffractionImageWindow(BaseWindow):
         # can stretch across the cell.
         self.pv_prefix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.pv_prefix.setMaximumWidth(16777215)
+        # Labeled PV entry row (idle only): "Detector PVA address:" + wide box.
+        self.pv_label = QLabel("Detector PVA address:")
+        self.pv_label.setObjectName("pv_label")
+        self._pv_row = QWidget()
+        _pv_row_layout = QHBoxLayout(self._pv_row)
+        _pv_row_layout.setContentsMargins(0, 0, 0, 0)
+        _pv_row_layout.setSpacing(8)
+        _pv_row_layout.addWidget(self.pv_label)
+        _pv_row_layout.addWidget(self.pv_prefix)
         self.viewer_layout.addWidget(self.start_live_view, 1, 0)
-        self.viewer_layout.addWidget(self.pv_prefix, 1, 1)
+        self.viewer_layout.addWidget(self._pv_row, 1, 1)
         self.viewer_layout.setColumnStretch(1, 1)
         self.group_box_connection.hide()
+        # Corner grip to resize the side/bottom profile plots together (live-view
+        # only). Anchored to the toggle button's top-right corner; the eventFilter
+        # keeps it there as the button resizes.
+        self._corner_grip = _CornerGrip(self.start_live_view, self._grip_press, self._grip_move)
+        self._corner_grip.hide()
+        self.start_live_view.installEventFilter(self)
         self._analysis_menu = QMenu(self)
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
@@ -1537,6 +1596,42 @@ class DiffractionImageWindow(BaseWindow):
         if abs(ra.width() - hist_w) > 0.5:
             ra.setWidth(hist_w)
 
+    def _avg_side_bounds(self):
+        """(min, max) px for the profile thickness: min keeps the Start/Stop
+        button usable; max stops the profiles from crowding out the image."""
+        lo = max(120, self.start_live_view.sizeHint().width())
+        hi = min(500, max(lo + 40, self.width() // 3))
+        return lo, hi
+
+    def _apply_avg_side(self, px) -> None:
+        lo, hi = self._avg_side_bounds()
+        px = int(max(lo, min(hi, px)))
+        self._avg_side = px
+        self.horizontal_avg_plot.setMinimumWidth(px)
+        self.horizontal_avg_plot.setMaximumWidth(px)
+        self.bottom_avg_plot.setMinimumHeight(px)
+        self.bottom_avg_plot.setMaximumHeight(px)
+        self._reposition_grip()
+
+    def _reposition_grip(self) -> None:
+        grip = getattr(self, "_corner_grip", None)
+        if grip is None:
+            return
+        b = self.start_live_view
+        grip.move(max(0, b.width() - grip.width()), 0)
+        grip.raise_()
+
+    def _grip_press(self) -> None:
+        self._grip_start_side = self._avg_side
+
+    def _grip_move(self, delta) -> None:
+        self._apply_avg_side(self._grip_start_side + delta)
+
+    def eventFilter(self, obj, event):
+        if obj is self.start_live_view and event.type() == QEvent.Resize:
+            self._reposition_grip()
+        return super().eventFilter(obj, event)
+
     def _toggle_live_view(self) -> None:
         """Single Start/Stop button dispatches by current state."""
         if self._running:
@@ -1558,16 +1653,19 @@ class DiffractionImageWindow(BaseWindow):
     def _enter_running_state(self) -> None:
         self._running = True
         self.start_live_view.setText("Stop Live View")
-        self.pv_prefix.hide()
+        self._pv_row.hide()
         self.bottom_avg_plot.show()
+        self._corner_grip.show()
+        self._reposition_grip()
         self._update_title()
 
     def _enter_idle_state(self) -> None:
         self._running = False
         self._last_connected = False
         self.start_live_view.setText("Start Live View")
-        self.pv_prefix.show()
+        self._pv_row.show()
         self.bottom_avg_plot.hide()
+        self._corner_grip.hide()
         self._update_title()
 
     def update_mouse_pos(self, pos) -> None:
