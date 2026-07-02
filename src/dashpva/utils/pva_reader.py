@@ -121,6 +121,7 @@ class PVAReader(QObject):
         self.attributes = []
         self.pv_attributes = {}
         self.metadata_ca = {}  # Store CA metadata PVs
+        self.cached_ca: dict = {}  # pv_name -> [values] captured during scan
 
         # variables used for image manipulaiton
         self.pixel_ordering = 'F'
@@ -242,6 +243,12 @@ class PVAReader(QObject):
                 try:
                     if self.cache_attributes(self.pv_attributes, self.rsm_attributes):
                         self.cache_image(np.ravel(self.image))
+                        if self.is_caching:
+                            ca_config = self.config.get('METADATA', {}).get('CA', {})
+                            for pv_name in ca_config.values():
+                                val = self.pv_attributes.get(pv_name)
+                                if val is not None:
+                                    self.cached_ca.setdefault(pv_name, []).append(val)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -494,6 +501,7 @@ class PVAReader(QObject):
             self.is_caching = True
             self.is_scan_complete = False
             self.scan_state_changed.emit(True)
+            self.cached_ca = {}
             print('[DEBUG] CA flag: Scan STARTED')
 
     def start_channel_monitor(self, callback=None) -> None:
@@ -636,7 +644,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")
@@ -647,7 +656,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")

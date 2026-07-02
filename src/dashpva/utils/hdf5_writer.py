@@ -165,23 +165,25 @@ class HDF5Writer(QObject, LogMixin):
 
             metadata_grp = data_grp.create_group('metadata')
 
-            # Write custom CA metadata to entry/data/metadata/ca_custom/.
-            # CUSTOM nesting was flattened — METADATA_CA keys are the PV friendly names directly.
-            custom_ca = {}
-            try:
-                custom_ca = settings.METADATA_CA.get('CUSTOM', {}) or {}
-            except Exception:
-                pass
+            # Write custom CA metadata to entry/data/metadata/ca/.
+            # METADATA_CA is a flat {friendly_name: pv_name} table from [METADATA.CA].
+            # Prefer cached_ca (values captured per-step during the scan) over
+            # merged_metadata (per-frame pv_attributes, which may carry a stale
+            # pre-scan value in the first entry).
+            custom_ca = getattr(settings, 'METADATA_CA', {}) or {}
+            cached_ca = data.get('cached_ca', {})
             if custom_ca:
-                ca_custom_grp = metadata_grp.create_group('ca')
+                ca_grp = metadata_grp.create_group('ca')
+                ca_grp.attrs['NX_class'] = 'NXcollection'
                 for friendly_name, pv_name in custom_ca.items():
                     try:
-                        values = merged_metadata.get(pv_name)
-                        if values is None:
+                        values = cached_ca.get(pv_name) or merged_metadata.get(pv_name)
+                        if not values:
                             continue
                         arr = np.array(values)
                         if arr.dtype.kind in ('i', 'u', 'f') and arr.size > 0:
-                            ca_custom_grp.create_dataset(friendly_name, data=arr)
+                            ds = ca_grp.create_dataset(friendly_name, data=arr)
+                            ds.attrs['pv_name'] = pv_name
                     except Exception:
                         pass
 
@@ -279,15 +281,14 @@ class HDF5Writer(QObject, LogMixin):
                 geo_grp[field] = h5py.SoftLink(f'/{target_path}')
 
     def merge_metadata(self, attributes):
-        merged_metadata = {}
-        for attribute_dict in attributes:
-            for key, value in attribute_dict.items():
-                if not (key == 'RSM' or key == 'Analysis'):
-                    if key not in merged_metadata:
-                        merged_metadata[key] = []
-                        merged_metadata[key].append(value)
-                    else:
-                        merged_metadata[key].append(value)
+        all_keys = set()
+        for d in attributes:
+            if isinstance(d, dict):
+                all_keys.update(k for k in d.keys() if k not in ('RSM', 'Analysis'))
+        merged_metadata = {k: [] for k in all_keys}
+        for d in attributes:
+            for k in all_keys:
+                merged_metadata[k].append(d.get(k, np.nan) if isinstance(d, dict) else np.nan)
         return merged_metadata
 
     # --- Scan format helpers (mirror of HDF5Handler methods) ---
