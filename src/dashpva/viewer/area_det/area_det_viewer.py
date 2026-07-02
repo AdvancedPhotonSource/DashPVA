@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
-from epics import PV, caget, camonitor
+from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
 from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -1074,6 +1074,19 @@ class DiffractionImageWindow(BaseWindow):
         UI responsive even if the metadata sweep takes a while.
         """
         self._pv_pollers_loading = True
+        # This worker thread does Channel Access (caget/camonitor for ROI, Stats,
+        # HKL). Attach it to the main CA context so pyepics doesn't spin up a
+        # per-thread context whose teardown on thread-exit intermittently crashes
+        # EPICS libCom ("pthread_attr_destroy ... free_threadInfoThread ... can't
+        # proceed, suspending" — seen while dead Stats PVs were still connecting).
+        # REVISIT: if that crash still appears (e.g. moving the ROI during a live
+        # beam-profiler fit), this wasn't the full cause — capture a fuller native
+        # trace and consider establishing the initial CA context on the main
+        # thread at startup as well.
+        try:
+            ca.use_initial_context()
+        except Exception:
+            pass
         try:
             if self.reader is None:
                 return
