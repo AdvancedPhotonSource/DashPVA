@@ -195,6 +195,18 @@ QPushButton#start_live_view, QPushButton#stop_live_view {
     padding: 6px 20px;
 }
 
+/* -- imageshow.ui PV input box (idle-state channel entry, wide) --------- */
+/* min-height matches the Start Live View button so they align in the row. */
+/* PV entry label + box match the Start Live View button ($FONT_LARGE). */
+QLineEdit#pv_prefix {
+    font-size: $FONT_LARGE;
+    min-height: 50px;
+    padding: 8px 12px;
+}
+QLabel#pv_label {
+    font-size: $FONT_LARGE;
+}
+
 /* -- imageshow.ui Stats buttons (ROI identity text colors) ------------ */
 QPushButton#btn_Stats1, QPushButton#btn_Stats2,
 QPushButton#btn_Stats3, QPushButton#btn_Stats4,
