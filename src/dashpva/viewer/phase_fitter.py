@@ -2231,7 +2231,7 @@ def main():
 
     app = QApplication(sys.argv)
     configure_app(app)
-    pg.setConfigOptions(antialias=True, background='w')
+    pg.setConfigOptions(antialias=True, background='w', foreground='k')
 
     window = PhaseFitApp(
         pv_address=args.pv_address,
