@@ -58,11 +58,11 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         self._lastToleranceWarnTime = 0.0
         self._toleranceWarnSuppressed = 0
         self._toleranceWarnIntervalSec = 60.0
-        # Silent tally of "Metadata channel X not found" occurrences. Was
-        # previously logged at ERROR level, which the associator subprocess
-        # piped into the workflow GUI text box on every frame. Counting only —
-        # inspect self._mdMissingChannels if you need the per-channel tallies.
-        self._mdMissingChannels = {}  # channel -> total count
+        # Per-channel tally of "Metadata channel X not found" occurrences, plus
+        # a throttled WARNING (ERROR on every frame floods the associator GUI
+        # box, so we warn at most once per _toleranceWarnIntervalSec per channel).
+        self._mdMissingChannels = {}     # channel -> total count
+        self._lastMissingWarnTime = {}   # channel -> last warn time (s)
 
         # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
         self.CODEC_PARAMETERS_MAP = {
@@ -161,11 +161,18 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
     def associateMetadata(self, mdChannel, frameId, frameTimestamp, frameAttributes):
         # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
-            # Count silently — no logger.error, no print. The associator
-            # subprocess captures any ERROR-level output and pushes it into
-            # the workflow GUI text box on every frame, so logging here
-            # floods the UI.
-            self._mdMissingChannels[mdChannel] = self._mdMissingChannels.get(mdChannel, 0) + 1
+            # Metadata for this channel has not arrived, so it cannot be
+            # attached to the frame. Tally per channel and warn at most once
+            # per interval per channel (ERROR every frame floods the GUI box).
+            count = self._mdMissingChannels.get(mdChannel, 0) + 1
+            self._mdMissingChannels[mdChannel] = count
+            now = time.time()
+            if now - self._lastMissingWarnTime.get(mdChannel, 0.0) >= self._toleranceWarnIntervalSec:
+                self.logger.warning(
+                    f'[Metadata Associator] {mdChannel} not attaching: no metadata '
+                    f'received yet (missed {count} times)'
+                )
+                self._lastMissingWarnTime[mdChannel] = now
             return False
 
         mdObject = self.currentMetadataMap[mdChannel]
@@ -225,8 +232,39 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         
     # Process monitor update
     def process(self, pvObject):
+        # Catch-all so any processing problem is logged (with traceback) via the
+        # LogMixin logger instead of vanishing; the frame is still forwarded.
+        try:
+            return self._process_frame(pvObject)
+        except Exception:
+            self.nFrameErrors += 1
+            try:
+                _fid = pvObject['uniqueId']
+            except Exception:
+                _fid = '?'
+            self.logger.exception(
+                f'[Metadata Associator] process() failed for frame {_fid}')
+            return pvObject
+
+    def _process_frame(self, pvObject):
         t0 = time.time()
         frameId = pvObject['uniqueId']
+        # One-time diagnostic: confirms process() is actually being called and
+        # shows how many metadata channels the framework attached (empty => there
+        # is nothing to associate). Also printed to stdout so it shows in the
+        # workflow associator output box, not just the general.log file.
+        if not getattr(self, '_loggedFirstFrame', False):
+            self._loggedFirstFrame = True
+            chans = list(getattr(self, 'metadataQueueMap', {}) or {})
+            msg = (f'[Metadata Associator] first frame id={frameId}; '
+                   f'{len(chans)} metadata channel(s) attached: {chans}')
+            self.logger.info(msg)
+            print(msg, flush=True)
+            if not chans:
+                warn = ('[Metadata Associator] no metadata channels attached — '
+                        'nothing will associate; check --metadata-channels / config.')
+                self.logger.warning(warn)
+                print(warn, flush=True)
         dims = pvObject['dimension']
         nDims = len(dims)
 
