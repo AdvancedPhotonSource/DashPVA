@@ -2529,6 +2529,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopAssociatorConsumers.setEnabled(False)
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
+            print(f"Associator Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
 
     def _sync_associator_metadata(self) -> None:
         """Restart the associator if it is running and metadata channels changed."""
@@ -2750,6 +2751,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopAnalysisConsumer.setEnabled(False)
             self.labelStatusAnalysisConsumer.setText('Process ID: Not running')
             self.textEditAnalysisConsumerOutput.appendPlainText('Analysis Consumer stopped.')
+            print(f"Analysis Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
 
     # ------------------------------------------------------------------ #
     # Close
