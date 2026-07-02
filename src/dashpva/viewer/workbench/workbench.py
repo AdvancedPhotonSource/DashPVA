@@ -1948,6 +1948,12 @@ class WorkbenchWindow(BaseWindow):
                 return
             if data.ndim >= 2 and np.issubdtype(data.dtype, np.number):
                 self.display_2d_data(data)
+                # Load ROIs saved for this dataset (mirror the sync load path)
+                try:
+                    self.roi_manager.clear_all_rois()
+                    self.roi_manager.render_rois_for_dataset(self.current_file_path, self.selected_dataset_path)
+                except Exception:
+                    pass
                 if hasattr(self, 'tabWidget_analysis'):
                     self.tabWidget_analysis.setCurrentIndex(0)
                 # Build info
