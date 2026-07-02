@@ -74,6 +74,17 @@ class ContextRectROI(pg.RectROI):
                 menu.addAction(action_hide)
                 menu.addAction(action_delete)
                 menu.addSeparator()
+                # Annotate ROI action
+                action_annotate = QAction("Add Annotation", menu)
+                try:
+                    _roi = self
+                    action_annotate.triggered.connect(
+                        lambda: self.parent_window.annotation_dock.open_for_roi(_roi)
+                        if hasattr(self.parent_window, 'annotation_dock') else None
+                    )
+                except Exception:
+                    pass
+                menu.addAction(action_annotate)
                 # Save ROI action
                 action_save = QAction("Save ROI", menu)
                 try:

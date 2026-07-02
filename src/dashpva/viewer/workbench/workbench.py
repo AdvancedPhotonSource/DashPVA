@@ -42,6 +42,7 @@ from dashpva.viewer.core.base_window import BaseWindow
 
 # Docks
 from dashpva.viewer.workbench.dock_window import DockWindow
+from dashpva.viewer.workbench.docks.annotation_dock import AnnotationDock
 from dashpva.viewer.workbench.docks.data_structure import DataStructureDock
 
 #from dashpva.viewer.workbench.docks.dash_ai import DashAI
@@ -50,6 +51,7 @@ from dashpva.viewer.workbench.docks.info_2d_dock import Info2DDock
 from dashpva.viewer.workbench.docks.info_3d_dock import Info3DDock
 from dashpva.viewer.workbench.docks.roi_calc import ROICalcDock
 from dashpva.viewer.workbench.docks.slice_plane import SlicePlaneDock
+from dashpva.viewer.workbench.managers.annotation_manager import AnnotationManager
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager
 from dashpva.viewer.workbench.workspace.workspace_2d import Workspace2D
 from dashpva.viewer.workbench.workspace.workspace_3d import Workspace3D
@@ -86,6 +88,8 @@ class WorkbenchWindow(BaseWindow):
             self.add_window_dock = None
         # roi
         self.roi_calc_dock = ROICalcDock(main_window=self, segment_name="other", dock_area=Qt.RightDockWidgetArea)
+        # annotations
+        self.annotation_dock = AnnotationDock(main_window=self, dock_area=Qt.RightDockWidgetArea, segment_name="other")
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
@@ -121,6 +125,8 @@ class WorkbenchWindow(BaseWindow):
 
         # ROI manager to centralize ROI logic
         self.roi_manager = ROIManager(self)
+        # Annotation manager — in-memory store, saved/loaded per HDF5 file
+        self.annotation_manager = AnnotationManager(self)
         # Minimal wiring for ROICalcDock when ROIManager is created after the dock:
         # subscribe ROICalcDock to ROIManager events and populate its A/B combos.
         try:
@@ -190,6 +196,11 @@ class WorkbenchWindow(BaseWindow):
     def current_2d_data(self):
         tab = getattr(self, 'tab_2d', None)
         return tab.current_2d_data if tab is not None else None
+
+    @property
+    def annotation_note_label(self):
+        tab = getattr(self, 'tab_2d', None)
+        return getattr(tab, 'annotation_note_label', None) if tab is not None else None
 
     def display_2d_data(self, data):
         if getattr(self, 'tab_2d', None) is not None:
@@ -912,6 +923,11 @@ class WorkbenchWindow(BaseWindow):
                     self.update_status("Failed to load file", level='error')
                     return
 
+                try:
+                    self.annotation_manager.load_from_hdf5(file_path)
+                    self.annotation_dock.refresh()
+                except Exception:
+                    pass
 
                 if hasattr(self, 'file_status_label'):
                     self.file_status_label.setText(f"HDF5 file loaded: {os.path.basename(file_path)}")
@@ -1690,6 +1706,12 @@ class WorkbenchWindow(BaseWindow):
                     self.roi_manager.render_rois_for_dataset(self.current_file_path, '/entry/data/data')
                 except Exception:
                     pass
+                try:
+                    self.annotation_manager.clear()
+                    self.annotation_manager.load_from_hdf5(self.current_file_path)
+                    self.annotation_dock.refresh()
+                except Exception:
+                    pass
             elif is_roi_data:
                 # When clicking on an ROI dataset, clear existing ROI boxes and render the ROI dataset itself as the image
                 with h5py.File(self.current_file_path, 'r') as h5f:
@@ -1723,6 +1745,8 @@ class WorkbenchWindow(BaseWindow):
                     # ROI-only view: no ROI boxes and no parent-dataset annotation overlays
                     try:
                         self.roi_manager.clear_all_rois()
+                        self.annotation_manager.clear()
+                        self.annotation_dock.refresh()
                     except Exception:
                         pass
                     # Reveal the 2D view's dataset-coordinates toggle when an origin is available
@@ -1762,6 +1786,12 @@ class WorkbenchWindow(BaseWindow):
                     try:
                         self.roi_manager.clear_all_rois()
                         self.roi_manager.render_rois_for_dataset(self.current_file_path, self.selected_dataset_path)
+                    except Exception:
+                        pass
+                    try:
+                        self.annotation_manager.clear()
+                        self.annotation_manager.load_from_hdf5(self.current_file_path)
+                        self.annotation_dock.refresh()
                     except Exception:
                         pass
                 elif data.ndim == 1:

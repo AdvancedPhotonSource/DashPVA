@@ -54,6 +54,14 @@ QLineEdit[readOnly="true"] {
     color: palette(text);
 }
 
+/* -- Per-frame annotation note label (read-only, beneath 2D image) ---- */
+QLabel#annotationNoteLabel {
+    padding: 2px 6px;
+    color: palette(mid);
+    font-style: italic;
+    font-size: $FONT_CAPTION;
+}
+
 /* -- Workbench info tabs --------------------------------------------- */
 QTabWidget#info_tabs::pane {
     border: 1px solid palette(mid);
