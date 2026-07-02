@@ -826,7 +826,7 @@ class DiffractionImageWindow(BaseWindow):
                 self.reader.pixel_ordering = 'F'
                 self.image_is_transposed = False
                 self.reader.image_is_transposed = False
-                
+
     def trigger_save_caches(self) -> None:
         if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()

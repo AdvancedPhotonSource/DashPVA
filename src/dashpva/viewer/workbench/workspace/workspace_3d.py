@@ -40,7 +40,8 @@ class Workspace3D(BaseTab):
     Delegates UI widget access via main_window, but centralizes 3D actions here.
     """
     def __init__(self, parent=None, main_window=None, title="3D View"):
-        pv.set_plot_theme('dark')
+        if pv is not None:
+            pv.set_plot_theme('dark')
         try: 
             super().__init__(ui_file=ui_path("workbench", "workspace", "workspace_3d.ui"), parent=parent, main_window=main_window, title=title)
             self.title = title
