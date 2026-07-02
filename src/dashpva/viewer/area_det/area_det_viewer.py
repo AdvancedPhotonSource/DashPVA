@@ -7,20 +7,22 @@ import time
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
-from epics import PV, caget, camonitor
+from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMenu,
     QMessageBox,
     QProgressBar,
     QSizePolicy,
     QSlider,
+    QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
 
@@ -31,6 +33,7 @@ from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
+    BeamFitDock,
     ImageDock,
     MaskDock,
     MousePosDock,
@@ -49,7 +52,7 @@ _PERF_TIMER_INTERVAL_MS = 1000
 # Bump when the dock set changes — restoreState silently rejects mismatched
 # versions so users with a stale saved layout fall back to defaults instead
 # of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 2
+_DOCK_STATE_VERSION = 3
 
 
 def _settings() -> QSettings:
@@ -84,6 +87,43 @@ class ConfigDialog(QDialog):
         _settings().setValue("area_det_prefix", self.prefix)
         self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
+
+
+class _CornerGrip(QWidget):
+    """Small diagonal drag handle that resizes the side + bottom profile plots
+    together. Lives at the toggle button's top-right corner (where the 2D image
+    meets the two 1D profiles). Dragging toward the image enlarges the profiles;
+    toward the corner shrinks them. The drag is mapped to a single value so the
+    left-plot width and bottom-plot height stay coupled (corner stays square)."""
+
+    def __init__(self, parent, on_press, on_move):
+        super().__init__(parent)
+        self._on_press = on_press
+        self._on_move = on_move
+        self._start = None
+        self.setFixedSize(16, 16)
+        self.setCursor(Qt.SizeBDiagCursor)
+        self.setToolTip("Drag to resize the side/bottom average plots")
+
+    def mousePressEvent(self, event):
+        self._start = event.globalPos()
+        self._on_press()
+
+    def mouseMoveEvent(self, event):
+        if self._start is not None:
+            d = event.globalPos() - self._start
+            self._on_move((d.x() - d.y()) / 2.0)
+
+    def mouseReleaseEvent(self, event):
+        self._start = None
+
+    def paintEvent(self, event):
+        from PyQt5.QtGui import QColor, QPainter
+        p = QPainter(self)
+        p.setPen(QColor(160, 160, 160))
+        w, h = self.width(), self.height()
+        for off in (3, 7, 11):
+            p.drawLine(w - 1, off, off, h - 1)
 
 
 class DiffractionImageWindow(BaseWindow):
@@ -210,13 +250,19 @@ class DiffractionImageWindow(BaseWindow):
         self.crosshair_v.hide()
         self.crosshair_h.hide()
         self.crosshair_visible = False
+        # Profile-plot thickness: left-plot width == bottom-plot height == corner
+        # button size. Adjustable at runtime via the corner grip. Always starts at
+        # this default (not persisted) so the initial layout is stable.
+        self._avg_side = self.fontMetrics().averageCharWidth() * 25
+        self._grip_start_side = self._avg_side
         # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
         self.horizontal_avg_plot.invertY(True)
-        # Cap width by font metrics so the side plot stays narrow regardless
-        # of DPI / system font size — pg.PlotWidget's default sizeHint is
-        # generous, so QSizePolicy alone won't constrain it.
-        self.horizontal_avg_plot.setMaximumWidth(self.fontMetrics().averageCharWidth() * 25)
+        # Fixed width (min == max) driven by self._avg_side so the column tracks
+        # it — mirrors the bottom plot's fixed height. (max alone left the column
+        # pinned by the corner button, so the left plot never resized.)
+        self.horizontal_avg_plot.setMinimumWidth(self._avg_side)
+        self.horizontal_avg_plot.setMaximumWidth(self._avg_side)
         self.horizontal_avg_plot.getAxis('bottom').setLabel(text='Horizontal Avg.')
         self.horizontal_avg_plot.hideAxis('left')
         self.viewer_layout.addWidget(self.horizontal_avg_plot, 0,0)
@@ -225,14 +271,71 @@ class DiffractionImageWindow(BaseWindow):
         self.horizontal_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         self.image_view.getView().getViewBox().sigYRangeChanged.connect(self._sync_havg_yrange)
 
+        # Bottom plot: average along the vertical axis, pixel-aligned UNDER the
+        # image (mirror of the left plot but X-linked). Reserves matching left +
+        # right margins so its plot area lines up with the image's (which is
+        # narrowed on the right by the HistogramLUT). Hidden until live view.
+        self.bottom_avg_plot = pg.PlotWidget()
+        # Height == the left plot's width (self._avg_side) so the two profiles
+        # stay symmetric and the corner button stays square.
+        self.bottom_avg_plot.setMinimumHeight(self._avg_side)
+        self.bottom_avg_plot.setMaximumHeight(self._avg_side)
+        self.bottom_avg_plot.getAxis('left').setLabel(text='Vertical Avg.')
+        self.bottom_avg_plot.hideAxis('bottom')
+        self.bottom_avg_plot.showAxis('right')
+        self.bottom_avg_plot.getAxis('right').setStyle(showValues=False)
+        self.bottom_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
+        self.viewer_layout.addWidget(self.bottom_avg_plot, 1, 1)
+        self.viewer_layout.setRowStretch(0, 1)
+        self.viewer_layout.setRowStretch(1, 0)
+        self.image_view.getView().getViewBox().sigXRangeChanged.connect(self._sync_bottom_xrange)
+        self.bottom_avg_plot.hide()
+
         # Build side panels as dock widgets and alias their members onto self
         self._setup_docks()
 
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
-        self.start_live_view.clicked.connect(self.start_live_view_clicked)
+        self.start_live_view.clicked.connect(self._toggle_live_view)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+
+        # --- Compact controls -----------------------------------------------
+        # Reuse the already-themed "Start Live View" button as the single
+        # Start/Stop toggle (theme.qss#start_live_view gives it $FONT_LARGE +
+        # min-height + padding). It fills the previously-empty bottom-left corner
+        # ([1,0]) and grows square while running. The wide PV box takes the cell
+        # under the image ([1,1]) while idle and is swapped for the bottom avg
+        # plot while running. Connection status lives in the window title, so the
+        # Provider/State group box and the separate Stop button are removed.
+        self._running = False
+        self._last_connected = False
+        self.start_live_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.stop_live_view.hide()
+        # Wide, stretchy PV box. Height/appearance come from theme.qss#pv_prefix
+        # (no hardcoded pixels); only the .ui's Fixed width is relaxed here so it
+        # can stretch across the cell.
+        self.pv_prefix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.pv_prefix.setMaximumWidth(16777215)
+        # Labeled PV entry row (idle only): "Detector PVA address:" + wide box.
+        self.pv_label = QLabel("Detector PVA address:")
+        self.pv_label.setObjectName("pv_label")
+        self._pv_row = QWidget()
+        _pv_row_layout = QHBoxLayout(self._pv_row)
+        _pv_row_layout.setContentsMargins(0, 0, 0, 0)
+        _pv_row_layout.setSpacing(8)
+        _pv_row_layout.addWidget(self.pv_label)
+        _pv_row_layout.addWidget(self.pv_prefix)
+        self.viewer_layout.addWidget(self.start_live_view, 1, 0)
+        self.viewer_layout.addWidget(self._pv_row, 1, 1)
+        self.viewer_layout.setColumnStretch(1, 1)
+        self.group_box_connection.hide()
+        # Corner grip to resize the side/bottom profile plots together (live-view
+        # only). Anchored to the toggle button's top-right corner; the eventFilter
+        # keeps it there as the button resizes.
+        self._corner_grip = _CornerGrip(self.start_live_view, self._grip_press, self._grip_move)
+        self._corner_grip.hide()
+        self.start_live_view.installEventFilter(self)
         self._analysis_menu = QMenu(self)
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
@@ -302,6 +405,7 @@ class DiffractionImageWindow(BaseWindow):
         self.roi_dock       = RoiDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
         self.waterfall_dock = WaterfallDock(main_window=self, show=False)
+        self.beam_fit_dock  = BeamFitDock(main_window=self, show=False)
 
         self._apply_default_layout()
         # Restore the user's last layout if one was saved; falls through to
@@ -401,17 +505,19 @@ class DiffractionImageWindow(BaseWindow):
         self.resizeDocks([self.stats_dock], [dock_height], Qt.Vertical)
         # Waterfall shares the large lower-left region with Image when shown.
         self.tabifyDockWidget(self.image_dock, self.waterfall_dock)
+        self.tabifyDockWidget(self.image_dock, self.beam_fit_dock)
         self.image_dock.raise_()
         self.roi_dock.hide()
         self.analysis_dock.hide()
         self.waterfall_dock.hide()
+        self.beam_fit_dock.hide()
 
     def _reset_layout(self) -> None:
         _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock,
-                  self.waterfall_dock):
+                  self.waterfall_dock, self.beam_fit_dock):
             self.removeDockWidget(d)
             d.setFloating(False)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
@@ -784,6 +890,7 @@ class DiffractionImageWindow(BaseWindow):
             self.stop_timers()
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.bottom_avg_plot.getPlotItem().clear()
             # Drop any ROI rectangles + "ROI too large" labels from the
             # previous PV. add_rois() appends both kinds to self.rois.
             for item in self.rois:
@@ -793,6 +900,8 @@ class DiffractionImageWindow(BaseWindow):
             # Tear down the waterfall's manual ROI + buffer for the new channel.
             if hasattr(self, 'waterfall_dock'):
                 self.waterfall_dock.on_channel_changed()
+            if hasattr(self, 'beam_fit_dock'):
+                self.beam_fit_dock.on_channel_changed()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel)
                 self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
@@ -824,7 +933,7 @@ class DiffractionImageWindow(BaseWindow):
                 self.slider.setValue(0)
                 self.slider.setOrientation(Qt.Horizontal) 
                 self.slider.setTickPosition(QSlider.TicksAbove)
-                self.viewer_layout.addWidget(self.slider, 1, 1)
+                self.viewer_layout.addWidget(self.slider, 2, 1)
                 
             self.set_pixel_ordering()
             self.transpose_image_checked()
@@ -835,6 +944,7 @@ class DiffractionImageWindow(BaseWindow):
             self.pv_pollers_status.emit(f"Connect failed: {e}", "error")
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.bottom_avg_plot.getPlotItem().clear()
             self.reset_rsm_vars()
             del self.file_writer
             del self.reader
@@ -860,6 +970,12 @@ class DiffractionImageWindow(BaseWindow):
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
+        # Reflect the new state in the compact controls + window title.
+        if self.reader is not None:
+            self._enter_running_state()
+        else:
+            self._enter_idle_state()
+
     def stop_live_view_clicked(self) -> None:
         """
         Clears the connection for the PVA channel and stops all active monitors.
@@ -879,6 +995,7 @@ class DiffractionImageWindow(BaseWindow):
             self.hkl_data = {}
             self.provider_name.setText('N/A')
             self._set_connection_label(False)
+        self._enter_idle_state()
 
     def stats_button_clicked(self) -> None:
         """
@@ -957,6 +1074,19 @@ class DiffractionImageWindow(BaseWindow):
         UI responsive even if the metadata sweep takes a while.
         """
         self._pv_pollers_loading = True
+        # This worker thread does Channel Access (caget/camonitor for ROI, Stats,
+        # HKL). Attach it to the main CA context so pyepics doesn't spin up a
+        # per-thread context whose teardown on thread-exit intermittently crashes
+        # EPICS libCom ("pthread_attr_destroy ... free_threadInfoThread ... can't
+        # proceed, suspending" — seen while dead Stats PVs were still connecting).
+        # REVISIT: if that crash still appears (e.g. moving the ROI during a live
+        # beam-profiler fit), this wasn't the full cause — capture a fuller native
+        # trace and consider establishing the initial CA context on the main
+        # thread at startup as well.
+        try:
+            ca.use_initial_context()
+        except Exception:
+            pass
         try:
             if self.reader is None:
                 return
@@ -1459,6 +1589,98 @@ class DiffractionImageWindow(BaseWindow):
         self.horizontal_avg_plot.getPlotItem().getViewBox().setYRange(
             y_range[0], y_range[1], padding=0)
 
+    def _sync_bottom_xrange(self, vb, x_range):
+        """Keep the bottom avg plot x-range in sync with the image view."""
+        self.bottom_avg_plot.getPlotItem().getViewBox().setXRange(
+            x_range[0], x_range[1], padding=0)
+
+    def _sync_bottom_margins(self) -> None:
+        """Match the bottom plot's left + right reserved widths to the image's
+        left axis + HistogramLUT so their plot areas align horizontally."""
+        try:
+            left_w = self.image_view.view.getAxis('left').width()
+            hist_w = self.image_view.ui.histogram.width()
+        except Exception:
+            return
+        la = self.bottom_avg_plot.getAxis('left')
+        ra = self.bottom_avg_plot.getAxis('right')
+        if abs(la.width() - left_w) > 0.5:
+            la.setWidth(left_w)
+        if abs(ra.width() - hist_w) > 0.5:
+            ra.setWidth(hist_w)
+
+    def _avg_side_bounds(self):
+        """(min, max) px for the profile thickness: min keeps the Start/Stop
+        button usable; max stops the profiles from crowding out the image."""
+        lo = max(120, self.start_live_view.sizeHint().width())
+        hi = min(500, max(lo + 40, self.width() // 3))
+        return lo, hi
+
+    def _apply_avg_side(self, px) -> None:
+        lo, hi = self._avg_side_bounds()
+        px = int(max(lo, min(hi, px)))
+        self._avg_side = px
+        self.horizontal_avg_plot.setMinimumWidth(px)
+        self.horizontal_avg_plot.setMaximumWidth(px)
+        self.bottom_avg_plot.setMinimumHeight(px)
+        self.bottom_avg_plot.setMaximumHeight(px)
+        self._reposition_grip()
+
+    def _reposition_grip(self) -> None:
+        grip = getattr(self, "_corner_grip", None)
+        if grip is None:
+            return
+        b = self.start_live_view
+        grip.move(max(0, b.width() - grip.width()), 0)
+        grip.raise_()
+
+    def _grip_press(self) -> None:
+        self._grip_start_side = self._avg_side
+
+    def _grip_move(self, delta) -> None:
+        self._apply_avg_side(self._grip_start_side + delta)
+
+    def eventFilter(self, obj, event):
+        if obj is self.start_live_view and event.type() == QEvent.Resize:
+            self._reposition_grip()
+        return super().eventFilter(obj, event)
+
+    def _toggle_live_view(self) -> None:
+        """Single Start/Stop button dispatches by current state."""
+        if self._running:
+            self.stop_live_view_clicked()
+        else:
+            self.start_live_view_clicked()
+
+    def _update_title(self) -> None:
+        """Reflect connection state in the window title."""
+        if not self._running:
+            self.setWindowTitle('DashPVA')
+            return
+        connected = self.reader is not None and self.reader.channel.isMonitorActive()
+        if connected:
+            self.setWindowTitle(f'DashPVA — Connected — {self._input_channel}')
+        else:
+            self.setWindowTitle(f'DashPVA — Connecting… {self._input_channel}')
+
+    def _enter_running_state(self) -> None:
+        self._running = True
+        self.start_live_view.setText("Stop Live View")
+        self._pv_row.hide()
+        self.bottom_avg_plot.show()
+        self._corner_grip.show()
+        self._reposition_grip()
+        self._update_title()
+
+    def _enter_idle_state(self) -> None:
+        self._running = False
+        self._last_connected = False
+        self.start_live_view.setText("Start Live View")
+        self._pv_row.show()
+        self.bottom_avg_plot.hide()
+        self._corner_grip.hide()
+        self._update_title()
+
     def update_mouse_pos(self, pos) -> None:
         """
         Maps the mouse position in the Image Viewer to the corresponding pixel value.
@@ -1498,6 +1720,11 @@ class DiffractionImageWindow(BaseWindow):
             provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
             self.provider_name.setText(provider_name)
             self._set_connection_label(self.reader.channel.isMonitorActive())
+            # Also reflect connection state in the window title (flip once on change).
+            connected = self.reader.channel.isMonitorActive()
+            if self._running and connected != self._last_connected:
+                self._last_connected = connected
+                self._update_title()
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             self.plot_call_id.setText(f'{self.call_id_plot:d}')
@@ -1582,6 +1809,7 @@ class DiffractionImageWindow(BaseWindow):
                             self.max_setting_val.setValue(max_level)
                             self.min_setting_val.setValue(min_level)
                         self.first_plot = False
+                        self._fit_histogram_range(force=True)
                     else:
                         self.image_view.setImage(self.image,
                                                 autoRange=False,
@@ -1593,6 +1821,12 @@ class DiffractionImageWindow(BaseWindow):
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
                                             y=np.arange(self.image.shape[1]),
                                             clear=True)
+                # Bottom plot: average along the vertical axis, aligned under image
+                if self.bottom_avg_plot.isVisible():
+                    self.bottom_avg_plot.plot(x=np.arange(self.image.shape[0]),
+                                              y=np.mean(self.image, axis=1),
+                                              clear=True)
+                    self._sync_bottom_margins()
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
@@ -1606,6 +1840,7 @@ class DiffractionImageWindow(BaseWindow):
     def autoscale_checked(self) -> None:
         if self.chk_autoscale.isChecked() and self.image is not None:
             self.apply_autoscale()
+            self._fit_histogram_range(force=True)
 
     def apply_autoscale(self) -> None:
         if self.image is None:
@@ -1624,7 +1859,31 @@ class DiffractionImageWindow(BaseWindow):
         self.min_setting_val.blockSignals(False)
         self.max_setting_val.blockSignals(False)
         self.image_view.setLevels(min_pct, max_pct)
-    
+        self._fit_histogram_range()
+
+    def _fit_histogram_range(self, force: bool = False) -> None:
+        """Keep the histogram's intensity (Y) scale stable so autoscale moves only
+        the level lines instead of rescaling the whole histogram every frame (the
+        jitter). Auto-range is frozen; the view is (re)fit to the data range only
+        on the first frame / autoscale-enable (force) or when data grows past it."""
+        if self.image is None:
+            return
+        try:
+            finite = self.image[np.isfinite(self.image)]
+            if finite.size == 0:
+                return
+            lo, hi = float(np.min(finite)), float(np.max(finite))
+            if hi <= lo:
+                hi = lo + 1.0
+            vb = self.image_view.ui.histogram.vb
+            vb.enableAutoRange(y=False)
+            cur_lo, cur_hi = vb.viewRange()[1]
+            if force or lo < cur_lo or hi > cur_hi:
+                pad = 0.05 * (hi - lo)
+                vb.setYRange(lo - pad, hi + pad, padding=0)
+        except Exception:
+            pass
+
     def get_threshold_range(self) -> tuple:
         """
         Determines the threshold range based on the data type.
