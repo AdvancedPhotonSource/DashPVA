@@ -19,7 +19,6 @@ from PyQt5.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
-    QPushButton,
     QSizePolicy,
     QSlider,
 )
@@ -254,31 +253,28 @@ class DiffractionImageWindow(BaseWindow):
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
-        self.start_live_view.clicked.connect(self.start_live_view_clicked)
+        self.start_live_view.clicked.connect(self._toggle_live_view)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
 
         # --- Compact controls -----------------------------------------------
-        # Big Start/Stop toggle fills the previously-empty bottom-left corner of
-        # the Live View grid ([1,0]) — same row as the bottom plot, under the
-        # left plot, and square (matches the profile-plot thickness). The wide PV
-        # box takes the cell under the image ([1,1]) while idle, and is swapped
-        # for the bottom avg plot while running. Connection status lives in the
-        # window title, so the Provider/State group box + the separate Stop
-        # button are removed.
+        # Reuse the already-themed "Start Live View" button as the single
+        # Start/Stop toggle (theme.qss#start_live_view gives it $FONT_LARGE +
+        # min-height + padding). It fills the previously-empty bottom-left corner
+        # ([1,0]) and grows square while running. The wide PV box takes the cell
+        # under the image ([1,1]) while idle and is swapped for the bottom avg
+        # plot while running. Connection status lives in the window title, so the
+        # Provider/State group box and the separate Stop button are removed.
         self._running = False
         self._last_connected = False
-        self.btn_live_toggle = QPushButton("Start Live View")
-        self.btn_live_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.btn_live_toggle.clicked.connect(self._toggle_live_view)
-        self.start_live_view.hide()
+        self.start_live_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.stop_live_view.hide()
-        # Wide, stretchy PV box under the image (reparents out of the group box).
-        self.pv_prefix.setMinimumWidth(200)
-        self.pv_prefix.setMaximumWidth(16777215)
-        self.pv_prefix.setMaximumHeight(40)
+        # Wide, stretchy PV box. Height/appearance come from theme.qss#pv_prefix
+        # (no hardcoded pixels); only the .ui's Fixed width is relaxed here so it
+        # can stretch across the cell.
         self.pv_prefix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.viewer_layout.addWidget(self.btn_live_toggle, 1, 0)
-        self.viewer_layout.addWidget(self.pv_prefix, 1, 1, Qt.AlignTop)
+        self.pv_prefix.setMaximumWidth(16777215)
+        self.viewer_layout.addWidget(self.start_live_view, 1, 0)
+        self.viewer_layout.addWidget(self.pv_prefix, 1, 1)
         self.viewer_layout.setColumnStretch(1, 1)
         self.group_box_connection.hide()
         self._analysis_menu = QMenu(self)
@@ -1561,7 +1557,7 @@ class DiffractionImageWindow(BaseWindow):
 
     def _enter_running_state(self) -> None:
         self._running = True
-        self.btn_live_toggle.setText("Stop Live View")
+        self.start_live_view.setText("Stop Live View")
         self.pv_prefix.hide()
         self.bottom_avg_plot.show()
         self._update_title()
@@ -1569,7 +1565,7 @@ class DiffractionImageWindow(BaseWindow):
     def _enter_idle_state(self) -> None:
         self._running = False
         self._last_connected = False
-        self.btn_live_toggle.setText("Start Live View")
+        self.start_live_view.setText("Start Live View")
         self.pv_prefix.show()
         self.bottom_avg_plot.hide()
         self._update_title()
@@ -1702,6 +1698,7 @@ class DiffractionImageWindow(BaseWindow):
                             self.max_setting_val.setValue(max_level)
                             self.min_setting_val.setValue(min_level)
                         self.first_plot = False
+                        self._fit_histogram_range(force=True)
                     else:
                         self.image_view.setImage(self.image,
                                                 autoRange=False,
@@ -1732,6 +1729,7 @@ class DiffractionImageWindow(BaseWindow):
     def autoscale_checked(self) -> None:
         if self.chk_autoscale.isChecked() and self.image is not None:
             self.apply_autoscale()
+            self._fit_histogram_range(force=True)
 
     def apply_autoscale(self) -> None:
         if self.image is None:
@@ -1750,7 +1748,31 @@ class DiffractionImageWindow(BaseWindow):
         self.min_setting_val.blockSignals(False)
         self.max_setting_val.blockSignals(False)
         self.image_view.setLevels(min_pct, max_pct)
-    
+        self._fit_histogram_range()
+
+    def _fit_histogram_range(self, force: bool = False) -> None:
+        """Keep the histogram's intensity (Y) scale stable so autoscale moves only
+        the level lines instead of rescaling the whole histogram every frame (the
+        jitter). Auto-range is frozen; the view is (re)fit to the data range only
+        on the first frame / autoscale-enable (force) or when data grows past it."""
+        if self.image is None:
+            return
+        try:
+            finite = self.image[np.isfinite(self.image)]
+            if finite.size == 0:
+                return
+            lo, hi = float(np.min(finite)), float(np.max(finite))
+            if hi <= lo:
+                hi = lo + 1.0
+            vb = self.image_view.ui.histogram.vb
+            vb.enableAutoRange(y=False)
+            cur_lo, cur_hi = vb.viewRange()[1]
+            if force or lo < cur_lo or hi > cur_hi:
+                pad = 0.05 * (hi - lo)
+                vb.setYRange(lo - pad, hi + pad, padding=0)
+        except Exception:
+            pass
+
     def get_threshold_range(self) -> tuple:
         """
         Determines the threshold range based on the data type.
