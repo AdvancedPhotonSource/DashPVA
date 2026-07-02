@@ -984,7 +984,14 @@ class Workflow(QDialog, LogMixin):
             return
         src_name = self.comboBoxProfile.currentText()
         src_id = self.comboBoxProfile.itemData(idx)
-        new_name = f'{src_name}-(copy)'
+        # Profile names are unique — pick a free "-(copy)" name so duplicating the
+        # same profile more than once doesn't hit the unique-name constraint.
+        base = f'{src_name}-(copy)'
+        new_name = base
+        n = 2
+        while self._db.get_profile_by_name(new_name) is not None:
+            new_name = f'{base}-{n}'
+            n += 1
         try:
             new_profile = self._db.create_profile(new_name)
             self._db.clone_profile_configs(src_id, new_profile.id)
