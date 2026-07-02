@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
+    QPushButton,
     QSizePolicy,
     QSlider,
 )
@@ -225,6 +226,27 @@ class DiffractionImageWindow(BaseWindow):
         self.horizontal_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
         self.image_view.getView().getViewBox().sigYRangeChanged.connect(self._sync_havg_yrange)
 
+        # Bottom plot: average along the vertical axis, pixel-aligned UNDER the
+        # image (mirror of the left plot but X-linked). Reserves matching left +
+        # right margins so its plot area lines up with the image's (which is
+        # narrowed on the right by the HistogramLUT). Hidden until live view.
+        self.bottom_avg_plot = pg.PlotWidget()
+        # Height == the left plot's width so the two profiles look symmetric and
+        # the bottom-left corner button becomes a square.
+        _avg_side = self.fontMetrics().averageCharWidth() * 25
+        self.bottom_avg_plot.setMinimumHeight(_avg_side)
+        self.bottom_avg_plot.setMaximumHeight(_avg_side)
+        self.bottom_avg_plot.getAxis('left').setLabel(text='Vertical Avg.')
+        self.bottom_avg_plot.hideAxis('bottom')
+        self.bottom_avg_plot.showAxis('right')
+        self.bottom_avg_plot.getAxis('right').setStyle(showValues=False)
+        self.bottom_avg_plot.getPlotItem().getViewBox().setMouseEnabled(x=False, y=False)
+        self.viewer_layout.addWidget(self.bottom_avg_plot, 1, 1)
+        self.viewer_layout.setRowStretch(0, 1)
+        self.viewer_layout.setRowStretch(1, 0)
+        self.image_view.getView().getViewBox().sigXRangeChanged.connect(self._sync_bottom_xrange)
+        self.bottom_avg_plot.hide()
+
         # Build side panels as dock widgets and alias their members onto self
         self._setup_docks()
 
@@ -233,6 +255,31 @@ class DiffractionImageWindow(BaseWindow):
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
         self.start_live_view.clicked.connect(self.start_live_view_clicked)
         self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+
+        # --- Compact controls -----------------------------------------------
+        # Big Start/Stop toggle fills the previously-empty bottom-left corner of
+        # the Live View grid ([1,0]) — same row as the bottom plot, under the
+        # left plot, and square (matches the profile-plot thickness). The wide PV
+        # box takes the cell under the image ([1,1]) while idle, and is swapped
+        # for the bottom avg plot while running. Connection status lives in the
+        # window title, so the Provider/State group box + the separate Stop
+        # button are removed.
+        self._running = False
+        self._last_connected = False
+        self.btn_live_toggle = QPushButton("Start Live View")
+        self.btn_live_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.btn_live_toggle.clicked.connect(self._toggle_live_view)
+        self.start_live_view.hide()
+        self.stop_live_view.hide()
+        # Wide, stretchy PV box under the image (reparents out of the group box).
+        self.pv_prefix.setMinimumWidth(200)
+        self.pv_prefix.setMaximumWidth(16777215)
+        self.pv_prefix.setMaximumHeight(40)
+        self.pv_prefix.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.viewer_layout.addWidget(self.btn_live_toggle, 1, 0)
+        self.viewer_layout.addWidget(self.pv_prefix, 1, 1, Qt.AlignTop)
+        self.viewer_layout.setColumnStretch(1, 1)
+        self.group_box_connection.hide()
         self._analysis_menu = QMenu(self)
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
@@ -787,6 +834,7 @@ class DiffractionImageWindow(BaseWindow):
             self.stop_timers()
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.bottom_avg_plot.getPlotItem().clear()
             # Drop any ROI rectangles + "ROI too large" labels from the
             # previous PV. add_rois() appends both kinds to self.rois.
             for item in self.rois:
@@ -829,7 +877,7 @@ class DiffractionImageWindow(BaseWindow):
                 self.slider.setValue(0)
                 self.slider.setOrientation(Qt.Horizontal) 
                 self.slider.setTickPosition(QSlider.TicksAbove)
-                self.viewer_layout.addWidget(self.slider, 1, 1)
+                self.viewer_layout.addWidget(self.slider, 2, 1)
                 
             self.set_pixel_ordering()
             self.transpose_image_checked()
@@ -840,6 +888,7 @@ class DiffractionImageWindow(BaseWindow):
             self.pv_pollers_status.emit(f"Connect failed: {e}", "error")
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
+            self.bottom_avg_plot.getPlotItem().clear()
             self.reset_rsm_vars()
             del self.file_writer
             del self.reader
@@ -865,6 +914,12 @@ class DiffractionImageWindow(BaseWindow):
         except Exception as e:
             print(f'[Diffraction Image Viewer] Error Starting Image Viewer {e}')
 
+        # Reflect the new state in the compact controls + window title.
+        if self.reader is not None:
+            self._enter_running_state()
+        else:
+            self._enter_idle_state()
+
     def stop_live_view_clicked(self) -> None:
         """
         Clears the connection for the PVA channel and stops all active monitors.
@@ -884,6 +939,7 @@ class DiffractionImageWindow(BaseWindow):
             self.hkl_data = {}
             self.provider_name.setText('N/A')
             self.is_connected.setText('Disconnected')
+        self._enter_idle_state()
 
     def stats_button_clicked(self) -> None:
         """
@@ -1457,6 +1513,59 @@ class DiffractionImageWindow(BaseWindow):
         self.horizontal_avg_plot.getPlotItem().getViewBox().setYRange(
             y_range[0], y_range[1], padding=0)
 
+    def _sync_bottom_xrange(self, vb, x_range):
+        """Keep the bottom avg plot x-range in sync with the image view."""
+        self.bottom_avg_plot.getPlotItem().getViewBox().setXRange(
+            x_range[0], x_range[1], padding=0)
+
+    def _sync_bottom_margins(self) -> None:
+        """Match the bottom plot's left + right reserved widths to the image's
+        left axis + HistogramLUT so their plot areas align horizontally."""
+        try:
+            left_w = self.image_view.view.getAxis('left').width()
+            hist_w = self.image_view.ui.histogram.width()
+        except Exception:
+            return
+        la = self.bottom_avg_plot.getAxis('left')
+        ra = self.bottom_avg_plot.getAxis('right')
+        if abs(la.width() - left_w) > 0.5:
+            la.setWidth(left_w)
+        if abs(ra.width() - hist_w) > 0.5:
+            ra.setWidth(hist_w)
+
+    def _toggle_live_view(self) -> None:
+        """Single Start/Stop button dispatches by current state."""
+        if self._running:
+            self.stop_live_view_clicked()
+        else:
+            self.start_live_view_clicked()
+
+    def _update_title(self) -> None:
+        """Reflect connection state in the window title."""
+        if not self._running:
+            self.setWindowTitle('DashPVA')
+            return
+        connected = self.reader is not None and self.reader.channel.isMonitorActive()
+        if connected:
+            self.setWindowTitle(f'DashPVA — Connected — {self._input_channel}')
+        else:
+            self.setWindowTitle(f'DashPVA — Connecting… {self._input_channel}')
+
+    def _enter_running_state(self) -> None:
+        self._running = True
+        self.btn_live_toggle.setText("Stop Live View")
+        self.pv_prefix.hide()
+        self.bottom_avg_plot.show()
+        self._update_title()
+
+    def _enter_idle_state(self) -> None:
+        self._running = False
+        self._last_connected = False
+        self.btn_live_toggle.setText("Start Live View")
+        self.pv_prefix.show()
+        self.bottom_avg_plot.hide()
+        self._update_title()
+
     def update_mouse_pos(self, pos) -> None:
         """
         Maps the mouse position in the Image Viewer to the corresponding pixel value.
@@ -1493,10 +1602,12 @@ class DiffractionImageWindow(BaseWindow):
         Updates the UI labels with current connection and cached data.
         """
         if self.reader is not None:
-            provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-            is_connected = 'Connected' if self.reader.channel.isMonitorActive() else 'Disconnected'
-            self.provider_name.setText(provider_name)
-            self.is_connected.setText(is_connected)
+            # Connection status is shown in the window title now; flip it once
+            # when the monitor actually goes active (Connecting… → Connected).
+            connected = self.reader.channel.isMonitorActive()
+            if self._running and connected != self._last_connected:
+                self._last_connected = connected
+                self._update_title()
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
             self.plot_call_id.setText(f'{self.call_id_plot:d}')
@@ -1592,6 +1703,12 @@ class DiffractionImageWindow(BaseWindow):
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
                                             y=np.arange(self.image.shape[1]),
                                             clear=True)
+                # Bottom plot: average along the vertical axis, aligned under image
+                if self.bottom_avg_plot.isVisible():
+                    self.bottom_avg_plot.plot(x=np.arange(self.image.shape[0]),
+                                              y=np.mean(self.image, axis=1),
+                                              clear=True)
+                    self._sync_bottom_margins()
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
