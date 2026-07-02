@@ -181,3 +181,38 @@ class DatasetLoader(QObject):
                 self.loaded.emit(data)
         except Exception as e:
             self.failed.emit(f"Error loading dataset: {e}")
+
+
+class HKLFrameWorker(QObject):
+    """Compute the per-pixel HKL grid for a single frame via RSMConverter, off the GUI thread.
+
+    Emits ``computed(frame, hkl)`` where ``hkl`` is a ``(3, H, W)``-indexable object
+    (hkl[0]=H, hkl[1]=K, hkl[2]=L). Emits ``failed(frame, msg)`` when the file lacks the
+    HKL geometry metadata (or any error).
+
+    Usage:
+        worker = HKLFrameWorker(file_path, frame=5)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.computed.connect(on_hkl_ready)
+    """
+
+    computed = pyqtSignal(int, object)   # frame_idx, hkl grid (3, H, W)
+    failed = pyqtSignal(int, str)
+    finished = pyqtSignal()
+
+    def __init__(self, file_path, frame, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.frame = int(frame)
+
+    @pyqtSlot()
+    def run(self):
+        from dashpva.utils.rsm_converter import RSMConverter
+        try:
+            hkl = RSMConverter().create_rsm(self.file_path, self.frame)
+            self.computed.emit(self.frame, hkl)
+        except Exception as e:
+            self.failed.emit(self.frame, str(e))
+        finally:
+            self.finished.emit()

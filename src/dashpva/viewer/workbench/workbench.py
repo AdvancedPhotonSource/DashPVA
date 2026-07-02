@@ -202,6 +202,11 @@ class WorkbenchWindow(BaseWindow):
         tab = getattr(self, 'tab_2d', None)
         return getattr(tab, 'annotation_note_label', None) if tab is not None else None
 
+    @property
+    def _last_hover_xy(self):
+        tab = getattr(self, 'tab_2d', None)
+        return getattr(tab, '_last_hover_xy', None) if tab is not None else None
+
     def display_2d_data(self, data):
         if getattr(self, 'tab_2d', None) is not None:
             return self.tab_2d.display_2d_data(data)
