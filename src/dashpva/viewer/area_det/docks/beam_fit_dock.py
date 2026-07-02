@@ -485,6 +485,13 @@ class BeamFitDock(BaseDock):
             self._start_fit(payload)
 
     def _start_fit(self, payload) -> None:
+        # Ensure the previous worker has fully stopped before we drop its
+        # reference. Rapid ROI moves dispatch fits back-to-back; without this the
+        # old QThread can be garbage-collected while still finishing, aborting
+        # with "QThread: Destroyed while thread is still running".
+        prev = self._worker
+        if prev is not None and prev.isRunning():
+            prev.wait(2000)
         self._busy = True
         self._pending = None
         self._worker = BeamFitWorker(*payload)
