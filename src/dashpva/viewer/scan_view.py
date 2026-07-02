@@ -251,6 +251,19 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self.logger.info(message)
         except Exception:
             pass
+        # On a successful save, log a concise confirmation with the path + time.
+        try:
+            path = None
+            if 'successfully saved to' in message:
+                path = message.split('successfully saved to', 1)[1].strip()
+            elif message.startswith('Saved to:'):
+                path = message.split('Saved to:', 1)[1].split('\n', 1)[0].strip()
+            if path:
+                now = datetime.now()
+                ts = now.strftime('%Y/%d/%m %H:%M:%S.') + f'{now.microsecond // 1000:03d}'
+                self.logger.info(f'[ScanView] Saved scan to {path} @ {ts}')
+        except Exception:
+            pass
         if hasattr(self, 'label_indicator'):
             self.label_indicator.setText('scan: off')
             self._apply_indicator_style()
