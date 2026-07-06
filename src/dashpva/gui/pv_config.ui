@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>470</width>
-    <height>260</height>
+    <height>200</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,32 +19,19 @@
      <x>10</x>
      <y>10</y>
      <width>451</width>
-     <height>171</height>
+     <height>111</height>
     </rect>
    </property>
    <property name="title">
     <string>Required Setup</string>
    </property>
-   <widget class="QLabel" name="lbl_input_channel">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>25</y>
-      <width>261</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Detector Prefix</string>
-    </property>
-   </widget>
    <widget class="QLineEdit" name="le_input_channel">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>50</y>
+      <y>60</y>
       <width>421</width>
-      <height>35</height>
+      <height>41</height>
      </rect>
     </property>
     <property name="text">
@@ -54,27 +41,17 @@
      <string>e.g. s6lambda1</string>
     </property>
    </widget>
-   <widget class="QLabel" name="lbl_profile">
+   <widget class="QLabel" name="lbl_input_channel">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>95</y>
+      <y>30</y>
       <width>261</width>
       <height>21</height>
      </rect>
     </property>
     <property name="text">
-     <string>Config Profile</string>
-    </property>
-   </widget>
-   <widget class="QComboBox" name="cb_profile">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>120</y>
-      <width>421</width>
-      <height>35</height>
-     </rect>
+     <string>Detector Prefix</string>
     </property>
    </widget>
   </widget>
@@ -82,7 +59,7 @@
    <property name="geometry">
     <rect>
      <x>130</x>
-     <y>195</y>
+     <y>140</y>
      <width>181</width>
      <height>51</height>
     </rect>
@@ -94,7 +71,6 @@
  </widget>
  <tabstops>
   <tabstop>le_input_channel</tabstop>
-  <tabstop>cb_profile</tabstop>
  </tabstops>
  <resources/>
  <connections>

@@ -27,8 +27,6 @@ from PyQt5.QtWidgets import (
 from pyqtgraph.colormap import get as get_colormap
 
 # Custom imported classes
-import dashpva.settings as app_settings
-from dashpva.database import DatabaseInterface
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
@@ -83,49 +81,11 @@ class ConfigDialog(QDialog):
         last = _settings().value("area_det_prefix", "", type=str)
         if last:
             self.le_input_channel.setText(last)
-        self._populate_profiles()
-
-    def _populate_profiles(self) -> None:
-        """Fill the profile dropdown from the DB, defaulting to the selected one.
-
-        The first two entries, "Default" and "Selected", resolve to whatever the
-        DB's default/selected profile is at accept time, so the user need not pick
-        a specific profile by name.
-        """
-        self.cb_profile.clear()
-        self.cb_profile.addItem("Default", "__default__")
-        self.cb_profile.addItem("Selected", "__selected__")
-        try:
-            db = DatabaseInterface()
-            profiles = db.get_all_profiles()
-            selected = db.get_selected_profile()
-        except Exception:
-            profiles, selected = [], None
-        for profile in profiles:
-            self.cb_profile.addItem(profile.name, profile.id)
-        if selected is not None:
-            idx = self.cb_profile.findData(selected.id)
-            if idx >= 0:
-                self.cb_profile.setCurrentIndex(idx)
 
     def dialog_accepted(self) -> None:
         self.prefix = self.le_input_channel.text().strip()
         _settings().setValue("area_det_prefix", self.prefix)
         self.input_channel = f"{self.prefix}:Pva1:Image" if self.prefix else "pvapy:image"
-        # Apply the chosen profile to this process only so a second detector can
-        # use a different one without disturbing the shared selected profile.
-        profile_id = self.cb_profile.currentData()
-        if profile_id in ("__default__", "__selected__"):
-            try:
-                db = DatabaseInterface()
-                profile = (db.get_default_profile() if profile_id == "__default__"
-                           else db.get_selected_profile())
-                profile_id = profile.id if profile is not None else None
-            except Exception:
-                profile_id = None
-        if profile_id is not None:
-            app_settings.set_locator(profile_id, persist=False)
-            app_settings.reload()
         self.image_viewer = DiffractionImageWindow(input_channel=self.input_channel)
 
 

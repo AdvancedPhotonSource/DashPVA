@@ -215,17 +215,13 @@ _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
 
 
-def set_locator(locator: Union[int, str], persist: bool = True) -> None:
+def set_locator(locator: Union[int, str]) -> None:
     """Set the configuration locator (TOML path, "profile:<name>", or int profile_id).
 
     Persists to a state file so sibling subprocesses can find the active config.
-    Pass persist=False to apply the locator to this process only, leaving the
-    shared env var and state file untouched (used for per-window profile choice).
     """
     global _locator_internal
     _locator_internal = locator
-    if not persist:
-        return
     os.environ['DASPVA_CONFIG_LOCATOR'] = str(locator)
     try:
         _STATE_FILE.write_text(str(locator))
