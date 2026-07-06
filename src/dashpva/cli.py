@@ -223,6 +223,50 @@ def sim_pyfai(**kwargs):
     sys.exit(subprocess.run(cmd).returncode)
 
 
+@sim.command('probe')
+@click.option('--channel', '-cn', default='pvapy:image', help='PVA channel name.')
+@click.option('--fps', type=float, default=10.0, help='Frames per second.')
+@click.option('--dt', default='float32', help='Data type (float32, uint16, ...).')
+@click.option('--rt', type=float, default=3600.0, help='Runtime in seconds.')
+@click.option('--rp', type=int, default=100, help='Report period (frames).')
+@click.option('--nx', type=int, default=512, help='Width in pixels.')
+@click.option('--ny', type=int, default=512, help='Height in pixels.')
+@click.option('--shape', type=click.Choice(['gaussian', 'laplacian', 'lorentzian', 'zone-plate']),
+              default='gaussian', help='Probe beam shape.')
+@click.option('--fwhm-x', type=float, default=30.0, help='Horizontal FWHM in pixels.')
+@click.option('--fwhm-y', type=float, default=18.0, help='Vertical FWHM in pixels.')
+@click.option('--amp', type=float, default=3000.0, help='Peak amplitude (counts).')
+@click.option('--bg', type=float, default=10.0, help='Background level (counts).')
+@click.option('--angle', type=float, default=0.0, help='Beam rotation in degrees.')
+@click.option('--drift', type=float, default=30.0, help='Center drift amplitude in pixels (0 = stationary).')
+@click.option('--drift-period', type=float, default=8.0, help='Center drift period in seconds.')
+@click.option('--jitter', type=float, default=0.05, help='Fractional per-frame jitter on FWHM/amplitude.')
+@click.option('--noise/--no-noise', default=True, help='Apply Poisson photon noise (default: on).')
+@click.option('--truth-pvs/--no-truth-pvs', default=True, help='Publish ground-truth scalar PVs (default: on).')
+def sim_probe(channel, fps, dt, rt, rp, nx, ny, shape, fwhm_x, fwhm_y, amp, bg,
+              angle, drift, drift_period, jitter, noise, truth_pvs):
+    """Run a moving 2D probe-beam simulation (Gaussian/Laplacian/Lorentzian/zone-plate).
+
+    Publishes an anisotropic beam that drifts and jitters over time for testing the
+    Beam Profiler dock. Defaults to the 'pvapy:image' channel so 'DashPVA detector'
+    connects with no extra flags. Zone-plate is a visual pattern only (no meaningful FWHM).
+    """
+    click.echo(f'Starting probe-beam simulation ({shape})...')
+    cmd = [
+        sys.executable, '-u', '-m', 'dashpva.consumers.caIOC_servers.probe_sim_server',
+        '-cn', channel, '-fps', str(fps), '-dt', dt, '-rt', str(rt), '-rp', str(rp),
+        '-nx', str(nx), '-ny', str(ny), '-shape', shape,
+        '-fwhmx', str(fwhm_x), '-fwhmy', str(fwhm_y), '-amp', str(amp), '-bg', str(bg),
+        '-angle', str(angle), '-drift', str(drift), '-driftp', str(drift_period),
+        '-jitter', str(jitter),
+    ]
+    if noise:
+        cmd.append('-noise')
+    if truth_pvs:
+        cmd.append('-truth')
+    sys.exit(subprocess.run(cmd).returncode)
+
+
 @cli.command()
 @click.argument('name', type=click.Choice(['scan', 'scan-monitors']))
 @click.option('--channel', default='', help='PVA channel (optional).')
