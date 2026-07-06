@@ -86,8 +86,15 @@ class ConfigDialog(QDialog):
         self._populate_profiles()
 
     def _populate_profiles(self) -> None:
-        """Fill the profile dropdown from the DB, defaulting to the selected one."""
+        """Fill the profile dropdown from the DB, defaulting to the selected one.
+
+        The first two entries, "Default" and "Selected", resolve to whatever the
+        DB's default/selected profile is at accept time, so the user need not pick
+        a specific profile by name.
+        """
         self.cb_profile.clear()
+        self.cb_profile.addItem("Default", "__default__")
+        self.cb_profile.addItem("Selected", "__selected__")
         try:
             db = DatabaseInterface()
             profiles = db.get_all_profiles()
@@ -108,6 +115,14 @@ class ConfigDialog(QDialog):
         # Apply the chosen profile to this process only so a second detector can
         # use a different one without disturbing the shared selected profile.
         profile_id = self.cb_profile.currentData()
+        if profile_id in ("__default__", "__selected__"):
+            try:
+                db = DatabaseInterface()
+                profile = (db.get_default_profile() if profile_id == "__default__"
+                           else db.get_selected_profile())
+                profile_id = profile.id if profile is not None else None
+            except Exception:
+                profile_id = None
         if profile_id is not None:
             app_settings.set_locator(profile_id, persist=False)
             app_settings.reload()
@@ -1352,6 +1367,9 @@ class DiffractionImageWindow(BaseWindow):
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
+                # Share the live HKL values with the reader so its per-frame merge
+                # saves them into the scan H5 (the associator may not attach them).
+                self.reader.hkl_values = self.hkl_data
                 missing = [n for n, v in self.hkl_data.items() if v is None]
                 got = len(self.hkl_data) - len(missing)
                 print(f"[Diffraction Image Viewer] HKL monitors started: "

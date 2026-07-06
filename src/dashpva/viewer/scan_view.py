@@ -167,6 +167,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self.h5_handler.hdf5_writer_finished.connect(self._on_writer_finished, Qt.QueuedConnection)
             self.signal_start_monitor.connect(self.reader.start_channel_monitor, Qt.QueuedConnection)
             self.signal_start_monitor.connect(self.reader.start_scan_monitor, Qt.QueuedConnection)
+            self.signal_start_monitor.connect(self.reader.start_hkl_ca_monitor, Qt.QueuedConnection)
             self.signal_trigger_save.connect(self.h5_handler.save_to_h5, Qt.QueuedConnection)
 
             if hasattr(self.reader, 'scan_state_changed'):

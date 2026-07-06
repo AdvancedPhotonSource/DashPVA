@@ -2477,7 +2477,6 @@ class Workflow(QDialog, LogMixin):
                 'Start Metadata Associator: no metadata channels built — '
                 'associator will have nothing to attach')
         self._associator_metadata_channels = metadata_pvs
-        self.logger.info(f'Launching associator: {" ".join(cmd)}')
 
         try:
             process = subprocess.Popen(
