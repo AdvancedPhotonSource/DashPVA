@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
@@ -43,6 +43,11 @@ class BaseWindow(QMainWindow):
     # Signals
     file_opened = pyqtSignal(str)  # Emitted when a file is opened
     file_saved = pyqtSignal(str)   # Emitted when a file is saved
+
+    # Bump (or override in a subclass) when the dock set changes so QMainWindow
+    # rejects a stale saved layout and falls back to defaults instead of
+    # restoring a half-broken arrangement.
+    DOCK_STATE_VERSION = 1
 
     def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
                  visible_actions=_SHOW_ALL, size_policy: dict = None):
@@ -93,6 +98,12 @@ class BaseWindow(QMainWindow):
 
         # CPU, GPU, runtime in status bar
         self.init_perf_statusbar()
+
+        # Restore the last window geometry + dock layout. Deferred to the next
+        # event-loop turn so it runs after the subclass __init__ has finished
+        # creating its docks — no subclass opt-in needed.
+        self._window_state_restored = False
+        QTimer.singleShot(0, self._restore_window_state)
 
     def load_ui(self):
         """Load the UI file for this window."""
@@ -507,8 +518,54 @@ class BaseWindow(QMainWindow):
         Handle window close event.
         Override in subclasses to add custom close behavior.
         """
+        # Persist window geometry + dock layout for the next launch.
+        self._save_window_state()
         # Base implementation - just accept the close event
         event.accept()
+
+    # ===== Window state persistence (geometry + dock layout) =====
+    def _state_settings(self) -> QSettings:
+        """Per-user QSettings store (Qt-native backend, no repo file)."""
+        return QSettings("DashPVA", "Viewer")
+
+    def _state_key(self) -> str:
+        """Namespace key so each viewer keeps its own geometry/layout."""
+        return self.viewer_name or self.__class__.__name__
+
+    def _restore_window_state(self) -> None:
+        """Restore saved geometry + dock layout; falls back to defaults on any issue."""
+        if getattr(self, "_window_state_restored", False):
+            return
+        self._window_state_restored = True
+        try:
+            s = self._state_settings()
+            key = self._state_key()
+            geom = s.value(f"{key}/window_geom", QByteArray(), type=QByteArray)
+            if not geom.isEmpty():
+                self.restoreGeometry(geom)
+                # Clamp to the current screen in case it was saved on a larger display.
+                try:
+                    avail = self.screen().availableGeometry()
+                    if self.width() > avail.width() or self.height() > avail.height():
+                        self.resize(min(self.width(), avail.width()),
+                                    min(self.height(), avail.height()))
+                except Exception:
+                    pass
+            state = s.value(f"{key}/dock_state", QByteArray(), type=QByteArray)
+            if not state.isEmpty():
+                self.restoreState(state, self.DOCK_STATE_VERSION)
+        except Exception:
+            pass
+
+    def _save_window_state(self) -> None:
+        """Save current geometry + dock layout to QSettings."""
+        try:
+            s = self._state_settings()
+            key = self._state_key()
+            s.setValue(f"{key}/window_geom", self.saveGeometry())
+            s.setValue(f"{key}/dock_state", self.saveState(self.DOCK_STATE_VERSION))
+        except Exception:
+            pass
 
     def set_viewer_name(self, name: str) -> None:
         """Set or update the viewer name used in status messages."""

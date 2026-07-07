@@ -9,7 +9,7 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -50,10 +50,6 @@ from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
 rot_gen = rotation_cycle(1,5)
 
 _PERF_TIMER_INTERVAL_MS = 1000
-# Bump when the dock set changes — restoreState silently rejects mismatched
-# versions so users with a stale saved layout fall back to defaults instead
-# of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 3
 
 
 def _settings() -> QSettings:
@@ -137,20 +133,16 @@ class DiffractionImageWindow(BaseWindow):
     # thread).  Decouples the async caget sweep from rectangle creation.
     rois_ready = pyqtSignal()
 
+    # Distinct dock-layout version for this viewer's saved state (persistence
+    # itself lives in BaseWindow, keyed per viewer_name).
+    DOCK_STATE_VERSION = 2
+
     def __init__(self, input_channel='pvapy:image'):
         super().__init__(ui_file_name='imageshow.ui',
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
-        saved_geom = _settings().value("area_det_window_geom", QByteArray(), type=QByteArray)
-        if not saved_geom.isEmpty():
-            try:
-                self.restoreGeometry(saved_geom)
-                avail = self.screen().availableGeometry()
-                if self.width() > avail.width() or self.height() > avail.height():
-                    self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
-            except Exception:
-                pass
+        # Window geometry + dock layout are restored by BaseWindow (deferred).
         self.show()
         self.reader = None
         self.image = None
@@ -421,15 +413,8 @@ class DiffractionImageWindow(BaseWindow):
         self.waterfall_dock = WaterfallDock(main_window=self, show=False)
         self.beam_fit_dock  = BeamFitDock(main_window=self, show=False)
 
+        # Default layout; BaseWindow restores any saved layout over this (deferred).
         self._apply_default_layout()
-        # Restore the user's last layout if one was saved; falls through to
-        # the defaults applied above on any failure.
-        saved_state = _settings().value("area_det_dock_state", QByteArray(), type=QByteArray)
-        if not saved_state.isEmpty():
-            try:
-                self.restoreState(saved_state, _DOCK_STATE_VERSION)
-            except Exception:
-                pass
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -530,7 +515,9 @@ class DiffractionImageWindow(BaseWindow):
         self.beam_fit_dock.hide()
 
     def _reset_layout(self) -> None:
-        _settings().remove("area_det_dock_state")
+        # Forget the saved dock layout so the next launch uses defaults
+        # (BaseWindow persists it under "<viewer_name>/dock_state").
+        _settings().remove(f"{self._state_key()}/dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
                   self.mouse_pos_dock, self.roi_dock, self.analysis_dock,
@@ -2068,12 +2055,7 @@ class DiffractionImageWindow(BaseWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
-        try:
-            s = _settings()
-            s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
-            s.setValue("area_det_window_geom", self.saveGeometry())
-        except Exception:
-            pass
+        # Geometry + dock layout are saved by BaseWindow.closeEvent (via super()).
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
