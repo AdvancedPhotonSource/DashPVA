@@ -15,11 +15,17 @@ def configure_app(app):
     keeps a single source of truth (e.g. ``background-color: $SUCCESS;``). Unknown
     ``$NAME`` tokens are left untouched (``safe_substitute``).
     """
+    import os
     from string import Template
 
     from PyQt5.QtWidgets import QStyleFactory
 
     from dashpva.gui import theme_colors
+
+    module_label = os.environ.get('DASHPVA_MODULE_LABEL')
+    if module_label:
+        app.setApplicationName(f'DashPVA — {module_label}')
+        app.setApplicationDisplayName(f'DashPVA — {module_label}')
 
     app.setStyle(QStyleFactory.create("Fusion"))
 
