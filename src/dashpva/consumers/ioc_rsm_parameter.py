@@ -287,7 +287,7 @@ def _run_ioc(prefix: str) -> None:
         with _pv_mons_lock:
             if src not in _pv_mons:
                 _pv_mons[src] = _PV(src, auto_monitor=True)
-            v = _pv_mons[src].get(use_monitor=True)
+            v = _pv_mons[src].get(use_monitor=True, timeout=0.1)
         try:
             if v is None:
                 raise ValueError('no connection / no value')

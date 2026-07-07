@@ -233,7 +233,7 @@ class PVAReader(QObject):
             # Fill any HKL PVs the associator didn't attach with the reader's own
             # camonitor'd values. setdefault keeps a timestamp-matched associator
             # value when present; otherwise the scan H5 would save empty HKL groups.
-            for pv_name, pv_value in self.hkl_values.items():
+            for pv_name, pv_value in list(self.hkl_values.items()):
                 if pv_value is not None:
                     self.pv_attributes.setdefault(pv_name, pv_value)
 
