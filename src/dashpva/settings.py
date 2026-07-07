@@ -167,6 +167,11 @@ _FLAG_PV_SUFFIX = "ScanOn:Value"
 _FILE_PATH_SUFFIX = "FilePath:Value"
 _FILE_NAME_SUFFIX = "FileName:Value"
 
+# Frame-ingestion throttle (static — not config-driven). Caps how many frames
+# the PVA reader fully processes per second so a burst (e.g. fast angle slews)
+# can't overrun the monitor thread and crash the viewer. 0 disables throttling.
+MAX_PROCESS_RATE_HZ: int = 20
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}

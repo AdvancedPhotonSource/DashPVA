@@ -1,3 +1,4 @@
+import time
 from collections import deque
 
 import bitshuffle
@@ -140,6 +141,16 @@ class PVAReader(QObject):
         self.frames_received = 0
         self.id_diff = 0
 
+        # Ingestion throttle. Frames are fully processed at most this many times
+        # per second; excess frames (e.g. from fast angle slews) are dropped
+        # before the heavy decode/parse/cache work so the monitor thread can't
+        # overrun and crash the viewer. Applies during scans too, so an
+        # over-fast scan drops frames rather than piling up and crashing.
+        self.MAX_PROCESS_RATE_HZ = app_settings.MAX_PROCESS_RATE_HZ
+        self._process_interval = (1.0 / self.MAX_PROCESS_RATE_HZ) if self.MAX_PROCESS_RATE_HZ else 0.0
+        self._last_process_time = 0.0
+        self.frames_throttled = 0
+
         # variables for data caches
         self.caches_needed = False
         self.caches_initialized = False
@@ -221,6 +232,22 @@ class PVAReader(QObject):
         try:
             self.frames_received += 1
             self.pva_object = pv
+
+            # Throttle: cap the rate of full frame processing so a burst (e.g.
+            # fast angle slews) can't overrun this (monitor) thread and crash
+            # the viewer. Applies during scans too — an over-fast scan drops
+            # frames here rather than piling up.
+            now = time.monotonic()
+            if (now - self._last_process_time) < self._process_interval:
+                self.frames_throttled += 1
+                # Keep frame-id tracking current so a throttled frame is not
+                # later miscounted as a network-missed frame.
+                try:
+                    self.last_array_id = pv['uniqueId']
+                except Exception:
+                    pass
+                return
+            self._last_process_time = now
 
             # parse data required to manipulate pv image
             self.parse_image_data_type(pv)
