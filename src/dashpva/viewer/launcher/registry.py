@@ -10,19 +10,20 @@ Fields per entry:
   - section: grouping header
   - cmd: list command to execute
   - tooltip: short help text
-  - edition: 'full' | 'standalone' | 'both'
+  - requires: tuple of layer names that must be active for this entry to appear,
+               e.g. ('area-det',) or ('area-det', 'standalone'). Empty tuple = core (always shown).
 """
 # Sections are rendered in the order they first appear in this list.
 # To add a new view, append another dict with the same keys.
 VIEWS = [
     # setup
     {
-        'key':'setup',
+        'key': 'setup',
         'label': 'PVA Workflow Setup',
         'section': 'Setup',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'setup'],
         'tooltip': 'Open PVA Workflow Setup (CLI: DashPVA setup)',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     {
         'key': 'ioc_rsm_parameter',
@@ -30,7 +31,7 @@ VIEWS = [
         'section': 'Setup',
         'cmd': [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter'],
         'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     # stream live
     {
@@ -39,7 +40,7 @@ VIEWS = [
         'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'detector'],
         'tooltip': 'Open Area detector (CLI: DashPVA detector)',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     {
         'key': 'hkl3d',
@@ -47,7 +48,7 @@ VIEWS = [
         'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'hkl3d'],
         'tooltip': 'Open HKL 3D (CLI: DashPVA hkl3d)',
-        'edition': 'full',
+        'requires': ('standalone',),
     },
     {
         'key': 'pyfai',
@@ -55,7 +56,7 @@ VIEWS = [
         'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'pyfai'],
         'tooltip': 'Live azimuthal integration (CLI: DashPVA pyfai)',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     {
         'key': 'phase_fitter_live',
@@ -63,7 +64,7 @@ VIEWS = [
         'section': 'Stream Live',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'phasefitter'],
         'tooltip': 'Live XRD phase fitting (CLI: DashPVA phasefitter)',
-        'edition': 'both',
+        'requires': ('area-det', 'standalone'),
     },
     {
         'key': 'monitor_scan',
@@ -71,7 +72,7 @@ VIEWS = [
         'section': 'Monitor',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
         'tooltip': 'Open Scan monitor (CLI: DashPVA monitor scan)',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     {
         'key': 'scan_viz',
@@ -79,7 +80,7 @@ VIEWS = [
         'section': 'Monitor',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
         'tooltip': 'Live 2D scan data collection and visualization',
-        'edition': 'full',
+        'requires': ('area-det',),
     },
     # post analysis
     {
@@ -88,7 +89,7 @@ VIEWS = [
         'section': 'Post Analysis',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'workbench'],
         'tooltip': 'Open Workbench (CLI: DashPVA workbench)',
-        'edition': 'both',
+        'requires': ('standalone',),
     },
     {
         'key': 'h5viewer',
@@ -96,7 +97,7 @@ VIEWS = [
         'section': 'Post Analysis',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'h5viewer'],
         'tooltip': 'Interactive HDF5 file browser and image viewer (CLI: DashPVA h5viewer)',
-        'edition': 'both',
+        'requires': (),
     },
     {
         'key': 'phase_fitter',
@@ -104,7 +105,7 @@ VIEWS = [
         'section': 'Post Analysis',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'phasefitter'],
         'tooltip': 'XRD phase fitting — file or live mode (CLI: DashPVA phasefitter)',
-        'edition': 'both',
+        'requires': ('standalone',),
     },
     {
         'key': 'metadata_converter',
@@ -112,7 +113,7 @@ VIEWS = [
         'section': 'Tools',
         'cmd': [sys.executable, '-m', 'dashpva.viewer.tools.metadata_converter_gui'],
         'tooltip': 'Open the Metadata Converter tool',
-        'edition': 'both',
+        'requires': (),
     },
     {
         'key': 'file_convert',
@@ -120,7 +121,7 @@ VIEWS = [
         'section': 'Tools',
         'cmd': [sys.executable, '-m', 'dashpva.viewer.tools.file_convert'],
         'tooltip': 'Convert folder(s) to HDF5 in standard structure',
-        'edition': 'both',
+        'requires': (),
     },
     # bayesian
     {
@@ -129,18 +130,26 @@ VIEWS = [
         'section': 'Bayesian',
         'cmd': [sys.executable, '-m', 'dashpva.cli', 'bayesian'],
         'tooltip': 'Open Bayesian 2-D Scan Viewer (CLI: DashPVA bayesian)',
-        'edition': 'both',
+        'requires': ('bayesian',),
     },
 ]
 
+EDITION_LAYERS = {
+    'area-det':   frozenset({'area-det'}),
+    'standalone': frozenset({'standalone'}),
+    'bayesian':   frozenset({'area-det', 'bayesian'}),
+    'full':       frozenset({'area-det', 'standalone', 'bayesian'}),
+}
 
-def get_views() -> list:
+
+def get_views(edition=None) -> list:
     """Return VIEWS filtered to the installed edition."""
-    try:
-        import dashpva.settings as settings
-        edition_file = settings.PROJECT_ROOT / '.dashpva_edition'
-        edition = edition_file.read_text().strip() if edition_file.exists() else 'full'
-    except Exception:
-        edition = 'both'
-
-    return [v for v in VIEWS if v.get('edition', 'both') in (edition, 'both')]
+    if edition is None:
+        try:
+            import dashpva.settings as settings
+            f = settings.PROJECT_ROOT / '.dashpva_edition'
+            edition = f.read_text().strip() if f.exists() else 'full'
+        except Exception:
+            edition = 'full'
+    layers = EDITION_LAYERS.get(edition, EDITION_LAYERS['full'])
+    return [v for v in VIEWS if set(v.get('requires', ())) <= layers]
