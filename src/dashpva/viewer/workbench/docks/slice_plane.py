@@ -135,6 +135,12 @@ class SlicePlaneDock(BaseDock):
             if hasattr(w, 'btn_view_slice_normal'):
                 w.btn_view_slice_normal.clicked.connect(tab.view_slice_normal)
 
+            # Slice → 2D
+            if hasattr(w, 'btn_goto_slice_2d'):
+                w.btn_goto_slice_2d.clicked.connect(tab.show_slice_2d_tab)
+            if hasattr(w, 'btn_save_slice'):
+                w.btn_save_slice.clicked.connect(tab.save_slice)
+
             # Initialize defaults
             try:
                 if hasattr(w, 'cb_slice_orientation'):

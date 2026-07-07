@@ -453,6 +453,29 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="gbSlice2D">
+     <property name="title">
+      <string>Slice → 2D</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutSlice2D">
+      <item row="0" column="0">
+       <widget class="QPushButton" name="btn_goto_slice_2d">
+        <property name="text">
+         <string>Show Slice 2D</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QPushButton" name="btn_save_slice">
+        <property name="text">
+         <string>Save Slice…</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="verticalSpacer">
      <property name="orientation">
       <enum>Qt::Vertical</enum>

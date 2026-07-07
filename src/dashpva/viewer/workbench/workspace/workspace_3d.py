@@ -1,12 +1,14 @@
 import numpy as np
 from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import (
+    QApplication,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -30,7 +32,6 @@ except ImportError:
     PYVISTA_AVAILABLE = False
 
 # Worker for off-UI-thread 3D prep
-from dashpva.utils.rsm_converter import RSMConverter
 from dashpva.viewer.workbench.workers import Render3D
 
 
@@ -67,6 +68,8 @@ class Workspace3D(BaseTab):
                 sp_lo.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
                 sp_hi.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
                 btn.clicked.connect(sl.setFullRange)
+            self.btn_show_slice_2d.clicked.connect(self.show_slice_2d_tab)
+            self.btn_save_slice.clicked.connect(self.save_slice)
             self.rb_downsample_on.toggled.connect(self._on_downsample_changed)
         except Exception as e:
             try:
@@ -577,37 +580,32 @@ class Workspace3D(BaseTab):
                 if not file_name:
                     return
                 file_path = file_name
-            conv = RSMConverter()
-            # 2. Load the raw data
-            try:
-                data = conv.load_h5_to_3d(file_path)
-            except Exception as e:
-                QMessageBox.warning(
-                    self, '3D Load Failed',
-                    f'Could not load 3D data from:\n{file_path}\n\n'
-                    f'The file may not contain HKL metadata or precomputed Q-space data.\n\n'
-                    f'Error: {e}'
-                )
-                return
-            points, intensities, num_images, shape = data
+            # Indeterminate progress indicator while loading + rendering. The raw
+            # load runs inside the worker thread (below), so the bar stays live.
+            self._load_progress = QProgressDialog("Loading 3D data…", None, 0, 0, self)
+            self._load_progress.setWindowTitle("Loading")
+            self._load_progress.setWindowModality(Qt.WindowModal)
+            self._load_progress.setCancelButton(None)
+            self._load_progress.setMinimumDuration(0)
+            self._load_progress.show()
+            QApplication.processEvents()
 
-            # Always keep the full dataset; apply stride only when downsampling is ON
-            self._raw_points = points
-            self._raw_intensities = intensities
             try:
                 downsample = self.rb_downsample_on.isChecked()
             except Exception:
                 downsample = True
-            if downsample:
-                _MAX_VIEWER_PTS = 2_000_000
-                _stride = max(1, len(intensities) // _MAX_VIEWER_PTS)
-                if _stride > 1:
-                    points      = points[::_stride]
-                    intensities = intensities[::_stride]
 
             # 3. Define what happens when the worker finishes processing
             def _on_ready():
                 try:
+                    # The worker loaded + prepared the arrays off the UI thread.
+                    worker = self._render3d_worker
+                    points = worker.points
+                    intensities = worker.intensities
+                    shape = worker.shape
+                    # Always keep the full dataset for the downsampling toggle.
+                    self._raw_points = worker.raw_points
+                    self._raw_intensities = worker.raw_intensities
                     # IMPORTANT: Tell the worker to plot to THIS tab's plotter
                     # We pass 'self.plotter' instead of 'mw'
                     self._render3d_worker.plot_3d_points(self)
@@ -682,6 +680,13 @@ class Workspace3D(BaseTab):
                     except Exception:
                         pass
 
+                    # Match the slice raster resolution to the detector frame shape.
+                    try:
+                        if isinstance(shape, (tuple, list)) and len(shape) == 2:
+                            self.orig_shape = (int(shape[0]), int(shape[1]))
+                    except Exception:
+                        pass
+
                     # Store display arrays and seed HKL range sliders + spinboxes
                     try:
                         self._display_points = points
@@ -717,32 +722,54 @@ class Workspace3D(BaseTab):
                         self.main_window.update_status(f"Render Error: {e}")
                     except Exception:
                         pass
+                finally:
+                    self._close_load_progress()
 
-            # 4. Threaded Execution
+            # 4. Threaded Execution — the worker loads the file off the UI thread.
+            def _on_load_failed(msg):
+                self._close_load_progress()
+                QMessageBox.warning(
+                    self, '3D Load Failed',
+                    f'Could not load 3D data from:\n{file_path}\n\n'
+                    f'The file may not contain HKL metadata or precomputed Q-space data.\n\n'
+                    f'Error: {msg}'
+                )
+
             self._render_thread = QThread(self)
             self._render3d_worker = Render3D(
-                points=points, 
-                intensities=intensities, 
-                num_images=num_images, 
-                shape=shape
+                file_path=file_path,
+                downsample=downsample,
             )
-            
+
             self._render3d_worker.moveToThread(self._render_thread)
-            
+
             # Connect signals
             self._render_thread.started.connect(self._render3d_worker.run)
             self._render3d_worker.render_ready.connect(_on_ready) # Use the local plotter
-            
+            self._render3d_worker.failed.connect(_on_load_failed)
+
             # Cleanup
             self._render3d_worker.finished.connect(self._render_thread.quit)
             self._render3d_worker.finished.connect(self._render3d_worker.deleteLater)
+            self._render3d_worker.finished.connect(self._close_load_progress)
             self._render_thread.finished.connect(self._render_thread.deleteLater)
-            
+
             self._render_thread.start()
 
         except Exception as e:
+            self._close_load_progress()
             QMessageBox.critical(self, "3D Viewer Error", f"Error: {str(e)}")
         finally:
+            pass
+
+    def _close_load_progress(self):
+        """Close and discard the 3D loading progress dialog if present."""
+        try:
+            dlg = getattr(self, "_load_progress", None)
+            if dlg is not None:
+                dlg.close()
+                self._load_progress = None
+        except Exception:
             pass
 
     def on_plane_update(self, normal, origin):
@@ -759,6 +786,11 @@ class Workspace3D(BaseTab):
         mask = np.abs(dist) < thickness
         
         slab = self.cloud_mesh_3d.extract_points(mask)
+
+        # Cache latest slice state for extraction/saving to 2D.
+        self._last_slab = slab
+        self._last_normal = np.asarray(normal, dtype=float)
+        self._last_origin = np.asarray(origin, dtype=float)
 
         # Clean up any existing slab actor before adding a new one to keep references current
         try:
@@ -831,6 +863,16 @@ class Workspace3D(BaseTab):
                     np.asarray(origin, dtype=float),
                     target_shape=shape
                 )
+        except Exception:
+            pass
+
+        # Live-update the Slice 2D tab with the masked/rasterized slice.
+        try:
+            tab_2d = getattr(self.main_window, 'tab_slice_2d', None)
+            if tab_2d is not None:
+                clim = (float(self.sb_min_intensity_3d.value()),
+                        float(self.sb_max_intensity_3d.value()))
+                tab_2d.schedule_update(slab, normal, origin, clim)
         except Exception:
             pass
 
@@ -934,6 +976,28 @@ class Workspace3D(BaseTab):
         try:
             self.update_info_slice_labels()
             self._refresh_availability()
+        except Exception:
+            pass
+
+        # Keep the extracted 2D slice in sync with the current intensity range.
+        self.refresh_slice_2d()
+
+    def refresh_slice_2d(self):
+        """Re-push the current slab to the Slice 2D tab using the current controls.
+
+        Keeps the extracted 2D slice consistent with the 3D view's intensity range
+        (and colormap) even when the slice plane itself has not moved.
+        """
+        try:
+            slab = getattr(self, '_last_slab', None)
+            if slab is None:
+                return
+            tab_2d = getattr(self.main_window, 'tab_slice_2d', None)
+            if tab_2d is None:
+                return
+            clim = (float(self.sb_min_intensity_3d.value()),
+                    float(self.sb_max_intensity_3d.value()))
+            tab_2d.schedule_update(slab, self._last_normal, self._last_origin, clim)
         except Exception:
             pass
 
@@ -1050,6 +1114,101 @@ class Workspace3D(BaseTab):
 
     # === Visibility & Colormap ===
 
+
+    def show_slice_2d_tab(self):
+        """Show and raise the Slice 2D dock, refreshed with the current controls."""
+        try:
+            # Sync intensity range / colormap before showing so the extracted slice
+            # matches what is currently set in the 3D view.
+            self.refresh_slice_2d()
+            dock = getattr(self.main_window, 'slice_2d_dock', None)
+            if dock is not None:
+                dock.show()
+                dock.raise_()
+        except Exception:
+            pass
+
+    def save_slice(self):
+        """Save the current 2D slice (image + per-pixel HKL) to HDF5.
+
+        Uses the last slice rendered in the Slice 2D tab, which is already masked
+        to the current intensity range. Prompts to write a new standalone file or
+        append into the source file.
+        """
+        from PyQt5.QtWidgets import QMessageBox
+
+        mw = self.main_window
+        tab_2d = getattr(mw, 'tab_slice_2d', None)
+        result = tab_2d.get_last_slice() if tab_2d is not None else None
+        if not result:
+            QMessageBox.warning(
+                self, 'No Slice',
+                'No slice available to save. Move the slice plane and make sure '
+                'points fall within the current intensity range.'
+            )
+            return
+
+        clim = result.get('clim', (0.0, 0.0))
+        meta = {
+            'data_type': 'slice',
+            'slice_normal': [float(x) for x in getattr(self, '_last_normal', np.array([0.0, 0.0, 1.0]))],
+            'slice_origin': [float(x) for x in getattr(self, '_last_origin', np.array([0.0, 0.0, 0.0]))],
+            'u_axis': [float(x) for x in result['u_axis']],
+            'v_axis': [float(x) for x in result['v_axis']],
+            'u_range': [float(result['u_range'][0]), float(result['u_range'][1])],
+            'v_range': [float(result['v_range'][0]), float(result['v_range'][1])],
+            'orientation': result['orientation'],
+            'intensity_min': float(clim[0]),
+            'intensity_max': float(clim[1]),
+            'num_points': int(result.get('num_points', 0)),
+            'original_file': str(getattr(mw, 'current_file_path', None) or 'unknown'),
+            'extraction_timestamp': str(np.datetime64('now')),
+        }
+
+        # Ask: new file or append to source.
+        box = QMessageBox(self)
+        box.setWindowTitle('Save Slice')
+        box.setText('Where should the extracted 2D slice be saved?')
+        btn_new = box.addButton('New file…', QMessageBox.AcceptRole)
+        btn_src = box.addButton('Append to source', QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Cancel)
+        source_path = getattr(mw, 'current_file_path', None)
+        btn_src.setEnabled(bool(source_path))
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked not in (btn_new, btn_src):
+            return
+
+        from dashpva.utils.hdf5_loader import HDF5Loader
+        loader = HDF5Loader()
+
+        if clicked is btn_new:
+            default_name = f"slice_extract_{str(np.datetime64('now', 's')).replace(':', '-')}.h5"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 'Save Slice Data', default_name, 'HDF5 Files (*.h5 *.hdf5);;All Files (*)'
+            )
+            if not file_path:
+                return
+            ok = loader.save_slice_arrays(
+                file_path, result['image'], result['qx'], result['qy'], result['qz'],
+                metadata=meta, append=False,
+            )
+            target = file_path
+        else:
+            ok = loader.save_slice_arrays(
+                source_path, result['image'], result['qx'], result['qy'], result['qz'],
+                metadata=meta, append=True,
+            )
+            target = source_path
+
+        if ok:
+            try:
+                mw.update_status(f"Slice saved to {target}")
+            except Exception:
+                pass
+            QMessageBox.information(self, 'Success', f'Slice saved successfully to:\n{target}')
+        else:
+            QMessageBox.critical(self, 'Error', f'Failed to save slice:\n{loader.get_last_error()}')
 
     def reset_slice(self):
         """Reset slice to HK (xy) preset at the data center."""
