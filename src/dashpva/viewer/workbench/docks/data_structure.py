@@ -57,14 +57,6 @@ class DataStructureDock(BaseDock):
         except Exception:
             pass
         header.addWidget(self.btn_refresh)
-        # Add Load Dataset button next to Refresh
-        self.btn_load = QPushButton("Load Dataset")
-        try:
-            self.btn_load.setToolTip("Load default dataset for selected file or the selected dataset")
-            self.btn_load.clicked.connect(self._on_load_clicked)
-        except Exception:
-            pass
-        header.addWidget(self.btn_load)
         header.addStretch(1)
         layout.addLayout(header)
         layout.addWidget(self.tree_data)
@@ -79,63 +71,6 @@ class DataStructureDock(BaseDock):
             self.refresh_data_structure_display()
         except Exception as e:
             QMessageBox.critical(self, "Refresh Error", f"Failed to refresh: {e}")
-
-    def _on_load_clicked(self):
-        try:
-            tree = getattr(self, 'tree_data', None)
-            mw = getattr(self, 'main_window', None)
-            if tree is None or mw is None:
-                QMessageBox.information(self, "Load Dataset", "Tree or main window not available.")
-                return
-            item = tree.currentItem()
-            if item is None:
-                # If no selection, try current file
-                fp = getattr(mw, 'current_file_path', None)
-                if fp and os.path.exists(fp):
-                    self._load_main_data_for_path(fp)
-                else:
-                    QMessageBox.information(self, "Load Dataset", "No selection or current file.")
-                return
-            item_type = item.data(0, Qt.UserRole + 2)
-            if item_type == "file_root":
-                path = item.data(0, Qt.UserRole + 1)
-                if path and os.path.exists(path):
-                    self._load_main_data_for_path(path)
-                else:
-                    QMessageBox.information(self, "Load Dataset", "Selected file is not available.")
-                return
-            # If a dataset/group is selected, try to load that selection; otherwise fall back to default
-            full_path = item.data(0, 32)  # Qt.UserRole = 32
-            if full_path:
-                self._ensure_current_file_from_item(item)
-                try:
-                    mw.selected_dataset_path = full_path
-                except Exception:
-                    pass
-                mw.start_dataset_load()
-            else:
-                fp = getattr(mw, 'current_file_path', None)
-                if fp and os.path.exists(fp):
-                    self._load_main_data_for_path(fp)
-                else:
-                    QMessageBox.information(self, "Load Dataset", "No dataset path found.")
-        except Exception as e:
-            QMessageBox.critical(self, "Load Error", f"Failed to load dataset: {e}")
-
-    def _ensure_current_file_from_item(self, item):
-        try:
-            mw = getattr(self, 'main_window', None)
-            cur = item
-            while cur is not None:
-                t = cur.data(0, Qt.UserRole + 2)
-                if t == "file_root":
-                    fp = cur.data(0, Qt.UserRole + 1)
-                    if fp and mw is not None:
-                        mw.current_file_path = fp
-                    break
-                cur = cur.parent()
-        except Exception:
-            pass
 
     def connect(self):
         try:
