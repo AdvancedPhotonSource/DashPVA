@@ -5,17 +5,47 @@ from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 class Render3D(QObject):
     finished = pyqtSignal()
     render_ready = pyqtSignal(object)
+    failed = pyqtSignal(str)
 
-    def __init__(self, *, points=None, intensities=None, num_images=None, shape=None, parent=None):
+    def __init__(self, *, points=None, intensities=None, num_images=None, shape=None,
+                 file_path=None, downsample=True, max_viewer_pts=2_000_000, parent=None):
         super().__init__(parent)
         self.points = points
         self.intensities = intensities
         self.num_images = int(num_images) if num_images is not None else 0
         self.shape = tuple(shape) if shape is not None else (0, 0)
+        # Optional off-thread raw load: when file_path is set, run() loads the
+        # dataset itself so the UI thread (and its progress bar) never blocks.
+        self.file_path = file_path
+        self.downsample = bool(downsample)
+        self.max_viewer_pts = int(max_viewer_pts)
+        # Full-resolution arrays, retained so the downsampling toggle can rebuild
+        # the display cloud without re-reading the file.
+        self.raw_points = points
+        self.raw_intensities = intensities
 
     @pyqtSlot()
     def run(self):
         try:
+            if self.file_path is not None:
+                from dashpva.utils.rsm_converter import RSMConverter
+                try:
+                    points, intensities, num_images, shape = RSMConverter().load_h5_to_3d(self.file_path)
+                except Exception as e:
+                    self.failed.emit(str(e))
+                    return
+                self.num_images = int(num_images) if num_images is not None else 0
+                self.shape = tuple(shape) if shape is not None else (0, 0)
+                self.raw_points = points
+                self.raw_intensities = intensities
+                if self.downsample:
+                    _stride = max(1, len(intensities) // self.max_viewer_pts)
+                    if _stride > 1:
+                        points = points[::_stride]
+                        intensities = intensities[::_stride]
+                self.points = points
+                self.intensities = intensities
+
             pts = np.asarray(self.points, dtype=float) if self.points is not None else np.empty((0, 3), dtype=float)
             ints = np.asarray(self.intensities, dtype=float).ravel() if self.intensities is not None else np.empty((0,), dtype=float)
             
