@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SliceView2DWidget</class>
+ <widget class="QWidget" name="SliceView2DWidget">
+  <property name="windowTitle">
+   <string>Slice 2D</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="lblSliceInfo">
+     <property name="text">
+      <string>Move the 3D slice plane to extract a 2D slice.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="cb_log_scale">
+     <property name="text">
+      <string>Log scale</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="gbSliceInfo">
+     <property name="title">
+      <string>Slice Information</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutSliceInfo">
+      <item>
+       <widget class="QLabel" name="lblSliceDetails">
+        <property name="text">
+         <string>—</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextSelectableByMouse</set>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="plotContainer">
+     <layout class="QVBoxLayout" name="layoutPlotHost"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

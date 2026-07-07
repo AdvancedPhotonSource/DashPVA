@@ -52,6 +52,7 @@ from dashpva.viewer.workbench.docks.info_3d_dock import Info3DDock
 from dashpva.viewer.workbench.docks.roi_calc import ROICalcDock
 from dashpva.viewer.workbench.docks.slice_plane import SlicePlaneDock
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager
+from dashpva.viewer.workbench.workspace.slice_2d import Slice2DDock
 from dashpva.viewer.workbench.workspace.workspace_3d import Workspace3D
 
 
@@ -101,6 +102,19 @@ class WorkbenchWindow(BaseWindow):
         self.tab_1d = None
         self.tab_2d = None
         self.tab_3d = Workspace3D(parent=self, main_window=self)
+        # Dock that renders the current 3D slice (live) with per-pixel HKL.
+        # `tab_slice_2d` aliases the hosted view so slab updates keep flowing.
+        try:
+            self.slice_2d_dock = Slice2DDock(main_window=self, segment_name="3d", dock_area=Qt.RightDockWidgetArea, show=False)
+            self.tab_slice_2d = self.slice_2d_dock.view
+            # Tabify with the 3D Info dock on the right so they share space.
+            try:
+                self.tabifyDockWidget(self.info_3d_dock, self.slice_2d_dock)
+            except Exception:
+                pass
+        except Exception:
+            self.slice_2d_dock = None
+            self.tab_slice_2d = None
         # Slice Controls dock (left, under Data Structure)
         try:
             self.slice_plane_dock = SlicePlaneDock(main_window=self, segment_name="3d", dock_area=Qt.LeftDockWidgetArea, show=False)
