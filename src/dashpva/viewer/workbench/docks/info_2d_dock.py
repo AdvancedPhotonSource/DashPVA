@@ -1,7 +1,7 @@
 from typing import Optional
 
 import numpy as np
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSlot
+from PyQt5.QtCore import QEvent, Qt, QThread, QTimer, pyqtSlot
 from PyQt5.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -44,6 +44,11 @@ class Info2DDock(InformationDockBase):
         self._hkl_debounce.setInterval(150)
         self._hkl_debounce.timeout.connect(self._compute_hkl_for_current)
         self._build_hkl_ui()
+        # Intensity-peak navigation: cached (frame, row, col) of global min/max
+        self._intensity_loc_key = None
+        self._hi_loc = None
+        self._lo_loc = None
+        self._make_intensity_clickable()
 
     # ------------------------------------------------------------------
     # UI (built in code — the base information_dock.ui is shared with Info3DDock)
@@ -86,6 +91,67 @@ class Info2DDock(InformationDockBase):
             pass
 
     # ------------------------------------------------------------------
+    # Intensity-peak navigation (click low/high → jump to frame & circle it)
+    # ------------------------------------------------------------------
+    def _make_intensity_clickable(self) -> None:
+        """Make the intensity low/high labels behave like links to their pixel."""
+        for lbl, tip in (
+            (getattr(self, 'lbl_int_high', None), "Click to jump to the brightest pixel and circle it"),
+            (getattr(self, 'lbl_int_low', None), "Click to jump to the dimmest pixel and circle it"),
+        ):
+            if lbl is not None:
+                try:
+                    lbl.setCursor(Qt.PointingHandCursor)
+                    lbl.setToolTip(tip)
+                    lbl.installEventFilter(self)
+                except Exception:
+                    pass
+
+    def eventFilter(self, obj, event):
+        try:
+            if event.type() == QEvent.MouseButtonPress:
+                if obj is getattr(self, 'lbl_int_high', None):
+                    self._goto_intensity('high')
+                    return True
+                if obj is getattr(self, 'lbl_int_low', None):
+                    self._goto_intensity('low')
+                    return True
+        except Exception:
+            pass
+        return super().eventFilter(obj, event)
+
+    def _compute_intensity_locations(self, data: np.ndarray) -> None:
+        """Cache (frame, row, col) of the global max/min over the current stack."""
+        try:
+            idx_max = np.unravel_index(int(np.argmax(data)), data.shape)
+            idx_min = np.unravel_index(int(np.argmin(data)), data.shape)
+            if data.ndim == 3:
+                self._hi_loc = (int(idx_max[0]), int(idx_max[1]), int(idx_max[2]))
+                self._lo_loc = (int(idx_min[0]), int(idx_min[1]), int(idx_min[2]))
+            elif data.ndim == 2:
+                self._hi_loc = (None, int(idx_max[0]), int(idx_max[1]))
+                self._lo_loc = (None, int(idx_min[0]), int(idx_min[1]))
+            else:
+                self._hi_loc = self._lo_loc = None
+        except Exception:
+            self._hi_loc = self._lo_loc = None
+
+    def _goto_intensity(self, which: str) -> None:
+        loc = self._hi_loc if which == 'high' else self._lo_loc
+        if not loc:
+            return
+        frame, row, col = loc
+        tab = getattr(self.main_window, 'tab_2d', None)
+        if tab is None or not hasattr(tab, 'mark_pixel'):
+            return
+        tab.mark_pixel(row, col, frame=frame)
+        try:
+            tw = self.main_window.tabWidget_analysis
+            tw.setCurrentWidget(tab)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Per-frame HKL computation (RSMConverter on a worker thread)
     # ------------------------------------------------------------------
     def _dataset_key(self):
@@ -109,6 +175,15 @@ class Info2DDock(InformationDockBase):
             self._hkl_key = key
             self._hkl_cache.clear()
             self._hkl_unavailable = False
+            # New dataset: drop cached peak locations and clear the marker.
+            self._intensity_loc_key = None
+            self._hi_loc = self._lo_loc = None
+            try:
+                tab = getattr(self.main_window, 'tab_2d', None)
+                if tab is not None and hasattr(tab, 'clear_peak_marker'):
+                    tab.clear_peak_marker()
+            except Exception:
+                pass
         self._update_hkl_labels()
         self._hkl_debounce.start()
 
@@ -285,6 +360,10 @@ class Info2DDock(InformationDockBase):
                     high_val = float(np.max(data))
                 except Exception:
                     high_val = None
+                # Cache the pixel locations of the global min/max once per array.
+                if id(data) != self._intensity_loc_key:
+                    self._intensity_loc_key = id(data)
+                    self._compute_intensity_locations(data)
         except Exception:
             points_str = None
         self.set_points(points_str)

@@ -1208,6 +1208,37 @@ class Workspace2D(BaseTab):
         except Exception:
             pass
 
+    def mark_pixel(self, row: int, col: int, frame=None):
+        """Navigate to ``frame`` (if given) and circle the pixel at (row, col).
+
+        Row/col index the frame array (axis0/axis1). The circle is drawn in the
+        same plot coordinates the hover crosshair uses (x=row, y=col).
+        """
+        try:
+            if (frame is not None and getattr(self, 'frame_spinbox', None) is not None
+                    and self.frame_spinbox.isEnabled()):
+                lo, hi = self.frame_spinbox.minimum(), self.frame_spinbox.maximum()
+                self.frame_spinbox.setValue(max(lo, min(hi, int(frame))))
+            if getattr(self, '_peak_marker', None) is None:
+                self._peak_marker = pg.ScatterPlotItem(
+                    size=26, symbol='o', pen=pg.mkPen((255, 60, 60), width=2),
+                    brush=pg.mkBrush(None))
+                self._peak_marker.setZValue(100)
+                self.plot_item.addItem(self._peak_marker)
+            self._peak_marker.setData([float(row)], [float(col)])
+            self._peak_marker.setVisible(True)
+        except Exception:
+            pass
+
+    def clear_peak_marker(self):
+        """Hide the intensity-navigation circle (e.g. when the dataset changes)."""
+        try:
+            if getattr(self, '_peak_marker', None) is not None:
+                self._peak_marker.setVisible(False)
+                self._peak_marker.clear()
+        except Exception:
+            pass
+
     def _update_hover_text_at(self, x: int, y: int):
         """Update hover crosshair and tooltip for given pixel coordinates on current frame."""
         try:
