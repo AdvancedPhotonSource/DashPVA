@@ -7,6 +7,7 @@ import hdf5plugin  # Must be imported before h5py to register compression filter
 import numpy as np
 
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.slice_raster import rasterize_slab
 
 
 class HDF5Loader(LogMixin):
@@ -924,176 +925,120 @@ class HDF5Loader(LogMixin):
 
             meta = {} if metadata is None else dict(metadata)
 
-            # Plane basis from metadata or fallback
-            n = np.array(meta.get('slice_normal', [0.0, 0.0, 1.0]), dtype=float)
-            n_norm = np.linalg.norm(n)
-            if not np.isfinite(n_norm) or n_norm <= 0.0:
-                n = np.array([0.0, 0.0, 1.0], dtype=float)
-            else:
-                n = n / n_norm
-            o = np.array(meta.get('slice_origin', [0.0, 0.0, 0.0]), dtype=float)
-            if not np.all(np.isfinite(o)):
-                # Fallback to centroid of points
-                o = np.mean(points, axis=0)
+            # Rasterize scattered slab points into a 2D image + per-pixel HKL
+            # grids using the shared routine (same one the display tab uses).
+            result = rasterize_slab(
+                points, intensities,
+                normal=meta.get('slice_normal', [0.0, 0.0, 1.0]),
+                origin=meta.get('slice_origin', None),
+                shape=shape if shape else meta.get('original_shape'),
+            )
+            if result is None:
+                raise ValueError("Slice rasterization produced no image")
 
-            # Choose an axis not parallel to n to build in-plane basis u,v
-            world_axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])]
-            ref = world_axes[0]
-            for ax in world_axes:
-                if abs(float(np.dot(ax, n))) < 0.9:
-                    ref = ax
-                    break
-            u = np.cross(n, ref)
-            u_norm = np.linalg.norm(u)
-            if not np.isfinite(u_norm) or u_norm <= 0.0:
-                # Fallback if numerical degeneracy
-                ref = np.array([0.0, 1.0, 0.0])
-                u = np.cross(n, ref)
-                u_norm = np.linalg.norm(u)
-                if not np.isfinite(u_norm) or u_norm <= 0.0:
-                    # Absolute fallback
-                    u = np.array([1.0, 0.0, 0.0])
-                    u_norm = 1.0
-            u = u / u_norm
-            v = np.cross(n, u)
-            v_norm = np.linalg.norm(v)
-            if not np.isfinite(v_norm) or v_norm <= 0.0:
-                v = np.array([0.0, 1.0, 0.0])
+            image = result['image']
+            meta['u_axis'] = [float(x) for x in result['u_axis']]
+            meta['v_axis'] = [float(x) for x in result['v_axis']]
+            meta['u_range'] = [float(result['u_range'][0]), float(result['u_range'][1])]
+            meta['v_range'] = [float(result['v_range'][0]), float(result['v_range'][1])]
+            meta['orientation'] = result['orientation']
 
-            # Project points onto plane coordinates (U,V)
-            rel = points - o[None, :]
-            U = rel.dot(u)
-            V = rel.dot(v)
+            return self.save_slice_arrays(
+                file_path, image, result['qx'], result['qy'], result['qz'],
+                metadata=meta, append=False,
+            )
+        except Exception as e:
+            self._handle_saving_error(e, file_path)
+            return False
 
-            # Determine slice image shape (H, W)
-            preferred_shape = None
-            # Prefer provided shape
-            if shape and isinstance(shape, (tuple, list)) and len(shape) == 2 and int(shape[0]) > 0 and int(shape[1]) > 0:
-                preferred_shape = (int(shape[0]), int(shape[1]))
-            else:
-                # Fallback to metadata original_shape if valid
-                orig = meta.get('original_shape', None)
-                if isinstance(orig, (tuple, list)) and len(orig) == 2 and int(orig[0]) > 0 and int(orig[1]) > 0:
-                    preferred_shape = (int(orig[0]), int(orig[1]))
-            # Final fallback to a reasonable default
-            if preferred_shape is None:
-                preferred_shape = (512, 512)
-            H, W = preferred_shape
+    def save_slice_arrays(self, file_path: str, image: np.ndarray, qx: np.ndarray,
+                          qy: np.ndarray, qz: np.ndarray, metadata: Optional[dict] = None,
+                          append: bool = False) -> bool:
+        """Write a pre-rasterized 2D slice (image + per-pixel HKL grids) to HDF5.
 
-            # Compute bin edges over U,V extents
-            U_min, U_max = float(np.min(U)), float(np.max(U))
-            V_min, V_max = float(np.min(V)), float(np.max(V))
-            # Avoid zero-size ranges
-            if not np.isfinite(U_min) or not np.isfinite(U_max) or U_max == U_min:
-                U_min, U_max = -0.5, 0.5
-            if not np.isfinite(V_min) or not np.isfinite(V_max) or V_max == V_min:
-                V_min, V_max = -0.5, 0.5
+        With ``append=False`` a new file is written whose layout mirrors
+        HDF5Writer output (``/entry/data/data``, ``/entry/data/hkl/{qx,qy,qz}``,
+        ``/entry/data/metadata``) so it re-opens in the 2D viewer. With
+        ``append=True`` the slice is added to an existing file under a unique
+        ``/entry/slices/slice_<timestamp>`` group, leaving original data intact.
 
-            # Bin points into HxW grid, averaging intensities per bin
-            du = (U_max - U_min) / float(W)
-            dv = (V_max - V_min) / float(H)
-            # Guard against zero or NaN
-            if not np.isfinite(du) or du <= 0.0:
-                du = 1.0 / float(max(W, 1))
-            if not np.isfinite(dv) or dv <= 0.0:
-                dv = 1.0 / float(max(H, 1))
-            iu = np.floor((U - U_min) / du).astype(int)
-            iv = np.floor((V - V_min) / dv).astype(int)
-            iu = np.clip(iu, 0, W - 1)
-            iv = np.clip(iv, 0, H - 1)
+        Args:
+            file_path: Output (or, when appending, existing) HDF5 path.
+            image: (H, W) intensity image.
+            qx, qy, qz: (H, W) per-pixel HKL coordinate grids.
+            metadata: provenance/slice metadata dict.
+            append: append into an existing file instead of overwriting.
 
-            image_sum = np.zeros((H, W), dtype=np.float64)
-            image_cnt = np.zeros((H, W), dtype=np.int64)
-            np.add.at(image_sum, (iv, iu), intensities.astype(np.float64))
-            np.add.at(image_cnt, (iv, iu), 1)
-            # Average; fill empty bins with 0.0
-            image = np.zeros((H, W), dtype=np.float32)
-            nonzero = image_cnt > 0
-            image[nonzero] = (image_sum[nonzero] / image_cnt[nonzero]).astype(np.float32)
-            image[~nonzero] = 0.0
-
-            # Build qx,qy,qz grids at bin centers
-            Uc = U_min + (np.arange(W, dtype=np.float64) + 0.5) * du
-            Vc = V_min + (np.arange(H, dtype=np.float64) + 0.5) * dv
-            # Broadcast to HxW
-            U_grid = np.broadcast_to(Uc[None, :], (H, W))
-            V_grid = np.broadcast_to(Vc[:, None], (H, W))
-            # q = o + U*u + V*v
-            qx = (o[0] + U_grid * u[0] + V_grid * v[0]).astype(np.float32)
-            qy = (o[1] + U_grid * u[1] + V_grid * v[1]).astype(np.float32)
-            qz = (o[2] + U_grid * u[2] + V_grid * v[2]).astype(np.float32)
-
-            # Prepare metadata consistent with writer
-            intensity_range = [float(np.min(image)), float(np.max(image))]
+        Returns:
+            True on success, False otherwise.
+        """
+        try:
+            image = np.asarray(image, dtype=np.float32)
+            H, W = image.shape
+            meta = {} if metadata is None else dict(metadata)
             meta.setdefault('data_type', 'slice')
             meta.setdefault('extraction_timestamp', str(np.datetime64('now')))
-            meta.setdefault('num_points', int(points.shape[0]))
             meta.setdefault('image_shape', [int(H), int(W)])
-            meta.setdefault('slice_normal', [float(n[0]), float(n[1]), float(n[2])])
-            meta.setdefault('slice_origin', [float(o[0]), float(o[1]), float(o[2])])
-            meta.setdefault('u_axis', [float(u[0]), float(u[1]), float(u[2])])
-            meta.setdefault('v_axis', [float(v[0]), float(v[1]), float(v[2])])
-            meta.setdefault('u_range', [float(U_min), float(U_max)])
-            meta.setdefault('v_range', [float(V_min), float(V_max)])
-            meta.setdefault('intensity_range', intensity_range)
+            meta.setdefault('intensity_range', [float(np.min(image)), float(np.max(image))])
+            comp = hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
 
-            # Write HDF5 file: /entry/data/data, /entry/data/hkl/{qx,qy,qz}, /entry/data/metadata
-            with h5py.File(file_path, 'w') as h5f:
-                entry_grp = h5f.create_group(self.hdf5_structure['entry'])
-                data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
-                # Image data
-                data_ds_name = self.hdf5_structure['images'].split('/')[-1]
-                data_grp.create_dataset(data_ds_name, data=image.astype(np.float32),
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                # HKL 2D grids
-                hkl_grp = data_grp.create_group(self.hdf5_structure['hkl'].split('/')[-1])
-                hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=qx,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=qy,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=qz,
-                    **hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True))
-                # Metadata
-                metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
-                for key, value in meta.items():
-                    try:
-                        if isinstance(value, (int, float, np.number)):
-                            metadata_grp.create_dataset(key, data=value)
-                        elif isinstance(value, str):
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            metadata_grp.create_dataset(key, data=value, dtype=dt)
-                        elif isinstance(value, (list, tuple, np.ndarray)):
-                            arr = np.array(value)
-                            if arr.dtype.kind in ('i', 'u', 'f'):
-                                metadata_grp.create_dataset(key, data=arr)
-                            elif arr.dtype.kind in ('U', 'S', 'O'):
-                                dt = h5py.string_dtype(encoding='utf-8')
-                                metadata_grp.create_dataset(key, data=arr.astype(dt))
-                            else:
-                                dt = h5py.string_dtype(encoding='utf-8')
-                                metadata_grp.create_dataset(key, data=str(value), dtype=dt)
-                        else:
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            metadata_grp.create_dataset(key, data=str(value), dtype=dt)
-                    except Exception as e:
-                        try:
-                            self.logger.warning(f"Could not save metadata key '{key}': {e}")
-                        except Exception:
-                            pass
-
-                # Attributes
-                entry_grp.attrs['data_type'] = 'slice'
-                data_grp.attrs['array_rank'] = 2
-                data_grp.attrs['array_shape'] = np.array([H, W], dtype=np.int64)
+            if append:
+                with h5py.File(file_path, 'a') as h5f:
+                    slices_grp = h5f.require_group('entry/slices')
+                    name = f"slice_{str(np.datetime64('now', 's')).replace(':', '-')}"
+                    base = name
+                    i = 1
+                    while name in slices_grp:
+                        name = f"{base}_{i}"
+                        i += 1
+                    data_grp = slices_grp.create_group(name)
+                    self._write_slice_datasets(data_grp, image, qx, qy, qz, meta, comp)
+            else:
+                with h5py.File(file_path, 'w') as h5f:
+                    entry_grp = h5f.create_group(self.hdf5_structure['entry'])
+                    entry_grp.attrs['data_type'] = 'slice'
+                    data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
+                    self._write_slice_datasets(data_grp, image, qx, qy, qz, meta, comp)
 
             try:
-                self.logger.info(f"Slice saved to {file_path} (shape {H}x{W})")
+                self.logger.info(f"Slice saved to {file_path} (shape {H}x{W}, append={append})")
             except Exception:
                 pass
             return True
         except Exception as e:
             self._handle_saving_error(e, file_path)
             return False
+
+    def _write_slice_datasets(self, data_grp, image, qx, qy, qz, meta, comp) -> None:
+        """Write image, hkl grids, metadata, and shape attrs into ``data_grp``."""
+        H, W = image.shape
+        data_grp.create_dataset(self.hdf5_structure['images'].split('/')[-1], data=image, **comp)
+        hkl_grp = data_grp.create_group(self.hdf5_structure['hkl'].split('/')[-1])
+        hkl_grp.create_dataset(self.hdf5_structure['qx'].split('/')[-1], data=np.asarray(qx, dtype=np.float32), **comp)
+        hkl_grp.create_dataset(self.hdf5_structure['qy'].split('/')[-1], data=np.asarray(qy, dtype=np.float32), **comp)
+        hkl_grp.create_dataset(self.hdf5_structure['qz'].split('/')[-1], data=np.asarray(qz, dtype=np.float32), **comp)
+        metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
+        for key, value in meta.items():
+            try:
+                if isinstance(value, (int, float, np.number)):
+                    metadata_grp.create_dataset(key, data=value)
+                elif isinstance(value, str):
+                    metadata_grp.create_dataset(key, data=value, dtype=h5py.string_dtype(encoding='utf-8'))
+                elif isinstance(value, (list, tuple, np.ndarray)):
+                    arr = np.array(value)
+                    if arr.dtype.kind in ('i', 'u', 'f'):
+                        metadata_grp.create_dataset(key, data=arr)
+                    else:
+                        metadata_grp.create_dataset(key, data=arr.astype(h5py.string_dtype(encoding='utf-8')))
+                else:
+                    metadata_grp.create_dataset(key, data=str(value), dtype=h5py.string_dtype(encoding='utf-8'))
+            except Exception as e:
+                try:
+                    self.logger.warning(f"Could not save metadata key '{key}': {e}")
+                except Exception:
+                    pass
+        data_grp.attrs['array_rank'] = 2
+        data_grp.attrs['array_shape'] = np.array([H, W], dtype=np.int64)
 
     # ================ UTILITY METHODS ======================= #
     def get_file_info(self, file_path: str, *, style: str = "text", include_unknown: bool = True,
