@@ -245,6 +245,18 @@ add: roi overlay color selector
 
 Scope the message to staged changes only (`git diff --cached`).
 
+## Releasing
+
+Canonical release procedure — run every version bump in this order:
+
+1. **`pyproject.toml`** → bump `version = "X.Y.Z"`.
+2. **`uv lock`** → regenerates the `uv.lock` root entry to `X.Y.Z`. Commit `pyproject.toml` + `uv.lock` together.
+3. **PR** → merge to `main`.
+4. **`uv sync`** (or `install.sh --update`) so `__version__` reflects it locally.
+5. **`git tag vX.Y.Z <main-commit> && git push origin vX.Y.Z`**.
+6. **`gh release create vX.Y.Z --title vX.Y.Z --notes "…"`** (latest, non-draft) — this is what triggers the in-app "update available."
+7. **Verify:** a `DashPVA` run shows `vX.Y.Z` + "Up to date"; `gh release list` shows it as Latest.
+
 ## Coding conventions
 
 - **Change only what was asked.** Do not bundle adjacent cleanups, refactors, or style fixes into a scoped request. Mention adjacent issues in chat as follow-up suggestions instead.
