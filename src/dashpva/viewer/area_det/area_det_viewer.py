@@ -1327,6 +1327,9 @@ class DiffractionImageWindow(BaseWindow):
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
+                # Share the live HKL values with the reader so its per-frame merge
+                # saves them into the scan H5 (the associator may not attach them).
+                self.reader.hkl_values = self.hkl_data
                 missing = [n for n, v in self.hkl_data.items() if v is None]
                 got = len(self.hkl_data) - len(missing)
                 print(f"[Diffraction Image Viewer] HKL monitors started: "

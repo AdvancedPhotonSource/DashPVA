@@ -1,4 +1,5 @@
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -51,6 +52,10 @@ class LauncherDialog(QDialog):
             pass
 
         self.processes = {}
+        self._next_proc_id = 1
+        self._process_manager = None
+        self._launch_buttons: dict = {}
+        self._launch_counts: dict = {}
         self._timer = QTimer(self)
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._poll_processes)
@@ -63,8 +68,8 @@ class LauncherDialog(QDialog):
             self.btn_settings.clicked.connect(self._open_settings)
         if hasattr(self, 'btn_exit'):
             self.btn_exit.clicked.connect(self.request_close)
-        if hasattr(self, 'btn_shutdown_all'):
-            self.btn_shutdown_all.clicked.connect(self._confirm_shutdown_all)
+        if hasattr(self, 'btn_processes'):
+            self.btn_processes.clicked.connect(self._open_process_manager)
 
         self._update_status()
 
@@ -183,10 +188,9 @@ class LauncherDialog(QDialog):
                         btn.setToolTip(tooltip)
                     row, col = divmod(i, 2)
                     grid.addWidget(btn, row, col)
+                    self._launch_buttons[entry['key']] = btn
                     btn.clicked.connect(
-                        lambda _=False, e=entry, b=btn: self.launch(
-                            e['key'], e['cmd'], b, e['running_text']
-                        )
+                        lambda _=False, e=entry: self.launch(e['key'], e['cmd'], e['label'])
                     )
                 except Exception:
                     pass
@@ -194,50 +198,65 @@ class LauncherDialog(QDialog):
             layout.insertWidget(insert_at, grid_widget)
             insert_at += 1
 
-    def launch(self, key, cmd, button, running_text, quiet=False):
-        """Start a child process and update UI indicators."""
-        if key in self.processes and self.processes[key]['popen'].poll() is None:
-            return
-        original_text = button.text()
-        button.setEnabled(False)
-        button.setText(f"{original_text} — Launching…")
+    def launch(self, key, cmd, label, quiet=False):
+        """Start a child process and track it. The launch button is disabled until
+        the process is confirmed running, then re-enabled."""
+        btn = self._launch_buttons.get(key)
+        if btn is not None:
+            btn.setEnabled(False)
+
+        count = self._launch_counts.get(key, 0) + 1
+        self._launch_counts[key] = count
+        instance_label = label if count == 1 else f'{label} ({count})'
 
         kwargs = {}
         if quiet:
             kwargs['stdout'] = subprocess.DEVNULL
             kwargs['stderr'] = subprocess.DEVNULL
 
+        env = os.environ.copy()
+        env['DASHPVA_MODULE_LABEL'] = instance_label
+        kwargs['env'] = env
+
         try:
             p = subprocess.Popen(cmd, start_new_session=True, **kwargs)
-            button.setText(running_text)
-            self.processes[key] = {
-                'popen': p,
-                'button': button,
-                'original_text': original_text,
-                'running_text': running_text
-            }
         except Exception as e:
+            if btn is not None:
+                btn.setEnabled(True)
             QMessageBox.critical(
                 self,
                 'Launch Failed',
                 f'Failed to launch:\n{" ".join(cmd)}\n\n{e}'
             )
-            button.setText(original_text)
-            button.setEnabled(True)
+            return
 
+        proc_id = self._next_proc_id
+        self._next_proc_id += 1
+        self.processes[proc_id] = {'popen': p, 'label': instance_label, 'key': key, 'btn': btn}
         self._update_status()
+        self._refresh_process_manager()
+        # Fallback: re-enable after 3 s in case the process exits before _poll sees it
+        if btn is not None:
+            QTimer.singleShot(3000, lambda b=btn: b.setEnabled(True))
 
     def _poll_processes(self):
-        """Periodic check for finished processes to restore UI state."""
+        """Periodic check for finished processes to keep the tracker in sync."""
         finished = []
-        for key, entry in self.processes.items():
+        for proc_id, entry in self.processes.items():
             p = entry['popen']
+            btn = entry.get('btn')
             if p.poll() is not None:
-                entry['button'].setText(entry['original_text'])
-                entry['button'].setEnabled(True)
-                finished.append(key)
-        for key in finished:
-            self.processes.pop(key, None)
+                finished.append(proc_id)
+                if btn is not None:
+                    btn.setEnabled(True)
+            elif not entry.get('_started'):
+                entry['_started'] = True
+                if btn is not None:
+                    btn.setEnabled(True)
+        for proc_id in finished:
+            self.processes.pop(proc_id, None)
+        if finished:
+            self._refresh_process_manager()
         self._update_status()
 
     def _update_status(self):
@@ -253,8 +272,9 @@ class LauncherDialog(QDialog):
                 self.lbl_status.setText(f'● {count} {noun} running')
         if hasattr(self, 'btn_exit'):
             self.btn_exit.setEnabled(True)
-        if hasattr(self, 'btn_shutdown_all'):
-            self.btn_shutdown_all.setEnabled(count > 0)
+        if hasattr(self, 'btn_processes'):
+            self.btn_processes.setText(f'Processes ({count})' if count else 'Processes')
+            self.btn_processes.setEnabled(count > 0)
 
     def _open_logs(self, _=None):
         """Open the log viewer dialog."""
@@ -279,8 +299,7 @@ class LauncherDialog(QDialog):
                     self.launch(
                         'settings',
                         [sys.executable, 'viewer/settings/settings_dialog.py'],
-                        self.btn_settings,
-                        'Settings — Running…'
+                        'Settings'
                     )
                 else:
                     raise e
@@ -290,13 +309,11 @@ class LauncherDialog(QDialog):
     def _format_running_modules_list(self):
         """Return a human-readable list of running modules and their PIDs."""
         lines = []
-        for key, entry in self.processes.items():
+        for entry in self.processes.values():
             p = entry.get('popen')
             if p is None or p.poll() is not None:
                 continue
-            name = entry.get('running_text', key)
-            if ' — ' in name:
-                name = name.split(' — ')[0]
+            name = entry.get('label', entry.get('key', 'Module'))
             try:
                 pid = p.pid
             except Exception:
@@ -324,14 +341,139 @@ class LauncherDialog(QDialog):
             except Exception:
                 pass
 
+    def stop_process(self, proc_id):
+        """Force-stop a single tracked module by its process id."""
+        entry = self.processes.get(proc_id)
+        if entry is None:
+            return
+        self._terminate_proc(entry['popen'])
+        self.processes.pop(proc_id, None)
+        self._update_status()
+        self._refresh_process_manager()
+
     def shutdown_all(self):
         """Force-stop all running modules and restore UI state."""
-        for key, entry in list(self.processes.items()):
+        for proc_id, entry in list(self.processes.items()):
             self._terminate_proc(entry['popen'])
-            entry['button'].setText(entry['original_text'])
-            entry['button'].setEnabled(True)
-            self.processes.pop(key, None)
+            self.processes.pop(proc_id, None)
         self._update_status()
+        self._refresh_process_manager()
+
+    @staticmethod
+    def bring_to_front_supported():
+        """Whether this platform has a window-raising mechanism available."""
+        if sys.platform.startswith('win'):
+            return True
+        if sys.platform == 'darwin':
+            return bool(shutil.which('osascript'))
+        return bool(shutil.which('wmctrl'))
+
+    def bring_to_front(self, pid):
+        """Raise and activate the window owned by ``pid`` (or any of its child
+        processes), on Windows, macOS, and Linux/X11.
+
+        A launched module often owns its window from a grandchild process (the
+        CLI wrapper spawns the real viewer), so the whole process subtree is
+        matched. Best-effort: returns True on success, False otherwise."""
+        pids = self._descendant_pids(pid)
+        if sys.platform.startswith('win'):
+            return self._bring_to_front_windows(pids)
+        if sys.platform == 'darwin':
+            return self._bring_to_front_macos(pids)
+        return self._bring_to_front_linux(pids)
+
+    @staticmethod
+    def _descendant_pids(pid):
+        """Return ``pid`` plus all of its descendant process ids."""
+        pids = {pid}
+        try:
+            import psutil
+            pids.update(c.pid for c in psutil.Process(pid).children(recursive=True))
+        except Exception:
+            pass
+        return pids
+
+    @staticmethod
+    def _bring_to_front_linux(pids):
+        if not shutil.which('wmctrl'):
+            return False
+        try:
+            out = subprocess.check_output(['wmctrl', '-l', '-p'], text=True)
+        except Exception:
+            return False
+        targets = {str(p) for p in pids}
+        for line in out.splitlines():
+            parts = line.split(None, 4)
+            # columns: win_id  desktop  pid  host  title
+            if len(parts) >= 3 and parts[2] in targets:
+                subprocess.run(['wmctrl', '-i', '-a', parts[0]], check=False)
+                return True
+        return False
+
+    @staticmethod
+    def _bring_to_front_macos(pids):
+        for p in pids:
+            script = (
+                'tell application "System Events" to set frontmost of '
+                f'(first process whose unix id is {p}) to true'
+            )
+            try:
+                r = subprocess.run(
+                    ['osascript', '-e', script],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                if r.returncode == 0:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    @staticmethod
+    def _bring_to_front_windows(pids):
+        try:
+            import ctypes
+            from ctypes import wintypes
+        except Exception:
+            return False
+        user32 = ctypes.windll.user32
+        targets = set(pids)
+        found = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _cb(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            win_pid = wintypes.DWORD(0)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(win_pid))
+            if win_pid.value in targets:
+                found.append(hwnd)
+                return False
+            return True
+
+        try:
+            user32.EnumWindows(_cb, 0)
+        except Exception:
+            return False
+        if not found:
+            return False
+        user32.ShowWindow(found[0], 9)  # SW_RESTORE
+        user32.SetForegroundWindow(found[0])
+        return True
+
+    def _open_process_manager(self):
+        """Open (or raise) the non-modal process-manager window."""
+        from .process_manager_dialog import ProcessManagerDialog
+        if self._process_manager is None:
+            self._process_manager = ProcessManagerDialog(self)
+        self._process_manager.refresh()
+        self._process_manager.show()
+        self._process_manager.raise_()
+        self._process_manager.activateWindow()
+
+    def _refresh_process_manager(self):
+        """Refresh the tracker window if it is currently open."""
+        if self._process_manager is not None and self._process_manager.isVisible():
+            self._process_manager.refresh()
 
     @staticmethod
     def _widen_messagebox(msg, width=420):
@@ -340,22 +482,6 @@ class LauncherDialog(QDialog):
             from PyQt5.QtWidgets import QSizePolicy, QSpacerItem
             spacer = QSpacerItem(width, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
             layout.addItem(spacer, layout.rowCount(), 0, 1, layout.columnCount())
-
-    def _confirm_shutdown_all(self):
-        """Confirm and force-stop all running modules."""
-        if not self.processes:
-            return
-        running_list = self._format_running_modules_list()
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle('Shutdown All Modules')
-        msg.setText('Force stop all running modules?')
-        msg.setInformativeText(running_list + '\n\nData might be lost.')
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msg.setDefaultButton(QMessageBox.No)
-        self._widen_messagebox(msg)
-        if msg.exec_() == QMessageBox.Yes:
-            self.shutdown_all()
 
     def _confirm_exit(self):
         """Show exit confirmation dialog. Returns True if the user confirmed."""

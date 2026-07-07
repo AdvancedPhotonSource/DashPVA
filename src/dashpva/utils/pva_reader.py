@@ -121,6 +121,8 @@ class PVAReader(QObject):
         self.attributes = []
         self.pv_attributes = {}
         self.metadata_ca = {}  # Store CA metadata PVs
+        self.cached_ca: dict = {}  # pv_name -> [values] captured during scan
+        self.hkl_values: dict = {}  # HKL pv_name -> latest value, merged into frames
 
         # variables used for image manipulaiton
         self.pixel_ordering = 'F'
@@ -227,7 +229,14 @@ class PVAReader(QObject):
 
             # update with latest pv metadata
             self.pv_attributes = self.parse_attributes(pv)
-            
+
+            # Fill any HKL PVs the associator didn't attach with the reader's own
+            # camonitor'd values. setdefault keeps a timestamp-matched associator
+            # value when present; otherwise the scan H5 would save empty HKL groups.
+            for pv_name, pv_value in list(self.hkl_values.items()):
+                if pv_value is not None:
+                    self.pv_attributes.setdefault(pv_name, pv_value)
+
             # Check for any roi pvs in metadata
             self.parse_roi_pvs(self.pv_attributes)
 
@@ -242,6 +251,12 @@ class PVAReader(QObject):
                 try:
                     if self.cache_attributes(self.pv_attributes, self.rsm_attributes):
                         self.cache_image(np.ravel(self.image))
+                        if self.is_caching:
+                            ca_config = self.config.get('METADATA', {}).get('CA', {})
+                            for pv_name in ca_config.values():
+                                val = self.pv_attributes.get(pv_name)
+                                if val is not None:
+                                    self.cached_ca.setdefault(pv_name, []).append(val)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -494,6 +509,7 @@ class PVAReader(QObject):
             self.is_caching = True
             self.is_scan_complete = False
             self.scan_state_changed.emit(True)
+            self.cached_ca = {}
             print('[DEBUG] CA flag: Scan STARTED')
 
     def start_channel_monitor(self, callback=None) -> None:
@@ -537,6 +553,11 @@ class PVAReader(QObject):
         if self.CACHING_MODE == 'scan' and self.FLAG_PV:
             try:
                 camonitor_clear(self.FLAG_PV)
+            except Exception:
+                pass
+        for pv_name in self.hkl_values:
+            try:
+                camonitor_clear(pv_name)
             except Exception:
                 pass
 
@@ -605,7 +626,39 @@ class PVAReader(QObject):
                 # Silently skip failed PVs to avoid spam
                 pass
 
-    ################################# Getters ################################# 
+    def start_hkl_ca_monitor(self) -> None:
+        """Caget + camonitor the [HKL] PVs so scan saves don't depend on the associator.
+
+        The scan writer looks up each HKL value by raw PV name in the frame
+        attributes; when the metadata associator doesn't attach them (static
+        motor / stale timestamp) the HKL groups save empty. Capturing them here
+        and merging in pva_callbackSuccess fills that gap. The 0.15s timeout
+        bounds only the value fetch, not the connect, so an unreachable PV still
+        waits pvapy's ~5s connection timeout; runs on the reader thread (last
+        after the channel/scan monitors) so it never blocks the GUI.
+        """
+        if not self.HKL_IN_CONFIG:
+            return
+        hkl_config = self.config.get('HKL', {})
+        for pv_dict in hkl_config.values():
+            if not isinstance(pv_dict, dict):
+                continue
+            for pv_name in pv_dict.values():
+                if not pv_name or pv_name in self.hkl_values:
+                    continue
+                try:
+                    pv_value = caget(pv_name, timeout=0.15)
+                    if pv_value is not None:
+                        self.hkl_values[pv_name] = pv_value
+                    camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
+                except Exception:
+                    pass
+
+    def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
+        """Store the latest value for an HKL PV; merged into each frame."""
+        self.hkl_values[pvname] = value
+
+    ################################# Getters #################################
     def get_cached_images(self) -> list[np.ndarray]:
         return list(self.cached_images)
     
@@ -636,7 +689,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")
@@ -647,7 +701,8 @@ class PVAReader(QObject):
                 data = {
                         'images': images,
                         'attributes': attributes,
-                        'rsm': rsm
+                        'rsm': rsm,
+                        'cached_ca': dict(self.cached_ca),
                         }
             else:
                 raise ValueError("[PVA Reader] Cached data must have the same length.")

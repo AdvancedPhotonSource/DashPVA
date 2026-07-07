@@ -505,43 +505,19 @@ class Workflow(QDialog, LogMixin):
             self._load_analysis_last()
 
     def _populate_processor_file_combos(self):
-        """Populate processor file dropdowns from CONSUMERS > hpc in the DB."""
-        if not self._db_available:
-            return
-        try:
-            # Look up CONSUMERS by name — works whether it's root or under PATHS
-            consumers_setting = self._db.get_setting_by_name('CONSUMERS')
-            if consumers_setting is None:
-                return
-            consumers_base = self._db.get_setting_value(consumers_setting.id, 'BASE') or ''
+        """Populate processor file dropdowns from DASHPVA_ROOT consumers/hpc subdirectories."""
 
-            hpc_setting = next(
-                (c for c in self._db.get_setting_children(consumers_setting.id) if c.name == 'hpc'),
-                None
-            )
-            if hpc_setting is None:
-                return
-            hpc_base     = self._db.get_setting_value(hpc_setting.id, 'BASE')     or ''
-            meta_dir     = self._db.get_setting_value(hpc_setting.id, 'meta')     or ''
-            analysis_dir = self._db.get_setting_value(hpc_setting.id, 'analysis') or ''
-        except Exception:
-            return
-
-        # Resolve relative to the package root (src/dashpva/) where consumers/ lives
-        pkg_root = pathlib.Path(__file__).parent.parent
+        hpc_root = app_settings.DASHPVA_ROOT / 'consumers' / 'hpc'
 
         def list_py_files(subdir):
-            try:
-                d = pkg_root / consumers_base / hpc_base / subdir if subdir else pkg_root / consumers_base / hpc_base
-                if not d.is_dir():
-                    return []
-                rel_base = d.relative_to(app_settings.PROJECT_ROOT)
-                return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')))
-            except Exception:
+            d = hpc_root / subdir
+            if not d.is_dir():
                 return []
+            rel_base = d.relative_to(app_settings.PROJECT_ROOT)
+            return sorted(str(rel_base / f.name) for f in sorted(d.glob('*.py')) if f.name != '__init__.py')
 
-        meta_files     = list_py_files(meta_dir)
-        analysis_files = list_py_files(analysis_dir)
+        meta_files     = list_py_files('meta')
+        analysis_files = list_py_files('analysis')
 
         for combo, files in [
             (self.comboBoxProcessorFileAssociator, meta_files),
@@ -1008,7 +984,14 @@ class Workflow(QDialog, LogMixin):
             return
         src_name = self.comboBoxProfile.currentText()
         src_id = self.comboBoxProfile.itemData(idx)
-        new_name = f'{src_name}-(copy)'
+        # Profile names are unique — pick a free "-(copy)" name so duplicating the
+        # same profile more than once doesn't hit the unique-name constraint.
+        base = f'{src_name}-(copy)'
+        new_name = base
+        n = 2
+        while self._db.get_profile_by_name(new_name) is not None:
+            new_name = f'{base}-{n}'
+            n += 1
         try:
             new_profile = self._db.create_profile(new_name)
             self._db.clone_profile_configs(src_id, new_profile.id)
@@ -2464,7 +2447,9 @@ class Workflow(QDialog, LogMixin):
             self.spinBoxDistributorUpdatesAnalysis.setValue(int(cfg['distributor_updates']))
 
     def run_associator_consumers(self):
+        self.logger.info('Start Metadata Associator requested')
         if 'associator_consumers' in self.processes:
+            self.logger.warning('Start Metadata Associator ignored — already running')
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
         self._save_meta_assoc_last()
@@ -2487,6 +2472,10 @@ class Workflow(QDialog, LogMixin):
         metadata_pvs = self._build_metadata_channels()
         if metadata_pvs:
             cmd.extend(['--metadata-channels', metadata_pvs])
+        else:
+            self.logger.warning(
+                'Start Metadata Associator: no metadata channels built — '
+                'associator will have nothing to attach')
         self._associator_metadata_channels = metadata_pvs
 
         try:
@@ -2507,7 +2496,9 @@ class Workflow(QDialog, LogMixin):
             self.buttonRunAssociatorConsumers.setEnabled(False)
             self.buttonStopAssociatorConsumers.setEnabled(True)
             self.labelStatusAssociatorConsumers.setText(f'Process ID: {process.pid}')
+            self.logger.info(f'Metadata Associator started (PID {process.pid})')
         except Exception as e:
+            self.logger.exception('Failed to start Metadata Associator')
             QtWidgets.QMessageBox.critical(self, 'Error', f'Failed to start Associator Consumers: {str(e)}')
 
     def stop_associator_consumers(self):
@@ -2520,6 +2511,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopAssociatorConsumers.setEnabled(False)
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
+            print(f"Associator Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
 
     def _sync_associator_metadata(self) -> None:
         """Restart the associator if it is running and metadata channels changed."""
@@ -2741,6 +2733,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonStopAnalysisConsumer.setEnabled(False)
             self.labelStatusAnalysisConsumer.setText('Process ID: Not running')
             self.textEditAnalysisConsumerOutput.appendPlainText('Analysis Consumer stopped.')
+            print(f"Analysis Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
 
     # ------------------------------------------------------------------ #
     # Close
