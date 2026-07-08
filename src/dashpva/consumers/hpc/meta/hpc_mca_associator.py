@@ -52,14 +52,13 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 from epics import PV as EpicsPV
-from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
-from dashpva.utils.log_manager import LogMixin
+from dashpva.consumers.core.base_hpc import BaseHpcProcessor
 
 
-class HpcMcaAssociator(AdImageProcessor, LogMixin):
+class HpcMcaAssociator(BaseHpcProcessor):
 
     # Default SIS3820 scaler channels at 12-ID-C.
     DEFAULT_MCA_BASE = '12idc:3820:mca'
@@ -72,7 +71,7 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
     MIN_COMPRESS_BYTES = 4098
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
+        super().__init__(configDict)
         try:
             self.set_log_manager(viewer_name="HpcMcaAssociator")
         except Exception:
@@ -104,22 +103,10 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         self._pvs = []                 # live epics.PV handles
         self._ca_started = False
 
-        # -- statistics -------------------------------------------------------
-        self.nFramesProcessed = 0
-        self.nFrameErrors = 0
+        # -- statistics (nFrames*/processingTime/lastFrameTimestamp from base) -
         self.nMcaWithin = 0            # readings attached within the window
         self.nMcaStale = 0             # readings older than the window
-        self.processingTime = 0
-        self.lastFrameTimestamp = 0
 
-        # Type map for the lz4 codec-parameters field (matches HpcAdMetadataProcessor).
-        self.CODEC_PARAMETERS_MAP = {
-            np.dtype('uint8'): pva.UBYTE, np.dtype('int8'): pva.BYTE,
-            np.dtype('uint16'): pva.USHORT, np.dtype('int16'): pva.SHORT,
-            np.dtype('uint32'): pva.UINT, np.dtype('int32'): pva.INT,
-            np.dtype('uint64'): pva.ULONG, np.dtype('int64'): pva.LONG,
-            np.dtype('float32'): pva.FLOAT, np.dtype('float64'): pva.DOUBLE,
-        }
         self.logger.setLevel(logging.DEBUG)
         self.logger.debug(f'Created HpcMcaAssociator for {self.mcaPvs}')
 
@@ -257,14 +244,7 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         pv_arr = union_dict[field_name]
         data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
 
-        UNION_FIELD_TO_DTYPE = {
-            'ubyteValue': np.uint8, 'byteValue': np.int8,
-            'ushortValue': np.uint16, 'shortValue': np.int16,
-            'uintValue': np.uint32, 'intValue': np.int32,
-            'ulongValue': np.uint64, 'longValue': np.int64,
-            'floatValue': np.float32, 'doubleValue': np.float64,
-        }
-        dtype = UNION_FIELD_TO_DTYPE.get(field_name)
+        dtype = self.UNION_FIELD_TO_DTYPE.get(field_name)
         arr = np.ascontiguousarray(
             np.asarray(data_list, dtype=dtype) if dtype is not None
             else np.asarray(data_list))
