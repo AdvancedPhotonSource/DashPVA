@@ -6,40 +6,19 @@ import numpy as np
 import pvaccess as pva
 import toml
 from pvaccess import DOUBLE, PvObject
-from pvapy.hpc.adImageProcessor import AdImageProcessor
-from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
+
+from dashpva.consumers.core.base_analysis_processor import BaseAnalysisProcessor
 
 
 # Example AD Metadata Processor for the streaming framework
 # This updated version processes one frame at a time.
-class HpcAnalysisProcessor(AdImageProcessor):
+class HpcAnalysisProcessor(BaseAnalysisProcessor):
 
     def __init__(self, configDict={}):
-        super(HpcAnalysisProcessor, self).__init__(configDict)
-
-        # Statistics
-        self.nFramesProcessed = 0
-        self.nFrameErrors = 0
-        self.nMetadataProcessed = 0
-        self.nMetadataDiscarded = 0
-        self.processingTime = 0
-
+        super().__init__(configDict)
         # Configuration parameters
         self.configure(configDict)
-
-        # Image and ROI settings
-        # These can be changed to suit your analysis needs
-        self.roi_x = 0
-        self.roi_y = 0
-        self.roi_width = 50
-        self.roi_height = 50
-
-        # The last processed frame's timestamp
-        self.lastFrameTimestamp = 0
-
-        # Dictionary to store attributes from the current frame
-        self.attributes = {}
 
     def configure(self, configDict):
         """
@@ -62,31 +41,6 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.axis1 = self.config.get('ANALYSIS', {}).get('AXIS1', None)
         self.axis2 = self.config.get('ANALYSIS', {}).get('AXIS2', None)
 
-
-
-    def parse_image_data_type(self, pva_object):
-        """
-        Parse the PVA Object to determine the incoming datatype of the image.
-        """
-        if pva_object is not None:
-            self.data_type = list(pva_object['value'][0].keys())[0]
-
-    def parse_pva_ndattributes(self, pva_object):
-        """
-        Parse the NDAttributes from the PVA Object into a python dict.
-        Store attributes in self.attributes for easy reference.
-        """
-        if pva_object is None:
-            return
-        obj_dict = pva_object.get()
-        attributes = {}
-        for attr in obj_dict.get("attribute", []):
-            name = attr['name']
-            value = attr['value']
-            attributes[name] = value
-
-        self.attributes = attributes
-
     def pva_to_image(self, pva_object):
         """
         Convert the PVA Object to a NumPy array representing the image.
@@ -103,7 +57,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
                 self.image = np.reshape(raw_data, shape).T
         except Exception:
             print("error parsing images")
-                    
+
 
     def process(self, pvObject):
         """
@@ -173,8 +127,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
         # Now create a PvObject with the analysis results
         # We will send out a single data point (X, Y, Intensity, ComX, ComY)
         analysis_object = PvObject({'value':{'Axis1': DOUBLE, 'Axis2': DOUBLE,
-                                             'Intensity': DOUBLE, 
-                                             'ComX': DOUBLE, 
+                                             'Intensity': DOUBLE,
+                                             'ComX': DOUBLE,
                                              'ComY': DOUBLE}},
                                    {'value':{'Axis1': float(x_value),'Axis2': float(y_value),
                                              'Intensity': float(intensity),
@@ -202,46 +156,3 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.processingTime += (t1 - t0)
 
         return pvObject
-
-    def resetStats(self):
-        """
-        Reset processor statistics.
-        """
-        self.nFramesProcessed = 0 
-        self.nFrameErrors = 0 
-        self.nMetadataProcessed = 0 
-        self.nMetadataDiscarded = 0 
-        self.processingTime = 0
-
-    def getStats(self):
-        """
-        Get current statistics of processing.
-        """
-        processedFrameRate = 0
-        frameErrorRate = 0
-        if self.processingTime > 0:
-            processedFrameRate = self.nFramesProcessed / self.processingTime
-            frameErrorRate = self.nFrameErrors / self.processingTime
-        return { 
-            'nFramesProcessed' : self.nFramesProcessed,
-            'nFrameErrors' : self.nFrameErrors,
-            'nMetadataProcessed' : self.nMetadataProcessed,
-            'nMetadataDiscarded' : self.nMetadataDiscarded,
-            'processingTime' : FloatWithUnits(self.processingTime, 's'),
-            'processedFrameRate' : FloatWithUnits(processedFrameRate, 'fps'),
-            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
-        }
-
-    def getStatsPvaTypes(self):
-        """
-        Define PVA types for different stats variables.
-        """
-        return { 
-            'nFramesProcessed' : pva.UINT,
-            'nFrameErrors' : pva.UINT,
-            'nMetadataProcessed' : pva.UINT,
-            'nMetadataDiscarded' : pva.UINT,
-            'processingTime' : pva.DOUBLE,
-            'processedFrameRate' : pva.DOUBLE,
-            'frameErrorRate' : pva.DOUBLE
-        }
