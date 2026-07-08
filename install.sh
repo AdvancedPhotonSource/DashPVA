@@ -97,39 +97,58 @@ ensure_uv() {
     info "uv installed: $(command -v uv)"
 }
 
+is_linux() { [[ "$(uname -s)" == "Linux" ]]; }
+
 prompt_edition() {
     echo
     info "Which edition would you like to install?"
     echo
-    info "  [1] Full          — everything (streaming + standalone + Bayesian)"
-    info "  [2] Area Detector — area detector viewer + live EPICS streaming (lean)"
-    info "  [3] Standalone    — post-analysis tools + Jupyter (no streaming)"
-    info "  [4] Bayesian      — area detector + Bayesian optimization (blop)"
-    echo
-    while true; do
-        read -rp "  Enter 1, 2, 3, or 4 [default: 1]: " choice
-        choice="${choice:-1}"
-        case "$choice" in
-            1) EDITION="full"; return ;;
-            2) EDITION="area-det"; return ;;
-            3) EDITION="standalone"; return ;;
-            4) EDITION="bayesian"; return ;;
-            *) info "Please enter 1, 2, 3, or 4." ;;
-        esac
-    done
+    if is_linux; then
+        info "  [1] Full          — everything (streaming + standalone + Bayesian)"
+        info "  [2] Area Detector — area detector viewer + live EPICS streaming (lean)"
+        info "  [3] Standalone    — post-analysis tools + Jupyter (no streaming)"
+        info "  [4] Bayesian      — area detector + Bayesian optimization (blop)"
+        echo
+        while true; do
+            read -rp "  Enter 1, 2, 3, or 4 [default: 1]: " choice
+            choice="${choice:-1}"
+            case "$choice" in
+                1) EDITION="full"; return ;;
+                2) EDITION="area-det"; return ;;
+                3) EDITION="standalone"; return ;;
+                4) EDITION="bayesian"; return ;;
+                *) info "Please enter 1, 2, 3, or 4." ;;
+            esac
+        done
+    else
+        info "  [1] Standalone    — post-analysis tools + Jupyter (no streaming)"
+        info ""
+        info "  Note: Full, Area Detector, and Bayesian editions require Linux"
+        info "  (pvapy/pyepics have no $(uname -s) wheels)."
+        echo
+        read -rp "  Press Enter to install Standalone: " _
+        EDITION="standalone"
+    fi
 }
 
 do_install() {
     local edition="$1"
     info "Installing $edition edition..."
     echo
-    case "$edition" in
-        full)       uv sync --extra full ;;
-        area-det)   uv sync --extra area-det ;;
-        standalone) uv sync --extra standalone ;;
-        bayesian)   uv sync --extra bayesian ;;
-        *)          err "Unknown edition: $edition"; exit 1 ;;
-    esac
+    if ! is_linux; then
+        # Bypass the lock file on non-Linux — resolve only standalone deps for
+        # the current platform so pvapy (Linux-only) is never considered.
+        uv venv --python python3 "$VENV_DIR"
+        uv pip install --python "$VENV_DIR" -e ".[$edition]"
+    else
+        case "$edition" in
+            full)       uv sync --extra full ;;
+            area-det)   uv sync --extra area-det ;;
+            standalone) uv sync --extra standalone ;;
+            bayesian)   uv sync --extra bayesian ;;
+            *)          err "Unknown edition: $edition"; exit 1 ;;
+        esac
+    fi
 }
 
 write_edition() {
@@ -224,6 +243,14 @@ main() {
             err "To switch, create a fresh environment."
             exit 1
         fi
+    fi
+
+    # Block streaming editions on non-Linux (no pvapy wheel available)
+    if ! is_linux && [[ "$edition" != "standalone" ]]; then
+        err "Edition '$edition' requires pvapy/pyepics which have no wheels for $(uname -s)."
+        err "Only 'standalone' is supported on non-Linux platforms."
+        err "Re-run without an edition flag, or pass --standalone."
+        exit 1
     fi
 
     deactivate_conda
