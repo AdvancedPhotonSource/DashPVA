@@ -17,7 +17,6 @@ dependencies = [
     "pyyaml>=6.0.0",
     "tqdm>=4.67.0",
     "blosc2>=3.2.0",
-    "bitshuffle>=0.5.0",
     "lz4>=4.4.0",
     "scikit-image>=0.22.0",
     "opencv-python>=4.8.0",
@@ -48,6 +47,7 @@ dependencies = [
 area-det = [
     "pvapy>=5.5.0",
     "pyepics>=3.5.0",
+    "bitshuffle>=0.5.0",
 ]
 # Post-analysis tools + Jupyter (no streaming). The workbench, HKL 3D viewer, and
 # the notebook DashAnalysis API render via pyvista/VTK.
