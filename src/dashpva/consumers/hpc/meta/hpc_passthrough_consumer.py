@@ -4,7 +4,7 @@ import time
 
 from pvapy.utility.timeUtility import TimeUtility
 
-from dashpva.consumers.hpc.meta.base_meta_associator import BaseMetaAssociator
+from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
 
 
 class HpcPassthroughProcessor(BaseMetaAssociator):

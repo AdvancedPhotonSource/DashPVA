@@ -4,10 +4,27 @@ import numpy as np
 import pvaccess as pva
 from pvapy.utility.timeUtility import TimeUtility
 
-from dashpva.consumers.hpc.base_hpc import BaseHpcProcessor
+from dashpva.consumers.core.base_hpc import BaseHpcProcessor
 
 
 class BaseMetaAssociator(BaseHpcProcessor):
+    """Base for metadata-associating HPC consumers.
+
+    Extends :class:`BaseHpcProcessor` with timestamp-tolerance handling and
+    :meth:`associateMetadata`, which matches a metadata channel value against a
+    frame's timestamp and appends it to the frame's NDAttributes. Subclasses
+    implement ``process`` and drive the association per frame.
+
+    Example:
+        class MyAssociator(BaseMetaAssociator):
+            def process(self, pvObject):
+                ts = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
+                attrs = pvObject['attribute']
+                self.associateMetadata('my:pv', pvObject['uniqueId'], ts, attrs)
+                pvObject['attribute'] = attrs
+                self.updateOutputChannel(pvObject)
+                return pvObject
+    """
 
     DEFAULT_TIMESTAMP_TOLERANCE = 0.001
     DEFAULT_METADATA_TIMESTAMP_OFFSET = 0.001

@@ -10,6 +10,23 @@ from dashpva.utils.log_manager import LogMixin
 
 
 class BaseHpcProcessor(AdImageProcessor, LogMixin):
+    """Base for pvapy HPC image processors.
+
+    Provides the boilerplate every DashPVA consumer shares: processing
+    statistics, numpy<->PVA codec maps, lz4/bslz4/blosc (de)compression
+    helpers, a ``self.logger``, and the pvapy stats hooks
+    (``resetStats``/``getStats``/``getStatsPvaTypes``). Subclasses only
+    implement ``process``.
+
+    Example:
+        class MyProcessor(BaseHpcProcessor):
+            def process(self, pvObject):
+                pixels = self.decompress_image(pvObject)
+                # ... work with pixels ...
+                self.nFramesProcessed += 1
+                self.updateOutputChannel(pvObject)
+                return pvObject
+    """
 
     def __init__(self, configDict={}):
         super().__init__(configDict)
