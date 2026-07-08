@@ -29,7 +29,7 @@ import toml
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
-from dashpva.consumers.hpc.meta.base_meta_associator import BaseMetaAssociator
+from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
 from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
