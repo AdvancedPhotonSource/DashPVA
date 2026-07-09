@@ -167,6 +167,16 @@ _FLAG_PV_SUFFIX = "ScanOn:Value"
 _FILE_PATH_SUFFIX = "FilePath:Value"
 _FILE_NAME_SUFFIX = "FileName:Value"
 
+# Rolling per-ROI metric history depth for the live software-ROI plot docks
+# (static — not config-driven). Bounds the deque of per-frame samples so a long
+# live session can't grow the plots' memory without limit.
+ROI_HISTORY_MAXLEN: int = 2000
+
+# Default endpoints ([[x1, y1], [x2, y2]]) and pen width for a newly-added line
+# cut in the live viewer (static — not config-driven). A line cut samples image
+# intensity along the segment and is plotted 1D in the Line Cuts dock.
+LINE_CUT_DEFAULT: list = [[50, 50], [200, 200]]
+LINE_CUT_PEN_WIDTH: int = 2
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
@@ -194,6 +204,18 @@ LOG_PATH: Optional[str] = str(PROJECT_ROOT / "logs")
 OUTPUT_PATH: Optional[str] = str(PROJECT_ROOT / "outputs")
 CONFIG_PATH: Optional[str] = str(PROJECT_ROOT / "pv_configs")
 CONSUMERS_PATH: Optional[str] = None
+
+# User saves — reusable detector masks and ROI presets live under data/saves.
+# Seeded on import (below) so the dirs always exist for the file pickers.
+SAVES_PATH: str = str(PROJECT_ROOT / "data" / "saves")
+MASKS_PATH: str = str(PROJECT_ROOT / "data" / "saves" / "masks")
+ROIS_PATH: str = str(PROJECT_ROOT / "data" / "saves" / "rois")
+
+for _seed_dir in (MASKS_PATH, ROIS_PATH):
+    try:
+        Path(_seed_dir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 # Diagnostics
 CONFIG: Dict[str, Any] = {}

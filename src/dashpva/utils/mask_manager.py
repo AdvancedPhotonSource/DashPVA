@@ -1,9 +1,10 @@
 import json
 import logging
 import os
-import pathlib
 
 import numpy as np
+
+import dashpva.settings as settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,7 @@ class MaskManager:
     DEFAULT_MASK_FILENAME = 'active_mask.npy'
 
     def __init__(self, masks_dir=None):
-        self.project_root = pathlib.Path(__file__).resolve().parents[3]
-        self.masks_dir = masks_dir or str(self.project_root / 'masks')
+        self.masks_dir = masks_dir or settings.MASKS_PATH
         os.makedirs(self.masks_dir, exist_ok=True)
 
         self.mask = None

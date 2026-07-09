@@ -22,7 +22,9 @@ build/
 .continue
 .DS_Store
 .trees
-masks/
+/masks/
+data/saves/masks/active_mask.npy
+src/dashpva/viewer/config.json
 dashpva.db
 *.egg-info/
 .dashpva_edition

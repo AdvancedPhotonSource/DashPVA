@@ -13,14 +13,20 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
+    QAbstractButton,
     QAction,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QSlider,
+    QSpinBox,
 )
 
 from dashpva.utils.log_manager import LogManager, get_default_manager
@@ -33,6 +39,40 @@ from dashpva.viewer.documentation.dialog import DocumentationDialog
 project_root = Path(__file__).parent.parent.parent
 
 _SHOW_ALL = object()  # sentinel: visible_actions not passed → show all menus
+
+# Per-user QSettings store shared by all DashPVA viewers (Qt native backend).
+_SETTINGS_ORG = "DashPVA"
+_SETTINGS_APP = "Viewer"
+
+
+def _widget_value(widget):
+    """Read a persistable value from a supported widget, or None if unsupported."""
+    if isinstance(widget, QAbstractButton):  # QCheckBox / QRadioButton / QPushButton
+        return bool(widget.isChecked())
+    if isinstance(widget, (QSpinBox, QSlider)):
+        return int(widget.value())
+    if isinstance(widget, QDoubleSpinBox):
+        return float(widget.value())
+    if isinstance(widget, QLineEdit):
+        return widget.text()
+    if isinstance(widget, QComboBox):
+        return int(widget.currentIndex())
+    return None
+
+
+def _set_widget_value(widget, value) -> None:
+    """Apply a stored value to a supported widget (signals blocked by caller)."""
+    if isinstance(widget, QAbstractButton):
+        checked = value if isinstance(value, bool) else str(value).lower() in ('1', 'true', 'yes')
+        widget.setChecked(checked)
+    elif isinstance(widget, (QSpinBox, QSlider)):
+        widget.setValue(int(value))
+    elif isinstance(widget, QDoubleSpinBox):
+        widget.setValue(float(value))
+    elif isinstance(widget, QLineEdit):
+        widget.setText(str(value))
+    elif isinstance(widget, QComboBox):
+        widget.setCurrentIndex(int(value))
 
 class BaseWindow(QMainWindow):
     """
@@ -501,6 +541,48 @@ class BaseWindow(QMainWindow):
             # Use the segment before the first ' - ' as the viewer name
             self.viewer_name = title.split(' - ')[0].strip() or self.__class__.__name__
         self.resize(width, height)
+
+    # ---- Widget-state persistence (opt-in) ----
+    # Reusable QSettings helpers: a viewer passes an explicit {key: widget} map
+    # plus a settings group. Only listed widgets are persisted, so restoring can
+    # never surprise a viewer that didn't opt in.
+
+    def save_widget_states(self, widgets: dict, group: str) -> None:
+        """Persist the given {key: widget} states under ``group`` in QSettings."""
+        try:
+            s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+            s.beginGroup(group)
+            for key, widget in widgets.items():
+                value = _widget_value(widget)
+                if value is not None:
+                    s.setValue(key, value)
+            s.endGroup()
+        except Exception:
+            pass
+
+    def restore_widget_states(self, widgets: dict, group: str) -> None:
+        """Restore previously saved states for the given {key: widget} map.
+
+        Signals are blocked per widget so restoring a value never fires slots
+        that assume a live connection; the restored state is read by normal
+        code paths on the next update.
+        """
+        try:
+            s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+            s.beginGroup(group)
+            for key, widget in widgets.items():
+                if not s.contains(key):
+                    continue
+                widget.blockSignals(True)
+                try:
+                    _set_widget_value(widget, s.value(key))
+                except (TypeError, ValueError):
+                    pass
+                finally:
+                    widget.blockSignals(False)
+            s.endGroup()
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         """

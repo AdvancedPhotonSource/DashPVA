@@ -21,6 +21,9 @@ class HDF5Writer(QObject, LogMixin):
         self.pva_reader = pva_reader
         # Default used when no OUTPUT_FILE_CONFIG is provided: filename under OUTPUT_PATH
         self.default_output_file_config = {'FilePath': 'SCAN_OUTPUT.h5'}
+        # ROI geometry snapshot (plain dicts) set by the viewer on the GUI thread
+        # before each save; written to /entry/data/rois by h5_save.
+        self.roi_snapshot = []
         # Initialize logging
         try:
             self.set_log_manager()
@@ -65,6 +68,7 @@ class HDF5Writer(QObject, LogMixin):
             data['len_images'] = len(data['images'])
             data['len_attributes'] = len(data['attributes'])
             data['HKL_IN_CONFIG'] = config.get('HKL_IN_CONFIG', False)
+            data['rois'] = getattr(self, 'roi_snapshot', []) or []
 
 
             # Get OUTPUT path dir and create if it doesnt exist
@@ -236,7 +240,50 @@ class HDF5Writer(QObject, LogMixin):
                 except Exception:
                     pass
 
+            self._write_rois(data_grp, data.get('rois', []), file_path)
+
             self._apply_nx_structure(h5f, entry)
+
+    def _write_rois(self, data_grp: h5py.Group, rois: list, file_path) -> None:
+        """Write ROI geometry under /entry/data/rois in the workbench-compatible
+        format (one dataset per ROI = cropped image region, geometry in attrs)
+        so ROIs re-render when the file is opened in the workbench."""
+        if not rois:
+            return
+        try:
+            rois_grp = data_grp.require_group('rois')
+            full = data_grp.get('data')
+            for entry in rois:
+                try:
+                    name = str(entry['name']).replace(' ', '_')
+                    x, y = int(entry['x']), int(entry['y'])
+                    w, h = int(entry['w']), int(entry['h'])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                try:
+                    if full is not None and full.ndim == 3 and w > 0 and h > 0:
+                        y0, x0 = max(0, y), max(0, x)
+                        crop = full[:, y0:y0 + h, x0:x0 + w]
+                    else:
+                        crop = np.zeros((0,), dtype=np.float32)
+                except Exception:
+                    crop = np.zeros((0,), dtype=np.float32)
+                if name in rois_grp:
+                    del rois_grp[name]
+                ds = rois_grp.create_dataset(name, data=crop)
+                ds.attrs['x'] = x
+                ds.attrs['y'] = y
+                ds.attrs['w'] = w
+                ds.attrs['h'] = h
+                ds.attrs['source_path'] = '/entry/data/data'
+                ds.attrs['kind'] = str(entry.get('kind', 'software'))
+            info = rois_grp.require_group('info')
+            try:
+                info.attrs['original_file_name'] = str(Path(file_path).name)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _apply_nx_structure(self, h5f: h5py.File, entry: h5py.Group, base_group: str = "entry/data/metadata"):
         """Apply NeXus NX_class attributes and create instrument/sample structural groups."""
