@@ -27,20 +27,26 @@ from PyQt5.QtWidgets import (
 from pyqtgraph.colormap import get as get_colormap
 
 # Custom imported classes
+import dashpva.settings as settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
+    AreaDetRoi2DPlotDock,
+    AreaDetRoiPlotDock,
     BeamFitDock,
     ImageDock,
+    LineCutDock,
     MaskDock,
     MousePosDock,
     RoiDock,
+    SoftwareRoiDock,
     StatsDock,
     WaterfallDock,
 )
+from dashpva.viewer.area_det.rois import AreaDetRoiManager
 from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
 from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
@@ -52,7 +58,7 @@ _PERF_TIMER_INTERVAL_MS = 1000
 # Bump when the dock set changes — restoreState silently rejects mismatched
 # versions so users with a stale saved layout fall back to defaults instead
 # of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 3
+_DOCK_STATE_VERSION = 4
 
 
 def _settings() -> QSettings:
@@ -170,6 +176,15 @@ class DiffractionImageWindow(BaseWindow):
         # name -> on-image pg.ROI overlay (e.g. "ROI1"), for transform-aware
         # region lookup by consumers such as the waterfall dock.
         self._roi_overlays: dict[str, pg.ROI] = {}
+        # Interactive software-ROI layer (separate from the PV-driven self.rois
+        # above). roi_manager is constructed in _setup_docks; these registries
+        # hold the lazily-opened per-ROI plot docks keyed by id(roi).
+        self.roi_manager = None
+        self._roi_plot_docks: dict[int, AreaDetRoiPlotDock] = {}
+        self._roi_2d_docks: dict[int, AreaDetRoi2DPlotDock] = {}
+        # Channel the current user ROIs/cuts belong to; used to clear them when
+        # the detector actually changes (a same-channel reconnect keeps them).
+        self._roi_channel = None
         self.stats_dialogs = {}
         self.stats_plot_dialogs = {}
         self.stats_data = {}
@@ -194,6 +209,8 @@ class DiffractionImageWindow(BaseWindow):
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
         self.timer_plot.timeout.connect(self.update_rois)
+        # Connected AFTER update_image so self.image is refreshed for the tick.
+        self.timer_plot.timeout.connect(self._update_software_rois)
 
         # HKL values
         self.is_hkl_ready = False
@@ -373,13 +390,26 @@ class DiffractionImageWindow(BaseWindow):
         
         self.chk_autoscale.setChecked(True)
         self.chk_threshold.setChecked(False)
-        
+
+        # Restore persisted control states (overrides the defaults above when a
+        # saved value exists); reconcile the threshold label to the final state.
+        self.restore_widget_states(self._persisted_widgets(), "area_det_controls")
+
         # Initialize threshold label - show it since threshold is checked by default
         self.update_threshold_label()
-        self.lbl_threshold_range.show()
-        
+        self.threshold_checked()
+
         # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
+
+        # Start with a clean image (clear any leftover ROIs/cuts), then restore
+        # the last-used ROI JSON preset if that file still exists — so reopening
+        # the viewer brings back the same regions.
+        if self.roi_manager is not None:
+            self.roi_manager.clear_all_rois()
+        saved_roi_json = _settings().value("area_det_rois_json_path", "", type=str)
+        if saved_roi_json and os.path.exists(saved_roi_json):
+            self._apply_rois_json(saved_roi_json)
 
     def _setup_docks(self):
         """Build side panels as dock widgets and alias their members onto self.
@@ -403,11 +433,15 @@ class DiffractionImageWindow(BaseWindow):
         #     [ Stats | Mask ]            (tabified, Stats raised)
         #     [ Image | Mouse Position ]  (tabified, Image raised)
         # ROI / Analysis start hidden — toggle from the Windows menu.
+        # Manager must exist before SoftwareRoiDock (which registers with it).
+        self.roi_manager = AreaDetRoiManager(self)
         self.stats_dock     = StatsDock(main_window=self)
         self.mask_dock      = MaskDock(main_window=self)
         self.image_dock     = ImageDock(main_window=self)
         self.mouse_pos_dock = MousePosDock(main_window=self)
         self.roi_dock       = RoiDock(main_window=self, show=False)
+        self.software_roi_dock = SoftwareRoiDock(main_window=self, show=False)
+        self.line_cut_dock  = LineCutDock(main_window=self, show=False)
         self.analysis_dock  = AnalysisDock(main_window=self, show=False)
         self.waterfall_dock = WaterfallDock(main_window=self, show=False)
         self.beam_fit_dock  = BeamFitDock(main_window=self, show=False)
@@ -512,7 +546,14 @@ class DiffractionImageWindow(BaseWindow):
         self.tabifyDockWidget(self.image_dock, self.waterfall_dock)
         self.tabifyDockWidget(self.image_dock, self.beam_fit_dock)
         self.image_dock.raise_()
+        # Software ROI dock shares the ROI dock's region.
+        self.tabifyDockWidget(self.roi_dock, self.software_roi_dock)
+        # Line Cuts plot shares the large lower-left region with Image.
+        self.tabifyDockWidget(self.image_dock, self.line_cut_dock)
+        self.image_dock.raise_()
         self.roi_dock.hide()
+        self.software_roi_dock.hide()
+        self.line_cut_dock.hide()
         self.analysis_dock.hide()
         self.waterfall_dock.hide()
         self.beam_fit_dock.hide()
@@ -521,8 +562,9 @@ class DiffractionImageWindow(BaseWindow):
         _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
-                  self.mouse_pos_dock, self.roi_dock, self.analysis_dock,
-                  self.waterfall_dock, self.beam_fit_dock):
+                  self.mouse_pos_dock, self.roi_dock, self.software_roi_dock,
+                  self.line_cut_dock, self.analysis_dock, self.waterfall_dock,
+                  self.beam_fit_dock):
             self.removeDockWidget(d)
             d.setFloating(False)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
@@ -532,6 +574,152 @@ class DiffractionImageWindow(BaseWindow):
         avail = self.screen().availableGeometry()
         if self.width() > avail.width() or self.height() > avail.height():
             self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
+
+    # ---- Persisted control widgets ----
+
+    def _persisted_widgets(self) -> dict:
+        """User-facing control states persisted across sessions via QSettings.
+
+        The input channel is persisted separately (``area_det_prefix``, set by
+        the config dialog) so it isn't overridden here for ``--channel`` launches."""
+        return {
+            'chk_autoscale': self.chk_autoscale,
+            'chk_threshold': self.chk_threshold,
+            'chk_transpose': self.chk_transpose,
+            'display_rois': self.display_rois,
+            'log_image': self.log_image,
+            'rbtn_C': self.rbtn_C,
+            'rbtn_F': self.rbtn_F,
+            'plotting_frequency': self.plotting_frequency,
+            'min_setting_val': self.min_setting_val,
+            'max_setting_val': self.max_setting_val,
+        }
+
+    # ---- Software ROI layer ----
+
+    def _update_software_rois(self) -> None:
+        """Per-frame hook (timer_plot tick, after update_image)."""
+        if self.roi_manager is not None:
+            self.roi_manager.on_new_frame()
+
+    def get_current_frame_data(self):
+        """Latest processed 2D frame — matches the ROI overlay coordinates."""
+        return self.image
+
+    def open_roi_plot_dock(self, roi) -> None:
+        dock = self._roi_plot_docks.get(id(roi))
+        if dock is None:
+            dock = AreaDetRoiPlotDock(self, roi)
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            self._roi_plot_docks[id(roi)] = dock
+        dock.show()
+        dock.raise_()
+
+    def open_roi_2d_plot_dock(self, roi) -> None:
+        dock = self._roi_2d_docks.get(id(roi))
+        if dock is None:
+            dock = AreaDetRoi2DPlotDock(self, roi)
+            self.addDockWidget(Qt.RightDockWidgetArea, dock)
+            self._roi_2d_docks[id(roi)] = dock
+        dock.show()
+        dock.raise_()
+
+    def open_line_cut_dock(self, roi=None) -> None:
+        """Surface the shared Line Cuts plot (all cuts are drawn in one dock)."""
+        self.line_cut_dock.show()
+        self.line_cut_dock.raise_()
+
+    def _software_roi_geoms(self) -> list:
+        """[{name,x,y,w,h}] for the user-drawn ROIs (for QSettings)."""
+        geoms = []
+        if self.roi_manager is None:
+            return geoms
+        for roi in self.roi_manager.rois:
+            try:
+                pos, size = roi.pos(), roi.size()
+                geoms.append({
+                    'name': self.roi_manager.get_roi_name(roi),
+                    'x': int(pos.x()), 'y': int(pos.y()),
+                    'w': int(size.x()), 'h': int(size.y()),
+                })
+            except Exception:
+                continue
+        return geoms
+
+    def _build_roi_snapshot(self) -> list:
+        """Plain-dict ROI geometry (no Qt objects) for the HDF5 writer thread —
+        software ROIs plus the detector's 4 PV ROIs."""
+        snapshot = []
+        for g in self._software_roi_geoms():
+            snapshot.append({**g, 'source_path': '/entry/data/data', 'kind': 'software'})
+        reader = self.reader
+        if reader is not None:
+            for name, dims in getattr(reader, 'rois', {}).items():
+                try:
+                    snapshot.append({
+                        'name': str(name),
+                        'x': int(dims['MinX']), 'y': int(dims['MinY']),
+                        'w': int(dims['SizeX']), 'h': int(dims['SizeY']),
+                        'source_path': '/entry/data/data', 'kind': 'pv',
+                    })
+                except (KeyError, TypeError, ValueError):
+                    continue
+        return snapshot
+
+    def save_software_rois_to_h5(self) -> None:
+        """Right-click / button save — funnels through the normal scan save so
+        ROIs land in /entry/data/rois alongside the images."""
+        if self.reader is None or not hasattr(self, 'file_writer'):
+            self.update_status("Start live view before saving ROIs", level='warning')
+            return
+        self.trigger_save_caches()
+
+    def save_rois_to_json(self) -> None:
+        """Save all user-drawn ROIs + line cuts to a standalone JSON preset file
+        so a region layout can be reused later (default location: ROIS_PATH)."""
+        if self.roi_manager is None:
+            return
+        items = list(self.roi_manager.rois) + list(self.roi_manager.cuts)
+        if not items:
+            self.update_status("No ROIs to save", level='warning')
+            return
+        default_path = os.path.join(settings.ROIS_PATH, 'rois.json')
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, 'Save ROIs to JSON', default_path, 'JSON files (*.json);;All files (*)')
+        if not filepath:
+            return
+        if not filepath.lower().endswith('.json'):
+            filepath += '.json'
+        self.roi_manager.save_rois_to_json(items, filepath)
+        self._remember_roi_json_path(filepath)
+
+    def load_rois_from_json(self) -> None:
+        """Pick a JSON preset (as written by save_rois_to_json) and load it,
+        replacing the current user-drawn ROIs/cuts."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, 'Load ROIs from JSON', settings.ROIS_PATH,
+            'JSON files (*.json);;All files (*)')
+        if filepath:
+            self._apply_rois_json(filepath)
+
+    def _apply_rois_json(self, filepath: str) -> None:
+        """Load ROIs/cuts from ``filepath`` and remember it for next open."""
+        if self.roi_manager is None:
+            return
+        try:
+            loaded = self.roi_manager.load_from_json(filepath)
+        except (OSError, ValueError) as e:
+            self.update_status(f"Failed to load ROIs: {e}", level='error')
+            return
+        self._remember_roi_json_path(filepath)
+        self.update_status(f"Loaded {loaded} ROIs from {filepath}")
+
+    def _remember_roi_json_path(self, filepath: str) -> None:
+        """Persist the last-used ROI JSON path so it auto-loads on next open."""
+        try:
+            _settings().setValue("area_det_rois_json_path", filepath)
+        except Exception:
+            pass
 
     # ---- Perf status bar override ----
     # The area-detector viewer doesn't use the GPU, so skip BaseWindow's GPU
@@ -582,7 +770,7 @@ class DiffractionImageWindow(BaseWindow):
 
     def load_mask_clicked(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, 'Load Mask File', '',
+            self, 'Load Mask File', self.mask_manager.masks_dir,
             'Mask files (*.edf *.npy *.tif *.tiff *.json);;'
             'EDF files (*.edf);;NumPy files (*.npy);;'
             'TIFF files (*.tif *.tiff);;'
@@ -817,6 +1005,9 @@ class DiffractionImageWindow(BaseWindow):
                 
     def trigger_save_caches(self) -> None:
         try:
+            # Snapshot ROI geometry on the GUI thread (pg items are not
+            # thread-safe) so the writer thread reads a stable plain-dict list.
+            self.file_writer.roi_snapshot = self._build_roi_snapshot()
             if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
             self.file_writer.save_caches_to_h5(clear_caches=True)
@@ -896,6 +1087,13 @@ class DiffractionImageWindow(BaseWindow):
         # stays visible across PVA connect → ROI sweep → Stats sweep, hidden by
         # the terminal "ROIs and stats ready" / error emit from _connect_pv_pollers.
         self.pv_pollers_status.emit(f"Connecting to {self._input_channel}…", "info")
+        # Detector changed → clear user ROIs/line cuts, whose old pixel coords
+        # don't map to the new detector (they'd otherwise linger off to the side).
+        # A same-channel reconnect keeps them.
+        if (self.roi_manager is not None and self._roi_channel is not None
+                and self._roi_channel != self._input_channel):
+            self.roi_manager.clear_all_rois()
+        self._roi_channel = self._input_channel
         try:
             self.stop_timers()
             self.image_view.clear()
@@ -1302,6 +1500,10 @@ class DiffractionImageWindow(BaseWindow):
             # New EPICS ROIs are now available — let the waterfall dock offer them.
             if hasattr(self, 'waterfall_dock'):
                 self.waterfall_dock.refresh_roi_sources()
+            # Mirror them into the software ROI list as read-only rows (live local
+            # stats + plots), without touching the user-drawn ROIs.
+            if self.roi_manager is not None:
+                self.roi_manager.set_pv_rois(self._roi_overlays)
         except Exception as e:
             print(f'[Diffraction Image Viewer] Failed to add ROIs:{e}')
 
@@ -1525,6 +1727,8 @@ class DiffractionImageWindow(BaseWindow):
         self.hkl_data = {}
         self.rois.clear()
         self._roi_overlays.clear()
+        if self.roi_manager is not None:
+            self.roi_manager.clear_pv_rois()
         self.qx = None
         self.qy = None
         self.qz = None
@@ -1692,6 +1896,9 @@ class DiffractionImageWindow(BaseWindow):
         # changed, and platform polish timing (Linux) can differ from startup.
         self._align_avg_side()
         self._update_title()
+        # Show ROI name labels now that live view is running (if enabled).
+        if hasattr(self, 'software_roi_dock'):
+            self.software_roi_dock._refresh_labels()
 
     def _enter_idle_state(self) -> None:
         self._running = False
@@ -1701,6 +1908,9 @@ class DiffractionImageWindow(BaseWindow):
         self.bottom_avg_plot.hide()
         self._corner_grip.hide()
         self._update_title()
+        # Clear ROI name labels while idle (start not on / stop clicked).
+        if hasattr(self, 'software_roi_dock'):
+            self.software_roi_dock._refresh_labels()
 
     def update_mouse_pos(self, pos) -> None:
         """
@@ -1979,6 +2189,7 @@ class DiffractionImageWindow(BaseWindow):
             s.setValue("area_det_window_geom", self.saveGeometry())
         except Exception:
             pass
+        self.save_widget_states(self._persisted_widgets(), "area_det_controls")
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
