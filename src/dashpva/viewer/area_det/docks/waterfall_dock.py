@@ -77,6 +77,7 @@ class WaterfallDock(BaseDock):
         # The interactive manual rectangle (created lazily, removed on teardown)
         # plus its child arrow that shows the averaging (collapse) direction.
         self._manual_roi = None
+        self._roi_geom = None  # (pos, size, angle) kept across tab hide/show
         self._avg_arrow = None
         self._build()
         # Drive updates from the host's plot timer (same cadence as the image),
@@ -234,14 +235,16 @@ class WaterfallDock(BaseDock):
         # empty view. _on_tick re-attempts this on the first streamed frame.
         if image_item is None or image_item.image is None:
             return
-        shape = image_item.image.shape
-        iw = int(shape[1]) if len(shape) >= 2 else 100
-        ih = int(shape[0]) if len(shape) >= 2 else 100
-        w = max(4, iw // 4)
-        h = max(4, ih // 4)
-        x = (iw - w) // 2
-        y = (ih - h) // 2
-        roi = pg.ROI([x, y], [w, h], pen=pg.mkPen((255, 215, 0), width=2),
+        if self._roi_geom is not None:
+            pos, size, angle = self._roi_geom
+        else:
+            shape = image_item.image.shape
+            iw = int(shape[1]) if len(shape) >= 2 else 100
+            ih = int(shape[0]) if len(shape) >= 2 else 100
+            w = max(4, iw // 4)
+            h = max(4, ih // 4)
+            pos, size, angle = [(iw - w) // 2, (ih - h) // 2], [w, h], 0.0
+        roi = pg.ROI(pos, size, angle=angle, pen=pg.mkPen((255, 215, 0), width=2),
                      movable=True, rotatable=True)
         roi.addScaleHandle([1, 1], [0, 0])
         roi.addScaleHandle([0, 0], [1, 1])
@@ -254,6 +257,10 @@ class WaterfallDock(BaseDock):
     def _remove_manual_roi(self) -> None:
         if self._manual_roi is None:
             return
+        # Remember geometry so the box returns unchanged when the tab is shown
+        # again (visibilityChanged tears the ROI down on every tab switch).
+        self._roi_geom = (self._manual_roi.pos(), self._manual_roi.size(),
+                          self._manual_roi.angle())
         try:
             self.main_window.image_view.getView().removeItem(self._manual_roi)
         except Exception:
@@ -270,12 +277,13 @@ class WaterfallDock(BaseDock):
 
     def _update_avg_indicator(self) -> None:
         """Draw/refresh a double-headed arrow on the manual ROI showing the axis
-        along which pixels are averaged (the collapsed direction).
+        the 1D profile spans (the kept axis, perpendicular to the collapsed one).
 
         The arrow is a child of the ROI, so it follows the rectangle's position
-        and rotation automatically. "Horizontal" averaging collapses the ROI's
-        local-x (width) axis -> arrow points along width; "Vertical" collapses
-        local-y (height) -> arrow points along height.
+        and rotation automatically. "Horizontal" collapses the ROI's local-y
+        (height / rows, axis 0), leaving a profile along local-x -> arrow points
+        along width; "Vertical" collapses local-x (width / cols, axis 1), leaving
+        a profile along local-y -> arrow points along height.
         """
         roi = self._manual_roi
         if roi is None:
@@ -339,6 +347,7 @@ class WaterfallDock(BaseDock):
         EPICS ROI list (availability may have changed with the new channel).
         """
         self._remove_manual_roi()
+        self._roi_geom = None  # new image size -> re-center a fresh ROI
         self._reset_buffer()
         self.refresh_roi_sources()
 
