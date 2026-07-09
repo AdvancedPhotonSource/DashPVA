@@ -100,6 +100,7 @@ class BeamFitDock(BaseDock):
         self._bin: deque[np.ndarray] = deque(maxlen=_DEFAULT_BIN)
         self._last_frame_id = _UNSET
         self._manual_roi = None
+        self._roi_geom = None  # (pos, size, angle) kept across tab hide/show
         self._guide_x = None
         self._guide_y = None
         # Single-flight fit state.
@@ -260,19 +261,22 @@ class BeamFitDock(BaseDock):
         image_item = self._image_item()
         if image_item is None or image_item.image is None:
             return
-        shape = image_item.image.shape
-        iw = int(shape[1]) if len(shape) >= 2 else 100
-        ih = int(shape[0]) if len(shape) >= 2 else 100
-        w = max(4, iw // 4)
-        h = max(4, ih // 4)
-        x = (iw - w) // 2
-        y = (ih - h) // 2
-        roi = pg.ROI([x, y], [w, h], pen=pg.mkPen(_RED, width=2),
+        if self._roi_geom is not None:
+            pos, size, angle = self._roi_geom
+        else:
+            shape = image_item.image.shape
+            iw = int(shape[1]) if len(shape) >= 2 else 100
+            ih = int(shape[0]) if len(shape) >= 2 else 100
+            w = max(4, iw // 4)
+            h = max(4, ih // 4)
+            pos, size, angle = [(iw - w) // 2, (ih - h) // 2], [w, h], 0.0
+        roi = pg.ROI(pos, size, angle=angle, pen=pg.mkPen(_RED, width=2),
                      movable=True, rotatable=True)
         roi.addScaleHandle([1, 1], [0, 0])
         roi.addScaleHandle([0, 0], [1, 1])
         roi.addRotateHandle([1, 0], [0.5, 0.5])
         roi.sigRegionChanged.connect(self._on_roi_changed)
+        roi.sigRegionChangeFinished.connect(self._on_roi_released)
         self.main_window.image_view.getView().addItem(roi)
         self._manual_roi = roi
         self._add_axis_guides(roi)
@@ -306,6 +310,10 @@ class BeamFitDock(BaseDock):
     def _remove_manual_roi(self) -> None:
         if self._manual_roi is None:
             return
+        # Remember geometry so the box returns unchanged when the tab is shown
+        # again (visibilityChanged tears the ROI down on every tab switch).
+        self._roi_geom = (self._manual_roi.pos(), self._manual_roi.size(),
+                          self._manual_roi.angle())
         try:
             self.main_window.image_view.getView().removeItem(self._manual_roi)
         except Exception:
@@ -321,16 +329,26 @@ class BeamFitDock(BaseDock):
         self._last_frame_id = _UNSET
         self._update_axis_guides()
 
+    def _on_roi_released(self, *_args) -> None:
+        # Mouse released after a move/resize: fit the current frame once, even if
+        # acquisition is paused (no new frames arrive to drive _on_tick).
+        self._last_frame_id = _UNSET
+        self._on_tick()
+
     # --------------------------------------------------------------- lifecycle
     def _on_visibility_changed(self, visible: bool) -> None:
         if visible:
             self._ensure_manual_roi()
+            # Refresh the profiles/fit for the restored ROI on the current frame.
+            self._last_frame_id = _UNSET
+            self._on_tick()
         else:
             self._remove_manual_roi()
 
     def on_channel_changed(self) -> None:
         """Called by the host when the PVA channel switches."""
         self._remove_manual_roi()
+        self._roi_geom = None  # new image size -> re-center a fresh ROI
         self._reset()
         # Re-point the broadcast at the new image channel if it's active.
         if self.chk_broadcast.isChecked():
