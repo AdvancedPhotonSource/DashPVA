@@ -23,9 +23,10 @@ class SliceView2D(QWidget):
     Hosted by :class:`Slice2DDock`. Fed by ``Workspace3D.on_plane_update`` via
     :meth:`schedule_update`, it rasterizes the slab into an HxW image with
     per-pixel HKL grids (see :func:`dashpva.utils.slice_raster.rasterize_slab`)
-    and displays it in a PyQtGraph ImageView, with the color levels set to the
-    3D view's current min/max intensity. Updates are throttled so dragging the
-    plane stays responsive. The last rasterized result is cached for saving.
+    and displays it in a PyQtGraph ImageView. Color levels autoscale to the
+    slice data by default (toggle off to use the 3D view's min/max); a log-scale
+    toggle and an orientation readout are also provided. Updates are throttled so
+    dragging the plane stays responsive. The last result is cached for saving.
 
     Example:
         >>> view = SliceView2D(main_window=mw)          # doctest: +SKIP
@@ -48,10 +49,13 @@ class SliceView2D(QWidget):
         self._applied_levels_key = None
         self._build_plot()
 
-        try:
-            self.cb_log_scale.toggled.connect(self._on_log_toggled)
-        except Exception:
-            pass
+        for _cb in ("cb_autoscale", "cb_log_scale"):
+            w = getattr(self, _cb, None)
+            if w is not None:
+                try:
+                    w.toggled.connect(self._redraw_last)
+                except Exception:
+                    pass
 
         self._timer = QTimer(self)
         self._timer.setInterval(100)  # ~10 fps coalesced updates
@@ -109,8 +113,6 @@ class SliceView2D(QWidget):
             try:
                 self.image_view.clear()
                 self.lblSliceInfo.setText("No slice points to display.")
-                if hasattr(self, "lblSliceDetails"):
-                    self.lblSliceDetails.setText("—")
             except Exception:
                 pass
             return
@@ -121,8 +123,6 @@ class SliceView2D(QWidget):
             return
         result["clim"] = (float(vmin), float(vmax))
         result["num_points"] = int(pts.shape[0])
-        result["normal"] = normal
-        result["origin"] = origin
         self._last = result
 
         self._display(result, (vmin, vmax))
@@ -137,13 +137,16 @@ class SliceView2D(QWidget):
                       and self.cb_log_scale.isChecked())
         disp = (np.log1p(np.maximum(image, 0.0)) if log_on else image).astype(np.float32)
 
-        # Only rescale the histogram range when the display domain flips
-        # (linear <-> log) or on the first draw, so it stays put otherwise.
+        autoscale = bool(getattr(self, "cb_autoscale", None) is None
+                         or self.cb_autoscale.isChecked())
+        # Autoscale re-levels to the slice's own data each draw. Otherwise the
+        # histogram range only rescales when the display domain flips
+        # (linear <-> log) or on the first draw, so it stays put.
         prev = self._applied_levels_key
         domain_flip = prev is None or prev[2] != log_on
         try:
-            self.image_view.setImage(disp, autoLevels=False, autoRange=False,
-                                     autoHistogramRange=domain_flip)
+            self.image_view.setImage(disp, autoLevels=autoscale, autoRange=False,
+                                     autoHistogramRange=(autoscale or domain_flip))
         except Exception:
             return
 
@@ -172,69 +175,43 @@ class SliceView2D(QWidget):
         except Exception:
             pass
 
-        # Levels in the display domain (log1p when log scale is on).
-        c0, c1 = float(clim[0]), float(clim[1])
-        if log_on:
-            lo = float(np.log1p(max(0.0, c0)))
-            hi = float(np.log1p(max(0.0, c1)))
+        if autoscale:
+            # setImage(autoLevels=True) already levelled to the data; drop the
+            # cached key so manual levels re-apply cleanly when autoscale is off.
+            self._applied_levels_key = None
         else:
-            lo, hi = c0, c1
-        # Push levels only when they changed (control edit or log toggle); a
-        # plain slice update reuses whatever is currently in the histogram so
-        # the user's manual vmin/vmax stays set.
-        levels_key = (round(lo, 9), round(hi, 9), log_on)
-        if levels_key != self._applied_levels_key:
-            try:
-                self.image_view.setLevels(lo, hi)
-                self._applied_levels_key = levels_key
-            except Exception:
-                pass
+            # Levels in the display domain (log1p when log scale is on).
+            c0, c1 = float(clim[0]), float(clim[1])
+            if log_on:
+                lo = float(np.log1p(max(0.0, c0)))
+                hi = float(np.log1p(max(0.0, c1)))
+            else:
+                lo, hi = c0, c1
+            # Push levels only when they changed (control edit or log toggle); a
+            # plain slice update reuses whatever is in the histogram so a manual
+            # vmin/vmax stays set.
+            levels_key = (round(lo, 9), round(hi, 9), log_on)
+            if levels_key != self._applied_levels_key:
+                try:
+                    self.image_view.setLevels(lo, hi)
+                    self._applied_levels_key = levels_key
+                except Exception:
+                    pass
         self._apply_colormap()
 
-        # Info line.
+        # Orientation readout only.
         try:
             txt = result["orientation"]
             if txt != "Custom":
                 txt += " plane"
             if result["orth_label"] and result["orth_value"] is not None:
                 txt += f" ({result['orth_label']} = {result['orth_value']:.4f})"
-            txt += f"   {H}×{W}   {result['num_points']} pts"
             self.lblSliceInfo.setText(txt)
         except Exception:
             pass
 
-        # Detailed slice information panel.
-        self._update_details(result, xlabel, ylabel)
-
-    def _update_details(self, result: dict, xlabel: str, ylabel: str) -> None:
-        if not hasattr(self, "lblSliceDetails"):
-            return
-        try:
-            H, W = result["image"].shape
-            U_min, U_max = result["u_range"]
-            V_min, V_max = result["v_range"]
-            c0, c1 = result["clim"]
-            n = np.asarray(result.get("normal", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
-            o = np.asarray(result.get("origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
-
-            orient = result["orientation"]
-            orient_txt = orient if orient == "Custom" else f"{orient} plane"
-            lines = [f"Orientation: {orient_txt}"]
-            if result["orth_label"] and result["orth_value"] is not None:
-                lines.append(f"Plane position: {result['orth_label']} = {result['orth_value']:.5f}")
-            lines.append(f"Normal (H,K,L): [{n[0]:.4f}, {n[1]:.4f}, {n[2]:.4f}]")
-            lines.append(f"Origin (H,K,L): [{o[0]:.5f}, {o[1]:.5f}, {o[2]:.5f}]")
-            lines.append(f"{xlabel} range: {U_min:.4f} → {U_max:.4f}")
-            lines.append(f"{ylabel} range: {V_min:.4f} → {V_max:.4f}")
-            lines.append(f"Image size: {H} × {W}")
-            lines.append(f"Points in slice: {result['num_points']}")
-            lines.append(f"Intensity range: {c0:.4g} → {c1:.4g}")
-            self.lblSliceDetails.setText("\n".join(lines))
-        except Exception:
-            pass
-
-    def _on_log_toggled(self, checked: bool) -> None:
-        """Re-render the cached slice when the log-scale checkbox changes."""
+    def _redraw_last(self, _checked: bool = False) -> None:
+        """Re-render the cached slice (e.g. when a display toggle changes)."""
         if self._last is not None:
             self._display(self._last, self._last["clim"])
 
