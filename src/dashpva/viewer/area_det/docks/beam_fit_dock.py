@@ -155,23 +155,23 @@ class BeamFitDock(BaseDock):
         outer.addLayout(controls)
 
         # Horizontal (red) profile plot + readout.
-        self.lbl_x = QLabel("Horizontal (X) · red")
+        self.lbl_x = QLabel("Horizontal averaging · red")
         self.lbl_x.setStyleSheet(status_style(_RED, bold=True))
         outer.addWidget(self.lbl_x)
         self.val_x = self._make_value_label()
         outer.addWidget(self.val_x)
         self.plot_x, self.curve_x_data, self.curve_x_fit, self.marker_x = \
-            self._make_profile_plot(_RED, "X offset [px]")
+            self._make_profile_plot(_RED, "offset [px]")
         outer.addWidget(self.plot_x, stretch=1)
 
         # Vertical (blue) profile plot + readout.
-        self.lbl_y = QLabel("Vertical (Y) · blue")
+        self.lbl_y = QLabel("Vertical averaging · blue")
         self.lbl_y.setStyleSheet(status_style(_BLUE, bold=True))
         outer.addWidget(self.lbl_y)
         self.val_y = self._make_value_label()
         outer.addWidget(self.val_y)
         self.plot_y, self.curve_y_data, self.curve_y_fit, self.marker_y = \
-            self._make_profile_plot(_BLUE, "Y offset [px]")
+            self._make_profile_plot(_BLUE, "offset [px]")
         outer.addWidget(self.plot_y, stretch=1)
 
         self.lbl_status = QLabel("Draw the red box over the beam.")
