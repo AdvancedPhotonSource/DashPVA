@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import QRectF, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -47,6 +47,11 @@ class MaskViewerWindow(QDialog):
         # Line tool: first click stores the start point (native coords) until the
         # second click completes the segment.
         self._line_start = None
+        # Drag state: snapshot of the mask at drag-start (for rect/line preview),
+        # the drag origin, and the last brush point (for gap-free strokes).
+        self._stroke_snapshot = None
+        self._drag_start = None
+        self._last_brush = None
 
         # Display-only orientation — initialized from parent viewer
         # so the mask appears the same way as the diffraction pattern
@@ -74,6 +79,22 @@ class MaskViewerWindow(QDialog):
         self.image_view.ui.roiBtn.hide()
         self.image_view.ui.menuBtn.hide()
         layout.addWidget(self.image_view, stretch=3)
+
+        # Mask drawn as a cheap red overlay on top of the base image. Updating
+        # only this layer (a 2-entry LUT applied to the bool mask) keeps live
+        # drawing/dragging fast — the base image is not recomputed per edit.
+        self.mask_overlay = pg.ImageItem()
+        self.mask_overlay.setZValue(10)
+        lut = np.zeros((2, 4), dtype=np.ubyte)
+        lut[1] = (255, 50, 50, 255)  # masked pixels → red, unmasked → transparent
+        self.mask_overlay.setLookupTable(lut)
+        self.mask_overlay.setLevels((0, 1))
+        self.plot_item.addItem(self.mask_overlay)
+
+        # Take over left-button drags for painting; anything else (pan/zoom, or
+        # not in edit mode) falls through to the viewbox's normal handler.
+        self._orig_mouse_drag = self.plot_item.vb.mouseDragEvent
+        self.plot_item.vb.mouseDragEvent = self._mouse_drag
 
         # Info label
         self.lbl_info = QLabel(self._info_text())
@@ -256,65 +277,46 @@ class MaskViewerWindow(QDialog):
         return log_on, levels, colormap
 
     def _refresh_display(self):
+        """Full redraw: grayscale base layer (diffraction image or black) plus
+        the red mask overlay. Use _refresh_overlay for cheap mask-only updates
+        during interactive drawing."""
         display_mask = self._get_display_mask()
-
+        base = None
         if self._show_image:
             img = self._get_current_image()
             if img is not None:
-                log_on, parent_levels, colormap = self._get_parent_display_settings()
-
-                # Transform raw image with same display transforms
+                log_on, parent_levels, _ = self._get_parent_display_settings()
                 img = self._transform_data_for_display(img)
-
                 img_float = img.astype(np.float64)
                 if log_on:
                     img_float = np.maximum(img_float, 0)
                     img_float = np.log10(img_float + 1)
-
                 if parent_levels is not None:
                     img_min, img_max = parent_levels
                 else:
                     img_min, img_max = img_float.min(), img_float.max()
-
                 rng = img_max - img_min
-                if rng > 0:
-                    img_norm = np.clip((img_float - img_min) / rng, 0, 1)
-                else:
-                    img_norm = np.zeros_like(img_float)
+                base = (np.clip((img_float - img_min) / rng, 0, 1)
+                        if rng > 0 else np.zeros_like(img_float))
 
-                # Build RGBA: grayscale image + mask in red with alpha
-                h, w = img_norm.shape[:2]
-                rgba = np.zeros((h, w, 4), dtype=np.float32)
-                rgba[..., 0] = img_norm
-                rgba[..., 1] = img_norm
-                rgba[..., 2] = img_norm
-                rgba[..., 3] = 1.0
+        if base is None:
+            base = np.zeros(display_mask.shape, dtype=np.float32)
 
-                mask_for_overlay = display_mask
-                if mask_for_overlay.shape != img_norm.shape[:2]:
-                    from skimage.transform import resize
-                    mask_for_overlay = resize(display_mask.astype(np.uint8),
-                                              img_norm.shape[:2], order=0,
-                                              preserve_range=True).astype(bool)
-                rgba[mask_for_overlay, 0] = 1.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
-                rgba[mask_for_overlay, 1] = 0.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
-                rgba[mask_for_overlay, 2] = 0.0 * self._alpha + img_norm[mask_for_overlay] * (1 - self._alpha)
+        self.image_view.setColorMap(pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 255, 255)]))
+        self.image_view.setImage(base.astype(np.float32), autoRange=False,
+                                 autoLevels=False, levels=(0, 1))
+        # Scale the overlay to the base extent so masks of a different size still
+        # register correctly (normally they match the detector frame exactly).
+        self.mask_overlay.setRect(QRectF(0, 0, base.shape[0], base.shape[1]))
+        self._refresh_overlay()
 
-                self.image_view.setImage(rgba, autoRange=False, autoLevels=False,
-                                         levels=(0, 1))
-            else:
-                self._show_mask_only(display_mask)
-        else:
-            self._show_mask_only(display_mask)
+    def _refresh_overlay(self):
+        """Cheap update of just the red mask layer — no base-image recompute."""
+        display_mask = self._get_display_mask()
+        self.mask_overlay.setImage(display_mask.astype(np.float32),
+                                   autoLevels=False, levels=(0, 1))
+        self.mask_overlay.setOpacity(self._alpha if self._show_image else 1.0)
         self.lbl_info.setText(self._info_text())
-
-    def _show_mask_only(self, display_mask):
-        """Display mask — uses pre-transformed display copy."""
-        cmap = pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 50, 50)])
-        self.image_view.setColorMap(cmap)
-        self.image_view.setImage(display_mask.astype(np.float32),
-                                 autoRange=False, autoLevels=False,
-                                 levels=(0, 1))
 
     def _toggle_image_overlay(self, state):
         self._show_image = (state == Qt.Checked)
@@ -323,8 +325,7 @@ class MaskViewerWindow(QDialog):
     def _alpha_changed(self, value):
         self._alpha = value / 100.0
         self.lbl_alpha.setText(f'{value}%')
-        if self._show_image:
-            self._refresh_display()
+        self.mask_overlay.setOpacity(self._alpha if self._show_image else 1.0)
 
     # ------------------------------------------------------------------
     # Mask operations (always in detector-native orientation)
@@ -401,24 +402,29 @@ class MaskViewerWindow(QDialog):
         self._line_start = None
         self.lbl_info.setText(self._info_text())
 
-    def _on_click(self, event):
-        if not self._editing:
-            return
-        pos = event.scenePos()
-        mouse_point = self.plot_item.vb.mapSceneToView(pos)
+    def _event_native(self, scene_pos):
+        """Map a scene position to a detector-native (row, col), or None if the
+        point is outside the mask."""
+        mouse_point = self.plot_item.vb.mapSceneToView(scene_pos)
         # pyqtgraph pixel (i,j) occupies [i, i+1) x [j, j+1) — use floor
         vx = int(np.floor(mouse_point.x()))
         vy = int(np.floor(mouse_point.y()))
-
-        # vx, vy are display coordinates — reverse-map to detector-native
         display_mask = self._get_display_mask()
         if not (0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]):
-            return
+            return None
         row, col = self._display_to_native(vx, vy)
         if not (0 <= row < self.mask.shape[0] and 0 <= col < self.mask.shape[1]):
-            return
+            return None
+        return row, col
 
-        # Erase toggles pixels off; otherwise the tool adds pixels to the mask.
+    def _on_click(self, event):
+        """Single-click editing: stamp a dot/square, or set a line endpoint."""
+        if not self._editing:
+            return
+        pt = self._event_native(event.scenePos())
+        if pt is None:
+            return
+        row, col = pt
         value = not self.chk_erase.isChecked()
         tool = self.cmb_tool.currentText()
         if tool == 'Rectangle':
@@ -426,15 +432,55 @@ class MaskViewerWindow(QDialog):
         elif tool == 'Line':
             if self._line_start is None:
                 self._line_start = (row, col)
-                self.lbl_info.setText('Line: click the end point…')
+                self.lbl_info.setText('Line: click the end point… (or drag)')
                 return
             self._paint_line(self._line_start, (row, col), self.spn_thickness.value(), value)
             self._line_start = None
         else:  # Brush
             self._paint_disk(row, col, self.spn_brush.value(), value)
-
-        self._refresh_display()
+        self._refresh_overlay()
         self.mask_updated.emit(self.mask)
+
+    def _mouse_drag(self, ev, axis=None):
+        """Left-drag painting: brush strokes continuously, rectangle/line preview
+        from the drag origin. Only the mask overlay is redrawn per move, and the
+        mask is saved once on release."""
+        if not self._editing or ev.button() != Qt.LeftButton:
+            return self._orig_mouse_drag(ev, axis=axis)
+        ev.accept()
+        value = not self.chk_erase.isChecked()
+        tool = self.cmb_tool.currentText()
+        pt = self._event_native(ev.scenePos())
+
+        if ev.isStart():
+            self._line_start = None  # a drag cancels any pending two-click line
+            self._drag_start = pt
+            self._last_brush = pt
+            self._stroke_snapshot = (self.mask.copy()
+                                     if tool in ('Rectangle', 'Line') else None)
+            if pt is not None and tool == 'Brush':
+                self._paint_disk(pt[0], pt[1], self.spn_brush.value(), value)
+                self._refresh_overlay()
+            return
+
+        if pt is not None:
+            if tool == 'Brush':
+                start = self._last_brush or pt
+                self._stamp_along(start, pt, max(1, self.spn_brush.value()), value)
+                self._last_brush = pt
+            elif self._stroke_snapshot is not None and self._drag_start is not None:
+                self.mask[:] = self._stroke_snapshot
+                if tool == 'Rectangle':
+                    self._paint_rect(self._drag_start, pt, value)
+                else:  # Line
+                    self._paint_line(self._drag_start, pt, self.spn_thickness.value(), value)
+            self._refresh_overlay()
+
+        if ev.isFinish():
+            self._stroke_snapshot = None
+            self._drag_start = None
+            self._last_brush = None
+            self.mask_updated.emit(self.mask)
 
     def _paint_disk(self, row, col, radius, value):
         """Set a circular region of pixels (native coords) to ``value``."""
@@ -458,13 +504,24 @@ class MaskViewerWindow(QDialog):
         if r0 < r1 and c0 < c1:
             self.mask[r0:r1, c0:c1] = value
 
-    def _paint_line(self, start, end, thickness, value):
-        """Set a thick line between two native-coord points to ``value``."""
+    def _paint_rect(self, corner0, corner1, value):
+        """Set the filled rectangle spanning two native-coord corners."""
+        (r0, c0), (r1, c1) = corner0, corner1
+        rlo, rhi = sorted((int(r0), int(r1)))
+        clo, chi = sorted((int(c0), int(c1)))
+        self.mask[rlo:rhi + 1, clo:chi + 1] = value
+
+    def _stamp_along(self, start, end, radius, value):
+        """Stamp disks of ``radius`` along the segment start→end (native coords)."""
         (r0, c0), (r1, c1) = start, end
         steps = int(max(abs(r1 - r0), abs(c1 - c0))) + 1
         rows = np.linspace(r0, r1, steps).round().astype(int)
         cols = np.linspace(c0, c1, steps).round().astype(int)
-        # _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2.
-        radius = max(1, int(round((thickness + 1) / 2)))
         for r, c in zip(rows, cols):
             self._paint_disk(int(r), int(c), radius, value)
+
+    def _paint_line(self, start, end, thickness, value):
+        """Set a thick line between two native-coord points to ``value``."""
+        # _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2.
+        radius = max(1, int(round((thickness + 1) / 2)))
+        self._stamp_along(start, end, radius, value)
