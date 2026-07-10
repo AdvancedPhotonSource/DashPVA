@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pyqtgraph as pg
 from PyQt5.QtCore import QRectF, Qt, pyqtSignal
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,10 +13,13 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QShortcut,
     QSlider,
     QSpinBox,
     QVBoxLayout,
 )
+
+import dashpva.settings as settings
 
 
 class MaskViewerWindow(QDialog):
@@ -52,6 +56,9 @@ class MaskViewerWindow(QDialog):
         self._stroke_snapshot = None
         self._drag_start = None
         self._last_brush = None
+        # Snapshot-based undo/redo of the mask (full boolean-array copies).
+        self._undo_stack = []
+        self._redo_stack = []
 
         # Display-only orientation — initialized from parent viewer
         # so the mask appears the same way as the diffraction pattern
@@ -133,6 +140,16 @@ class MaskViewerWindow(QDialog):
         self.btn_invert.clicked.connect(self._invert_mask)
         ctrl.addWidget(self.btn_invert)
 
+        self.btn_undo = QPushButton('Undo')
+        self.btn_undo.setToolTip('Undo the last mask edit (Ctrl+Z / Cmd+Z)')
+        self.btn_undo.clicked.connect(self.undo)
+        ctrl.addWidget(self.btn_undo)
+
+        self.btn_redo = QPushButton('Redo')
+        self.btn_redo.setToolTip('Redo the last undone mask edit (Ctrl+Y / Cmd+Shift+Z)')
+        self.btn_redo.clicked.connect(self.redo)
+        ctrl.addWidget(self.btn_redo)
+
         self.btn_export_json = QPushButton('Export JSON')
         self.btn_export_json.setToolTip('Export as EPICS NDPluginBadPixel JSON')
         self.btn_export_json.clicked.connect(self._export_json)
@@ -178,6 +195,47 @@ class MaskViewerWindow(QDialog):
 
         ctrl.addStretch()
         layout.addLayout(ctrl)
+
+        # Standard undo/redo shortcuts (Cmd+Z / Ctrl+Z, and the platform redo).
+        QShortcut(QKeySequence.Undo, self, self.undo)
+        QShortcut(QKeySequence.Redo, self, self.redo)
+        self._update_undo_buttons()
+
+    # ------------------------------------------------------------------
+    # Undo / redo (snapshot-based)
+    # ------------------------------------------------------------------
+
+    def _push_undo(self):
+        """Record the current mask before a mutating edit; clears the redo stack."""
+        self._undo_stack.append(self.mask.copy())
+        if len(self._undo_stack) > settings.MASK_UNDO_MAX:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+        self._update_undo_buttons()
+
+    def undo(self):
+        if not self._undo_stack:
+            return
+        self._redo_stack.append(self.mask.copy())
+        self.mask = self._undo_stack.pop()
+        self._line_start = None
+        self._refresh_display()
+        self.mask_updated.emit(self.mask)
+        self._update_undo_buttons()
+
+    def redo(self):
+        if not self._redo_stack:
+            return
+        self._undo_stack.append(self.mask.copy())
+        self.mask = self._redo_stack.pop()
+        self._line_start = None
+        self._refresh_display()
+        self.mask_updated.emit(self.mask)
+        self._update_undo_buttons()
+
+    def _update_undo_buttons(self):
+        self.btn_undo.setEnabled(bool(self._undo_stack))
+        self.btn_redo.setEnabled(bool(self._redo_stack))
 
     def _info_text(self):
         num_masked = int(np.sum(self.mask))
@@ -246,11 +304,13 @@ class MaskViewerWindow(QDialog):
     # ------------------------------------------------------------------
 
     def _toggle_transpose(self):
+        self._push_undo()
         self.mask = self.mask.T.copy()
         self._refresh_display()
         self.mask_updated.emit(self.mask)
 
     def _rotate(self):
+        self._push_undo()
         self.mask = np.rot90(self.mask, k=1).copy()
         self._refresh_display()
         self.mask_updated.emit(self.mask)
@@ -350,6 +410,7 @@ class MaskViewerWindow(QDialog):
         self.lbl_info.setText(f"Saved! {self._info_text()}")
 
     def _invert_mask(self):
+        self._push_undo()
         self.mask = ~self.mask
         self._refresh_display()
         self.mask_updated.emit(self.mask)
@@ -428,15 +489,18 @@ class MaskViewerWindow(QDialog):
         value = not self.chk_erase.isChecked()
         tool = self.cmb_tool.currentText()
         if tool == 'Rectangle':
+            self._push_undo()
             self._paint_square(row, col, self.spn_brush.value(), value)
         elif tool == 'Line':
             if self._line_start is None:
                 self._line_start = (row, col)
                 self.lbl_info.setText('Line: click the end point… (or drag)')
                 return
+            self._push_undo()
             self._paint_line(self._line_start, (row, col), self.spn_thickness.value(), value)
             self._line_start = None
         else:  # Brush
+            self._push_undo()
             self._paint_disk(row, col, self.spn_brush.value(), value)
         self._refresh_overlay()
         self.mask_updated.emit(self.mask)
@@ -453,6 +517,7 @@ class MaskViewerWindow(QDialog):
         pt = self._event_native(ev.scenePos())
 
         if ev.isStart():
+            self._push_undo()  # one undo step for the whole stroke
             self._line_start = None  # a drag cancels any pending two-click line
             self._drag_start = pt
             self._last_brush = pt

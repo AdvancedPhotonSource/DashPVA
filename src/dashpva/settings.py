@@ -183,6 +183,10 @@ ROI_HISTORY_MAXLEN: int = 2000
 LINE_CUT_DEFAULT: list = [[50, 50], [200, 200]]
 LINE_CUT_PEN_WIDTH: int = 2
 
+# Max depth of the mask-editor undo/redo history (static — not config-driven).
+# Each entry is a full boolean mask copy, so this bounds editor memory use.
+MASK_UNDO_MAX: int = 20
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
