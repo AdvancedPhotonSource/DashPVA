@@ -5,6 +5,7 @@ import pyqtgraph as pg
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -43,6 +44,9 @@ class MaskViewerWindow(QDialog):
         self._editing = False
         self._show_image = False
         self._alpha = 0.5
+        # Line tool: first click stores the start point (native coords) until the
+        # second click completes the segment.
+        self._line_start = None
 
         # Display-only orientation — initialized from parent viewer
         # so the mask appears the same way as the diffraction pattern
@@ -125,12 +129,31 @@ class MaskViewerWindow(QDialog):
         self.chk_edit.stateChanged.connect(self._toggle_edit)
         ctrl.addWidget(self.chk_edit)
 
-        ctrl.addWidget(QLabel('Brush:'))
+        ctrl.addWidget(QLabel('Tool:'))
+        self.cmb_tool = QComboBox()
+        self.cmb_tool.addItems(['Brush', 'Rectangle', 'Line'])
+        self.cmb_tool.currentTextChanged.connect(self._tool_changed)
+        ctrl.addWidget(self.cmb_tool)
+
+        ctrl.addWidget(QLabel('Size:'))
         self.spn_brush = QSpinBox()
-        self.spn_brush.setRange(1, 10)
-        self.spn_brush.setValue(1)
+        self.spn_brush.setToolTip('Brush radius / square side, in pixels')
+        self.spn_brush.setRange(1, 500)
+        self.spn_brush.setValue(3)
         self.spn_brush.setSuffix(' px')
         ctrl.addWidget(self.spn_brush)
+
+        ctrl.addWidget(QLabel('Thickness:'))
+        self.spn_thickness = QSpinBox()
+        self.spn_thickness.setToolTip('Line thickness, in pixels')
+        self.spn_thickness.setRange(1, 200)
+        self.spn_thickness.setValue(3)
+        self.spn_thickness.setSuffix(' px')
+        ctrl.addWidget(self.spn_thickness)
+
+        self.chk_erase = QCheckBox('Erase')
+        self.chk_erase.setToolTip('Draw removes pixels from the mask instead of adding them')
+        ctrl.addWidget(self.chk_erase)
 
         ctrl.addStretch()
         layout.addLayout(ctrl)
@@ -364,6 +387,7 @@ class MaskViewerWindow(QDialog):
 
     def _toggle_edit(self, state):
         self._editing = (state == Qt.Checked)
+        self._line_start = None
         if self._editing:
             self.image_view.getView().scene().sigMouseClicked.connect(self._on_click)
         else:
@@ -371,6 +395,11 @@ class MaskViewerWindow(QDialog):
                 self.image_view.getView().scene().sigMouseClicked.disconnect(self._on_click)
             except TypeError:
                 pass
+
+    def _tool_changed(self, *_):
+        """Reset any in-progress line when the active tool changes."""
+        self._line_start = None
+        self.lbl_info.setText(self._info_text())
 
     def _on_click(self, event):
         if not self._editing:
@@ -381,24 +410,61 @@ class MaskViewerWindow(QDialog):
         vx = int(np.floor(mouse_point.x()))
         vy = int(np.floor(mouse_point.y()))
 
-        # pyqtgraph renders data[i,j] at (x=i, y=j)
-        # vx, vy are display coordinates — reverse-map to native
+        # vx, vy are display coordinates — reverse-map to detector-native
         display_mask = self._get_display_mask()
-        if 0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]:
-            native_i, native_j = self._display_to_native(vx, vy)
-            if 0 <= native_i < self.mask.shape[0] and 0 <= native_j < self.mask.shape[1]:
-                radius = self.spn_brush.value()
-                self._toggle_region(native_i, native_j, radius)
-                self._refresh_display()
-                self.mask_updated.emit(self.mask)
+        if not (0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]):
+            return
+        row, col = self._display_to_native(vx, vy)
+        if not (0 <= row < self.mask.shape[0] and 0 <= col < self.mask.shape[1]):
+            return
 
-    def _toggle_region(self, row, col, radius):
-        """Toggle a circular region of pixels in native coordinates."""
+        # Erase toggles pixels off; otherwise the tool adds pixels to the mask.
+        value = not self.chk_erase.isChecked()
+        tool = self.cmb_tool.currentText()
+        if tool == 'Rectangle':
+            self._paint_square(row, col, self.spn_brush.value(), value)
+        elif tool == 'Line':
+            if self._line_start is None:
+                self._line_start = (row, col)
+                self.lbl_info.setText('Line: click the end point…')
+                return
+            self._paint_line(self._line_start, (row, col), self.spn_thickness.value(), value)
+            self._line_start = None
+        else:  # Brush
+            self._paint_disk(row, col, self.spn_brush.value(), value)
+
+        self._refresh_display()
+        self.mask_updated.emit(self.mask)
+
+    def _paint_disk(self, row, col, radius, value):
+        """Set a circular region of pixels (native coords) to ``value``."""
+        radius = max(1, int(radius))
         h, w = self.mask.shape
-        new_val = not self.mask[row, col]
-        for dr in range(-radius + 1, radius):
-            for dc in range(-radius + 1, radius):
-                if dr * dr + dc * dc < radius * radius:
-                    r, c = row + dr, col + dc
-                    if 0 <= r < h and 0 <= c < w:
-                        self.mask[r, c] = new_val
+        r0, r1 = max(0, row - radius + 1), min(h, row + radius)
+        c0, c1 = max(0, col - radius + 1), min(w, col + radius)
+        if r0 >= r1 or c0 >= c1:
+            return
+        rr, cc = np.ogrid[r0:r1, c0:c1]
+        disk = (rr - row) ** 2 + (cc - col) ** 2 < radius * radius
+        self.mask[r0:r1, c0:c1][disk] = value
+
+    def _paint_square(self, row, col, side, value):
+        """Set a square region of side ``side`` centered at (row, col)."""
+        side = max(1, int(side))
+        half = side // 2
+        h, w = self.mask.shape
+        r0, r1 = max(0, row - half), min(h, row - half + side)
+        c0, c1 = max(0, col - half), min(w, col - half + side)
+        if r0 < r1 and c0 < c1:
+            self.mask[r0:r1, c0:c1] = value
+
+    def _paint_line(self, start, end, thickness, value):
+        """Set a thick line between two native-coord points to ``value``."""
+        (r0, c0), (r1, c1) = start, end
+        steps = int(max(abs(r1 - r0), abs(c1 - c0))) + 1
+        rows = np.linspace(r0, r1, steps).round().astype(int)
+        cols = np.linspace(c0, c1, steps).round().astype(int)
+        # _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2.
+        radius = max(1, int(round((thickness + 1) / 2)))
+        for r, c in zip(rows, cols):
+            self._paint_disk(int(r), int(c), radius, value)
