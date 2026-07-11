@@ -119,24 +119,28 @@ class MaskManager:
                     f"masked={np.sum(mask)}, skipped={skipped}")
         return mask
 
-    def export_json_mask(self, filepath, set_value=0):
+    def export_json_mask(self, filepath, set_value=0, transposed=False):
         """
         Export current mask as EPICS NDPluginBadPixel JSON format.
 
-        Mask is in detector-native orientation: mask[row, col].
-        JSON uses [X, Y] = [col, row] in raw detector coordinates.
+        EPICS expects RAW detector coordinates ([X, Y] = [col, row], with any
+        display transpose/reversal disabled). The in-app mask is held in the
+        viewer's display orientation, so the caller passes the current transpose
+        state (``transposed``) and we un-transpose back to raw before writing.
         All bad pixels use "Set" mode with the given replacement value.
         """
         if self.mask is None:
             logger.warning("No mask to export")
             return None
 
+        mask = self.mask.T if transposed else self.mask  # -> raw detector orientation
+
         bad_pixels = []
-        rows, cols = np.where(self.mask)
+        rows, cols = np.where(mask)
         for row, col in zip(rows, cols):
             bad_pixels.append({"Pixel": [int(col), int(row)], "Set": set_value})
 
-        mask_rows, mask_cols = self.mask.shape
+        mask_rows, mask_cols = mask.shape
         data = {
             "Detector size": [int(mask_cols), int(mask_rows)],
             "Bad pixels": bad_pixels

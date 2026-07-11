@@ -343,10 +343,11 @@ class MaskViewerWindow(QDialog):
         try:
             import json
             bad_pixels = []
-            rows, cols = np.where(self.mask)
+            mask = self.mask.T if self._is_transposed else self.mask  # -> raw detector orientation
+            rows, cols = np.where(mask)
             for row, col in zip(rows, cols):
                 bad_pixels.append({"Pixel": [int(col), int(row)], "Set": 0})
-            mask_rows, mask_cols = self.mask.shape
+            mask_rows, mask_cols = mask.shape
             data = {
                 "Detector size": [int(mask_cols), int(mask_rows)],
                 "Bad pixels": bad_pixels

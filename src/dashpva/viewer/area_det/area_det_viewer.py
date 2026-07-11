@@ -751,7 +751,7 @@ class DiffractionImageWindow(BaseWindow):
         if not filepath:
             return
         try:
-            self.mask_manager.export_json_mask(filepath)
+            self.mask_manager.export_json_mask(filepath, transposed=self.image_is_transposed)
             QMessageBox.information(
                 self, 'Export Complete',
                 f'Exported {self.mask_manager.num_masked_pixels} bad pixels to:\n{filepath}')
