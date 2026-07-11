@@ -93,7 +93,7 @@ class PVAReader(QObject):
         self.provider = provider
         self.channel = pva.Channel(self.input_channel, self.provider)
         self._explicit_prefix = pva_prefix
-        self.pva_prefix = pva_prefix or self.input_channel.split(":")[0]
+        self.pva_prefix = pva_prefix or self._prefix_from_channel(self.input_channel)
 
         # variables setup using config
         self.config = {}
@@ -149,6 +149,22 @@ class PVAReader(QObject):
         # self._on_scan_complete_callbacks = []
 
         self._configure()
+
+    @staticmethod
+    def _prefix_from_channel(channel: str) -> str:
+        """Detector prefix from the image channel.
+
+        The image channel is ``<prefix>:Pva1:Image`` and the prefix itself may
+        contain colons (e.g. ``1id:Eiger``), so strip the known image suffix
+        rather than ``split(':')[0]`` — which would drop everything after the
+        first colon and build ROI PV names off a truncated prefix.
+        """
+        ch = (channel or "").strip()
+        low = ch.lower()
+        for suffix in (":pva1:image", ":image"):
+            if low.endswith(suffix):
+                return ch[:len(ch) - len(suffix)]
+        return ch.rsplit(":", 1)[0] if ":" in ch else ch
 
 ############################# Configuration #############################
     def _configure(self) -> None:
