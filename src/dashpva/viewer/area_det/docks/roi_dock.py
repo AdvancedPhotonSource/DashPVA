@@ -50,13 +50,14 @@ class RoiDock(BaseDock):
         self.lbl_ROI3.setObjectName("lbl_ROI3")
         self.lbl_ROI4 = QLabel("ROI4 Total:")
         self.lbl_ROI4.setObjectName("lbl_ROI4")
-        self.lbl_image_total = QLabel("Stats5 Total:")
+        self.lbl_image_total = QLabel("Manual ROI Total:")
 
         self.roi1_total_value   = _total_label("roi1_total_value")
         self.roi2_total_value   = _total_label("roi2_total_value")
         self.roi3_total_value   = _total_label("roi3_total_value")
         self.roi4_total_value   = _total_label("roi4_total_value")
         self.stats5_total_value = _total_label("stats5_total_value")
+        self.manual_roi_total_value = self.stats5_total_value  # slot 5 == Manual ROI
 
         # Per-ROI show/hide checkboxes — paired with the colored label so the
         # user can drop a single ROI rectangle from the image overlay without
@@ -67,20 +68,29 @@ class RoiDock(BaseDock):
         self.chk_show_roi3 = self._make_roi_checkbox(3)
         self.chk_show_roi4 = self._make_roi_checkbox(4)
 
+        # Slot 5 is a locally computed Manual ROI (Stats5 is usually unavailable
+        # from EPICS). This checkbox ENABLES/draws the movable, rotatable ROI.
+        self.chk_enable_manual_roi = QCheckBox()
+        self.chk_enable_manual_roi.setObjectName("chk_enable_manual_roi")
+        self.chk_enable_manual_roi.setToolTip(
+            "Enable a movable/rotatable manual ROI with locally computed stats")
+
         totals.addRow(self._roi_label_row(self.chk_show_roi1, self.lbl_ROI1), self.roi1_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi2, self.lbl_ROI2), self.roi2_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi3, self.lbl_ROI3), self.roi3_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi4, self.lbl_ROI4), self.roi4_total_value)
-        totals.addRow(self.lbl_image_total, self.stats5_total_value)
+        totals.addRow(self._roi_label_row(self.chk_enable_manual_roi, self.lbl_image_total), self.stats5_total_value)
         outer.addLayout(totals)
 
         self.lbl_roi_specific_stats = QLabel("ROI Specific Stats")
         outer.addWidget(self.lbl_roi_specific_stats)
 
         for i in range(1, 6):
-            stat_btn = QPushButton(f"Stats{i}")
+            stat_text = "Manual ROI" if i == 5 else f"Stats{i}"
+            plot_text = "Plot Manual ROI" if i == 5 else f"Plot Stats{i}"
+            stat_btn = QPushButton(stat_text)
             stat_btn.setObjectName(f"btn_Stats{i}")
-            plot_btn = QPushButton(f"Plot Stats{i}")
+            plot_btn = QPushButton(plot_text)
             plot_btn.setObjectName(f"btn_PlotStats{i}")
             plot_btn.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
 
