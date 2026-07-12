@@ -37,18 +37,20 @@ DOCK_HEADER_BG = "#2C3E50"
 DOCK_HEADER_TEXT = "#FFFFFF"
 
 # -- ROI / Stats colors --------------------------------------------------------
-ROI_COLORS = ['#E05A5A', '#4A90D9', '#3EAF8E', '#A878D0']
+ROI_COLORS = ['#E05A5A', '#4A90D9', '#3EAF8E', '#A878D0', '#E0A030']
 ROI_STATS_COLORS = {
     'Stats1': ROI_COLORS[0],
     'Stats2': ROI_COLORS[1],
     'Stats3': ROI_COLORS[2],
     'Stats4': ROI_COLORS[3],
+    'ManualROI': ROI_COLORS[4],
 }
 # Individual aliases for $VARIABLE substitution in theme.qss
 ROI_1 = ROI_COLORS[0]
 ROI_2 = ROI_COLORS[1]
 ROI_3 = ROI_COLORS[2]
 ROI_4 = ROI_COLORS[3]
+ROI_5 = ROI_COLORS[4]
 
 # -- Lock banner (ROI calculator locked state) ---------------------------------
 LOCK_BG = "#FFD6D6"

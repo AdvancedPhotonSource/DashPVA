@@ -56,10 +56,11 @@ class RoiStatsPlotDialog(QDialog):
         'SIGMA': (148, 103, 189),   # purple
     }
 
-    def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer'):
+    def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer', display_name: str = None):
         super().__init__()
         self.parent_viewer = parent
         self.stats_text = stats_text
+        self._display_name = display_name or stats_text
         self.prefix = self.parent_viewer.reader.pva_prefix
         self.timer_labels = timer
 
@@ -68,7 +69,7 @@ class RoiStatsPlotDialog(QDialog):
         roi_color = ROI_COLORS.get(stats_text)
         if roi_color:
             self.setStyleSheet(f'QDialog {{ border: 2px solid {roi_color}; }}')
-        self.setWindowTitle(f'{stats_text} - Live Stats Plot')
+        self.setWindowTitle(f'{self._display_name} - Live Stats Plot')
         self.resize(800, 600)
 
         self._paused = False

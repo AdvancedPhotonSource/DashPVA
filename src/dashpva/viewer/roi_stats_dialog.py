@@ -15,7 +15,7 @@ from dashpva.gui.theme_colors import ROI_STATS_COLORS as ROI_COLORS
 
 
 class RoiStatsDialog(QDialog):
-    def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer'): # type: ignore # needed so annotations don't show warnings
+    def __init__(self, parent: 'QMainWindow', stats_text: str, timer: 'QTimer', display_name: str = None): # type: ignore # needed so annotations don't show warnings
         super(RoiStatsDialog, self).__init__()
         """
         Pop up QDialog for additional stats within an ROI.
@@ -26,7 +26,7 @@ class RoiStatsDialog(QDialog):
         timer (QTimer) -- QTimer passed by parent(area detector) so that there aren't multiple timers being ran
         """
         uic.loadUi(ui_path("roi_stats_dialog.ui"), self)
-        self.setWindowTitle(f"{stats_text} Info")
+        self.setWindowTitle(f"{display_name or stats_text} Info")
         self.stats_text = stats_text
         self.parent = parent
         self.prefix = self.parent.reader.pva_prefix
