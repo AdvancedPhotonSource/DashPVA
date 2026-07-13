@@ -1,3 +1,4 @@
+import threading
 from collections import deque
 
 import bitshuffle
@@ -139,6 +140,18 @@ class PVAReader(QObject):
         self.frames_missed = 0
         self.frames_received = 0
         self.id_diff = 0
+
+        # Producer/consumer buffering. pvapy's network thread pushes frames into
+        # a bounded queue; a dedicated consumer thread drains and processes them.
+        # When the consumer falls behind, the queue fills and pvapy drops the
+        # newest frame rather than overrunning the monitor thread and crashing
+        # the viewer. See start_channel_monitor / _consume_loop.
+        self.QUEUE_SIZE = app_settings.PVA_MONITOR_QUEUE_SIZE
+        self.MONITOR_REQUEST = app_settings.PVA_MONITOR_REQUEST
+        self._queue = None
+        self._consumer_thread = None
+        self._consuming = False
+        self._process_callback = None
 
         # variables for data caches
         self.caches_needed = False
@@ -530,18 +543,50 @@ class PVAReader(QObject):
 
     def start_channel_monitor(self, callback=None) -> None:
         """
-        Subscribes to the PVA channel with a callback function and starts monitoring for PV changes.
+        Starts a queueing monitor on the PVA channel (producer/consumer).
+
+        pvapy's network thread pushes each frame into a bounded queue; a
+        dedicated consumer thread drains the queue and runs the per-frame
+        processing, so receiving and processing no longer share one thread.
+
         Args:
-            callback (function, optional): A custom callback to use for the monitor.
+            callback (function, optional): A custom per-frame processor.
                                            If None, defaults to self.pva_callbackSuccess.
 
         The scan FLAG_PV monitor is now set up by ``start_scan_monitor`` from
         the background PV-pollers thread, so a dead/slow FLAG_PV can't stall
         the GUI thread on Start Live View. See area_det_viewer._connect_pv_pollers.
         """
-        monitor_callback = callback if callback is not None else self.pva_callbackSuccess
-        self.channel.subscribe('pva_monitor', monitor_callback)
-        self.channel.startMonitor()
+        self._process_callback = callback if callback is not None else self.pva_callbackSuccess
+        self._queue = pva.PvObjectQueue(self.QUEUE_SIZE)
+        self._consuming = True
+        self._consumer_thread = threading.Thread(target=self._consume_loop, daemon=True)
+        self._consumer_thread.start()
+        # qMonitor starts the monitor itself — no separate startMonitor() call.
+        self.channel.qMonitor(self._queue, self.MONITOR_REQUEST)
+
+    def _consume_loop(self) -> None:
+        """Drain the monitor queue and process one frame at a time.
+
+        Runs at the machine's real processing speed: finish a frame, grab the
+        next. Blocks briefly when the queue is empty so stop is responsive, and
+        never lets a single bad frame kill the loop.
+        """
+        q = self._queue
+        while self._consuming:
+            try:
+                pv = q.get()
+            except pva.QueueEmpty:
+                try:
+                    q.waitForPut(0.5)
+                except Exception:
+                    pass
+                continue
+            try:
+                self._process_callback(pv)
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
     def start_scan_monitor(self) -> None:
         """Initial caget + CA monitor for the scan FLAG_PV. No-op outside scan mode.
@@ -562,10 +607,21 @@ class PVAReader(QObject):
 
     def stop_channel_monitor(self) -> None:
         """
-        Stops all monitoring and callback functions.
+        Stops the queueing monitor, drains-loop consumer, and CA callbacks.
         """
-        self.channel.unsubscribe('pva_monitor')
-        self.channel.stopMonitor()
+        self._consuming = False
+        try:
+            self.channel.stopMonitor()
+        except Exception:
+            pass
+        if self._queue is not None:
+            try:
+                self._queue.cancelWaitForPut()
+            except Exception:
+                pass
+        if self._consumer_thread is not None:
+            self._consumer_thread.join(timeout=2.0)
+            self._consumer_thread = None
         if self.CACHING_MODE == 'scan' and self.FLAG_PV:
             try:
                 camonitor_clear(self.FLAG_PV)

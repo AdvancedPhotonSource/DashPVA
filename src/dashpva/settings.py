@@ -167,6 +167,20 @@ _FLAG_PV_SUFFIX = "ScanOn:Value"
 _FILE_PATH_SUFFIX = "FilePath:Value"
 _FILE_NAME_SUFFIX = "FileName:Value"
 
+# Bounded pvapy monitor queue depth for the PVA reader (static — not
+# config-driven). The network thread enqueues frames here and a consumer thread
+# drains them; when the consumer falls behind the queue fills and pvapy drops
+# the newest frame (counted as nRejected) rather than overrunning the monitor
+# thread and crashing the viewer. Memory is bounded at this depth × frame size.
+PVA_MONITOR_QUEUE_SIZE: int = 15000
+
+# pvapy monitor request descriptor for the PVA reader (static — not
+# config-driven). 'field()' selects the full NTNDArray structure (value, codec,
+# dimension, uniqueId, uncompressedSize, attribute, ...) which the reader needs
+# to decode frames. A value-only selector strips those fields on servers that
+# honor the request (e.g. the pvapy sim server), leaving the image undecodable.
+PVA_MONITOR_REQUEST: str = 'field()'
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
