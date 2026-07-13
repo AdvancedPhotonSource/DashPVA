@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
@@ -616,6 +616,30 @@ class BaseWindow(QMainWindow):
         self._close_confirmed = True
         return True
 
+    # ---- Machine-local layout persistence (QSettings, per viewer type) ----
+    # Window geometry and dock layout are physical/machine state, so they live
+    # in Qt's native per-user store rather than a portable TOML/JSON config.
+
+    def _qsettings(self) -> QSettings:
+        """QSettings scoped to this viewer type (org "DashPVA")."""
+        return QSettings("DashPVA", type(self).__name__)
+
+    def save_layout(self) -> None:
+        """Persist window geometry and dock layout for this viewer."""
+        s = self._qsettings()
+        s.setValue("geometry", self.saveGeometry())
+        s.setValue("dock_state", self.saveState())
+
+    def restore_layout(self) -> None:
+        """Restore previously saved geometry and dock layout, if any."""
+        s = self._qsettings()
+        geom = s.value("geometry")
+        if geom:
+            self.restoreGeometry(geom)
+        state = s.value("dock_state")
+        if state:
+            self.restoreState(state)
+
     def closeEvent(self, event):
         """Close only once any unsaved edits have been saved or discarded.
 
@@ -624,6 +648,7 @@ class BaseWindow(QMainWindow):
         """
         if not self.confirm_close(event):
             return
+        self.save_layout()
         event.accept()
 
     def set_viewer_name(self, name: str) -> None:
