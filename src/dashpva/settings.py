@@ -174,12 +174,20 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 # thread and crashing the viewer. Memory is bounded at this depth × frame size.
 PVA_MONITOR_QUEUE_SIZE: int = 15000
 
+# Server-side pvAccess monitor queue depth for this subscription. This is the
+# buffer where high-rate frames are dropped (uniqueId gaps) when the client
+# can't drain fast enough; it is separate from the client-side
+# PVA_MONITOR_QUEUE_SIZE above. Deeper = absorbs larger bursts, but the server
+# holds this many full frames in memory (depth × frame size).
+PVA_MONITOR_SERVER_QUEUE_SIZE: int = 250
+
 # pvapy monitor request descriptor for the PVA reader (static — not
 # config-driven). 'field()' selects the full NTNDArray structure (value, codec,
 # dimension, uniqueId, uncompressedSize, attribute, ...) which the reader needs
 # to decode frames. A value-only selector strips those fields on servers that
 # honor the request (e.g. the pvapy sim server), leaving the image undecodable.
-PVA_MONITOR_REQUEST: str = 'field()'
+# 'record[queueSize=N]' enlarges the server monitor queue (see above).
+PVA_MONITOR_REQUEST: str = f'field() record[queueSize={PVA_MONITOR_SERVER_QUEUE_SIZE}]'
 
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
