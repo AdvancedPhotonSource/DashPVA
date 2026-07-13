@@ -97,6 +97,22 @@ def setup(ioc):
     exit_code = subprocess.run([sys.executable, '-m', 'dashpva.workflow.workflow']).returncode
     sys.exit(exit_code)
 
+
+@cli.command('ioc')
+@click.option('--prefix', default='pvapy', metavar='PREFIX',
+              help='IOC PV prefix (e.g. 6idb); a trailing ":" is added if missing. Defaults to pvapy.')
+@click.option('--gui/--no-gui', default=True,
+              help='Show the IOC control GUI (default). Use --no-gui to run the IOC headless.')
+def ioc(prefix, gui):
+    """Launch the RSM-parameter IOC simulator (GUI + headless CaIoc)."""
+    click.echo('Running RSM-parameter IOC simulator' + ('' if gui else ' (headless)'))
+    cmd = [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter', '--prefix', prefix.strip()]
+    if not gui:
+        cmd.append('--ioc-mode')
+    exit_code = subprocess.run(cmd).returncode
+    sys.exit(exit_code)
+
+
 @cli.command()
 def bayesian():
     """Launch the Bayesian Optimization viewer (blop)"""
