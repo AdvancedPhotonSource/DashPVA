@@ -72,6 +72,14 @@ QTabWidget#info_tabs QTabBar::tab:selected {
     border-bottom: 1px solid palette(base);
 }
 
+/* -- 3D workspace path bar (folder/file location) -------------------- */
+QLabel#lbl_path_bar {
+    background: palette(dark);
+    color: palette(bright-text);
+    padding: 4px 8px;
+    border-bottom: 1px solid palette(shadow);
+}
+
 /* -- File status label (workbench) ----------------------------------- */
 QLabel#file_status_label {
     font-size: $FONT_SUBHEADING;

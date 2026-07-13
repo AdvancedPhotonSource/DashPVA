@@ -232,6 +232,12 @@ LAST_PONI_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_CIF_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 
+# 3D folder playback / slice extraction tuning
+SLICE_PLAYBACK_DEFAULT_FPS: int = 5
+SLICE_PLAYBACK_MIN_FPS: int = 1
+SLICE_PLAYBACK_MAX_FPS: int = 60
+SLICE_FRAME_FILE_CACHE: int = 2      # loaded per-file clouds kept in memory
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'

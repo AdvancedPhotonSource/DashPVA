@@ -3,6 +3,8 @@ from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
+import pyqtgraph as pg
+from natsort import natsorted
 from PyQt5.QtCore import QSettings, Qt, QThread, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
@@ -75,6 +77,8 @@ class Workspace3D(BaseTab):
                 sp_hi.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
                 btn.clicked.connect(sl.setFullRange)
             self.rb_downsample_on.toggled.connect(self._on_downsample_changed)
+            self.btn_save_3d_config.clicked.connect(self.save_3d_config)
+            self.btn_load_3d_config.clicked.connect(self.load_3d_config)
             # Folder playback controls
             self.btn_load_3d_folder.clicked.connect(self.browse_folder)
             self.btn_prev_frame.clicked.connect(self.prev_frame)
@@ -82,6 +86,7 @@ class Workspace3D(BaseTab):
             self.btn_play_pause.toggled.connect(self.toggle_play)
             self.sb_fps.valueChanged.connect(self.set_fps)
             self.slider_frame.valueChanged.connect(self._on_slider_changed)
+            self.cb_playback_signal.currentIndexChanged.connect(lambda _=None: self._on_signal_changed())
         except Exception as e:
             try:
                 self.main_window.update_status(f"Error setting up 3D connections: {e}")
@@ -1015,6 +1020,126 @@ class Workspace3D(BaseTab):
         except Exception:
             pass
 
+    def save_3d_config(self):
+        """Save the current HKL range + intensity min/max as a named config.
+
+        Writes into the currently-loaded HDF5 file under /entry/view_configs so
+        several named configs can live in the same file and be reloaded later.
+        """
+        from PyQt5.QtWidgets import QInputDialog, QMessageBox
+
+        mw = self.main_window
+        file_path = getattr(mw, 'current_file_path', None) or getattr(mw, 'selected_dataset_path', None)
+        if not file_path:
+            QMessageBox.warning(self, '3D Config',
+                                'No loaded file to save into. Load a 3D dataset first.')
+            return
+        name, ok = QInputDialog.getText(self, 'Save 3D Config', 'Configuration name:')
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        from dashpva.utils.hdf5_loader import HDF5Loader
+        loader = HDF5Loader()
+        if name in loader.list_view_configs(file_path):
+            if QMessageBox.question(
+                self, '3D Config', f"Configuration '{name}' exists. Overwrite?",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+
+        config = {
+            'hkl_range': [
+                float(self._h_min_spin.value()), float(self._h_max_spin.value()),
+                float(self._k_min_spin.value()), float(self._k_max_spin.value()),
+                float(self._l_min_spin.value()), float(self._l_max_spin.value()),
+            ],
+            'intensity_min': float(self.sb_min_intensity_3d.value()),
+            'intensity_max': float(self.sb_max_intensity_3d.value()),
+        }
+        if loader.save_view_config(file_path, name, config):
+            try:
+                mw.update_status(f"Saved 3D config '{name}' to {file_path}")
+            except Exception:
+                pass
+            QMessageBox.information(self, '3D Config', f"Saved configuration '{name}'.")
+        else:
+            QMessageBox.critical(self, '3D Config',
+                                 f'Failed to save configuration:\n{loader.get_last_error()}')
+
+    def load_3d_config(self):
+        """Load a saved HKL range + intensity config from the loaded file and apply it."""
+        from PyQt5.QtWidgets import QInputDialog, QMessageBox
+
+        mw = self.main_window
+        file_path = getattr(mw, 'current_file_path', None) or getattr(mw, 'selected_dataset_path', None)
+        if not file_path:
+            QMessageBox.warning(self, '3D Config', 'No loaded file to read configurations from.')
+            return
+
+        from dashpva.utils.hdf5_loader import HDF5Loader
+        loader = HDF5Loader()
+        names = loader.list_view_configs(file_path)
+        if not names:
+            QMessageBox.information(self, '3D Config', 'No saved configurations in this file.')
+            return
+        if len(names) == 1:
+            name = names[0]
+        else:
+            name, ok = QInputDialog.getItem(
+                self, 'Load 3D Config', 'Configuration:', names, 0, False)
+            if not ok:
+                return
+
+        config = loader.load_view_config(file_path, name)
+        if not config:
+            QMessageBox.warning(self, '3D Config',
+                                f"Could not load '{name}':\n{loader.get_last_error()}")
+            return
+        self._apply_view_config(config)
+        try:
+            mw.update_status(f"Loaded 3D config '{name}'")
+        except Exception:
+            pass
+
+    def _apply_view_config(self, config: dict) -> None:
+        """Apply a loaded HKL range + intensity config to the 3D controls."""
+        hr = config.get('hkl_range')
+        if hr and len(hr) == 6:
+            try:
+                pairs = [(hr[0], hr[1]), (hr[2], hr[3]), (hr[4], hr[5])]
+                for (sl, da, db, lbl, sp_lo, sp_hi, _btn), (lo, hi) in zip(self._hkl_widgets(), pairs):
+                    d_min, d_max = getattr(self, da), getattr(self, db)
+                    for sp, v in ((sp_lo, lo), (sp_hi, hi)):
+                        sp.blockSignals(True)
+                        sp.setValue(v)
+                        sp.blockSignals(False)
+                    try:
+                        sl.blockSignals(True)
+                        sl.setLow(self._slider_int(lo, d_min, d_max), emit=False)
+                        sl.setHigh(self._slider_int(hi, d_min, d_max), emit=False)
+                        sl.blockSignals(False)
+                        sl.update()
+                    except Exception:
+                        pass
+                    lbl.setText(f'{lo:.3f} → {hi:.3f}')
+                self.update_hkl_range()
+            except Exception:
+                pass
+        try:
+            imin = config.get('intensity_min')
+            imax = config.get('intensity_max')
+            if imin is not None:
+                self.sb_min_intensity_3d.blockSignals(True)
+                self.sb_min_intensity_3d.setValue(int(round(imin)))
+                self.sb_min_intensity_3d.blockSignals(False)
+            if imax is not None:
+                self.sb_max_intensity_3d.blockSignals(True)
+                self.sb_max_intensity_3d.setValue(int(round(imax)))
+                self.sb_max_intensity_3d.blockSignals(False)
+            self.update_intensity()
+        except Exception:
+            pass
+
     def update_hkl_range(self):
         """Filter the displayed cloud to the H/K/L min/max range and re-render."""
         if self._display_points is None or self.plotter is None:
@@ -1125,6 +1250,293 @@ class Workspace3D(BaseTab):
                 self.main_window.update_status(f"Downsampling toggle error: {e}")
             except Exception:
                 pass
+
+    # === Folder playback ===
+    def _init_playback_state(self):
+        """Initialise folder-playback state + the per-frame 1D signal plot."""
+        self._frame_files = []
+        self._current_frame = 0
+        self._frame_cache = OrderedDict()
+        self._signal_series = {}
+        self._playback_seeded = False
+        self._play_timer = QTimer(self)
+        self._play_timer.timeout.connect(self._advance_frame)
+        self._signal_plot = None
+        self._signal_marker = None
+        self._build_playback_plot()
+
+    def _build_playback_plot(self):
+        try:
+            self._signal_plot = pg.PlotWidget()
+            self._signal_marker = pg.InfiniteLine(
+                angle=90, movable=False, pen=pg.mkPen(color=(0, 200, 255), width=1))
+            self._signal_plot.addItem(self._signal_marker)
+            self._signal_marker.hide()
+            self.layout_playback_signal.addWidget(self._signal_plot)
+        except Exception:
+            self._signal_plot = None
+
+    def browse_folder(self):
+        """Pick a folder of per-frame .h5 files and start folder playback."""
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
+        s = QSettings("DashPVA", "Workbench")
+        start_dir = s.value("last_3d_folder", "", type=str)
+        folder = QFileDialog.getExistingDirectory(self, "Select folder of 3D frame files", start_dir)
+        if not folder:
+            return
+        s.setValue("last_3d_folder", folder)
+        files = natsorted({str(p) for p in Path(folder).glob('*.h5')}
+                          | {str(p) for p in Path(folder).glob('*.hdf5')})
+        if not files:
+            QMessageBox.warning(self, "Folder Playback", "No .h5/.hdf5 files found in that folder.")
+            return
+        self._frame_files = list(files)
+        self._frame_cache.clear()
+        self._current_frame = 0
+        self._playback_seeded = False
+        try:
+            self.gb_playback.setEnabled(True)
+            self.slider_frame.blockSignals(True)
+            self.slider_frame.setRange(0, len(files) - 1)
+            self.slider_frame.setValue(0)
+            self.slider_frame.blockSignals(False)
+        except Exception:
+            pass
+        self._populate_signal_dropdown(files[0])
+        self._load_frame_signals(files)
+        self._render_frame(0, reset_camera=True)
+        self._on_signal_changed()
+
+    def _populate_signal_dropdown(self, sample_file):
+        from dashpva.utils.hdf5_loader import HDF5Loader
+        try:
+            names = HDF5Loader().list_frame_signals(sample_file)
+            self.cb_playback_signal.blockSignals(True)
+            self.cb_playback_signal.clear()
+            for n in names:
+                self.cb_playback_signal.addItem(n, n)
+            self.cb_playback_signal.blockSignals(False)
+        except Exception:
+            pass
+
+    def _load_frame_signals(self, files):
+        """One pass over the folder reading each frame's scalar signals."""
+        from PyQt5.QtWidgets import QApplication, QProgressDialog
+
+        from dashpva.utils.hdf5_loader import HDF5Loader
+        names = [self.cb_playback_signal.itemData(i) for i in range(self.cb_playback_signal.count())]
+        self._signal_series = {n: [] for n in names}
+        if not names:
+            return
+        loader = HDF5Loader()
+        progress = QProgressDialog("Reading frame signals…", "Cancel", 0, len(files), self)
+        progress.setWindowTitle("Folder Playback")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        for i, path in enumerate(files):
+            progress.setValue(i)
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                break
+            for n in names:
+                self._signal_series[n].append(loader.read_frame_scalar(path, n))
+        progress.setValue(len(files))
+        for n in list(self._signal_series.keys()):
+            self._signal_series[n] = np.array(
+                [np.nan if v is None else v for v in self._signal_series[n]], dtype=float)
+
+    def _load_frame_cloud(self, path):
+        if path in self._frame_cache:
+            self._frame_cache.move_to_end(path)
+            return self._frame_cache[path]
+        from dashpva.utils.rsm_converter import RSMConverter
+        points, intensities, _num, _shape = RSMConverter().load_h5_to_3d(path)
+        pts = np.asarray(points, dtype=float)
+        ints = np.asarray(intensities, dtype=float).reshape(-1)
+        self._frame_cache[path] = (pts, ints)
+        cap = max(1, int(getattr(app_settings, 'SLICE_FRAME_FILE_CACHE', 2)))
+        while len(self._frame_cache) > cap:
+            self._frame_cache.popitem(last=False)
+        return pts, ints
+
+    def _render_frame(self, index, reset_camera=False):
+        if not self._frame_files:
+            return
+        index = max(0, min(int(index), len(self._frame_files) - 1))
+        self._current_frame = index
+        path = self._frame_files[index]
+        try:
+            pts, ints = self._load_frame_cloud(path)
+        except Exception as e:
+            try:
+                self.main_window.update_status(f"Frame load error: {e}")
+            except Exception:
+                pass
+            return
+        if not self._playback_seeded:
+            self._seed_playback_from(pts, ints)
+            self._playback_seeded = True
+            reset_camera = True
+        self._render_cloud(pts, ints, reset_camera=reset_camera)
+        try:
+            self.slider_frame.blockSignals(True)
+            self.slider_frame.setValue(index)
+            self.slider_frame.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            self.lbl_frame_counter.setText(f"{index + 1} / {len(self._frame_files)}")
+            self.lbl_frame_counter.setToolTip(os.path.basename(path))
+        except Exception:
+            pass
+        try:
+            if self._signal_marker is not None:
+                self._signal_marker.setValue(index)
+                self._signal_marker.show()
+        except Exception:
+            pass
+
+    def _seed_playback_from(self, pts, ints):
+        """First-frame setup: intensity bounds, LUT, and HKL range from the data."""
+        try:
+            self._data_intensity_min = float(np.min(ints))
+            self._data_intensity_max = float(np.max(ints))
+            lo, hi = int(self._data_intensity_min), int(self._data_intensity_max)
+            if hi <= lo:
+                hi = lo + 1
+            for sb, v in ((self.sb_min_intensity_3d, lo), (self.sb_max_intensity_3d, hi)):
+                sb.blockSignals(True)
+                sb.setRange(lo, hi)
+                sb.setValue(v)
+                sb.blockSignals(False)
+        except Exception:
+            pass
+        try:
+            self.on_3d_colormap_changed()
+        except Exception:
+            pass
+        try:
+            self._h_min_data = float(np.min(pts[:, 0]))
+            self._h_max_data = float(np.max(pts[:, 0]))
+            self._k_min_data = float(np.min(pts[:, 1]))
+            self._k_max_data = float(np.max(pts[:, 1]))
+            self._l_min_data = float(np.min(pts[:, 2]))
+            self._l_max_data = float(np.max(pts[:, 2]))
+            for sl, da, db, lbl, sp_lo, sp_hi, _btn in self._hkl_widgets():
+                d_min, d_max = getattr(self, da), getattr(self, db)
+                sl.blockSignals(True)
+                sl.setFullRange()
+                sl.blockSignals(False)
+                for sp, v in ((sp_lo, d_min), (sp_hi, d_max)):
+                    sp.blockSignals(True)
+                    sp.setValue(v)
+                    sp.blockSignals(False)
+                lbl.setText(f'{d_min:.3f} → {d_max:.3f}')
+        except Exception:
+            pass
+
+    def _render_cloud(self, points, intensities, reset_camera=False):
+        """Swap the point cloud shown in the plotter (lightweight per-frame render)."""
+        if self.plotter is None:
+            return
+        pts = np.asarray(points, dtype=float)
+        ints = np.asarray(intensities, dtype=float).reshape(-1)
+        if pts.ndim != 2 or pts.shape[1] != 3 or pts.shape[0] == 0:
+            return
+        self._raw_points = pts
+        self._raw_intensities = ints
+        self._display_points = pts
+        self._display_intensities = ints
+        try:
+            actors = getattr(self.plotter, 'actors', {}) or {}
+            if 'points' in actors:
+                self.plotter.remove_actor('points', reset_camera=False)
+        except Exception:
+            pass
+        mesh = pv.PolyData(pts)
+        mesh['intensity'] = ints
+        self.cloud_mesh_3d = mesh
+        try:
+            self.plotter.add_mesh(
+                mesh, scalars='intensity',
+                cmap=self.lut if getattr(self, 'lut', None) is not None else 'viridis',
+                point_size=5.0, name='points', show_scalar_bar=True,
+                nan_opacity=0.0, show_edges=False)
+        except Exception:
+            return
+        try:
+            self.plotter.show_bounds(mesh=mesh, xtitle='H Axis', ytitle='K Axis',
+                                     ztitle='L Axis', bounds=mesh.bounds)
+        except Exception:
+            pass
+        if reset_camera:
+            try:
+                self.plotter.reset_camera()
+            except Exception:
+                pass
+        try:
+            self.update_intensity()
+        except Exception:
+            pass
+        try:
+            self.plotter.render()
+        except Exception:
+            pass
+
+    def prev_frame(self):
+        self._render_frame(self._current_frame - 1)
+
+    def next_frame(self):
+        self._render_frame(self._current_frame + 1)
+
+    def _advance_frame(self):
+        if not self._frame_files:
+            return
+        nxt = self._current_frame + 1
+        if nxt >= len(self._frame_files):
+            nxt = 0
+        self._render_frame(nxt)
+
+    def toggle_play(self, checked):
+        if checked and self._frame_files:
+            fps = max(1, int(self.sb_fps.value()))
+            self._play_timer.start(int(1000 / fps))
+            try:
+                self.btn_play_pause.setText('⏸')
+            except Exception:
+                pass
+        else:
+            self._play_timer.stop()
+            try:
+                self.btn_play_pause.setText('▶')
+            except Exception:
+                pass
+
+    def set_fps(self, value):
+        if self._play_timer.isActive():
+            self._play_timer.start(int(1000 / max(1, int(value))))
+
+    def _on_slider_changed(self, value):
+        self._render_frame(int(value))
+
+    def _on_signal_changed(self):
+        if self._signal_plot is None:
+            return
+        try:
+            name = self.cb_playback_signal.currentData()
+            series = self._signal_series.get(name) if name else None
+            self._signal_plot.clear()
+            self._signal_plot.addItem(self._signal_marker)
+            if series is not None and len(series) > 0:
+                self._signal_plot.plot(np.arange(len(series)), series,
+                                       pen='y', symbol='o', symbolSize=4)
+                self._signal_plot.setLabel('bottom', 'Frame')
+                self._signal_plot.setLabel('left', str(name))
+            self._signal_marker.setValue(self._current_frame)
+            self._signal_marker.show()
+        except Exception:
+            pass
 
     def reset_slice(self):
         """Reset slice to HK (xy) preset at the data center."""

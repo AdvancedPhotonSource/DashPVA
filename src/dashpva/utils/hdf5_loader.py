@@ -1126,6 +1126,109 @@ class HDF5Loader(LogMixin):
             self._handle_saving_error(e, file_path)
             return False
 
+    def save_view_config(self, file_path: str, name: str, config: dict) -> bool:
+        """Save a named 3D view configuration into an existing HDF5 file.
+
+        Multiple configs coexist under ``/entry/view_configs/<name>``. Re-using a
+        name overwrites that config. Stores HKL range and intensity min/max.
+        """
+        try:
+            with h5py.File(file_path, 'a') as h5f:
+                configs = h5f.require_group('entry/view_configs')
+                if name in configs:
+                    del configs[name]
+                cg = configs.create_group(name)
+                cg.create_dataset('hkl_range', data=np.asarray(config.get('hkl_range', []), dtype=float))
+                cg.create_dataset('intensity_min', data=float(config.get('intensity_min', 0.0)))
+                cg.create_dataset('intensity_max', data=float(config.get('intensity_max', 0.0)))
+                cg.attrs['saved'] = str(np.datetime64('now'))
+            try:
+                self.logger.info(f"Saved view config '{name}' to {file_path}")
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            self._handle_saving_error(e, file_path)
+            return False
+
+    def list_view_configs(self, file_path: str) -> list:
+        """Return the names of saved 3D view configs in ``file_path`` (or [])."""
+        try:
+            with h5py.File(file_path, 'r') as h5f:
+                grp = h5f.get('entry/view_configs')
+                return sorted(grp.keys()) if grp is not None else []
+        except Exception as e:
+            self.last_error = str(e)
+            return []
+
+    def load_view_config(self, file_path: str, name: str) -> Optional[dict]:
+        """Load one named 3D view config: hkl_range (6 floats) + intensity min/max."""
+        try:
+            with h5py.File(file_path, 'r') as h5f:
+                cg = h5f.get(f'entry/view_configs/{name}')
+                if cg is None:
+                    self.last_error = f"View config '{name}' not found"
+                    return None
+                hr = np.asarray(cg['hkl_range'][()], dtype=float).reshape(-1) if 'hkl_range' in cg else None
+                return {
+                    'hkl_range': [float(x) for x in hr] if hr is not None else None,
+                    'intensity_min': float(cg['intensity_min'][()]) if 'intensity_min' in cg else None,
+                    'intensity_max': float(cg['intensity_max'][()]) if 'intensity_max' in cg else None,
+                }
+        except Exception as e:
+            self.last_error = str(e)
+            return None
+
+    def list_frame_signals(self, file_path: str) -> list:
+        """Return the names of per-frame scalar/1D signals in a frame HDF5 file.
+
+        Names are namespaced: ``motor/<name>``, ``ca/<name>``, or the bare
+        analysis keys ``intensity``/``comx``/``comy``. Used to populate the 3D
+        playback signal dropdown.
+        """
+        names = []
+        try:
+            with h5py.File(file_path, 'r') as h5f:
+                mp = h5f.get(self.hdf5_structure['motor_positions'])
+                if isinstance(mp, h5py.Group):
+                    names += [f"motor/{k}" for k in mp.keys()]
+                elif isinstance(mp, h5py.Dataset):
+                    names.append('motor_positions')
+                for key in ('intensity', 'comx', 'comy'):
+                    if h5f.get(self.hdf5_structure[key]) is not None:
+                        names.append(key)
+                ca = h5f.get('entry/data/metadata/ca')
+                if isinstance(ca, h5py.Group):
+                    names += [f"ca/{k}" for k in ca.keys()]
+        except Exception as e:
+            self.last_error = str(e)
+        return names
+
+    def read_frame_scalar(self, file_path: str, name: str) -> Optional[float]:
+        """Read one scalar for ``name`` from a single frame file (mean of arrays)."""
+        try:
+            if name.startswith('motor/'):
+                path = f"{self.hdf5_structure['motor_positions']}/{name.split('/', 1)[1]}"
+            elif name.startswith('ca/'):
+                path = f"entry/data/metadata/ca/{name.split('/', 1)[1]}"
+            elif name in ('intensity', 'comx', 'comy'):
+                path = self.hdf5_structure[name]
+            elif name == 'motor_positions':
+                path = self.hdf5_structure['motor_positions']
+            else:
+                path = name
+            with h5py.File(file_path, 'r') as h5f:
+                dset = h5f.get(path)
+                if dset is None:
+                    return None
+                arr = np.asarray(dset[()], dtype=float).reshape(-1)
+                if arr.size == 0:
+                    return None
+                return float(arr.mean()) if arr.size > 1 else float(arr[0])
+        except Exception as e:
+            self.last_error = str(e)
+            return None
+
     def _find_slice_group(self, h5f):
         """Return the h5 group holding a 2D slice (new-file or appended layout)."""
         dg = h5f.get('entry/data')
