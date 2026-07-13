@@ -8,7 +8,31 @@
     <verstretch>0</verstretch>
    </sizepolicy>
   </property>
-  <layout class="QHBoxLayout" name="container">
+  <layout class="QVBoxLayout" name="root_layout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="lbl_path_bar">
+     <property name="text">
+      <string>No data loaded</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="container">
    <property name="spacing">
     <number>8</number>
    </property>
@@ -61,6 +85,94 @@
            <widget class="QPushButton" name="btn_load_3d_data">
             <property name="text">
              <string>Load Selected Dataset</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_load_3d_folder">
+            <property name="text">
+             <string>Load Folder…</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="gb_playback">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="title">
+          <string>Playback</string>
+         </property>
+         <layout class="QVBoxLayout" name="layout_playback">
+          <item>
+           <layout class="QHBoxLayout" name="layout_playback_buttons">
+            <item>
+             <widget class="QPushButton" name="btn_prev_frame">
+              <property name="text">
+               <string>◀</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_play_pause">
+              <property name="text">
+               <string>▶</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_next_frame">
+              <property name="text">
+               <string>▶▏</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="layout_fps">
+            <item>
+             <widget class="QLabel" name="lbl_fps">
+              <property name="text">
+               <string>FPS:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="sb_fps">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>60</number>
+              </property>
+              <property name="value">
+               <number>5</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QSlider" name="slider_frame">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_frame_counter">
+            <property name="text">
+             <string>– / –</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
             </property>
            </widget>
           </item>
@@ -222,6 +334,27 @@
             </property>
            </widget>
           </item>
+          <item row="1" column="0" colspan="2">
+           <widget class="QPushButton" name="btn_load_slice">
+            <property name="text">
+             <string>Load Slice…</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QPushButton" name="btn_multi_slice">
+            <property name="text">
+             <string>Multi-slice…</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0" colspan="2">
+           <widget class="QPushButton" name="btn_extract_slice_dataset">
+            <property name="text">
+             <string>Extract Slice Dataset…</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
@@ -241,6 +374,8 @@
       </layout>
      </widget>
     </widget>
+   </item>
+  </layout>
    </item>
   </layout>
  </widget>

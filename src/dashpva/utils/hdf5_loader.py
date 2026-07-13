@@ -1040,6 +1040,103 @@ class HDF5Loader(LogMixin):
         data_grp.attrs['array_rank'] = 2
         data_grp.attrs['array_shape'] = np.array([H, W], dtype=np.int64)
 
+    def load_slice(self, file_path: str) -> Optional[dict]:
+        """Load a 2D slice previously written by :meth:`save_slice_arrays`.
+
+        Reads the image, per-pixel HKL grids, and slice metadata (orientation,
+        in-plane axes/ranges, intensity range) and returns a dict compatible
+        with the Slice 2D view's display path. Returns None if the file holds no
+        recognisable 2D slice.
+        """
+        try:
+            with h5py.File(file_path, 'r') as h5f:
+                grp = self._find_slice_group(h5f)
+                if grp is None:
+                    self.last_error = "No 2D slice found in file"
+                    return None
+                image = np.asarray(grp['data'][()], dtype=np.float32)
+                hkl = grp['hkl']
+                qx = np.asarray(hkl['qx'][()], dtype=np.float32)
+                qy = np.asarray(hkl['qy'][()], dtype=np.float32)
+                qz = np.asarray(hkl['qz'][()], dtype=np.float32)
+
+                meta = {}
+                if 'metadata' in grp:
+                    for key, dset in grp['metadata'].items():
+                        val = dset[()]
+                        if isinstance(val, bytes):
+                            val = val.decode('utf-8', 'replace')
+                        meta[key] = val
+
+                H, W = image.shape
+                orth_label = str(meta.get('orth_label') or '') or None
+                return {
+                    'image': image, 'qx': qx, 'qy': qy, 'qz': qz,
+                    'orientation': str(meta.get('orientation', 'Custom')),
+                    'orth_label': orth_label,
+                    'orth_value': float(meta['orth_value']) if 'orth_value' in meta else None,
+                    'slice_normal': np.asarray(meta['slice_normal'], dtype=float) if 'slice_normal' in meta else None,
+                    'slice_origin': np.asarray(meta['slice_origin'], dtype=float) if 'slice_origin' in meta else None,
+                    'u_axis': np.asarray(meta.get('u_axis', (1.0, 0.0, 0.0)), dtype=float),
+                    'v_axis': np.asarray(meta.get('v_axis', (0.0, 1.0, 0.0)), dtype=float),
+                    'u_range': tuple(float(x) for x in meta.get('u_range', (0.0, float(W)))),
+                    'v_range': tuple(float(x) for x in meta.get('v_range', (0.0, float(H)))),
+                    'clim': (float(meta.get('intensity_min', np.min(image))),
+                             float(meta.get('intensity_max', np.max(image)))),
+                    'num_points': int(meta.get('num_points', 0)),
+                }
+        except Exception as e:
+            self.last_error = str(e)
+            return None
+
+    def save_slices_to_file(self, file_path: str, entries: list) -> bool:
+        """Write several extracted slices into one new multi-slice HDF5 file.
+
+        Each entry is a dict with keys ``name`` (group label), ``image``,
+        ``qx``/``qy``/``qz`` (per-pixel HKL grids) and ``meta`` (metadata dict,
+        which should include the originating ``source_file``). Every slice lands
+        under ``/entry/slices/<name>`` so a batch shares one file.
+
+        Returns True on success, False otherwise.
+        """
+        try:
+            comp = hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True)
+            with h5py.File(file_path, 'w') as h5f:
+                entry_grp = h5f.create_group('entry')
+                entry_grp.attrs['data_type'] = 'multislice'
+                slices_grp = entry_grp.create_group('slices')
+                for entry in entries:
+                    base = str(entry.get('name') or 'slice')
+                    name = base
+                    i = 1
+                    while name in slices_grp:
+                        name = f"{base}_{i}"
+                        i += 1
+                    grp = slices_grp.create_group(name)
+                    image = np.asarray(entry['image'], dtype=np.float32)
+                    meta = dict(entry.get('meta') or {})
+                    self._write_slice_datasets(
+                        grp, image, entry['qx'], entry['qy'], entry['qz'], meta, comp)
+            try:
+                self.logger.info(f"Saved {len(entries)} slices to {file_path}")
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            self._handle_saving_error(e, file_path)
+            return False
+
+    def _find_slice_group(self, h5f):
+        """Return the h5 group holding a 2D slice (new-file or appended layout)."""
+        dg = h5f.get('entry/data')
+        if dg is not None and 'data' in dg and 'hkl' in dg and dg['data'].ndim == 2:
+            return dg
+        sg = h5f.get('entry/slices')
+        if sg is not None and len(sg) > 0:
+            # Most recently appended slice.
+            return sg[sorted(sg.keys())[-1]]
+        return None
+
     # ================ UTILITY METHODS ======================= #
     def get_file_info(self, file_path: str, *, style: str = "text", include_unknown: bool = True,
                        float_precision: int = 6, summarize_datasets: bool = True, raw: bool = False):

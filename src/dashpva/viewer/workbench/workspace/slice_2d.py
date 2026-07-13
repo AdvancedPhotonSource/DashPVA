@@ -97,6 +97,16 @@ class SliceView2D(QWidget):
         """Return the last rasterized slice dict (incl. clim), or None."""
         return self._last
 
+    def display_loaded(self, result: dict) -> None:
+        """Display a pre-rasterized slice loaded from disk (bypasses rasterizing)."""
+        self._last = result
+        self._applied_levels_key = None
+        clim = result.get('clim')
+        if clim is None:
+            img = result['image']
+            clim = (float(np.min(img)), float(np.max(img)))
+        self._display(result, clim)
+
     # ── Rendering ───────────────────────────────────────────────────────────
     def _flush_pending(self) -> None:
         if not self._pending:
@@ -216,29 +226,39 @@ class SliceView2D(QWidget):
             self._display(self._last, self._last["clim"])
 
     def _apply_colormap(self) -> None:
+        """Match the slice colormap to the 3D view's current selection.
+
+        Uses ``ImageView.setColorMap`` (sets the histogram gradient) so the
+        colormap sticks from the first render and survives redraws, rather than
+        a per-image LUT that ImageView can revert to its default gradient.
+        """
         try:
             cmap_name = str(self.main_window.tab_3d.cb_colormap_3d.currentText())
         except Exception:
             cmap_name = "viridis"
         if cmap_name == self._last_colormap:
             return
-        lut = None
+        cmap = None
         try:
             cmap = pg.colormap.get(cmap_name)
-            if cmap is not None:
-                lut = cmap.getLookupTable(nPts=256)
         except Exception:
-            lut = None
-        if lut is None:
+            cmap = None
+        if cmap is None:
+            try:
+                cmap = pg.colormap.getFromMatplotlib(cmap_name)
+            except Exception:
+                cmap = None
+        if cmap is None:
             try:
                 import matplotlib.cm as cm
-                colors = cm.get_cmap(cmap_name)(np.linspace(0.0, 1.0, 256), bytes=True)
-                lut = colors[:, :3]
+                cols = cm.get_cmap(cmap_name)(np.linspace(0.0, 1.0, 256), bytes=True)
+                cmap = pg.ColorMap(np.linspace(0.0, 1.0, 256), cols)
             except Exception:
-                xs = np.linspace(0, 255, 256).astype(np.uint8)
-                lut = np.column_stack([xs, xs, xs])
+                cmap = None
+        if cmap is None:
+            return
         try:
-            self.image_view.imageItem.setLookupTable(lut)
+            self.image_view.setColorMap(cmap)
             self._last_colormap = cmap_name
         except Exception:
             pass

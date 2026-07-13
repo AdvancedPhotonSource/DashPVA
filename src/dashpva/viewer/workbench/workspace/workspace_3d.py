@@ -1,5 +1,9 @@
+import os
+from collections import OrderedDict
+from pathlib import Path
+
 import numpy as np
-from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtCore import QSettings, Qt, QThread, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QDoubleSpinBox,
@@ -14,6 +18,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+import dashpva.settings as app_settings
 
 # Import BaseTab using existing tabs package alias
 from dashpva.gui import ui_path
@@ -68,9 +74,14 @@ class Workspace3D(BaseTab):
                 sp_lo.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
                 sp_hi.valueChanged.connect(self._make_spin_cb(sl, da, db, lbl, sp_lo, sp_hi))
                 btn.clicked.connect(sl.setFullRange)
-            self.btn_show_slice_2d.clicked.connect(self.show_slice_2d_tab)
-            self.btn_save_slice.clicked.connect(self.save_slice)
             self.rb_downsample_on.toggled.connect(self._on_downsample_changed)
+            # Folder playback controls
+            self.btn_load_3d_folder.clicked.connect(self.browse_folder)
+            self.btn_prev_frame.clicked.connect(self.prev_frame)
+            self.btn_next_frame.clicked.connect(self.next_frame)
+            self.btn_play_pause.toggled.connect(self.toggle_play)
+            self.sb_fps.valueChanged.connect(self.set_fps)
+            self.slider_frame.valueChanged.connect(self._on_slider_changed)
         except Exception as e:
             try:
                 self.main_window.update_status(f"Error setting up 3D connections: {e}")
@@ -78,6 +89,9 @@ class Workspace3D(BaseTab):
                 pass
     
     def build(self):
+        # Folder playback / frame session state (independent of the plotter)
+        self._init_playback_state()
+
         # Try to create VTK QtInteractor; fall back if unavailable
         try:
             self.plotter = QtInteractor(self)
@@ -781,8 +795,8 @@ class Workspace3D(BaseTab):
         vec = self.cloud_mesh_3d.points - origin
         dist = np.dot(vec, normal)
         
-        # Thickness of the slice in HKL units (align with HKL3D)
-        thickness = 0.002 
+        # Thickness of the slice in HKL units (set via the Slice Controls dock).
+        thickness = getattr(self, '_slice_thickness', 0.002)
         mask = np.abs(dist) < thickness
         
         slab = self.cloud_mesh_3d.extract_points(mask)
@@ -1111,104 +1125,6 @@ class Workspace3D(BaseTab):
                 self.main_window.update_status(f"Downsampling toggle error: {e}")
             except Exception:
                 pass
-
-    # === Visibility & Colormap ===
-
-
-    def show_slice_2d_tab(self):
-        """Show and raise the Slice 2D dock, refreshed with the current controls."""
-        try:
-            # Sync intensity range / colormap before showing so the extracted slice
-            # matches what is currently set in the 3D view.
-            self.refresh_slice_2d()
-            dock = getattr(self.main_window, 'slice_2d_dock', None)
-            if dock is not None:
-                dock.show()
-                dock.raise_()
-        except Exception:
-            pass
-
-    def save_slice(self):
-        """Save the current 2D slice (image + per-pixel HKL) to HDF5.
-
-        Uses the last slice rendered in the Slice 2D tab, which is already masked
-        to the current intensity range. Prompts to write a new standalone file or
-        append into the source file.
-        """
-        from PyQt5.QtWidgets import QMessageBox
-
-        mw = self.main_window
-        tab_2d = getattr(mw, 'tab_slice_2d', None)
-        result = tab_2d.get_last_slice() if tab_2d is not None else None
-        if not result:
-            QMessageBox.warning(
-                self, 'No Slice',
-                'No slice available to save. Move the slice plane and make sure '
-                'points fall within the current intensity range.'
-            )
-            return
-
-        clim = result.get('clim', (0.0, 0.0))
-        meta = {
-            'data_type': 'slice',
-            'slice_normal': [float(x) for x in getattr(self, '_last_normal', np.array([0.0, 0.0, 1.0]))],
-            'slice_origin': [float(x) for x in getattr(self, '_last_origin', np.array([0.0, 0.0, 0.0]))],
-            'u_axis': [float(x) for x in result['u_axis']],
-            'v_axis': [float(x) for x in result['v_axis']],
-            'u_range': [float(result['u_range'][0]), float(result['u_range'][1])],
-            'v_range': [float(result['v_range'][0]), float(result['v_range'][1])],
-            'orientation': result['orientation'],
-            'intensity_min': float(clim[0]),
-            'intensity_max': float(clim[1]),
-            'num_points': int(result.get('num_points', 0)),
-            'original_file': str(getattr(mw, 'current_file_path', None) or 'unknown'),
-            'extraction_timestamp': str(np.datetime64('now')),
-        }
-
-        # Ask: new file or append to source.
-        box = QMessageBox(self)
-        box.setWindowTitle('Save Slice')
-        box.setText('Where should the extracted 2D slice be saved?')
-        btn_new = box.addButton('New file…', QMessageBox.AcceptRole)
-        btn_src = box.addButton('Append to source', QMessageBox.ActionRole)
-        box.addButton(QMessageBox.Cancel)
-        source_path = getattr(mw, 'current_file_path', None)
-        btn_src.setEnabled(bool(source_path))
-        box.exec_()
-        clicked = box.clickedButton()
-        if clicked not in (btn_new, btn_src):
-            return
-
-        from dashpva.utils.hdf5_loader import HDF5Loader
-        loader = HDF5Loader()
-
-        if clicked is btn_new:
-            default_name = f"slice_extract_{str(np.datetime64('now', 's')).replace(':', '-')}.h5"
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, 'Save Slice Data', default_name, 'HDF5 Files (*.h5 *.hdf5);;All Files (*)'
-            )
-            if not file_path:
-                return
-            ok = loader.save_slice_arrays(
-                file_path, result['image'], result['qx'], result['qy'], result['qz'],
-                metadata=meta, append=False,
-            )
-            target = file_path
-        else:
-            ok = loader.save_slice_arrays(
-                source_path, result['image'], result['qx'], result['qy'], result['qz'],
-                metadata=meta, append=True,
-            )
-            target = source_path
-
-        if ok:
-            try:
-                mw.update_status(f"Slice saved to {target}")
-            except Exception:
-                pass
-            QMessageBox.information(self, 'Success', f'Slice saved successfully to:\n{target}')
-        else:
-            QMessageBox.critical(self, 'Error', f'Failed to save slice:\n{loader.get_last_error()}')
 
     def reset_slice(self):
         """Reset slice to HK (xy) preset at the data center."""
