@@ -237,6 +237,13 @@ SLICE_PLAYBACK_DEFAULT_FPS: int = 5
 SLICE_PLAYBACK_MIN_FPS: int = 1
 SLICE_PLAYBACK_MAX_FPS: int = 60
 SLICE_FRAME_FILE_CACHE: int = 2      # loaded per-file clouds kept in memory
+# Streaming prefetch window (video-style buffering): frames loaded ahead of and
+# retained behind the current playback frame; total buffered ≈ AHEAD + BEHIND.
+SLICE_PLAYBACK_BUFFER_AHEAD: int = 40
+SLICE_PLAYBACK_BUFFER_BEHIND: int = 10
+# Minimum point-cloud downsample stride applied while playing (render every Nth
+# point) so frames stay light enough for smooth video.
+SLICE_PLAYBACK_DOWNSAMPLE: int = 4
 
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None

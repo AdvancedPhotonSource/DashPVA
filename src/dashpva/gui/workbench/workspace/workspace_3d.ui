@@ -91,7 +91,7 @@
           <item>
            <widget class="QPushButton" name="btn_load_3d_folder">
             <property name="text">
-             <string>Load Folder…</string>
+             <string>Load Selected Folder</string>
             </property>
            </widget>
           </item>

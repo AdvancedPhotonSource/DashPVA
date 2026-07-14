@@ -1,11 +1,10 @@
 import os
-from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
 from natsort import natsorted
-from PyQt5.QtCore import QSettings, Qt, QThread, QTimer
+from PyQt5.QtCore import Qt, QThread, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QDoubleSpinBox,
@@ -21,9 +20,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-import dashpva.settings as app_settings
-
 # Import BaseTab using existing tabs package alias
+import dashpva.settings as app_settings
 from dashpva.gui import ui_path
 
 from .base_tab import BaseTab
@@ -1256,9 +1254,12 @@ class Workspace3D(BaseTab):
         """Initialise folder-playback state + the per-frame 1D signal plot."""
         self._frame_files = []
         self._current_frame = 0
-        self._frame_cache = OrderedDict()
+        self._frame_buffer = {}       # index -> (points, intensities); sliding window
+        self._pending_render = None   # index awaited for a stalled (buffering) render
         self._signal_series = {}
         self._playback_seeded = False
+        self._prefetch_thread = None
+        self._prefetcher = None
         self._play_timer = QTimer(self)
         self._play_timer.timeout.connect(self._advance_frame)
         self._signal_plot = None
@@ -1276,23 +1277,45 @@ class Workspace3D(BaseTab):
         except Exception:
             self._signal_plot = None
 
-    def browse_folder(self):
-        """Pick a folder of per-frame .h5 files and start folder playback."""
-        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+    def _selected_tree_folder(self):
+        """Return the folder path selected in the Data Structure tree, or None.
 
-        s = QSettings("DashPVA", "Workbench")
-        start_dir = s.value("last_3d_folder", "", type=str)
-        folder = QFileDialog.getExistingDirectory(self, "Select folder of 3D frame files", start_dir)
+        Walks up from the current item to a ``folder_section`` (its folder path),
+        or a ``file_root`` (its containing directory).
+        """
+        import os
+        tree = getattr(self.main_window, 'tree_data', None)
+        if tree is None:
+            return None
+        item = tree.currentItem()
+        while item is not None:
+            item_type = item.data(0, Qt.UserRole + 2)
+            path = item.data(0, Qt.UserRole + 1)
+            if item_type == "folder_section" and path and os.path.isdir(path):
+                return path
+            if item_type == "file_root" and path and os.path.isfile(path):
+                return os.path.dirname(path)
+            item = item.parent()
+        return None
+
+    def browse_folder(self):
+        """Load the folder selected in the Data Structure tree and start playback."""
+        from PyQt5.QtWidgets import QMessageBox
+
+        folder = self._selected_tree_folder()
         if not folder:
+            QMessageBox.warning(
+                self, "Folder Playback",
+                "Select a folder (or a file inside one) in the Data Structure tree first.")
             return
-        s.setValue("last_3d_folder", folder)
         files = natsorted({str(p) for p in Path(folder).glob('*.h5')}
                           | {str(p) for p in Path(folder).glob('*.hdf5')})
         if not files:
             QMessageBox.warning(self, "Folder Playback", "No .h5/.hdf5 files found in that folder.")
             return
         self._frame_files = list(files)
-        self._frame_cache.clear()
+        self._frame_buffer = {}
+        self._pending_render = None
         self._current_frame = 0
         self._playback_seeded = False
         try:
@@ -1303,10 +1326,73 @@ class Workspace3D(BaseTab):
             self.slider_frame.blockSignals(False)
         except Exception:
             pass
+        # Reveal the playback dock now that a folder is loaded.
+        try:
+            dock = getattr(self.main_window, 'playback_3d_dock', None)
+            if dock is not None:
+                dock.show()
+                dock.raise_()
+        except Exception:
+            pass
         self._populate_signal_dropdown(files[0])
-        self._load_frame_signals(files)
+        self._load_frame_signals(files)      # quick scalar pass (cheap, no RSM)
+        self._start_prefetcher(files)        # stream clouds in the background
+        # Stay paused; let the background thread buffer frame 0 and paint it when
+        # ready (no synchronous compute, no auto-play).
         self._render_frame(0, reset_camera=True)
         self._on_signal_changed()
+
+    def _start_prefetcher(self, files):
+        """(Re)start the background frame-loader thread for `files`."""
+        from PyQt5.QtCore import QThread
+
+        from dashpva.utils.buffers import FramePrefetcher
+        self._stop_prefetcher()
+        self._prefetch_thread = QThread(self)
+        self._prefetcher = FramePrefetcher(files)
+        self._prefetcher.moveToThread(self._prefetch_thread)
+        self._prefetch_thread.started.connect(self._prefetcher.run)
+        self._prefetcher.frame_loaded.connect(self._on_frame_loaded)
+        self._prefetcher.finished.connect(self._prefetch_thread.quit)
+        self._prefetch_thread.start()
+
+    def _stop_prefetcher(self):
+        try:
+            if self._prefetcher is not None:
+                self._prefetcher.stop()
+            if self._prefetch_thread is not None:
+                self._prefetch_thread.quit()
+                self._prefetch_thread.wait(2000)
+        except Exception:
+            pass
+        self._prefetcher = None
+        self._prefetch_thread = None
+
+    def _request_window(self, center):
+        """Ask the prefetcher to load the frames around `center` that aren't
+        buffered yet (target-first, then forward, then backward) so a jump
+        computes its frame first and buffers forward. Buffered frames are kept
+        in memory (no eviction) so revisiting is instant."""
+        n = len(self._frame_files)
+        if n == 0:
+            return
+        ahead = int(getattr(app_settings, 'SLICE_PLAYBACK_BUFFER_AHEAD', 40))
+        behind = int(getattr(app_settings, 'SLICE_PLAYBACK_BUFFER_BEHIND', 10))
+        lo = max(0, center - behind)
+        hi = min(n - 1, center + ahead)
+        missing = [i for i in range(center, hi + 1) if i not in self._frame_buffer]
+        missing += [i for i in range(center - 1, lo - 1, -1) if i not in self._frame_buffer]
+        if self._prefetcher is not None and missing:
+            self._prefetcher.request(missing)
+
+    def _on_frame_loaded(self, index, pts, ints):
+        """Slot (UI thread): a background-loaded frame arrived."""
+        if not (0 <= index < len(self._frame_files)):
+            return
+        self._frame_buffer[index] = (pts, ints)
+        if index == self._pending_render:
+            self._pending_render = None
+            self._paint_frame(index, pts, ints)
 
     def _populate_signal_dropdown(self, sample_file):
         from dashpva.utils.hdf5_loader import HDF5Loader
@@ -1321,7 +1407,8 @@ class Workspace3D(BaseTab):
             pass
 
     def _load_frame_signals(self, files):
-        """One pass over the folder reading each frame's scalar signals."""
+        """Quick folder pass reading each frame's scalar signals (cheap, no RSM)
+        for the 1D playback plot. The heavy clouds stream in the background."""
         from PyQt5.QtWidgets import QApplication, QProgressDialog
 
         from dashpva.utils.hdf5_loader import HDF5Loader
@@ -1330,7 +1417,8 @@ class Workspace3D(BaseTab):
         if not names:
             return
         loader = HDF5Loader()
-        progress = QProgressDialog("Reading frame signals…", "Cancel", 0, len(files), self)
+        n_files = len(files)
+        progress = QProgressDialog("Reading frame signals…", "Cancel", 0, n_files, self)
         progress.setWindowTitle("Folder Playback")
         progress.setWindowModality(Qt.WindowModal)
         progress.setMinimumDuration(0)
@@ -1341,44 +1429,55 @@ class Workspace3D(BaseTab):
                 break
             for n in names:
                 self._signal_series[n].append(loader.read_frame_scalar(path, n))
-        progress.setValue(len(files))
+        progress.setValue(n_files)
         for n in list(self._signal_series.keys()):
             self._signal_series[n] = np.array(
                 [np.nan if v is None else v for v in self._signal_series[n]], dtype=float)
 
-    def _load_frame_cloud(self, path):
-        if path in self._frame_cache:
-            self._frame_cache.move_to_end(path)
-            return self._frame_cache[path]
+    def _load_frame_cloud(self, index):
+        """Synchronous cloud load for a frame index (used for the first frame and
+        as a fallback); the background prefetcher handles the rest."""
+        cached = self._frame_buffer.get(index)
+        if cached is not None:
+            return cached
         from dashpva.utils.rsm_converter import RSMConverter
-        points, intensities, _num, _shape = RSMConverter().load_h5_to_3d(path)
-        pts = np.asarray(points, dtype=float)
-        ints = np.asarray(intensities, dtype=float).reshape(-1)
-        self._frame_cache[path] = (pts, ints)
-        cap = max(1, int(getattr(app_settings, 'SLICE_FRAME_FILE_CACHE', 2)))
-        while len(self._frame_cache) > cap:
-            self._frame_cache.popitem(last=False)
-        return pts, ints
+        points, intensities, _num, _shape = RSMConverter().load_h5_to_3d(self._frame_files[index])
+        return np.asarray(points, dtype=float), np.asarray(intensities, dtype=float).reshape(-1)
 
     def _render_frame(self, index, reset_camera=False):
+        """Show frame `index`, rendering from the buffer or waiting on it.
+
+        Re-centers the prefetch window on `index` (target-first) so a jump to an
+        unbuffered frame computes that frame first, then buffers forward.
+        """
         if not self._frame_files:
             return
         index = max(0, min(int(index), len(self._frame_files) - 1))
         self._current_frame = index
-        path = self._frame_files[index]
-        try:
-            pts, ints = self._load_frame_cloud(path)
-        except Exception as e:
+        self._request_window(index)
+        cached = self._frame_buffer.get(index)
+        if cached is None:
+            # Not buffered yet: wait (pause & buffer). _on_frame_loaded paints it.
+            self._pending_render = index
             try:
-                self.main_window.update_status(f"Frame load error: {e}")
+                self.lbl_frame_counter.setText(f"Buffering {index + 1} / {len(self._frame_files)}…")
             except Exception:
                 pass
             return
+        self._pending_render = None
+        self._paint_frame(index, cached[0], cached[1], reset_camera=reset_camera)
+
+    def _paint_frame(self, index, pts, ints, reset_camera=False):
+        """Render an already-loaded frame and update the frame UI."""
+        self._current_frame = index
         if not self._playback_seeded:
             self._seed_playback_from(pts, ints)
             self._playback_seeded = True
             reset_camera = True
         self._render_cloud(pts, ints, reset_camera=reset_camera)
+        self._update_frame_ui(index)
+
+    def _update_frame_ui(self, index):
         try:
             self.slider_frame.blockSignals(True)
             self.slider_frame.setValue(index)
@@ -1387,7 +1486,7 @@ class Workspace3D(BaseTab):
             pass
         try:
             self.lbl_frame_counter.setText(f"{index + 1} / {len(self._frame_files)}")
-            self.lbl_frame_counter.setToolTip(os.path.basename(path))
+            self.lbl_frame_counter.setToolTip(os.path.basename(self._frame_files[index]))
         except Exception:
             pass
         try:
@@ -1446,16 +1545,43 @@ class Workspace3D(BaseTab):
             return
         self._raw_points = pts
         self._raw_intensities = ints
+        # Downsample the rendered cloud when the toggle is on (turned on during
+        # playback) so each frame renders fast enough for smooth video.
+        try:
+            downsample = self.rb_downsample_on.isChecked()
+        except Exception:
+            downsample = False
+        if downsample:
+            _MAX_VIEWER_PTS = 2_000_000
+            factor = max(1, int(getattr(app_settings, 'SLICE_PLAYBACK_DOWNSAMPLE', 4)))
+            stride = max(factor, len(ints) // _MAX_VIEWER_PTS)
+            if stride > 1:
+                pts = pts[::stride]
+                ints = ints[::stride]
         self._display_points = pts
         self._display_intensities = ints
+        # Honor the current H/K/L range filter so a user's selection persists
+        # across frames instead of resetting to the full cloud each frame.
+        render_pts, render_ints = pts, ints
+        try:
+            h0, h1 = self._h_min_spin.value(), self._h_max_spin.value()
+            k0, k1 = self._k_min_spin.value(), self._k_max_spin.value()
+            l0, l1 = self._l_min_spin.value(), self._l_max_spin.value()
+            m = ((pts[:, 0] >= h0) & (pts[:, 0] <= h1) &
+                 (pts[:, 1] >= k0) & (pts[:, 1] <= k1) &
+                 (pts[:, 2] >= l0) & (pts[:, 2] <= l1))
+            if m.any() and not m.all():
+                render_pts, render_ints = pts[m], ints[m]
+        except Exception:
+            pass
         try:
             actors = getattr(self.plotter, 'actors', {}) or {}
             if 'points' in actors:
                 self.plotter.remove_actor('points', reset_camera=False)
         except Exception:
             pass
-        mesh = pv.PolyData(pts)
-        mesh['intensity'] = ints
+        mesh = pv.PolyData(render_pts)
+        mesh['intensity'] = render_ints
         self.cloud_mesh_3d = mesh
         try:
             self.plotter.add_mesh(
@@ -1465,20 +1591,35 @@ class Workspace3D(BaseTab):
                 nan_opacity=0.0, show_edges=False)
         except Exception:
             return
+        # Pin the new actor's color range to the current controls (cheap) so
+        # colors stay fixed across frames without a full intensity re-render.
         try:
-            self.plotter.show_bounds(mesh=mesh, xtitle='H Axis', ytitle='K Axis',
-                                     ztitle='L Axis', bounds=mesh.bounds)
+            clim = (float(self.sb_min_intensity_3d.value()),
+                    float(self.sb_max_intensity_3d.value()))
+            self.plotter.actors['points'].mapper.scalar_range = clim
         except Exception:
-            pass
+            clim = None
+        # Redraw the axis only when the data bounds actually change.
+        bounds_key = tuple(round(float(x), 6) for x in mesh.bounds)
+        if reset_camera or bounds_key != getattr(self, '_last_axis_bounds', None):
+            try:
+                self.plotter.show_bounds(mesh=mesh, xtitle='H Axis', ytitle='K Axis',
+                                         ztitle='L Axis', bounds=mesh.bounds)
+                self._last_axis_bounds = bounds_key
+            except Exception:
+                pass
         if reset_camera:
             try:
                 self.plotter.reset_camera()
             except Exception:
                 pass
-        try:
-            self.update_intensity()
-        except Exception:
-            pass
+        # Re-sync intensity (scalar bars / LUTs) only when the range changed.
+        if reset_camera or clim != getattr(self, '_last_intensity_clim', None):
+            try:
+                self.update_intensity()
+            except Exception:
+                pass
+            self._last_intensity_clim = clim
         try:
             self.plotter.render()
         except Exception:
@@ -1493,13 +1634,26 @@ class Workspace3D(BaseTab):
     def _advance_frame(self):
         if not self._frame_files:
             return
-        nxt = self._current_frame + 1
-        if nxt >= len(self._frame_files):
-            nxt = 0
-        self._render_frame(nxt)
+        nxt = (self._current_frame + 1) % len(self._frame_files)
+        self._request_window(nxt)
+        cached = self._frame_buffer.get(nxt)
+        if cached is None:
+            # Pause & buffer: stay on the current frame; the timer keeps ticking
+            # and resumes once `nxt` finishes loading.
+            try:
+                self.lbl_frame_counter.setText(f"Buffering {nxt + 1} / {len(self._frame_files)}…")
+            except Exception:
+                pass
+            return
+        self._paint_frame(nxt, cached[0], cached[1])
 
     def toggle_play(self, checked):
         if checked and self._frame_files:
+            # Downsample while playing so frames render fast enough for smooth video.
+            try:
+                self.rb_downsample_on.setChecked(True)
+            except Exception:
+                pass
             fps = max(1, int(self.sb_fps.value()))
             self._play_timer.start(int(1000 / fps))
             try:

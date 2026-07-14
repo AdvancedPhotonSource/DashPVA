@@ -187,39 +187,39 @@ class Controls2D:
                     self.main.play_timer = QTimer(self.main)
                     try:
                         self.main.play_timer.timeout.connect(self.main._advance_frame_playback)
-                        print("[PLAYBACK][Controls2D] Created play_timer and wired timeout")
+                        self.main.logger.debug("Created play_timer and wired timeout")
                     except Exception as e:
-                        print(f"[PLAYBACK][Controls2D] ERROR wiring timer: {e}")
+                        self.main.logger.debug(f"ERROR wiring timer: {e}")
 
                 if hasattr(self.main, 'btn_play'):
                     try:
                         self.main.btn_play.clicked.connect(self.main.start_playback)
-                        print("[PLAYBACK][Controls2D] Wired btn_play -> start_playback")
+                        self.main.logger.debug("Wired btn_play -> start_playback")
                     except Exception as e:
-                        print(f"[PLAYBACK][Controls2D] ERROR wiring btn_play: {e}")
+                        self.main.logger.debug(f"ERROR wiring btn_play: {e}")
                 else:
-                    print("[PLAYBACK][Controls2D] btn_play not found on main")
+                    self.main.logger.debug("btn_play not found on main")
 
                 if hasattr(self.main, 'btn_pause'):
                     try:
                         self.main.btn_pause.clicked.connect(self.main.pause_playback)
-                        print("[PLAYBACK][Controls2D] Wired btn_pause -> pause_playback")
+                        self.main.logger.debug("Wired btn_pause -> pause_playback")
                     except Exception as e:
-                        print(f"[PLAYBACK][Controls2D] ERROR wiring btn_pause: {e}")
+                        self.main.logger.debug(f"ERROR wiring btn_pause: {e}")
                 else:
-                    print("[PLAYBACK][Controls2D] btn_pause not found on main")
+                    self.main.logger.debug("btn_pause not found on main")
 
                 if hasattr(self.main, 'sb_fps'):
                     try:
                         self.main.sb_fps.valueChanged.connect(self.main.on_fps_changed)
-                        print("[PLAYBACK][Controls2D] Wired sb_fps -> on_fps_changed")
+                        self.main.logger.debug("Wired sb_fps -> on_fps_changed")
                     except Exception as e:
-                        print(f"[PLAYBACK][Controls2D] ERROR wiring sb_fps: {e}")
+                        self.main.logger.debug(f"ERROR wiring sb_fps: {e}")
                 else:
-                    print("[PLAYBACK][Controls2D] sb_fps not found on main")
+                    self.main.logger.debug("sb_fps not found on main")
             except Exception as e:
                 try:
-                    print(f"[PLAYBACK][Controls2D] ERROR in playback wiring block: {e}")
+                    self.main.logger.debug(f"ERROR in playback wiring block: {e}")
                 except Exception:
                     pass
 

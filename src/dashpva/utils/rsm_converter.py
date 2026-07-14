@@ -221,9 +221,7 @@ class RSMConverter:
             if found_path:
                 ds = f[found_path]
                 return ds.asstr()[:] if ds.dtype == "O" else ds[:]
-            else:
-                print(f"Key '{target_key}' not found in file.")
-                return None
+            return None
 
     # Internal helpers
     def _first_str(self, ds) -> str:

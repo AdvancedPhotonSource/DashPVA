@@ -1197,7 +1197,7 @@ class HDF5Loader(LogMixin):
                 for key in ('intensity', 'comx', 'comy'):
                     if h5f.get(self.hdf5_structure[key]) is not None:
                         names.append(key)
-                ca = h5f.get('entry/data/metadata/ca')
+                ca = h5f.get('entry/data/metadata/ca') or h5f.get('entry/metadata/ca')
                 if isinstance(ca, h5py.Group):
                     names += [f"ca/{k}" for k in ca.keys()]
         except Exception as e:
@@ -1208,17 +1208,24 @@ class HDF5Loader(LogMixin):
         """Read one scalar for ``name`` from a single frame file (mean of arrays)."""
         try:
             if name.startswith('motor/'):
-                path = f"{self.hdf5_structure['motor_positions']}/{name.split('/', 1)[1]}"
+                key = name.split('/', 1)[1]
+                candidates = [f"{self.hdf5_structure['motor_positions']}/{key}",
+                              f"entry/metadata/motor_positions/{key}"]
             elif name.startswith('ca/'):
-                path = f"entry/data/metadata/ca/{name.split('/', 1)[1]}"
+                key = name.split('/', 1)[1]
+                candidates = [f"entry/data/metadata/ca/{key}", f"entry/metadata/ca/{key}"]
             elif name in ('intensity', 'comx', 'comy'):
-                path = self.hdf5_structure[name]
+                candidates = [self.hdf5_structure[name]]
             elif name == 'motor_positions':
-                path = self.hdf5_structure['motor_positions']
+                candidates = [self.hdf5_structure['motor_positions']]
             else:
-                path = name
+                candidates = [name]
             with h5py.File(file_path, 'r') as h5f:
-                dset = h5f.get(path)
+                dset = None
+                for c in candidates:
+                    dset = h5f.get(c)
+                    if dset is not None:
+                        break
                 if dset is None:
                     return None
                 arr = np.asarray(dset[()], dtype=float).reshape(-1)

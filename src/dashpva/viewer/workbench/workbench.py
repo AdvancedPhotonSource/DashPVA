@@ -49,6 +49,7 @@ from dashpva.viewer.workbench.docks.data_structure import DataStructureDock
 from dashpva.viewer.workbench.docks.dock_win import DockWinDock
 from dashpva.viewer.workbench.docks.info_2d_dock import Info2DDock
 from dashpva.viewer.workbench.docks.info_3d_dock import Info3DDock
+from dashpva.viewer.workbench.docks.playback_3d import Playback3DDock
 from dashpva.viewer.workbench.docks.roi_calc import ROICalcDock
 from dashpva.viewer.workbench.docks.slice_plane import SlicePlaneDock
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager
@@ -115,6 +116,14 @@ class WorkbenchWindow(BaseWindow):
         except Exception:
             self.slice_2d_dock = None
             self.tab_slice_2d = None
+        # 3D Playback dock — reparent the workspace's playback group into a dock
+        # so all Workspace3D playback-widget references keep working unchanged.
+        try:
+            self.playback_3d_dock = Playback3DDock(
+                main_window=self, content=getattr(self.tab_3d, 'gb_playback', None),
+                segment_name="3d", dock_area=Qt.RightDockWidgetArea, show=False)
+        except Exception:
+            self.playback_3d_dock = None
         # Slice Controls dock (left, under Data Structure)
         try:
             self.slice_plane_dock = SlicePlaneDock(main_window=self, segment_name="3d", dock_area=Qt.LeftDockWidgetArea, show=False)
@@ -960,7 +969,7 @@ class WorkbenchWindow(BaseWindow):
                     self._last_hist_levels = None
                     self._histogram_poll_timer.start()
                     try:
-                        print("[DEBUG] Histogram polling timer started (10 Hz)")
+                        self.logger.debug("Histogram polling timer started (10 Hz)")
                         # Reduce noise: debug log instead of user-facing status
                         if hasattr(self, 'logger'):
                             self.logger.debug("Histogram polling enabled (10 Hz)")
@@ -1205,29 +1214,29 @@ class WorkbenchWindow(BaseWindow):
                     self.play_timer = QTimer(self)
                     try:
                         self.play_timer.timeout.connect(self._advance_frame_playback)
-                        print("[PLAYBACK] Created play_timer and wired timeout")
+                        self.logger.debug("Created play_timer and wired timeout")
                     except Exception as e:
-                        print(f"[PLAYBACK] ERROR wiring timer: {e}")
+                        self.logger.debug(f"ERROR wiring timer: {e}")
 
                 # Wire controls if present in UI
                 if hasattr(self, 'btn_play'):
                     try:
                         self.btn_play.clicked.connect(self.start_playback)
-                        print("[PLAYBACK] Wired btn_play -> start_playback")
+                        self.logger.debug("Wired btn_play -> start_playback")
                     except Exception as e:
-                        print(f"[PLAYBACK] ERROR wiring btn_play: {e}")
+                        self.logger.debug(f"ERROR wiring btn_play: {e}")
                 if hasattr(self, 'btn_pause'):
                     try:
                         self.btn_pause.clicked.connect(self.pause_playback)
-                        print("[PLAYBACK] Wired btn_pause -> pause_playback")
+                        self.logger.debug("Wired btn_pause -> pause_playback")
                     except Exception as e:
-                        print(f"[PLAYBACK] ERROR wiring btn_pause: {e}")
+                        self.logger.debug(f"ERROR wiring btn_pause: {e}")
                 if hasattr(self, 'sb_fps'):
                     try:
                         self.sb_fps.valueChanged.connect(self.on_fps_changed)
-                        print("[PLAYBACK] Wired sb_fps -> on_fps_changed")
+                        self.logger.debug("Wired sb_fps -> on_fps_changed")
                     except Exception as e:
-                        print(f"[PLAYBACK] ERROR wiring sb_fps: {e}")
+                        self.logger.debug(f"ERROR wiring sb_fps: {e}")
                 # cb_auto_replay is read in _advance_frame_playback; no signal wiring needed
 
                 # Default disabled; enabled when 3D data with >3 frames is loaded
@@ -1837,10 +1846,10 @@ class WorkbenchWindow(BaseWindow):
     def visualize_selected_dataset(self):
         """Load and plot the selected dataset; clear/render ROIs depending on dataset type (image vs ROI)."""
         if not self.current_file_path or not self.selected_dataset_path:
-            print("[DEBUG] visualize_selected_dataset: no current_file_path or selected_dataset_path")
+            self.logger.debug("visualize_selected_dataset: no current_file_path or selected_dataset_path")
             return
         try:
-            print(f"[DEBUG] visualize_selected_dataset: selected_dataset_path={self.selected_dataset_path}")
+            self.logger.debug(f"visualize_selected_dataset: selected_dataset_path={self.selected_dataset_path}")
             sel_path = str(self.selected_dataset_path)
             is_image_data = sel_path.endswith("/entry/data/data") or sel_path == "/entry/data/data" or sel_path.endswith("entry/data/data")
             is_roi_data = sel_path.startswith("/entry/data/rois") or "/entry/data/rois/" in sel_path
@@ -1854,12 +1863,12 @@ class WorkbenchWindow(BaseWindow):
             if is_image_data:
                 # Load original image dataset via HDF5Loader (preferred)
                 valid = self.h5loader.validate_file(self.current_file_path)
-                print(f"[DEBUG] HDF5Loader.validate_file -> {valid}")
+                self.logger.debug(f"HDF5Loader.validate_file -> {valid}")
                 if not valid:
                     self.update_status(f"HDF5 validation failed: {self.h5loader.get_last_error()}")
                     return
                 volume, vol_shape = self.h5loader.load_h5_volume_3d(self.current_file_path)
-                print(f"[DEBUG] HDF5Loader.load_h5_volume_3d shape={getattr(volume,'shape',None)}")
+                self.logger.debug(f"HDF5Loader.load_h5_volume_3d shape={getattr(volume,'shape',None)}")
                 if volume is None or volume.size == 0:
                     self.update_status("No data in /entry/data/data")
                     return
@@ -1877,7 +1886,7 @@ class WorkbenchWindow(BaseWindow):
                 # When clicking on an ROI dataset, clear existing ROI boxes and render the ROI dataset itself as the image
                 with h5py.File(self.current_file_path, 'r') as h5f:
                     exists = self.selected_dataset_path in h5f
-                    print(f"[DEBUG] ROI dataset exists in file? {exists}")
+                    self.logger.debug(f"ROI dataset exists in file? {exists}")
                     if not exists:
                         self.update_status("ROI dataset not found")
                         return
@@ -1901,17 +1910,17 @@ class WorkbenchWindow(BaseWindow):
                 # Fallback: open generic dataset directly
                 with h5py.File(self.current_file_path, 'r') as h5file:
                     exists = self.selected_dataset_path in h5file
-                    print(f"[DEBUG] Dataset exists in file? {exists}")
+                    self.logger.debug(f"Dataset exists in file? {exists}")
                     if not exists:
                         self.update_status("Dataset not found")
                         return
                     dataset = h5file[self.selected_dataset_path]
-                    print(f"[DEBUG] Dataset type={type(dataset)} shape={getattr(dataset,'shape',None)}")
+                    self.logger.debug(f"Dataset type={type(dataset)} shape={getattr(dataset,'shape',None)}")
                     if not isinstance(dataset, h5py.Dataset):
                         self.update_status("Selected item is not a dataset")
                         return
                     data = self.load_dataset_robustly(dataset)
-                    print(f"[DEBUG] load_dataset_robustly returned shape={getattr(data,'shape',None)}")
+                    self.logger.debug(f"load_dataset_robustly returned shape={getattr(data,'shape',None)}")
                     if data is None:
                         return
                 if data.ndim >= 2 and np.issubdtype(data.dtype, np.number):
@@ -3728,8 +3737,8 @@ class WorkbenchWindow(BaseWindow):
         """
         # Get the full path stored in the item
         full_path = item.data(0, 32)  # Qt.UserRole = 32
-        print(f"[DEBUG] Double-clicked item text: {item.text(0)}")
-        print(f"[DEBUG] Double-clicked item full_path (Qt.UserRole=32): {full_path}")
+        self.logger.debug(f"Double-clicked item text: {item.text(0)}")
+        self.logger.debug(f"Double-clicked item full_path (Qt.UserRole=32): {full_path}")
         # Detect file root items to auto-open default dataset
         try:
             item_type = item.data(0, Qt.UserRole + 2)
@@ -3745,15 +3754,15 @@ class WorkbenchWindow(BaseWindow):
             self._ensure_current_file_from_item(item)
             # Store selected dataset path
             self.selected_dataset_path = full_path
-            print(f"[DEBUG] selected_dataset_path set: {self.selected_dataset_path}")
+            self.logger.debug(f"selected_dataset_path set: {self.selected_dataset_path}")
 
             # Load and visualize the dataset
             try:
                 self.start_dataset_load()
-                print("[DEBUG] visualize_selected_dataset call completed")
+                self.logger.debug("visualize_selected_dataset call completed")
             except Exception as e:
                 self.update_status(f"Error in double-click load: {e}")
-                print(f"[DEBUG] Exception in double-click load: {e}")
+                self.logger.debug(f"Exception in double-click load: {e}")
         else:
             # If this is a file root, branch by file type
             if item_type == "file_root":
@@ -3761,14 +3770,14 @@ class WorkbenchWindow(BaseWindow):
                 self._ensure_current_file_from_item(item)
                 fp = getattr(self, 'current_file_path', None)
                 if fp and self._is_hdf5_path(fp):
-                    print("[DEBUG] Double-clicked HDF5 file root; attempting to load default dataset '/entry/data/data'")
+                    self.logger.debug("Double-clicked HDF5 file root; attempting to load default dataset '/entry/data/data'")
                     # Set the default dataset path
                     self.selected_dataset_path = '/entry/data/data'
                     # Verify the dataset exists; if not, show message
                     try:
                         with h5py.File(fp, 'r') as h5f:
                             exists = self.selected_dataset_path in h5f
-                        print(f"[DEBUG] Default dataset exists? {exists}")
+                        self.logger.debug(f"Default dataset exists? {exists}")
                         if not exists:
                             self.update_status("Default dataset '/entry/data/data' not found in file")
                             return
@@ -3778,11 +3787,11 @@ class WorkbenchWindow(BaseWindow):
                     # Visualize using existing logic (will use HDF5Loader for image data)
                     try:
                         self.visualize_selected_dataset()
-                        print("[DEBUG] Default dataset visualization completed")
+                        self.logger.debug("Default dataset visualization completed")
                     except Exception as e:
                         self.update_status(f"Error loading default dataset: {e}")
                 elif fp and self._is_image_path(fp):
-                    print("[DEBUG] Double-clicked image file root; loading image")
+                    self.logger.debug("Double-clicked image file root; loading image")
                     data = self._load_image_file(fp)
                     if data is None or int(getattr(data, 'size', 0)) == 0:
                         self.update_status("Failed to load image", level='error')
@@ -3807,14 +3816,14 @@ class WorkbenchWindow(BaseWindow):
                         pass
                 else:
                     # Unknown type: toggle expand/collapse
-                    print("[DEBUG] Double-clicked unknown file root. Toggling expand/collapse.")
+                    self.logger.debug("Double-clicked unknown file root. Toggling expand/collapse.")
                     if item.isExpanded():
                         item.setExpanded(False)
                     else:
                         item.setExpanded(True)
             else:
                 # Non-file root (group or child): toggle expand/collapse
-                print("[DEBUG] Double-clicked a non-dataset (root/group/child). Toggling expand/collapse.")
+                self.logger.debug("Double-clicked a non-dataset (root/group/child). Toggling expand/collapse.")
                 if item.isExpanded():
                     item.setExpanded(False)
                 else:
@@ -4340,7 +4349,7 @@ class WorkbenchWindow(BaseWindow):
             # Only play if more than 1 frame
             num_frames = self.current_2d_data.shape[0]
             if num_frames <= 1:
-                print(f"[PLAYBACK] start_playback: num_frames={num_frames} -> not enough frames to play")
+                self.logger.debug(f"start_playback: num_frames={num_frames} -> not enough frames to play")
                 return
             # Set timer interval from FPS
             fps = 2
@@ -4350,7 +4359,7 @@ class WorkbenchWindow(BaseWindow):
             except Exception:
                 fps = 2
             interval_ms = int(1000 / max(1, fps))
-            print(f"[PLAYBACK] start_playback: num_frames={num_frames}, fps={fps}, interval_ms={interval_ms}")
+            self.logger.debug(f"start_playback: num_frames={num_frames}, fps={fps}, interval_ms={interval_ms}")
             # Reset frame index to 0 at playback start to avoid stale index from previous data
             try:
                 if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
@@ -4362,11 +4371,11 @@ class WorkbenchWindow(BaseWindow):
                     self.play_timer.setInterval(interval_ms)
                     self.play_timer.start()
                     try:
-                        print(f"[PLAYBACK] timer state: {'active' if self.play_timer.isActive() else 'inactive'}")
+                        self.logger.debug(f"timer state: {'active' if self.play_timer.isActive() else 'inactive'}")
                     except Exception:
                         pass
                 except Exception as e:
-                    print(f"[PLAYBACK] ERROR starting timer: {e}")
+                    self.logger.debug(f"ERROR starting timer: {e}")
             # Update control states
             try:
                 self.btn_play.setEnabled(False)
@@ -4416,7 +4425,7 @@ class WorkbenchWindow(BaseWindow):
                 return
             num_frames = self.current_2d_data.shape[0]
             if num_frames <= 1:
-                print("[PLAYBACK] tick: num_frames<=1 -> pausing")
+                self.logger.debug("tick: num_frames<=1 -> pausing")
                 self.pause_playback()
                 return
             idx = 0
@@ -4436,19 +4445,19 @@ class WorkbenchWindow(BaseWindow):
                     auto = bool(self.cb_auto_replay.isChecked()) if hasattr(self, 'cb_auto_replay') else False
                 except Exception:
                     auto = False
-                print(f"[PLAYBACK] tick: idx={idx}, next_idx={next_idx} reached end, auto_replay={auto}")
+                self.logger.debug(f"tick: idx={idx}, next_idx={next_idx} reached end, auto_replay={auto}")
                 if auto:
                     next_idx = 0
                 else:
                     self.pause_playback()
                     return
-            print(f"[PLAYBACK] tick: advancing to next_idx={next_idx} of num_frames={num_frames}")
+            self.logger.debug(f"tick: advancing to next_idx={next_idx} of num_frames={num_frames}")
             # Set via spinbox to reuse existing update logic
             if hasattr(self, 'frame_spinbox'):
                 try:
                     self.frame_spinbox.setValue(next_idx)
                 except Exception as e:
-                    print(f"[PLAYBACK] ERROR setting frame_spinbox: {e}")
+                    self.logger.debug(f"ERROR setting frame_spinbox: {e}")
         except Exception:
             pass
 

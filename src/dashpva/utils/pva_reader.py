@@ -1,3 +1,4 @@
+import logging
 from collections import deque
 
 import bitshuffle
@@ -9,6 +10,8 @@ from epics import caget, camonitor, camonitor_clear
 from PyQt5.QtCore import QObject, pyqtSignal
 
 import dashpva.settings as app_settings
+
+logger = logging.getLogger(__name__)
 
 
 class PVAReader(QObject):
@@ -515,18 +518,18 @@ class PVAReader(QObject):
 ########################### Start and Stop Channel Monitors ##########################    
     def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:
         """CA monitor callback for FLAG_PV — detects scan stop even when PVA frames stop arriving."""
-        print(f'[DEBUG] CA flag callback: {pvname}={value!r}  is_caching={self.is_caching}')
+        logger.debug(f'CA flag callback: {pvname}={value!r}  is_caching={self.is_caching}')
         if value == self.STOP_SCAN and self.is_caching:
             self.is_caching = False
             self.scan_state_changed.emit(False)
             self.reader_scan_complete.emit()
-            print('[DEBUG] CA flag: Scan STOPPED — emitting reader_scan_complete')
+            logger.debug('CA flag: Scan STOPPED — emitting reader_scan_complete')
         elif value == self.START_SCAN and not self.is_caching:
             self.is_caching = True
             self.is_scan_complete = False
             self.scan_state_changed.emit(True)
             self.cached_ca = {}
-            print('[DEBUG] CA flag: Scan STARTED')
+            logger.debug('CA flag: Scan STARTED')
 
     def start_channel_monitor(self, callback=None) -> None:
         """
