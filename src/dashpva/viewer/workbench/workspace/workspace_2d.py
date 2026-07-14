@@ -1239,6 +1239,34 @@ class Workspace2D(BaseTab):
         except Exception:
             pass
 
+    def _hkl_at_pixel(self, x: int, y: int):
+        """Return (H, K, L) at pixel (x, y) on the current frame, or (None, None, None)."""
+        try:
+            qxg = getattr(self, '_qx_grid', None)
+            qyg = getattr(self, '_qy_grid', None)
+            qzg = getattr(self, '_qz_grid', None)
+            if qxg is None or qyg is None or qzg is None:
+                return None, None, None
+            if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
+                idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
+                if 0 <= idx < qxg.shape[0]:
+                    return float(qxg[idx, y, x]), float(qyg[idx, y, x]), float(qzg[idx, y, x])
+            elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
+                return float(qxg[y, x]), float(qyg[y, x]), float(qzg[y, x])
+        except Exception:
+            pass
+        return None, None, None
+
+    def _update_hover_readout(self, x: int, y: int, intensity: float):
+        """Push (pixel, intensity, HKL) to the 2D Info dock Mouse section."""
+        H_val, K_val, L_val = self._hkl_at_pixel(x, y)
+        try:
+            dock = getattr(self.main_window, 'info_2d_dock', None)
+            if dock is not None:
+                dock.set_mouse_info((x, y), intensity, H_val, K_val, L_val)
+        except Exception:
+            pass
+
     def _update_hover_text_at(self, x: int, y: int):
         """Update hover crosshair and tooltip for given pixel coordinates on current frame."""
         try:
@@ -1261,58 +1289,8 @@ class Workspace2D(BaseTab):
                 intensity = float(frame[x, y])
             except Exception:
                 intensity = float('nan')
-            # HKL text
-            try:
-                qxg = getattr(self, '_qx_grid', None)
-                qyg = getattr(self, '_qy_grid', None)
-                qzg = getattr(self, '_qz_grid', None)
-                if qxg is not None and qyg is not None and qzg is not None:
-                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
-                        idx = 0
-                        try:
-                            idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
-                        except Exception:
-                            idx = 0
-                        if 0 <= idx < qxg.shape[0]:
-                            float(qxg[idx, y, x])
-                            float(qyg[idx, y, x])
-                            float(qzg[idx, y, x])
-                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
-                        float(qxg[y, x])
-                        float(qyg[y, x])
-                        float(qzg[y, x])
-            except Exception:
-                pass
-            # Tooltip text removed; keep crosshair only
-            try:
-                if hasattr(self, '_hover_text') and self._hover_text is not None:
-                    self._hover_text.setVisible(False)
-            except Exception:
-                pass
-            # Update 2D Info dock Mouse section even during playback
-            try:
-                if hasattr(self.main_window, 'info_2d_dock') and self.main_window.info_2d_dock is not None:
-                    H_val = K_val = L_val = None
-                    try:
-                        qxg = getattr(self, '_qx_grid', None)
-                        qyg = getattr(self, '_qy_grid', None)
-                        qzg = getattr(self, '_qz_grid', None)
-                        if qxg is not None and qyg is not None and qzg is not None:
-                            if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
-                                idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
-                                if 0 <= idx < qxg.shape[0]:
-                                    H_val = float(qxg[idx, y, x])
-                                    K_val = float(qyg[idx, y, x])
-                                    L_val = float(qzg[idx, y, x])
-                            elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
-                                H_val = float(qxg[y, x])
-                                K_val = float(qyg[y, x])
-                                L_val = float(qzg[y, x])
-                    except Exception:
-                        H_val = K_val = L_val = None
-                    self.main_window.info_2d_dock.set_mouse_info((x, y), intensity, H_val, K_val, L_val)
-            except Exception:
-                pass
+            # Update the 2D Info dock at this pixel
+            self._update_hover_readout(x, y, intensity)
         except Exception:
             pass
 
@@ -1571,61 +1549,8 @@ class Workspace2D(BaseTab):
                 intensity = float(frame[x, y])
             except Exception:
                 intensity = float('nan')
-            # HKL from cached q-grids if present
-            try:
-                qxg = getattr(self, '_qx_grid', None)
-                qyg = getattr(self, '_qy_grid', None)
-                qzg = getattr(self, '_qz_grid', None)
-                if qxg is not None and qyg is not None and qzg is not None:
-                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
-                        idx = 0
-                        try:
-                            if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled():
-                                idx = int(self.frame_spinbox.value())
-                        except Exception:
-                            idx = 0
-                        if 0 <= idx < qxg.shape[0]:
-                            float(qxg[idx, y, x])
-                            float(qyg[idx, y, x])
-                            float(qzg[idx, y, x])
-                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
-                        float(qxg[y, x])
-                        float(qyg[y, x])
-                        float(qzg[y, x])
-            except Exception:
-                pass
-            # Update tooltip text near cursor
-            try:
-                if hasattr(self, '_hover_text') and self._hover_text is not None:
-                    # Hide hover text; keep crosshair only
-                    self._hover_text.setVisible(False)
-                    # Update 2D Info dock Mouse section
-                    try:
-                        if hasattr(self.main_window, 'info_2d_dock') and self.main_window.info_2d_dock is not None:
-                            # Derive H,K,L values again here for precision
-                            H_val = K_val = L_val = None
-                            try:
-                                qxg = getattr(self, '_qx_grid', None)
-                                qyg = getattr(self, '_qy_grid', None)
-                                qzg = getattr(self, '_qz_grid', None)
-                                if qxg is not None and qyg is not None and qzg is not None:
-                                    if qxg.ndim == 3 and qyg.ndim == 3 and qzg.ndim == 3:
-                                        idx = int(self.frame_spinbox.value()) if hasattr(self, 'frame_spinbox') and self.frame_spinbox.isEnabled() else 0
-                                        if 0 <= idx < qxg.shape[0]:
-                                            H_val = float(qxg[idx, y, x])
-                                            K_val = float(qyg[idx, y, x])
-                                            L_val = float(qzg[idx, y, x])
-                                    elif qxg.ndim == 2 and qyg.ndim == 2 and qzg.ndim == 2:
-                                        H_val = float(qxg[y, x])
-                                        K_val = float(qyg[y, x])
-                                        L_val = float(qzg[y, x])
-                            except Exception:
-                                H_val = K_val = L_val = None
-                            self.main_window.info_2d_dock.set_mouse_info((x, y), intensity, H_val, K_val, L_val)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            # Update the 2D Info dock at this pixel
+            self._update_hover_readout(x, y, intensity)
         except Exception:
             pass
 
