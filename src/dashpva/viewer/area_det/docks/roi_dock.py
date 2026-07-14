@@ -75,11 +75,23 @@ class RoiDock(BaseDock):
         self.chk_enable_manual_roi.setToolTip(
             "Enable a movable/rotatable manual ROI with locally computed stats")
 
+        # Broadcast the Manual ROI stats (total/min/max/mean/sigma) as ONE PVA
+        # object at "{detector-prefix}:ManualROI:stats" so other tools (and the
+        # DashPVA BO objective picker) can subscribe. Opt-in; PVA-only.
+        self.chk_broadcast_manual_roi = QCheckBox("Broadcast as PV")
+        self.chk_broadcast_manual_roi.setObjectName("chk_broadcast_manual_roi")
+        self.chk_broadcast_manual_roi.setToolTip(
+            "Publish the Manual ROI stats (total/min/max/mean/sigma) as one PVA "
+            "object at '{prefix}:ManualROI:stats' (updates every frame). Enabling "
+            "this also enables the Manual ROI.")
+
         totals.addRow(self._roi_label_row(self.chk_show_roi1, self.lbl_ROI1), self.roi1_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi2, self.lbl_ROI2), self.roi2_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi3, self.lbl_ROI3), self.roi3_total_value)
         totals.addRow(self._roi_label_row(self.chk_show_roi4, self.lbl_ROI4), self.roi4_total_value)
         totals.addRow(self._roi_label_row(self.chk_enable_manual_roi, self.lbl_image_total), self.stats5_total_value)
+        # Broadcast toggle sits right under the Manual ROI row (attached to slot 5).
+        totals.addRow("", self.chk_broadcast_manual_roi)
         outer.addLayout(totals)
 
         self.lbl_roi_specific_stats = QLabel("ROI Specific Stats")

@@ -7,6 +7,13 @@ import time
 import numpy as np
 import pyqtgraph as pg
 import xrayutilities as xu
+
+try:
+    import pvaccess as pva
+    HAS_PVA = True
+except Exception:  # noqa: BLE001 - PVA server is optional (broadcast feature only)
+    pva = None
+    HAS_PVA = False
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
 from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
@@ -181,6 +188,10 @@ class DiffractionImageWindow(BaseWindow):
         self._manual_roi_geom = None
         self._manual_roi_last_frame = -1
         self._manual_roi_source = None
+        # Optional PVA broadcast of the Manual ROI stats (one struct object).
+        self._mroi_pva_server = None
+        self._mroi_pva_addr = None
+        self._mroi_pva_type = None
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
@@ -495,6 +506,9 @@ class DiffractionImageWindow(BaseWindow):
         self.chk_enable_manual_roi = self.roi_dock.chk_enable_manual_roi
         self.manual_roi_total_value = self.roi_dock.manual_roi_total_value
         self.chk_enable_manual_roi.stateChanged.connect(self._toggle_manual_roi)
+        self.chk_broadcast_manual_roi = self.roi_dock.chk_broadcast_manual_roi
+        self.chk_broadcast_manual_roi.stateChanged.connect(
+            self._toggle_manual_roi_broadcast)
 
         # Analysis dock widgets
         self.btn_analysis_window = self.analysis_dock.btn_analysis_window
@@ -1283,11 +1297,77 @@ class DiffractionImageWindow(BaseWindow):
         if sub is None or sub.size == 0 or not np.any(np.isfinite(sub)):
             return
         prefix = self.reader.pva_prefix
-        self.stats_data[f'{prefix}:ManualROI:Total_RBV'] = float(np.nansum(sub))
-        self.stats_data[f'{prefix}:ManualROI:MinValue_RBV'] = float(np.nanmin(sub))
-        self.stats_data[f'{prefix}:ManualROI:MaxValue_RBV'] = float(np.nanmax(sub))
-        self.stats_data[f'{prefix}:ManualROI:MeanValue_RBV'] = float(np.nanmean(sub))
-        self.stats_data[f'{prefix}:ManualROI:Sigma_RBV'] = float(np.nanstd(sub))
+        total = float(np.nansum(sub))
+        vmin = float(np.nanmin(sub))
+        vmax = float(np.nanmax(sub))
+        vmean = float(np.nanmean(sub))
+        vsigma = float(np.nanstd(sub))
+        self.stats_data[f'{prefix}:ManualROI:Total_RBV'] = total
+        self.stats_data[f'{prefix}:ManualROI:MinValue_RBV'] = vmin
+        self.stats_data[f'{prefix}:ManualROI:MaxValue_RBV'] = vmax
+        self.stats_data[f'{prefix}:ManualROI:MeanValue_RBV'] = vmean
+        self.stats_data[f'{prefix}:ManualROI:Sigma_RBV'] = vsigma
+
+        # Optionally broadcast all five stats as one PVA object.
+        if HAS_PVA and getattr(self, 'chk_broadcast_manual_roi', None) \
+                and self.chk_broadcast_manual_roi.isChecked():
+            self._publish_manual_roi_pva(prefix, total, vmin, vmax, vmean, vsigma,
+                                         frame_id)
+
+    # ---- Manual ROI PVA broadcast --------------------------------------
+    def _toggle_manual_roi_broadcast(self) -> None:
+        """Enable/disable publishing the Manual ROI stats as a PVA object.
+
+        Turning broadcast ON also enables the Manual ROI (so stats exist to
+        publish); the PVA server itself is created lazily on the first publish.
+        Turning it OFF tears the server down.
+        """
+        if self.chk_broadcast_manual_roi.isChecked():
+            if not HAS_PVA:
+                print("[Manual ROI] pvaccess not available — cannot broadcast.")
+                return
+            if not self.chk_enable_manual_roi.isChecked():
+                self.chk_enable_manual_roi.setChecked(True)  # produces the stats
+        else:
+            self._stop_manual_roi_pva()
+
+    def _publish_manual_roi_pva(self, prefix, total, vmin, vmax, vmean, vsigma,
+                                frame_id) -> None:
+        """Publish the Manual ROI stats to '{prefix}:ManualROI:stats' (lazy server)."""
+        addr = f'{prefix}:ManualROI:stats'
+        try:
+            # (Re)create the server if absent or the prefix/address changed.
+            if self._mroi_pva_server is None or self._mroi_pva_addr != addr:
+                self._stop_manual_roi_pva()
+                self._mroi_pva_type = {
+                    'total': pva.DOUBLE, 'min': pva.DOUBLE, 'max': pva.DOUBLE,
+                    'mean': pva.DOUBLE, 'sigma': pva.DOUBLE,
+                    'frame_number': pva.INT, 'timeStamp': pva.PvTimeStamp(),
+                }
+                self._mroi_pva_server = pva.PvaServer()
+                self._mroi_pva_server.addRecord(
+                    addr, pva.PvObject(self._mroi_pva_type), None)
+                self._mroi_pva_addr = addr
+                print(f"[Manual ROI] broadcasting stats to: {addr}")
+            obj = pva.PvObject(self._mroi_pva_type, {
+                'total': total, 'min': vmin, 'max': vmax,
+                'mean': vmean, 'sigma': vsigma,
+                'frame_number': int(frame_id) if frame_id is not None else 0,
+                'timeStamp': pva.PvTimeStamp(time.time()),
+            })
+            self._mroi_pva_server.updateUnchecked(addr, obj)
+        except Exception as e:  # noqa: BLE001
+            print(f"[Manual ROI] failed to broadcast stats: {e}")
+
+    def _stop_manual_roi_pva(self) -> None:
+        if self._mroi_pva_server is not None:
+            try:
+                self._mroi_pva_server.stop()
+            except Exception:  # noqa: BLE001
+                pass
+        self._mroi_pva_server = None
+        self._mroi_pva_addr = None
+        self._mroi_pva_type = None
 
     def freeze_image_checked(self) -> None:
         """
@@ -2074,6 +2154,7 @@ class DiffractionImageWindow(BaseWindow):
             s.setValue("area_det_window_geom", self.saveGeometry())
         except Exception:
             pass
+        self._stop_manual_roi_pva()  # tear down the Manual ROI PVA server if running
         del self.stats_dialogs # otherwise dialogs stay in memory
         del self.stats_plot_dialogs
         if self.mask_viewer is not None:
