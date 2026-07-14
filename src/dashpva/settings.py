@@ -172,7 +172,7 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 # drains them; when the consumer falls behind the queue fills and pvapy drops
 # the newest frame (counted as nRejected) rather than overrunning the monitor
 # thread and crashing the viewer. Memory is bounded at this depth × frame size.
-PVA_MONITOR_QUEUE_SIZE: int = 15000
+PVA_MONITOR_QUEUE_SIZE: int = 512
 
 # Server-side pvAccess monitor queue depth for this subscription. This is the
 # buffer where high-rate frames are dropped (uniqueId gaps) when the client
