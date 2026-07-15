@@ -2693,6 +2693,10 @@ class Workflow(QDialog, LogMixin):
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
+            # Decouple reception from processing: without a receiver queue pvapy
+            # runs the (slow) RSM process() on the monitor thread, so frames
+            # arriving mid-processing are dropped. 0 = unbounded queue.
+            '--receiver-queue-size', '0',
             '--n-consumers', str(self.spinBoxNConsumersAnalysis.value()),
             '--distributor-updates', str(self.spinBoxDistributorUpdatesAnalysis.value()),
             '-dc'
