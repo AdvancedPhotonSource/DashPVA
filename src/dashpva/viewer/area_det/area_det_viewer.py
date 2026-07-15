@@ -828,9 +828,14 @@ class DiffractionImageWindow(BaseWindow):
                 self.reader.image_is_transposed = False
                 
     def trigger_save_caches(self) -> None:
-        if not self.file_writer_thread.isRunning():
+        try:
+            if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
-        self.file_writer.save_caches_to_h5(clear_caches=True)
+            self.file_writer.save_caches_to_h5(clear_caches=True)
+        except ValueError as e:
+            # A save that cannot proceed (e.g. empty/mismatched caches) must
+            # report and be skipped, never crash the viewer.
+            self.update_status(f"Save skipped: {e}", level='warning')
 
     def c_ordering_clicked(self) -> None:
         """
