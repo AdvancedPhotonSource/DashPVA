@@ -44,8 +44,7 @@ from dashpva.viewer.area_det.docks import (
 )
 from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
-from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
-from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
+from dashpva.viewer.roi_stats_panel import RoiStatsPanel
 
 rot_gen = rotation_cycle(1,5)
 
@@ -171,16 +170,21 @@ class DiffractionImageWindow(BaseWindow):
         # name -> on-image pg.ROI overlay (e.g. "ROI1"), for transform-aware
         # region lookup by consumers such as the waterfall dock.
         self._roi_overlays: dict[str, pg.ROI] = {}
-        self.stats_dialogs = {}
-        self.stats_plot_dialogs = {}
         self.stats_data = {}
         # Manual ROI (ROI dock slot 5): plain movable/rotatable box whose stats
         # are computed locally (not from EPICS). Geometry persists across
         # enable/disable; source is the linear (pre-log) display image.
-        self.manual_roi = None
-        self._manual_roi_geom = None
+        # Manual ROIs (up to 5): plain amber movable/rotatable boxes labelled
+        # M1..M5, stats computed locally (not EPICS) and optionally broadcast as
+        # one soft PV. Viewer-owned so they persist while the panel is closed.
+        self.MAX_MANUAL_ROIS = 5
+        self.manual_rois = []            # [{roi, label, n, key}]
         self._manual_roi_last_frame = -1
         self._manual_roi_source = None
+        self._manual_pva_server = None
+        self._manual_pv_obj = None
+        self._manual_pv_channel = None
+        self.roi_stats_panel = None
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
@@ -356,9 +360,6 @@ class DiffractionImageWindow(BaseWindow):
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
         self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan_view)
         self.btn_analysis_window.setMenu(self._analysis_menu)
-        for i in range(1, 6):
-            getattr(self, f"btn_Stats{i}").clicked.connect(self.stats_button_clicked)
-            getattr(self, f"btn_PlotStats{i}").clicked.connect(self.stats_plot_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
@@ -479,8 +480,6 @@ class DiffractionImageWindow(BaseWindow):
         for i in range(1, 5):
             setattr(self, f"lbl_ROI{i}", getattr(self.roi_dock, f"lbl_ROI{i}"))
             setattr(self, f"roi{i}_total_value", getattr(self.roi_dock, f"roi{i}_total_value"))
-        self.lbl_image_total     = self.roi_dock.lbl_image_total
-        self.stats5_total_value  = self.roi_dock.stats5_total_value
         self.chk_show_roi = [
             self.roi_dock.chk_show_roi1,
             self.roi_dock.chk_show_roi2,
@@ -489,12 +488,8 @@ class DiffractionImageWindow(BaseWindow):
         ]
         for chk in self.chk_show_roi:
             chk.stateChanged.connect(self._apply_roi_visibility)
-        for i in range(1, 6):
-            setattr(self, f"btn_Stats{i}", getattr(self.roi_dock, f"btn_Stats{i}"))
-            setattr(self, f"btn_PlotStats{i}", getattr(self.roi_dock, f"btn_PlotStats{i}"))
-        self.chk_enable_manual_roi = self.roi_dock.chk_enable_manual_roi
-        self.manual_roi_total_value = self.roi_dock.manual_roi_total_value
-        self.chk_enable_manual_roi.stateChanged.connect(self._toggle_manual_roi)
+        self.btn_roi_panel = self.roi_dock.btn_roi_panel
+        self.btn_roi_panel.clicked.connect(self.open_roi_stats_panel)
 
         # Analysis dock widgets
         self.btn_analysis_window = self.analysis_dock.btn_analysis_window
@@ -1003,8 +998,6 @@ class DiffractionImageWindow(BaseWindow):
             if self.reader.channel.isMonitorActive():
                 self.reader.stop_channel_monitor()
             self.stop_timers()
-            for key in self.stats_dialogs:
-                self.stats_dialogs[key] = None
             for hkl_pv in self.hkl_pvs.values():
                 hkl_pv.clear_callbacks()
                 hkl_pv.disconnect()
@@ -1014,39 +1007,15 @@ class DiffractionImageWindow(BaseWindow):
             self._set_connection_label(False)
         self._enter_idle_state()
 
-    @staticmethod
-    def _stats_identity(object_name: str) -> tuple:
-        """Map a Stats/Plot button's objectName to (stats_data key, display name).
-
-        Slot 5 is the locally computed Manual ROI (key 'ManualROI'); slots 1-4
-        map straight to 'Stats{N}'. Keyed off objectName, not the button text, so
-        relabeling slot 5 to "Manual ROI" doesn't change the data key.
-        """
-        idx = ''.join(ch for ch in object_name if ch.isdigit())
-        if idx == '5':
-            return 'ManualROI', 'Manual ROI'
-        return f'Stats{idx}', f'Stats{idx}'
-
-    def stats_button_clicked(self) -> None:
-        """Open the stats readout dialog for the pressed Stats / Manual ROI button."""
-        if self.reader is not None:
-            stats_text, display = self._stats_identity(self.sender().objectName())
-            self.stats_dialogs[stats_text] = RoiStatsDialog(
-                parent=self, stats_text=stats_text,
-                timer=self.timer_labels, display_name=display)
-            self.stats_dialogs[stats_text].show()
-
-    def stats_plot_button_clicked(self) -> None:
-        """Open the live time-series plot for the pressed Stats / Manual ROI button."""
-        if self.reader is not None:
-            stats_text, display = self._stats_identity(self.sender().objectName())
-            existing = self.stats_plot_dialogs.get(stats_text)
-            if existing is not None:
-                existing.close()
-            self.stats_plot_dialogs[stats_text] = RoiStatsPlotDialog(
-                parent=self, stats_text=stats_text,
-                timer=self.timer_labels, display_name=display)
-            self.stats_plot_dialogs[stats_text].show()
+    def open_roi_stats_panel(self) -> None:
+        """Open (or raise) the single consolidated ROI stats + plots window."""
+        if self.reader is None:
+            return
+        if self.roi_stats_panel is None:
+            self.roi_stats_panel = RoiStatsPanel(parent=self, timer=self.timer_labels)
+        self.roi_stats_panel.show()
+        self.roi_stats_panel.raise_()
+        self.roi_stats_panel.activateWindow()
 
     STATS_GROUPS = ('Stats1', 'Stats2', 'Stats3', 'Stats4', 'Stats5')
     STATS_FIELDS = ('Total_RBV', 'MinValue_RBV', 'MaxValue_RBV', 'Sigma_RBV', 'MeanValue_RBV')
@@ -1204,70 +1173,84 @@ class DiffractionImageWindow(BaseWindow):
             else:
                 roi.hide()
 
-    # -------------------------------------------------------- Manual ROI (slot 5)
-    def _toggle_manual_roi(self) -> None:
-        """Enable/disable the manual ROI overlay from the ROI-dock checkbox."""
-        if self.chk_enable_manual_roi.isChecked():
-            self._ensure_manual_roi()
-        else:
-            self._remove_manual_roi()
+    # ------------------------------------------------------ Manual ROIs (up to 5)
+    def _next_manual_slot(self):
+        """Lowest free slot number 1..MAX_MANUAL_ROIS, or None if all are used."""
+        used = {e['n'] for e in self.manual_rois}
+        for n in range(1, self.MAX_MANUAL_ROIS + 1):
+            if n not in used:
+                return n
+        return None
 
-    def _ensure_manual_roi(self) -> None:
-        """Draw a plain movable/rotatable box (no interior markings). Geometry is
-        restored from the last enabled state so the shape persists."""
-        if self.manual_roi is not None:
-            return
+    def add_manual_roi(self):
+        """Create a plain amber, movable/rotatable box labelled M{k} whose stats are
+        computed locally. Returns its key ('Manual{k}') or None (full / no frame)."""
+        n = self._next_manual_slot()
+        if n is None:
+            return None
         image_item = self.image_view.getImageItem()
         if image_item is None or image_item.image is None:
-            return
-        if self._manual_roi_geom is not None:
-            pos, size, angle = self._manual_roi_geom
-        else:
-            shape = image_item.image.shape
-            iw = int(shape[1]) if len(shape) >= 2 else 100
-            ih = int(shape[0]) if len(shape) >= 2 else 100
-            w = max(4, iw // 4)
-            h = max(4, ih // 4)
-            pos, size, angle = [(iw - w) // 2, (ih - h) // 2], [w, h], 0.0
-        roi = pg.ROI(pos, size, angle=angle, pen=pg.mkPen(ROI_COLORS[4], width=2),
+            return None
+        shape = image_item.image.shape
+        iw = int(shape[1]) if len(shape) >= 2 else 100
+        ih = int(shape[0]) if len(shape) >= 2 else 100
+        w = max(4, iw // 5)
+        h = max(4, ih // 5)
+        x = (iw - w) // 2 + (n - 1) * 8   # stagger so stacked boxes don't hide
+        y = (ih - h) // 2 + (n - 1) * 8
+        roi = pg.ROI([x, y], [w, h], pen=pg.mkPen(ROI_COLORS[4], width=2),
                      movable=True, rotatable=True)
         roi.addScaleHandle([1, 1], [0, 0])
         roi.addScaleHandle([0, 0], [1, 1])
         roi.addRotateHandle([1, 0], [0.5, 0.5])
+        # M{k} label pinned to the box's top-left corner (child -> moves/rotates with it).
+        label = pg.TextItem(f'M{n}', color=ROI_COLORS[4], anchor=(0, 1))
+        label.setParentItem(roi)
+        label.setPos(0, 0)
         self.image_view.addItem(roi)
-        self.manual_roi = roi
+        self.manual_rois.append({'roi': roi, 'label': label, 'n': n, 'key': f'Manual{n}'})
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
+        return f'Manual{n}'
 
-    def _remove_manual_roi(self) -> None:
-        if self.manual_roi is None:
+    def remove_manual_roi(self, key) -> None:
+        """Remove the manual ROI with 'Manual{k}' key (box + label + its stats)."""
+        entry = next((e for e in self.manual_rois if e['key'] == key), None)
+        if entry is None:
             return
-        # Remember geometry so re-enabling restores the same box.
-        self._manual_roi_geom = (self.manual_roi.pos(), self.manual_roi.size(),
-                                 self.manual_roi.angle())
         try:
-            self.image_view.getView().removeItem(self.manual_roi)
+            self.image_view.getView().removeItem(entry['roi'])  # child label goes too
         except Exception:
             pass
-        self.manual_roi = None
-        # Drop stored manual stats so the label/plots read 0 while disabled.
+        self.manual_rois.remove(entry)
         prefix = self.reader.pva_prefix if self.reader is not None else None
         if prefix:
             for field in self.STATS_FIELDS:
-                self.stats_data.pop(f'{prefix}:ManualROI:{field}', None)
+                self.stats_data.pop(f"{prefix}:{key}:{field}", None)
+
+    @staticmethod
+    def _roi_stats(sub) -> dict:
+        """All 5 stats in one compact float64 pass (min copies): derive mean/std
+        from n/sum/sumsq instead of rescanning. Returns {} if empty/all-NaN."""
+        flat = np.ravel(sub)
+        if flat.size and np.isnan(flat).any():
+            flat = flat[np.isfinite(flat)]
+        if flat.size == 0:
+            return {}
+        flat = flat.astype(np.float64, copy=False)
+        n = flat.size
+        s = float(flat.sum())
+        mean = s / n
+        var = max(float(flat.dot(flat)) / n - mean * mean, 0.0)
+        return {'Total_RBV': s, 'MinValue_RBV': float(flat.min()),
+                'MaxValue_RBV': float(flat.max()), 'MeanValue_RBV': mean,
+                'Sigma_RBV': var ** 0.5}
 
     def _update_manual_roi_stats(self, force: bool = False) -> None:
-        """Compute Total/Min/Max/Mean/Sigma locally over the manual ROI region and
-        store them under the 'ManualROI' key, so the dock label and the Stats/Plot
-        dialogs consume them exactly like the EPICS ROIs. Frame-guarded; stats are
-        orientation-invariant so transpose/rotate don't matter."""
-        if self.manual_roi is None:
-            # Deferred creation: the box was enabled before a frame was displayed.
-            chk = getattr(self, 'chk_enable_manual_roi', None)
-            if chk is not None and chk.isChecked():
-                self._ensure_manual_roi()  # creates + computes once a frame exists
-            return
-        if self.reader is None:
+        """Frame-guarded local stats for every manual ROI -> stats_data['{prefix}:
+        Manual{k}:{field}'] (+ broadcast). One vectorized pass per ROI; the ~<=5
+        loop is negligible. Hard early-out when no manual ROI exists."""
+        if not self.manual_rois or self.reader is None:
             return
         image_item = self.image_view.getImageItem()
         if image_item is None or image_item.image is None:
@@ -1279,15 +1262,74 @@ class DiffractionImageWindow(BaseWindow):
         source = self._manual_roi_source
         if source is None:
             source = np.asarray(image_item.image)
-        sub = _extract_roi_subarray(source, self.manual_roi, image_item)
-        if sub is None or sub.size == 0 or not np.any(np.isfinite(sub)):
-            return
         prefix = self.reader.pva_prefix
-        self.stats_data[f'{prefix}:ManualROI:Total_RBV'] = float(np.nansum(sub))
-        self.stats_data[f'{prefix}:ManualROI:MinValue_RBV'] = float(np.nanmin(sub))
-        self.stats_data[f'{prefix}:ManualROI:MaxValue_RBV'] = float(np.nanmax(sub))
-        self.stats_data[f'{prefix}:ManualROI:MeanValue_RBV'] = float(np.nanmean(sub))
-        self.stats_data[f'{prefix}:ManualROI:Sigma_RBV'] = float(np.nanstd(sub))
+        for entry in self.manual_rois:
+            sub = _extract_roi_subarray(source, entry['roi'], image_item)
+            if sub is None:
+                continue
+            for field, val in self._roi_stats(sub).items():
+                self.stats_data[f"{prefix}:{entry['key']}:{field}"] = val
+        if self._manual_pva_server is not None:
+            self._publish_manual_stats(frame_id)
+
+    # --------------------------------------------- Manual ROI broadcast (one PV)
+    def _manual_broadcast_channel(self) -> str:
+        base = (self.reader.pva_prefix if self.reader is not None else '') or 'pvapy'
+        return f'{base}:ManualROI:Stats'
+
+    def start_manual_broadcast(self) -> bool:
+        """Publish all M1..M5 stats on one soft PV so a consumer subscribes once."""
+        try:
+            import pvaccess as pva
+        except Exception:
+            return False
+        self.stop_manual_broadcast()
+        struct = {'frameId': pva.INT}
+        for k in range(1, self.MAX_MANUAL_ROIS + 1):
+            struct[f'm{k}_active'] = pva.BOOLEAN
+            for f in ('total', 'min', 'max', 'mean', 'sigma'):
+                struct[f'm{k}_{f}'] = pva.DOUBLE
+        try:
+            self._manual_pv_channel = self._manual_broadcast_channel()
+            self._manual_pv_obj = pva.PvObject(struct)
+            self._manual_pva_server = pva.PvaServer()
+            self._manual_pva_server.addRecord(self._manual_pv_channel, self._manual_pv_obj, None)
+            self._manual_pva_server.start()
+        except Exception:
+            self.stop_manual_broadcast()
+            return False
+        self._publish_manual_stats(getattr(self.reader, 'frames_received', 0))
+        return True
+
+    def stop_manual_broadcast(self) -> None:
+        if self._manual_pva_server is not None:
+            try:
+                self._manual_pva_server.stop()
+            except Exception:
+                pass
+        self._manual_pva_server = None
+        self._manual_pv_obj = None
+        self._manual_pv_channel = None
+
+    _MANUAL_FIELD_MAP = {'total': 'Total_RBV', 'min': 'MinValue_RBV', 'max': 'MaxValue_RBV',
+                         'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV'}
+
+    def _publish_manual_stats(self, frame_id) -> None:
+        if self._manual_pva_server is None or self._manual_pv_obj is None:
+            return
+        prefix = self.reader.pva_prefix if self.reader is not None else ''
+        by_slot = {e['n']: e['key'] for e in self.manual_rois}
+        obj = {'frameId': int(frame_id) if frame_id is not None else 0}
+        for k in range(1, self.MAX_MANUAL_ROIS + 1):
+            key = by_slot.get(k)
+            obj[f'm{k}_active'] = key is not None
+            for short, field in self._MANUAL_FIELD_MAP.items():
+                obj[f'm{k}_{short}'] = (
+                    float(self.stats_data.get(f'{prefix}:{key}:{field}', 0.0)) if key else 0.0)
+        try:
+            self._manual_pv_obj.set(obj)
+        except Exception:
+            pass
 
     def freeze_image_checked(self) -> None:
         """
@@ -1847,7 +1889,6 @@ class DiffractionImageWindow(BaseWindow):
             for i in range(1, 5):
                 label = getattr(self, f"roi{i}_total_value")
                 label.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}")
-            self.stats5_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:ManualROI:Total_RBV', 0.0)):.2f}")
 
     def update_rsm(self) -> None:
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
@@ -2071,8 +2112,9 @@ class DiffractionImageWindow(BaseWindow):
             s.setValue("area_det_window_geom", self.saveGeometry())
         except Exception:
             pass
-        del self.stats_dialogs # otherwise dialogs stay in memory
-        del self.stats_plot_dialogs
+        if self.roi_stats_panel is not None:
+            self.roi_stats_panel.close()
+        self.stop_manual_broadcast()
         if self.mask_viewer is not None:
             self.mask_viewer.close()
         if self.file_writer_thread.isRunning():
