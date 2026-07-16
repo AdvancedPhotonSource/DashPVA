@@ -16,7 +16,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -27,6 +26,7 @@ from PyQt5.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from dashpva.gui.theme_colors import ROI_COLORS
@@ -52,8 +52,11 @@ _ANALYSIS = [('Peak', 'peak_intensity', 4), ('Peak frame', 'peak_pos', 0),
              ('FWHM', 'fwhm_value', 2), ('FWHM ctr', 'fwhm_center', 0)]
 
 
-class RoiStatsPanel(QDialog):
-    """One window for all ROI stats + time-series plots (EPICS 1-4 + manual)."""
+class RoiStatsPanel(QWidget):
+    """One panel for all ROI stats + time-series plots (EPICS 1-4 + manual).
+
+    Housed either embedded in the ROI dock or popped out into a standalone window
+    (the viewer reparents this same widget between the two hosts)."""
 
     MAX_POINTS = 500
 
@@ -61,8 +64,6 @@ class RoiStatsPanel(QDialog):
         super().__init__(parent)
         self.viewer = parent
         self.timer = timer
-        self.setWindowTitle('ROI Stats & Plots')
-        self.resize(900, 720)
         self._paused = False
         self._frame_index = 0
         self._last_frames = self._current_frames()
@@ -115,6 +116,10 @@ class RoiStatsPanel(QDialog):
         self.cmb_stat.currentIndexChanged.connect(self._rebuild_curves)
         top.addWidget(self.cmb_stat)
         top.addStretch()
+        self.btn_detach = QPushButton('Detach ⧉')
+        self.btn_detach.setToolTip('Pop the panel out into a standalone window')
+        self.btn_detach.clicked.connect(self._request_detach)
+        top.addWidget(self.btn_detach)
         layout.addLayout(top)
 
         self.plot_item = pg.PlotItem()
@@ -123,44 +128,52 @@ class RoiStatsPanel(QDialog):
         self.plot_item.addLegend(offset=(10, 10))
         self.plot_item.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget = pg.PlotWidget(plotItem=self.plot_item)
+        self.plot_widget.setMinimumHeight(160)   # stays usable when embedded/narrow
         # Manual zoom/pan disables auto-range so the user's view sticks.
         self.plot_item.getViewBox().sigRangeChangedManually.connect(self._on_manual_zoom)
         layout.addWidget(self.plot_widget, stretch=3)
 
-        ctrl = QHBoxLayout()
+        # Row 1: plot controls.
+        ctrl1 = QHBoxLayout()
         self.btn_pause = QPushButton('Pause')
         self.btn_pause.clicked.connect(self._toggle_pause)
-        ctrl.addWidget(self.btn_pause)
+        ctrl1.addWidget(self.btn_pause)
         self.btn_clear = QPushButton('Clear')
         self.btn_clear.clicked.connect(self._clear)
-        ctrl.addWidget(self.btn_clear)
+        ctrl1.addWidget(self.btn_clear)
         self.chk_autoscale_x = QCheckBox('Auto X')
         self.chk_autoscale_x.setChecked(True)
         self.chk_autoscale_x.setToolTip('Follow data on X (auto-unchecks when you zoom/pan)')
-        ctrl.addWidget(self.chk_autoscale_x)
+        ctrl1.addWidget(self.chk_autoscale_x)
         self.chk_autoscale_y = QCheckBox('Auto Y')
         self.chk_autoscale_y.setChecked(True)
-        ctrl.addWidget(self.chk_autoscale_y)
-        ctrl.addWidget(QLabel('Window:'))
+        ctrl1.addWidget(self.chk_autoscale_y)
+        ctrl1.addWidget(QLabel('Window:'))
         self.spn_window = QSpinBox()
         self.spn_window.setRange(50, 10000)
         self.spn_window.setValue(self._max_points)
         self.spn_window.setSuffix(' pts')
         self.spn_window.valueChanged.connect(self._on_window)
-        ctrl.addWidget(self.spn_window)
-        ctrl.addStretch()
+        ctrl1.addWidget(self.spn_window)
+        ctrl1.addStretch()
+        layout.addLayout(ctrl1)
+
+        # Row 2: manual-ROI controls (own row so the panel stays readable when
+        # embedded in the narrow ROI dock).
+        ctrl2 = QHBoxLayout()
         self.btn_add = QPushButton('+ Add manual ROI')
         self.btn_add.clicked.connect(self._add_manual)
-        ctrl.addWidget(self.btn_add)
+        ctrl2.addWidget(self.btn_add)
         self.btn_remove = QPushButton('Remove manual')
         self.btn_remove.setToolTip('Remove the manual ROI selected in the ROI dropdown')
         self.btn_remove.clicked.connect(self._remove_manual)
-        ctrl.addWidget(self.btn_remove)
+        ctrl2.addWidget(self.btn_remove)
         self.chk_broadcast = QCheckBox('Broadcast as PV')
         self.chk_broadcast.setToolTip('Publish all M1-M5 stats on one soft PV')
         self.chk_broadcast.toggled.connect(self._on_broadcast)
-        ctrl.addWidget(self.chk_broadcast)
-        layout.addLayout(ctrl)
+        ctrl2.addWidget(self.chk_broadcast)
+        ctrl2.addStretch()
+        layout.addLayout(ctrl2)
 
         self.table = QTableWidget(0, 1 + len(_STATS) + len(_COM))
         self.table.setHorizontalHeaderLabels(['ROI'] + _STAT_NAMES + _COM_NAMES)
@@ -183,6 +196,20 @@ class RoiStatsPanel(QDialog):
         layout.addWidget(box)
 
         self._refresh_availability(force=True)
+        self.setMinimumWidth(340)   # keep controls legible when docked narrow
+
+    # ------------------------------------------------- detach / re-embed
+    def _request_detach(self):
+        toggler = getattr(self.viewer, 'toggle_roi_stats_detached', None)
+        if callable(toggler):
+            toggler()
+
+    def set_detached(self, detached: bool) -> None:
+        """Reflect where the panel currently lives on the detach/dock button."""
+        self.btn_detach.setText('Dock ⧉' if detached else 'Detach ⧉')
+        self.btn_detach.setToolTip(
+            'Re-embed the panel in the ROI dock' if detached
+            else 'Pop the panel out into a standalone window')
 
     # ------------------------------------------------------- availability
     def _refresh_availability(self, force: bool = False):

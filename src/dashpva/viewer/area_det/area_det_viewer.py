@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QSizePolicy,
     QSlider,
+    QVBoxLayout,
     QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
@@ -135,6 +136,26 @@ class _CornerGrip(QWidget):
             p.drawLine(w - 1, off, off, h - 1)
 
 
+class _RoiStatsWindow(QDialog):
+    """Standalone host for the detached ROI Stats & Plots panel. Closing it hands
+    control back to the viewer, which hides the panel until it is reopened."""
+
+    def __init__(self, viewer):
+        super().__init__(viewer)
+        self._viewer = viewer
+        self.setWindowTitle('ROI Stats & Plots')
+        self.resize(900, 720)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(2, 2, 2, 2)
+
+    def closeEvent(self, event):
+        try:
+            self._viewer._on_roi_stats_window_closed()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
+
 class DiffractionImageWindow(BaseWindow):
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
@@ -194,6 +215,8 @@ class DiffractionImageWindow(BaseWindow):
         self._manual_pv_obj = None
         self._manual_pv_channel = None
         self.roi_stats_panel = None
+        self._roi_stats_window = None       # lazy standalone host when detached
+        self._roi_stats_detached = False
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
@@ -1031,15 +1054,70 @@ class DiffractionImageWindow(BaseWindow):
             self._set_connection_label(False)
         self._enter_idle_state()
 
-    def open_roi_stats_panel(self) -> None:
-        """Open (or raise) the single consolidated ROI stats + plots window."""
-        if self.reader is None:
-            return
+    def _ensure_roi_stats_panel(self) -> None:
         if self.roi_stats_panel is None:
             self.roi_stats_panel = RoiStatsPanel(parent=self, timer=self.timer_labels)
-        self.roi_stats_panel.show()
-        self.roi_stats_panel.raise_()
-        self.roi_stats_panel.activateWindow()
+
+    def open_roi_stats_panel(self) -> None:
+        """Show the ROI stats + plots panel embedded in the ROI dock. If it was
+        detached to its own window, re-embed it. Clicking again while it is already
+        embedded and visible hides it (toggle)."""
+        if self.reader is None:
+            return
+        self._ensure_roi_stats_panel()
+        if self._roi_stats_detached:
+            self._embed_roi_stats()
+            return
+        area = self.roi_dock.panel_area
+        if area.isVisible() and area.widget() is self.roi_stats_panel:
+            area.setVisible(False)          # toggle off
+        else:
+            self._embed_roi_stats()
+
+    def _embed_roi_stats(self) -> None:
+        """Put the panel inside the ROI dock (reparenting it out of the standalone
+        window if it was detached) and make sure the dock is visible."""
+        self._ensure_roi_stats_panel()
+        panel = self.roi_stats_panel
+        if self._roi_stats_window is not None:
+            self._roi_stats_window.layout().removeWidget(panel)
+            self._roi_stats_window.hide()
+        self.roi_dock.panel_area.setWidget(panel)     # reparents into the dock
+        self.roi_dock.panel_area.setVisible(True)
+        panel.show()
+        panel.set_detached(False)
+        self._roi_stats_detached = False
+        self.roi_dock.show()
+        self.roi_dock.raise_()
+
+    def _detach_roi_stats(self) -> None:
+        """Pop the panel out of the ROI dock into its own resizable window."""
+        self._ensure_roi_stats_panel()
+        panel = self.roi_stats_panel
+        if self._roi_stats_window is None:
+            self._roi_stats_window = _RoiStatsWindow(self)
+        self.roi_dock.panel_area.takeWidget()          # release without deleting
+        self.roi_dock.panel_area.setVisible(False)
+        self._roi_stats_window.layout().addWidget(panel)   # reparents into window
+        panel.show()
+        panel.set_detached(True)
+        self._roi_stats_detached = True
+        self._roi_stats_window.show()
+        self._roi_stats_window.raise_()
+        self._roi_stats_window.activateWindow()
+
+    def toggle_roi_stats_detached(self) -> None:
+        """Detach button handler: embedded <-> standalone window."""
+        if self._roi_stats_detached:
+            self._embed_roi_stats()
+        else:
+            self._detach_roi_stats()
+
+    def _on_roi_stats_window_closed(self) -> None:
+        """Detached window closed: the panel goes away until the ROI Stats & Plots
+        button re-embeds it."""
+        self._roi_stats_detached = False
+        self.roi_dock.panel_area.setVisible(False)
 
     STATS_GROUPS = ('Stats1', 'Stats2', 'Stats3', 'Stats4', 'Stats5')
     STATS_FIELDS = ('Total_RBV', 'MinValue_RBV', 'MaxValue_RBV', 'Sigma_RBV', 'MeanValue_RBV')
@@ -2332,6 +2410,8 @@ class DiffractionImageWindow(BaseWindow):
             self._save_manual_rois()
         except Exception:
             pass
+        if self._roi_stats_window is not None:
+            self._roi_stats_window.close()
         if self.roi_stats_panel is not None:
             self.roi_stats_panel.close()
         self.stop_manual_broadcast()

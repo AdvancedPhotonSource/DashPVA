@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -79,7 +80,16 @@ class RoiDock(BaseDock):
             "Open the consolidated ROI stats + plots window (ROI 1-4 + manual ROIs)")
         outer.addWidget(self.btn_roi_panel)
 
-        outer.addStretch()
+        # Host for the embedded ROI Stats & Plots panel. The viewer places the
+        # panel widget here; it can also be popped out to a standalone window.
+        # Hidden until the panel is opened; scrolls when the dock is short.
+        self.panel_area = QScrollArea()
+        self.panel_area.setObjectName("roi_panel_area")
+        self.panel_area.setWidgetResizable(True)
+        self.panel_area.setFrameShape(QScrollArea.NoFrame)
+        self.panel_area.setVisible(False)
+        outer.addWidget(self.panel_area, stretch=1)
+
         self.setWidget(container)
 
     @staticmethod
