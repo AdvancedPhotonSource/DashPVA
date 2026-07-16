@@ -32,7 +32,7 @@ import json
 import logging
 import sys
 import traceback
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pyqtgraph as pg
@@ -192,26 +192,84 @@ class ScanWorker(QThread):
 
 
 class _SurfaceWorker(QThread):
-    """Computes a model-prediction surface off the GUI thread (GP compute)."""
+    """Computes a single-objective model surface off the GUI thread (GP compute)."""
 
     done = pyqtSignal(object)   # surface payload dict
     failed = pyqtSignal(str)
 
-    def __init__(self, agent, config, x_name, y_name, parent=None):
+    def __init__(self, agent, config, x_name, y_name, *,
+                 fixed_overrides=None, objective=None, parent=None):
         super().__init__(parent)
         self._agent = agent
         self._config = config
         self._x = x_name
         self._y = y_name
+        self._fixed = fixed_overrides
+        self._objective = objective
 
     def run(self) -> None:
         try:
             from dashpva.viewer.bayesian.blop_adapter import predict_surface
 
-            payload = predict_surface(self._agent, self._config, self._x, self._y)
+            payload = predict_surface(
+                self._agent, self._config, self._x, self._y,
+                fixed_overrides=self._fixed, objective=self._objective)
             self.done.emit(payload)
         except Exception as exc:  # noqa: BLE001
             logger.error("Surface prediction failed:\n%s", traceback.format_exc())
+            self.failed.emit(str(exc))
+
+
+class _SurfaceMultiWorker(QThread):
+    """Computes all optimized objectives over a 2-D grid (for the RGB phase map)."""
+
+    done = pyqtSignal(object)   # multi-surface payload dict
+    failed = pyqtSignal(str)
+
+    def __init__(self, agent, config, x_name, y_name, *,
+                 fixed_overrides=None, parent=None):
+        super().__init__(parent)
+        self._agent = agent
+        self._config = config
+        self._x = x_name
+        self._y = y_name
+        self._fixed = fixed_overrides
+
+    def run(self) -> None:
+        try:
+            from dashpva.viewer.bayesian.blop_adapter import predict_surface_multi
+
+            payload = predict_surface_multi(
+                self._agent, self._config, self._x, self._y,
+                fixed_overrides=self._fixed)
+            self.done.emit(payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Phase-map prediction failed:\n%s", traceback.format_exc())
+            self.failed.emit(str(exc))
+
+
+class _SliceWorker(QThread):
+    """Computes a 1-D model slice (all optimized objectives vs one DOF) off-thread."""
+
+    done = pyqtSignal(object)   # slice payload dict
+    failed = pyqtSignal(str)
+
+    def __init__(self, agent, config, x_name, *, fixed_overrides=None, parent=None):
+        super().__init__(parent)
+        self._agent = agent
+        self._config = config
+        self._x = x_name
+        self._fixed = fixed_overrides
+
+    def run(self) -> None:
+        try:
+            from dashpva.viewer.bayesian.blop_adapter import predict_slice_1d
+
+            payload = predict_slice_1d(
+                self._agent, self._config, self._x, fixed_overrides=self._fixed)
+            self.done.emit(payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Slice prediction failed:\n%s", traceback.format_exc())
             self.failed.emit(str(exc))
 
 
@@ -223,8 +281,54 @@ _MODE_POINTS = "Measured points"
 _MODE_MEAN = "Predicted surface"
 _MODE_SIGMA = "Uncertainty (σ)"
 _MODE_ACQ = "Acquisition (UCB)"
+_MODE_OBJ_VS_DOF = "Objectives vs DOF"
 _SURFACE_MODES = (_MODE_MEAN, _MODE_SIGMA, _MODE_ACQ)
 _MODE_TO_GRID = {_MODE_MEAN: "mean", _MODE_SIGMA: "sem", _MODE_ACQ: "acq"}
+
+# Distinct colors for the per-objective series in the "Objectives vs DOF" view.
+_OBJ_PALETTE = (
+    "#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+    "#17becf", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22",
+)
+
+_MODE_PHASE_MAP = "Phase map (RGB)"
+
+
+def phase_anchor_rgb(i: int, n: int) -> tuple:
+    """Anchor RGB (0-255) for phase ``i`` of ``n``.
+
+    n<=3 -> clean red/green/blue primaries (so mixtures read intuitively);
+    n>3  -> evenly-spaced samples of the 'turbo' colormap (approximate blend).
+    """
+    if n <= 3:
+        return ((230, 40, 40), (40, 180, 70), (50, 90, 230))[i]
+    try:
+        cmap = pg.colormap.get("turbo")
+        pos = i / max(1, n - 1)
+        c = cmap.map(float(pos), mode="byte")
+        return (int(c[0]), int(c[1]), int(c[2]))
+    except Exception:  # noqa: BLE001 - fall back to palette hex
+        col = pg.mkColor(_OBJ_PALETTE[i % len(_OBJ_PALETTE)])
+        return (col.red(), col.green(), col.blue())
+
+
+def composition_rgb(fracs, n: int):
+    """Blend per-item phase fractions into uint8 RGB via the phase anchors.
+
+    ``fracs`` is an ``(m, n)`` array (m items, n phases).  Each row is clamped to
+    >=0 and normalized to sum 1, then mapped to a weighted sum of the n anchor
+    colors.  Returns an ``(m, 3)`` uint8 array.  A pure phase yields its anchor
+    color; mixtures blend proportionally.
+    """
+    f = np.clip(np.asarray(fracs, dtype=float), 0.0, None)
+    if f.ndim == 1:
+        f = f.reshape(1, -1)
+    s = f.sum(axis=1, keepdims=True)
+    s[s == 0] = 1.0
+    w = f / s                                              # (m, n)
+    anchors = np.array([phase_anchor_rgb(i, n) for i in range(n)], dtype=float)  # (n, 3)
+    rgb = w @ anchors                                      # (m, 3)
+    return np.clip(rgb, 0, 255).astype(np.uint8)
 
 
 class _PlotPanel(QtWidgets.QWidget):
@@ -235,8 +339,12 @@ class _PlotPanel(QtWidgets.QWidget):
     (UCB) proxy — computed on demand via the "Update surface" button.
     """
 
-    # Emitted when the user requests a model surface for (x_dof, y_dof).
+    # Emitted when the user requests a single-objective model surface (x_dof, y_dof).
     surface_requested = pyqtSignal(str, str)
+    # Emitted when the user requests an RGB phase-map (all objectives) (x_dof, y_dof).
+    surface_multi_requested = pyqtSignal(str, str)
+    # Emitted when the user requests a 1-D model slice (objectives vs x_dof).
+    slice_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -274,18 +382,32 @@ class _PlotPanel(QtWidgets.QWidget):
         row1 = QtWidgets.QHBoxLayout()
         row1.addWidget(QtWidgets.QLabel("View:"))
         self._mode_combo = QtWidgets.QComboBox()
-        self._mode_combo.addItems([_MODE_POINTS, _MODE_MEAN, _MODE_SIGMA, _MODE_ACQ])
+        self._mode_combo.addItems(
+            [_MODE_POINTS, _MODE_PHASE_MAP, _MODE_MEAN, _MODE_SIGMA, _MODE_ACQ,
+             _MODE_OBJ_VS_DOF])
         self._mode_combo.setToolTip(
-            "Measured points: where you sampled (color = objective value).\n"
-            "Predicted surface: the model's learned objective landscape.\n"
+            "Measured points: where you sampled (color = phase composition).\n"
+            "Phase map (RGB): predicted phase-composition map over the DOF pair.\n"
+            "Predicted surface: the model's learned surface for one objective.\n"
             "Uncertainty (σ): where the model is unsure.\n"
-            "Acquisition (UCB): optimistic estimate the optimizer is drawn toward."
+            "Acquisition (UCB): optimistic estimate the optimizer is drawn toward.\n"
+            "Objectives vs DOF: each objective (phase fraction) vs the X DOF — "
+            "measured points, plus a model curve per optimized objective on Update."
         )
         row1.addWidget(self._mode_combo)
+        # Objective selector — used by the single-objective surface modes.
+        self._obj_label = QtWidgets.QLabel("Objective:")
+        row1.addWidget(self._obj_label)
+        self._obj_combo = QtWidgets.QComboBox()
+        self._obj_combo.setToolTip(
+            "Which objective the Predicted surface / σ / UCB views show "
+            "(ignored by the composition and phase-map views).")
+        row1.addWidget(self._obj_combo)
         self._update_btn = QtWidgets.QPushButton("Update surface")
         self._update_btn.setToolTip(
             "Compute the model surface for the selected DOF pair from the current "
-            "model (run an optimization first; other DOFs are fixed at the best point)."
+            "model (run an optimization first; other DOFs are fixed via the sliders "
+            "below, defaulting to the best point)."
         )
         self._update_btn.setEnabled(False)  # enabled once a model exists (after a run)
         row1.addWidget(self._update_btn)
@@ -297,11 +419,19 @@ class _PlotPanel(QtWidgets.QWidget):
         row2.addWidget(QtWidgets.QLabel("X axis:"))
         self._x_combo = QtWidgets.QComboBox()
         row2.addWidget(self._x_combo)
-        row2.addWidget(QtWidgets.QLabel("Y axis:"))
+        self._y_label = QtWidgets.QLabel("Y axis:")
+        row2.addWidget(self._y_label)
         self._y_combo = QtWidgets.QComboBox()
         row2.addWidget(self._y_combo)
         row2.addStretch(1)
         proj_lay.addLayout(row2)
+
+        # Fixed-DOF sliders (for DOFs not on X/Y): populated by _rebuild_fixed_sliders.
+        self._fixed_box = QtWidgets.QWidget()
+        self._fixed_form = QtWidgets.QFormLayout(self._fixed_box)
+        self._fixed_form.setContentsMargins(0, 0, 0, 0)
+        self._fixed_form.setSpacing(2)
+        proj_lay.addWidget(self._fixed_box)
 
         self._proj = pg.PlotWidget()
         self._proj.showGrid(x=True, y=True, alpha=0.2)
@@ -328,6 +458,11 @@ class _PlotPanel(QtWidgets.QWidget):
             pen=pg.mkPen(WARNING, width=2), brush=pg.mkBrush(None),
         )
         self._proj.addItem(self._best_marker)
+        # Legend (used by the "Objectives vs DOF" view; harmless otherwise).
+        self._legend = self._proj.addLegend(offset=(-10, 10))
+        # Per-objective series for the "Objectives vs DOF" view (created lazily).
+        self._obj_scatter: Dict[str, Any] = {}   # name -> ScatterPlotItem (measured)
+        self._obj_curve: Dict[str, Any] = {}     # name -> PlotDataItem (model mean)
         proj_lay.addWidget(self._proj, 1)
 
         self._proj_hint = QtWidgets.QLabel("")
@@ -339,27 +474,60 @@ class _PlotPanel(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([320, 380])
 
-        self._x_combo.currentIndexChanged.connect(self._render_projection)
-        self._y_combo.currentIndexChanged.connect(self._render_projection)
+        self._x_combo.currentIndexChanged.connect(self._on_axes_changed)
+        self._y_combo.currentIndexChanged.connect(self._on_axes_changed)
         self._mode_combo.currentIndexChanged.connect(self._render_projection)
+        self._obj_combo.currentIndexChanged.connect(self._render_projection)
         self._update_btn.clicked.connect(self._on_update_clicked)
 
         # data state
         self._dof_names: List[str] = []
+        self._obj_names: List[str] = []  # objective names (for the Objectives-vs-DOF view)
         self._records: List[dict] = []   # each: {"params": {...}, "primary": float}
         self._best_idx: Optional[int] = None
         self._minimize = False
         self._surface: Optional[dict] = None        # last computed surface payload
         self._surface_key: Optional[tuple] = None   # (x_name, y_name) it was for
+        self._surface_multi: Optional[dict] = None      # last RGB phase-map payload
+        self._surface_multi_key: Optional[tuple] = None
+        self._slice: Optional[dict] = None          # last computed 1-D slice payload
+        self._slice_key: Optional[str] = None       # x_name it was for
+        # DOF bounds (name -> (lo, hi, kind)) for the fixed-DOF sliders.
+        self._dof_bounds: Dict[str, tuple] = {}
+        self._opt_names: List[str] = []  # optimized objective names (surface selector)
+        # Fixed non-axis DOF values (name -> value) + their slider/label widgets.
+        self._fixed_vals: Dict[str, float] = {}
+        self._fixed_widgets: Dict[str, tuple] = {}  # name -> (slider, value_label)
+        # Whether a model exists and no compute/scan is running (Update gating).
+        self._compute_allowed = False
 
     # -- setup ------------------------------------------------------------
-    def reset(self, dof_names: List[str], minimize: bool) -> None:
-        self._dof_names = list(dof_names)
+    def reset(self, dofs, minimize: bool,
+              obj_names: Optional[List[str]] = None,
+              opt_names: Optional[List[str]] = None) -> None:
+        """Reset for a new run.
+
+        ``dofs`` is a list of DOFSpec-like objects (``.name/.lo/.hi/.kind``);
+        ``obj_names`` are ALL objectives (for composition color / points),
+        ``opt_names`` the optimized ones (for the surface objective selector).
+        """
+        self._dof_names = [d.name for d in dofs]
+        self._dof_bounds = {
+            d.name: (float(d.lo), float(d.hi), getattr(d, "kind", "float"))
+            for d in dofs
+        }
+        self._obj_names = list(obj_names or [])
+        self._opt_names = list(opt_names or [])
         self._records = []
         self._best_idx = None
         self._minimize = minimize
         self._surface = None
         self._surface_key = None
+        self._surface_multi = None
+        self._surface_multi_key = None
+        self._slice = None
+        self._slice_key = None
+        self._fixed_vals = {}
         self._measured_curve.setData([], [])
         self._best_curve.setData([], [])
         self._scatter.clear()
@@ -368,6 +536,11 @@ class _PlotPanel(QtWidgets.QWidget):
         self._surface_img.setVisible(False)
         if self._colorbar is not None:
             self._colorbar.setVisible(False)
+        self._clear_obj_series()
+        self._obj_combo.blockSignals(True)
+        self._obj_combo.clear()
+        self._obj_combo.addItems(self._opt_names)
+        self._obj_combo.blockSignals(False)
         for combo in (self._x_combo, self._y_combo):
             combo.blockSignals(True)
             combo.clear()
@@ -375,13 +548,69 @@ class _PlotPanel(QtWidgets.QWidget):
             combo.blockSignals(False)
         if len(self._dof_names) > 1:
             self._y_combo.setCurrentIndex(1)
+        self._rebuild_fixed_sliders()
         self._render_projection()
+
+    # -- fixed-DOF sliders ------------------------------------------------
+    def _on_axes_changed(self) -> None:
+        # X/Y selection changed -> the set of non-axis DOFs changed.
+        self._rebuild_fixed_sliders()
+        self._render_projection()
+
+    def _rebuild_fixed_sliders(self) -> None:
+        while self._fixed_form.rowCount():
+            self._fixed_form.removeRow(0)
+        self._fixed_widgets.clear()
+        x, y = self._x_combo.currentText(), self._y_combo.currentText()
+        others = [n for n in self._dof_names if n not in (x, y)]
+        # Visibility is owned by _render_projection (mode-dependent); here we only
+        # (re)build the widgets for the current non-axis DOFs.
+        for name in others:
+            lo, hi, kind = self._dof_bounds.get(name, (0.0, 1.0, "float"))
+            val = self._fixed_vals.get(name, 0.5 * (lo + hi))
+            self._fixed_vals[name] = val
+            sld = QtWidgets.QSlider(Qt.Horizontal)
+            sld.setRange(0, 1000)
+            sld.setValue(int(round((val - lo) / (hi - lo) * 1000)) if hi > lo else 0)
+            sld.setToolTip(f"Hold {name} constant at this value for the model surface.")
+            lbl = QtWidgets.QLabel(f"{val:.4g}")
+            lbl.setMinimumWidth(60)
+            sld.valueChanged.connect(lambda v, nm=name: self._on_fixed_slider(nm, v))
+            row = QtWidgets.QWidget()
+            rl = QtWidgets.QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.addWidget(sld, 1)
+            rl.addWidget(lbl)
+            self._fixed_form.addRow(f"{name} =", row)
+            self._fixed_widgets[name] = (sld, lbl)
+
+    def _on_fixed_slider(self, name: str, v: int) -> None:
+        lo, hi, kind = self._dof_bounds.get(name, (0.0, 1.0, "float"))
+        val = lo + (v / 1000.0) * (hi - lo)
+        if kind == "int":
+            val = float(round(val))
+        self._fixed_vals[name] = val
+        if name in self._fixed_widgets:
+            self._fixed_widgets[name][1].setText(f"{val:.4g}")
+        # A moved slider invalidates the computed model surface (different slice).
+        self._surface_key = None
+        self._surface_multi_key = None
+        self._update_proj_hint()
+
+    def fixed_overrides(self) -> Dict[str, float]:
+        return dict(self._fixed_vals)
+
+    def current_objective(self) -> Optional[str]:
+        return self._obj_combo.currentText() or None
 
     def current_dof_pair(self) -> tuple:
         return self._x_combo.currentText(), self._y_combo.currentText()
 
     def set_update_enabled(self, enabled: bool) -> None:
-        self._update_btn.setEnabled(enabled)
+        # "enabled" == a model exists and no compute/scan is in progress. The
+        # actual button state also depends on the mode (see _refresh_update_btn).
+        self._compute_allowed = enabled
+        self._refresh_update_btn()
 
     # -- live update ------------------------------------------------------
     def add_point(self, payload: dict) -> None:
@@ -412,28 +641,130 @@ class _PlotPanel(QtWidgets.QWidget):
         self._surface_key = (payload["x_name"], payload["y_name"])
         self._render_projection()
 
+    def set_slice(self, payload: dict) -> None:
+        """Store a computed 1-D model slice and display it (if axis/mode match)."""
+        self._slice = payload
+        self._slice_key = payload["x_name"]
+        self._render_projection()
+
+    def set_surface_multi(self, payload: dict) -> None:
+        """Store a computed RGB phase-map surface and display it (if axes/mode match)."""
+        self._surface_multi = payload
+        self._surface_multi_key = (payload["x_name"], payload["y_name"])
+        self._render_projection()
+
+    def _set_legend(self, entries) -> None:
+        """Rebuild the projection legend from (label, color) entries."""
+        try:
+            self._legend.clear()
+        except Exception:  # noqa: BLE001
+            return
+        for label, color in entries:
+            sample = pg.ScatterPlotItem(size=10, pen=pg.mkPen(None),
+                                        brush=pg.mkBrush(color))
+            self._legend.addItem(sample, label)
+
+    def _clear_obj_series(self) -> None:
+        """Remove all per-objective scatter/curve items from the projection plot."""
+        for item in list(self._obj_scatter.values()) + list(self._obj_curve.values()):
+            try:
+                self._proj.removeItem(item)
+            except Exception:  # noqa: BLE001
+                pass
+        self._obj_scatter.clear()
+        self._obj_curve.clear()
+        # addLegend() is sticky; rebuild it so stale entries don't linger.
+        try:
+            self._legend.clear()
+        except Exception:  # noqa: BLE001
+            pass
+
     # -- projection -------------------------------------------------------
     def _on_update_clicked(self) -> None:
+        mode = self._mode_combo.currentText()
+        if mode == _MODE_OBJ_VS_DOF:
+            xname = self._x_combo.currentText()
+            if not xname:
+                self._proj_hint.setText("Pick an X DOF first.")
+                return
+            self.slice_requested.emit(xname)
+            return
         xname, yname = self.current_dof_pair()
         if not xname or not yname or xname == yname:
             self._proj_hint.setText("Pick two different DOFs for X and Y first.")
             return
-        self.surface_requested.emit(xname, yname)
+        if mode == _MODE_PHASE_MAP:
+            self.surface_multi_requested.emit(xname, yname)
+        else:
+            self.surface_requested.emit(xname, yname)
 
     def _surface_matches_axes(self) -> bool:
         return self._surface is not None and self._surface_key == self.current_dof_pair()
 
+    def _surface_multi_matches_axes(self) -> bool:
+        return (self._surface_multi is not None
+                and self._surface_multi_key == self.current_dof_pair())
+
+    def _slice_matches_axis(self) -> bool:
+        return self._slice is not None and self._slice_key == self._x_combo.currentText()
+
     def _render_projection(self) -> None:
+        mode = self._mode_combo.currentText()
+        obj_vs_dof = mode == _MODE_OBJ_VS_DOF
+        phase_map_mode = mode == _MODE_PHASE_MAP
+        points_mode = mode == _MODE_POINTS
+        single_obj_mode = mode in _SURFACE_MODES         # mean / sigma / acq
+        uses_model = mode != _MODE_POINTS                # everything but raw points
+
+        # --- consistent control state across ALL modes -----------------------
+        # Y-axis picker: used by every 2-D mode; not by Objectives-vs-DOF (Y is
+        # the objective values there).
+        self._y_combo.setEnabled(not obj_vs_dof)
+        self._y_label.setEnabled(not obj_vs_dof)
+        self._y_combo.setToolTip(
+            "Not used in this view — Y is each objective's value (one series per "
+            "objective)." if obj_vs_dof else "")
+        # Objective picker: only the single-objective surfaces (mean/σ/UCB) use it.
+        self._obj_combo.setEnabled(single_obj_mode)
+        self._obj_label.setEnabled(single_obj_mode)
+        # Fixed-DOF sliders: only meaningful when a MODEL prediction is shown
+        # (they slice the model); hidden for raw measured points.
+        self._fixed_box.setVisible(bool(self._fixed_widgets) and uses_model)
+        # Update button: nothing to compute for raw points; label matches the mode.
+        self._refresh_update_btn()
+        # Legend is rebuilt per mode; clear first so nothing stale lingers.
+        self._set_legend([])
+
+        # --- Objectives vs DOF: 1-D view -------------------------------------
+        if obj_vs_dof:
+            self._scatter.clear()
+            self._best_marker.clear()
+            self._surface_img.setVisible(False)
+            if self._colorbar is not None:
+                self._colorbar.setVisible(False)
+            self._render_obj_vs_dof(self._x_combo.currentText())  # sets its own legend
+            self._update_proj_hint()
+            return
+
+        # --- 2-D modes -------------------------------------------------------
+        for item in list(self._obj_scatter.values()) + list(self._obj_curve.values()):
+            item.setVisible(False)
+
         xname, yname = self.current_dof_pair()
         self._proj.setLabel("bottom", xname or "")
         self._proj.setLabel("left", yname or "")
-        mode = self._mode_combo.currentText()
-        surface_mode = mode in _SURFACE_MODES
 
-        self._draw_points_overlay(xname, yname, surface_mode=surface_mode)
+        # Measured points: composition color in points/phase-map modes; on any
+        # colored surface (scalar heatmap OR RGB map) draw an outline so they show.
+        self._draw_points_overlay(
+            xname, yname,
+            surface_mode=(single_obj_mode or phase_map_mode),
+            composition=(points_mode or phase_map_mode),
+        )
 
-        show_surface = surface_mode and self._surface_matches_axes()
-        if show_surface:
+        if phase_map_mode:
+            self._render_phase_map(xname, yname)
+        elif single_obj_mode and self._surface_matches_axes():
             grid = np.asarray(self._surface[_MODE_TO_GRID[mode]], dtype=float)
             s = self._surface
             self._surface_img.setImage(grid)
@@ -451,16 +782,78 @@ class _PlotPanel(QtWidgets.QWidget):
             if self._colorbar is not None:
                 self._colorbar.setVisible(False)
 
+        # Composition legend (phase → anchor color) for the composition views.
+        if points_mode or phase_map_mode:
+            n = len(self._obj_names)
+            self._set_legend(
+                [(nm, phase_anchor_rgb(i, n)) for i, nm in enumerate(self._obj_names)])
+
         self._update_proj_hint()
 
-    def _draw_points_overlay(self, xname, yname, *, surface_mode: bool) -> None:
+    def _refresh_update_btn(self) -> None:
+        """Enable/label the Update button consistently with the current mode.
+
+        The button is only meaningful when a model prediction can be computed
+        (``self._compute_allowed`` — set by the run lifecycle) AND the mode has
+        something to compute (raw 'Measured points' has nothing).
+        """
+        mode = self._mode_combo.currentText()
+        has_compute = mode != _MODE_POINTS
+        self._update_btn.setEnabled(self._compute_allowed and has_compute)
+        label = {
+            _MODE_PHASE_MAP: "Update phase map",
+            _MODE_OBJ_VS_DOF: "Update curves",
+        }.get(mode, "Update surface")
+        self._update_btn.setText(label)
+
+    def _render_phase_map(self, xname: str, yname: str) -> None:
+        """Render the predicted RGB phase-map (composition of optimized objectives)."""
+        if not (xname and yname and xname != yname
+                and self._surface_multi_matches_axes()):
+            self._surface_img.setVisible(False)
+            if self._colorbar is not None:
+                self._colorbar.setVisible(False)
+            return
+        s = self._surface_multi
+        names = self._obj_names
+        n = len(names)
+        # Sample any objective's grid for the shape (ny, nx).
+        any_grid = next(iter(s["objectives"].values()))["mean"]
+        ny, nx = any_grid.shape
+        # Fraction stack over ALL phases (observe phases = 0, not modeled) so the
+        # anchor mapping matches the measured-point composition colors.
+        stack = np.zeros((ny * nx, n), dtype=float)
+        for i, nm in enumerate(names):
+            od = s["objectives"].get(nm)
+            if od is not None:
+                stack[:, i] = np.clip(np.asarray(od["mean"], dtype=float).ravel(), 0, None)
+        rgb = composition_rgb(stack, n).reshape(ny, nx, 3)
+        self._surface_img.setImage(rgb)
+        self._surface_img.setRect(QtCore.QRectF(
+            s["x_lo"], s["y_lo"], s["x_hi"] - s["x_lo"], s["y_hi"] - s["y_lo"]))
+        self._surface_img.setVisible(True)
+        if self._colorbar is not None:
+            self._colorbar.setVisible(False)     # RGB image: scalar bar doesn't apply
+
+    def _draw_points_overlay(self, xname, yname, *, surface_mode: bool,
+                             composition: bool = False) -> None:
         if not self._records or not xname or not yname:
             self._scatter.clear()
             self._best_marker.clear()
             return
         xs = np.array([r["params"].get(xname, np.nan) for r in self._records])
         ys = np.array([r["params"].get(yname, np.nan) for r in self._records])
-        if surface_mode:
+        if composition and self._obj_names:
+            # Color each point by its measured phase composition (all objectives).
+            n = len(self._obj_names)
+            fr = np.array(
+                [[r.get("objectives", {}).get(nm, 0.0) for nm in self._obj_names]
+                 for r in self._records], dtype=float)
+            rgb = composition_rgb(fr, n)          # (m, 3) uint8
+            brushes = [pg.mkBrush(int(c[0]), int(c[1]), int(c[2])) for c in rgb]
+            pen = pg.mkPen("k", width=0.5) if surface_mode else pg.mkPen(None)
+            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pen)
+        elif surface_mode:
             # On a colored surface, draw plain outlined points so they stay visible.
             self._scatter.setData(
                 x=xs, y=ys, brush=pg.mkBrush(255, 255, 255, 150),
@@ -475,10 +868,97 @@ class _PlotPanel(QtWidgets.QWidget):
         if self._best_idx is not None:
             self._best_marker.setData(x=[xs[self._best_idx]], y=[ys[self._best_idx]])
 
+    def _obj_color(self, idx: int) -> str:
+        return _OBJ_PALETTE[idx % len(_OBJ_PALETTE)]
+
+    def _render_obj_vs_dof(self, xname: str) -> None:
+        """Draw each objective's value vs a single DOF (measured points + model curve).
+
+        Measured points come from the recorded ``objectives`` per point (all
+        objectives, including observe).  A model regression curve is overlaid for
+        each objective present in the current 1-D slice payload (optimized only).
+        """
+        self._proj.setLabel("bottom", xname or "")
+        self._proj.setLabel("left", "objective value")
+
+        names = self._obj_names or (
+            list(self._records[0]["objectives"].keys()) if self._records else [])
+        show_model = self._slice_matches_axis()
+        slice_objs = (self._slice or {}).get("objectives", {}) if show_model else {}
+
+        legend_entries = []
+        for i, name in enumerate(names):
+            color = self._obj_color(i)
+            legend_entries.append((name, color))
+            # lazily create the two items for this objective (no name= -> the
+            # legend is managed manually via _set_legend, avoiding duplicates)
+            sc = self._obj_scatter.get(name)
+            if sc is None:
+                sc = pg.ScatterPlotItem(size=9, pen=pg.mkPen(None),
+                                        brush=pg.mkBrush(color))
+                self._proj.addItem(sc)
+                self._obj_scatter[name] = sc
+            cv = self._obj_curve.get(name)
+            if cv is None:
+                cv = self._proj.plot([], [], pen=pg.mkPen(color, width=2))
+                self._obj_curve[name] = cv
+
+            # measured points for this objective vs the chosen DOF
+            xs, ys = [], []
+            for r in self._records:
+                if xname in r["params"] and name in r.get("objectives", {}):
+                    xs.append(r["params"][xname])
+                    ys.append(r["objectives"][name])
+            sc.setData(x=np.array(xs), y=np.array(ys))
+            sc.setVisible(True)
+
+            # model regression curve (optimized objectives only)
+            if name in slice_objs:
+                cv.setData(np.asarray(self._slice["xi"], dtype=float),
+                           np.asarray(slice_objs[name]["mean"], dtype=float))
+                cv.setVisible(True)
+            else:
+                cv.setData([], [])
+                cv.setVisible(False)
+        self._set_legend(legend_entries)
+
     def _update_proj_hint(self) -> None:
         mode = self._mode_combo.currentText()
-        if mode not in _SURFACE_MODES:
-            self._proj_hint.setText("Color = objective value at each sampled point.")
+        if mode == _MODE_OBJ_VS_DOF:
+            if self._slice_matches_axis():
+                s = self._slice
+                extra = ""
+                if s.get("fixed"):
+                    extra = "; other DOFs fixed at best (" + ", ".join(
+                        f"{k}={v:.4g}" for k, v in s["fixed"].items()) + ")"
+                self._proj_hint.setText(
+                    "Points = measured phase fractions; lines = model curve for "
+                    f"optimized objectives{extra}.")
+            else:
+                self._proj_hint.setText(
+                    "Points = measured objective values vs the X DOF. Click "
+                    "“Update surface” to overlay the model curve (optimized objectives).")
+            return
+        if mode == _MODE_PHASE_MAP:
+            if self._surface_multi_matches_axes():
+                s = self._surface_multi
+                extra = ""
+                if s.get("fixed"):
+                    extra = "; fixed " + ", ".join(
+                        f"{k}={v:.4g}" for k, v in s["fixed"].items())
+                self._proj_hint.setText(
+                    "Predicted phase composition (color = blend of optimized "
+                    f"phases); points = measured composition{extra}.")
+            else:
+                self._proj_hint.setText(
+                    "Points colored by measured phase composition. Click "
+                    "“Update surface” for the predicted RGB phase map "
+                    "(set the fixed-DOF sliders first).")
+            return
+        if mode == _MODE_POINTS:
+            self._proj_hint.setText(
+                "Color = measured phase composition at each sampled point "
+                "(legend shows each phase's anchor color).")
         elif not self._surface_matches_axes():
             self._proj_hint.setText(
                 "Click “Update surface” to compute the model surface for this DOF pair.")
@@ -486,7 +966,7 @@ class _PlotPanel(QtWidgets.QWidget):
             s = self._surface
             extra = ""
             if s.get("fixed"):
-                extra = "; other DOFs fixed at best (" + ", ".join(
+                extra = "; other DOFs fixed (" + ", ".join(
                     f"{k}={v:.4g}" for k, v in s["fixed"].items()) + ")"
             self._proj_hint.setText(f"{mode} of “{s['objective']}”{extra}.")
 
@@ -498,7 +978,8 @@ class _PlotPanel(QtWidgets.QWidget):
 class _DOFTable(QtWidgets.QTableWidget):
     """Editable table of degrees of freedom (one motor per row)."""
 
-    COLS = ["On", "Name", "Motor PV / Name", "Low limit", "High limit", "Type"]
+    COLS = ["On", "Name", "Motor PV / Name", "Low limit", "High limit", "Type",
+            "Protocol"]
 
     def __init__(self, parent=None):
         super().__init__(0, len(self.COLS), parent)
@@ -512,10 +993,12 @@ class _DOFTable(QtWidgets.QTableWidget):
         hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)    # Low limit
         hdr.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)    # High limit
         hdr.setSectionResizeMode(5, QtWidgets.QHeaderView.Fixed)    # Type
+        hdr.setSectionResizeMode(6, QtWidgets.QHeaderView.Fixed)    # Protocol
         self.setColumnWidth(0, 44)
         self.setColumnWidth(3, 98)
         self.setColumnWidth(4, 98)
         self.setColumnWidth(5, 80)
+        self.setColumnWidth(6, 74)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.setMinimumHeight(150)
@@ -550,6 +1033,15 @@ class _DOFTable(QtWidgets.QTableWidget):
         kind.setCurrentText(spec.kind)
         self.setCellWidget(r, 5, kind)
 
+        proto = QtWidgets.QComboBox()
+        proto.addItems(["auto", "ca", "pva"])
+        proto.setCurrentText(getattr(spec, "protocol", "auto") or "auto")
+        proto.setToolTip(
+            "I/O protocol for this motor's PV.\n"
+            "auto = infer from a ca://|pva:// prefix (default Channel Access);\n"
+            "ca = Channel Access; pva = PVAccess (driven via PvaSignal).")
+        self.setCellWidget(r, 6, proto)
+
     @staticmethod
     def _make_spin(value: float) -> QtWidgets.QDoubleSpinBox:
         sb = QtWidgets.QDoubleSpinBox()
@@ -581,6 +1073,7 @@ class _DOFTable(QtWidgets.QTableWidget):
                     hi=self.cellWidget(r, 4).value(),
                     kind=self.cellWidget(r, 5).currentText(),
                     enabled=chk.isChecked(),
+                    protocol=self.cellWidget(r, 6).currentText(),
                 )
             )
         return out
@@ -593,18 +1086,21 @@ class _DOFTable(QtWidgets.QTableWidget):
 class _ObjectiveTable(QtWidgets.QTableWidget):
     """Editable table of objectives (usually one)."""
 
-    COLS = ["Name", "Read PV", "Direction"]
+    COLS = ["Name", "Read PV", "Protocol", "Field", "Role"]
 
     def __init__(self, parent=None):
         super().__init__(0, len(self.COLS), parent)
         self.setHorizontalHeaderLabels(self.COLS)
         self.verticalHeader().setVisible(False)
         hdr = self.horizontalHeader()
-        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)   # Name
+        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)   # Read PV
+        hdr.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)     # Protocol
+        hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)   # Field
+        hdr.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # Role
+        self.setColumnWidth(2, 74)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.setMaximumHeight(120)
+        self.setMaximumHeight(180)
 
     def add_objective(self, spec: Optional[ObjectiveSpec] = None) -> None:
         # When the user clicks "Add objective" (no spec), give the new row a
@@ -616,10 +1112,59 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         self.insertRow(r)
         self.setItem(r, 0, QtWidgets.QTableWidgetItem(spec.name))
         self.setItem(r, 1, QtWidgets.QTableWidgetItem(spec.pv))
-        direction = QtWidgets.QComboBox()
-        direction.addItems(["maximize", "minimize"])
-        direction.setCurrentText("minimize" if spec.minimize else "maximize")
-        self.setCellWidget(r, 2, direction)
+
+        proto = QtWidgets.QComboBox()
+        proto.addItems(["auto", "ca", "pva"])
+        proto.setCurrentText(getattr(spec, "protocol", "auto") or "auto")
+        proto.setToolTip(
+            "Read protocol. pva lets several objectives share ONE PVA object and "
+            "each pick a different Field.")
+        self.setCellWidget(r, 2, proto)
+
+        # Field = which key/column of a multi-field PVA object this objective reads
+        # (blank for a plain CA PV / single-value NTScalar).
+        field_item = QtWidgets.QTableWidgetItem(getattr(spec, "field", "") or "")
+        field_item.setToolTip(
+            "For a multi-field PVA object, the field/column to optimize on "
+            "(e.g. monoclinic / orthorhombic / tetragonal). Leave blank for a "
+            "single-value channel.")
+        self.setItem(r, 3, field_item)
+
+        role = QtWidgets.QComboBox()
+        role.addItems(["maximize", "minimize", "observe"])
+        role.setCurrentText(getattr(spec, "role", None) or
+                            ("minimize" if spec.minimize else "maximize"))
+        role.setToolTip(
+            "maximize / minimize are optimized by the model; observe is only "
+            "recorded (plotted/logged), not optimized.")
+        self.setCellWidget(r, 4, role)
+
+    def split_pva_stream(self, channel: str, fields: List[str]) -> None:
+        """Add one objective row per field, all bound to one PVA channel.
+
+        A convenience for multi-fraction phase streams: pick the channel once,
+        then get N rows (protocol=pva, same Read PV, distinct Field).  New rows
+        default to ``observe`` so nothing is optimized until the user sets a
+        maximize/minimize role — preventing an accidental "maximize everything".
+        """
+        existing = {
+            (self.item(r, 0).text().strip() if self.item(r, 0) else "")
+            for r in range(self.rowCount())
+        }
+        for fld in fields:
+            fld = (fld or "").strip()
+            if not fld:
+                continue
+            name = fld
+            i = 2
+            while name in existing:
+                name = f"{fld}{i}"
+                i += 1
+            existing.add(name)
+            self.add_objective(
+                ObjectiveSpec(name=name, pv=channel, protocol="pva",
+                              field=fld, role="observe")
+            )
 
     def _unique_default_name(self) -> str:
         existing = {
@@ -650,7 +1195,9 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
                 ObjectiveSpec(
                     name=(name_item.text() if name_item else "").strip(),
                     pv=(pv_item.text() if pv_item else "").strip(),
-                    minimize=self.cellWidget(r, 2).currentText() == "minimize",
+                    protocol=self.cellWidget(r, 2).currentText(),
+                    field=(self.item(r, 3).text().strip() if self.item(r, 3) else ""),
+                    role=self.cellWidget(r, 4).currentText(),
                 )
             )
         return out
@@ -677,6 +1224,8 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._agent = None
         self._agent_config: Optional[OptimizerConfig] = None
         self._surface_worker: Optional[_SurfaceWorker] = None
+        self._surface_multi_worker: Optional[_SurfaceMultiWorker] = None
+        self._slice_worker: Optional[_SliceWorker] = None
         self._stopping = False  # True between a Stop request and the worker ending
         # Central-profile config source (None -> local QSettings fallback) and the
         # name of the currently-loaded named setup within that profile.
@@ -693,6 +1242,8 @@ class BayesianViewer(QtWidgets.QMainWindow):
         root.addWidget(self._build_control_panel(), 0)
         root.addWidget(self._build_display_panel(), 1)
         self._plots.surface_requested.connect(self._on_surface_requested)
+        self._plots.surface_multi_requested.connect(self._on_surface_multi_requested)
+        self._plots.slice_requested.connect(self._on_slice_requested)
 
         self._load_initial()
 
@@ -701,8 +1252,6 @@ class BayesianViewer(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_control_panel(self) -> QtWidgets.QWidget:
-        from dashpva.viewer.bayesian.bluesky_compat import get_bluesky_root
-
         # ---- scrollable setup area -------------------------------------
         content = QtWidgets.QWidget()
         outer = QtWidgets.QVBoxLayout(content)
@@ -711,14 +1260,6 @@ class BayesianViewer(QtWidgets.QMainWindow):
 
         # Profile + named-setup picker (follows the app-selected profile)
         outer.addLayout(self._build_profile_row())
-
-        # Bluesky env
-        env_row = QtWidgets.QFormLayout()
-        env_row.setLabelAlignment(Qt.AlignRight)
-        self._bluesky_env = QtWidgets.QLineEdit(get_bluesky_root())
-        self._bluesky_env.setPlaceholderText("path to conda env with bluesky/ophyd")
-        env_row.addRow("Bluesky Conda Env:", self._bluesky_env)
-        outer.addLayout(env_row)
 
         # DOF table + buttons
         outer.addWidget(self._section_label("Degrees of freedom (motors)"))
@@ -741,10 +1282,17 @@ class BayesianViewer(QtWidgets.QMainWindow):
         obj_btns = QtWidgets.QHBoxLayout()
         add_obj = self._small_button("＋ Add objective")
         rm_obj = self._small_button("－ Remove selected")
+        split_obj = self._small_button("⑂ Split PVA stream…")
+        split_obj.setToolTip(
+            "Bind several objectives to ONE multi-field PVA object: pick the "
+            "channel, then get one row per field (each selectable as "
+            "maximize/minimize/observe).")
         add_obj.clicked.connect(lambda: self._obj_table.add_objective())
         rm_obj.clicked.connect(self._obj_table.remove_selected)
+        split_obj.clicked.connect(self._on_split_pva)
         obj_btns.addWidget(add_obj)
         obj_btns.addWidget(rm_obj)
+        obj_btns.addWidget(split_obj)
         obj_btns.addStretch(1)
         outer.addLayout(obj_btns)
 
@@ -784,13 +1332,66 @@ class BayesianViewer(QtWidgets.QMainWindow):
         run_form.addRow(self._iter_caption, self._iterations)
         run_form.addRow("Points / iteration (batch):", self._n_points)
         run_form.addRow(self._total_caption, self._total_lbl)
-        self._acq_kwargs = QtWidgets.QLineEdit()
-        self._acq_kwargs.setPlaceholderText("advanced: key=value, key2=value2")
-        run_form.addRow("Acquisition options:", self._acq_kwargs)
         self._simulate = QtWidgets.QCheckBox("Simulate (offline, no EPICS)")
         run_form.addRow("", self._simulate)
         outer.addLayout(run_form)
         self._update_total()
+
+        # Advanced-Agent kwargs are no longer edited in the GUI (rarely useful);
+        # any value from a loaded setup is carried through here and re-saved.
+        self._acq_kwargs_value: Dict[str, Any] = {}
+
+        # ---- Advanced (optional): not needed for a simple move→read scan -----
+        adv_box = QtWidgets.QGroupBox("Advanced (optional) — leave blank for a simple scan")
+        adv_form = QtWidgets.QFormLayout(adv_box)
+        adv_form.setLabelAlignment(Qt.AlignRight)
+        self._checkpoint_path = QtWidgets.QLineEdit()
+        self._checkpoint_path.setPlaceholderText(
+            "optional: save/resume path, e.g. /path/to/bo_checkpoint")
+        self._checkpoint_path.setToolTip(
+            "Optional. Persist the optimizer state (Ax trials + model) to this path "
+            "so a campaign can be stopped and resumed. Blank = no checkpointing; "
+            "the optimizer still runs (Ax: Sobol exploration → GP Bayesian).")
+        adv_form.addRow("Checkpoint path:", self._checkpoint_path)
+        self._commit_pv = QtWidgets.QLineEdit()
+        self._commit_pv.setPlaceholderText("optional: commit PV, e.g. pva://FLA:fire")
+        self._commit_pv.setToolTip(
+            "Optional trigger written AFTER the DOFs move and BEFORE the read, each "
+            "point (\"apply the values and measure\"). Blank = none (plain "
+            "move→read; drive real device PVs directly). Point it at a commit "
+            "bridge for experiments that need custom apply logic.")
+        adv_form.addRow("Commit PV:", self._commit_pv)
+        self._commit_done_pv = QtWidgets.QLineEdit()
+        self._commit_done_pv.setPlaceholderText(
+            "optional: commit-done counter PV, e.g. pva://FLA:done")
+        self._commit_done_pv.setToolTip(
+            "Optional counter the commit target advances ONLY after the commit fully "
+            "completes. When set, the commit step blocks until it advances — a robust "
+            "barrier independent of PVA put-completion timing.")
+        adv_form.addRow("Commit-done counter PV:", self._commit_done_pv)
+        self._commit_done_timeout = QtWidgets.QSpinBox()
+        self._commit_done_timeout.setRange(5, 3600)
+        self._commit_done_timeout.setValue(600)
+        self._commit_done_timeout.setSuffix(" s")
+        self._commit_done_timeout.setToolTip(
+            "How long the commit step waits for the commit-done counter to advance. "
+            "Set it comfortably ABOVE your real commit time (aligned move + flash "
+            "power-up + fresh-fit wait) so slow moves/flashes don't time out.")
+        adv_form.addRow("Commit timeout:", self._commit_done_timeout)
+        # Bluesky env is only a fallback for a lean install that lacks bluesky.
+        # With the --bayesian venv, bluesky is already importable and this is
+        # ignored — leave blank.
+        self._bluesky_env = QtWidgets.QLineEdit()
+        self._bluesky_env.setPlaceholderText(
+            "optional: /path/to/blueskyenv (blank = use DashPVA's own bluesky)")
+        self._bluesky_env.setToolTip(
+            "Optional override. DashPVA's .venv already has bluesky/ophyd/blop "
+            "(from install.sh --bayesian), so the optimizer runs its own Bluesky "
+            "RunEngine and this is IGNORED. Only set a conda-env path if bluesky "
+            "is NOT importable in the DashPVA venv (a lean install); generic core "
+            "bluesky/ophyd is enough.")
+        adv_form.addRow("Bluesky env override:", self._bluesky_env)
+        outer.addWidget(adv_box)
 
         hint = QtWidgets.QLabel(
             "Ax auto-explores (Sobol) the first trials, then switches to the GP "
@@ -890,7 +1491,11 @@ class BayesianViewer(QtWidgets.QMainWindow):
             objectives=self._obj_table.specs(),
             iterations=self._iterations.value(),
             n_points=self._n_points.value(),
-            acq_kwargs=_parse_kwargs(self._acq_kwargs.text()),
+            acq_kwargs=dict(self._acq_kwargs_value),   # carried through (no GUI field)
+            commit_pv=self._commit_pv.text().strip(),
+            commit_done_pv=self._commit_done_pv.text().strip(),
+            commit_done_timeout=float(self._commit_done_timeout.value()),
+            checkpoint_path=self._checkpoint_path.text().strip(),
         )
 
     def _apply_config(self, cfg: OptimizerConfig) -> None:
@@ -906,8 +1511,55 @@ class BayesianViewer(QtWidgets.QMainWindow):
             self._obj_table.add_objective()
         self._iterations.setValue(cfg.iterations)
         self._n_points.setValue(cfg.n_points)
-        self._acq_kwargs.setText(_format_kwargs(cfg.acq_kwargs))
+        self._acq_kwargs_value = dict(cfg.acq_kwargs)   # carried through (no GUI field)
+        self._checkpoint_path.setText(getattr(cfg, "checkpoint_path", "") or "")
+        self._commit_pv.setText(getattr(cfg, "commit_pv", "") or "")
+        self._commit_done_pv.setText(getattr(cfg, "commit_done_pv", "") or "")
+        self._commit_done_timeout.setValue(int(getattr(cfg, "commit_done_timeout", 600.0)))
         self._update_total()
+
+    def _on_split_pva(self) -> None:
+        """Bind several objectives to one multi-field PVA object.
+
+        Ask for the channel, try to introspect its fields live (so the user can
+        confirm the exact keys), then add one ``observe`` objective row per
+        chosen field.  If introspection fails (channel offline), the user just
+        types the field names.
+        """
+        channel, ok = QtWidgets.QInputDialog.getText(
+            self, "Split PVA stream",
+            "PVA channel holding several fields\n"
+            "(e.g. pva://pvapy:phase:fractions):")
+        if not ok or not channel.strip():
+            return
+        channel = channel.strip()
+
+        discovered: List[str] = []
+        try:
+            from dashpva.viewer.bayesian.pva_signal import PvaSignal
+            val = PvaSignal(channel).get()
+            if isinstance(val, dict):
+                discovered = [k for k, v in val.items()
+                              if isinstance(v, (int, float))]
+        except Exception as exc:  # noqa: BLE001 - offline is fine; user types fields
+            logger.info("PVA introspection of %s failed: %s", channel, exc)
+
+        prompt = (
+            "Fields to add (comma-separated). Discovered live:"
+            if discovered else
+            "Channel not reachable for introspection — type the field names "
+            "(comma-separated):")
+        text, ok = QtWidgets.QInputDialog.getText(
+            self, "Split PVA stream", prompt, text=", ".join(discovered))
+        if not ok or not text.strip():
+            return
+        fields = [f.strip() for f in text.split(",") if f.strip()]
+        if not fields:
+            return
+        self._obj_table.split_pva_stream(channel, fields)
+        self._status_lbl.setText(
+            f"Status: added {len(fields)} objective(s) on {channel} "
+            "(set roles: maximize/minimize/observe)")
 
     def _build_profile_row(self) -> QtWidgets.QVBoxLayout:
         """Active-profile label + named-setup picker (Load/Save/Save As/Delete)."""
@@ -1005,8 +1657,13 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._restore_local_ui()
 
     def _restore_local_ui(self) -> None:
-        # Bluesky conda-env path (per-machine, local).
+        # Bluesky conda-env override (per-machine, local; optional).
         env = self._settings.value(_SETTINGS_BLUESKY_ENV, "", type=str)
+        # Drop the legacy wrong APS default that used to be persisted, so it
+        # doesn't reappear (the field is ignored anyway when bluesky is in .venv).
+        if env and env.rstrip("/") == "/home/beams/USER6IDB/.conda/envs/6idb-bits":
+            env = ""
+            self._settings.setValue(_SETTINGS_BLUESKY_ENV, "")
         if env:
             self._bluesky_env.setText(env)
         # Simulate is never persisted: always start OFF (beamline safety).
@@ -1206,8 +1863,10 @@ class BayesianViewer(QtWidgets.QMainWindow):
             run_cfg = cfg
             self._agent_config = cfg
             self._plots.reset(
-                [d.name for d in cfg.active_dofs()],
-                cfg.active_objectives()[0].minimize,
+                cfg.active_dofs(),
+                cfg.optimized_objectives()[0].minimize,
+                [o.name for o in cfg.active_objectives()],
+                [o.name for o in cfg.optimized_objectives()],
             )
             self._best_lbl.setText("")
 
@@ -1253,7 +1912,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._stopping = False
         self._agent = None
         self._agent_config = None
-        self._plots.reset([], minimize=False)   # clear plots, surface, and axes
+        self._plots.reset([], minimize=False, obj_names=[])  # clear plots, surface, axes
         self._plots.set_update_enabled(False)
         self._best_lbl.setText("")
         self._status_lbl.setText("Status: Idle")
@@ -1318,7 +1977,9 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._status_lbl.setText("Status: Computing surface…")
         self._status_lbl.setStyleSheet(status_style(WARNING))
         self._surface_worker = _SurfaceWorker(
-            self._agent, self._agent_config, x_name, y_name)
+            self._agent, self._agent_config, x_name, y_name,
+            fixed_overrides=self._plots.fixed_overrides(),
+            objective=self._plots.current_objective())
         self._surface_worker.done.connect(self._on_surface_done)
         self._surface_worker.failed.connect(self._on_surface_failed)
         self._surface_worker.start()
@@ -1336,6 +1997,76 @@ class BayesianViewer(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.warning(
             self, "Surface error",
             f"Could not compute the model surface:\n\n{msg}")
+
+    def _on_surface_multi_requested(self, x_name: str, y_name: str) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            QtWidgets.QMessageBox.information(
+                self, "Optimization running",
+                "Wait for the current run to finish before computing a phase map.")
+            return
+        if self._agent is None or self._agent_config is None:
+            QtWidgets.QMessageBox.information(
+                self, "No model yet",
+                "Run an optimization first, then click “Update surface”.")
+            return
+        self._plots.set_update_enabled(False)
+        self._status_lbl.setText("Status: Computing phase map…")
+        self._status_lbl.setStyleSheet(status_style(WARNING))
+        self._surface_multi_worker = _SurfaceMultiWorker(
+            self._agent, self._agent_config, x_name, y_name,
+            fixed_overrides=self._plots.fixed_overrides())
+        self._surface_multi_worker.done.connect(self._on_surface_multi_done)
+        self._surface_multi_worker.failed.connect(self._on_surface_multi_failed)
+        self._surface_multi_worker.start()
+
+    def _on_surface_multi_done(self, payload: dict) -> None:
+        self._plots.set_surface_multi(payload)
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Phase map updated ✓")
+        self._status_lbl.setStyleSheet(status_style(SUCCESS))
+
+    def _on_surface_multi_failed(self, msg: str) -> None:
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Phase map failed")
+        self._status_lbl.setStyleSheet(status_style(ERROR))
+        QtWidgets.QMessageBox.warning(
+            self, "Phase map error",
+            f"Could not compute the phase map:\n\n{msg}")
+
+    def _on_slice_requested(self, x_name: str) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            QtWidgets.QMessageBox.information(
+                self, "Optimization running",
+                "Wait for the current run to finish before computing a slice.")
+            return
+        if self._agent is None or self._agent_config is None:
+            QtWidgets.QMessageBox.information(
+                self, "No model yet",
+                "Run an optimization first, then click “Update surface”.")
+            return
+        self._plots.set_update_enabled(False)
+        self._status_lbl.setText("Status: Computing slice…")
+        self._status_lbl.setStyleSheet(status_style(WARNING))
+        self._slice_worker = _SliceWorker(
+            self._agent, self._agent_config, x_name,
+            fixed_overrides=self._plots.fixed_overrides())
+        self._slice_worker.done.connect(self._on_slice_done)
+        self._slice_worker.failed.connect(self._on_slice_failed)
+        self._slice_worker.start()
+
+    def _on_slice_done(self, payload: dict) -> None:
+        self._plots.set_slice(payload)
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Slice updated ✓")
+        self._status_lbl.setStyleSheet(status_style(SUCCESS))
+
+    def _on_slice_failed(self, msg: str) -> None:
+        self._plots.set_update_enabled(True)
+        self._status_lbl.setText("Status: Slice failed")
+        self._status_lbl.setStyleSheet(status_style(ERROR))
+        QtWidgets.QMessageBox.warning(
+            self, "Slice error",
+            f"Could not compute the model slice:\n\n{msg}")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1367,6 +2098,20 @@ class BayesianViewer(QtWidgets.QMainWindow):
             except (TypeError, RuntimeError):
                 pass
             self._surface_worker.wait(2000)
+        if self._slice_worker is not None and self._slice_worker.isRunning():
+            try:
+                self._slice_worker.done.disconnect()
+                self._slice_worker.failed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._slice_worker.wait(2000)
+        if self._surface_multi_worker is not None and self._surface_multi_worker.isRunning():
+            try:
+                self._surface_multi_worker.done.disconnect()
+                self._surface_multi_worker.failed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._surface_multi_worker.wait(2000)
         event.accept()
 
 

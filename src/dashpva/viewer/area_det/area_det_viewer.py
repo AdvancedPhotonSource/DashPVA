@@ -9,7 +9,16 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import (
+    QByteArray,
+    QEvent,
+    QPointF,
+    QSettings,
+    Qt,
+    QThread,
+    QTimer,
+    pyqtSignal,
+)
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -22,6 +31,7 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QSizePolicy,
     QSlider,
+    QVBoxLayout,
     QWidget,
 )
 from pyqtgraph.colormap import get as get_colormap
@@ -44,8 +54,7 @@ from dashpva.viewer.area_det.docks import (
 )
 from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.mask_viewer import MaskViewerWindow
-from dashpva.viewer.roi_stats_dialog import RoiStatsDialog
-from dashpva.viewer.roi_stats_plot import RoiStatsPlotDialog
+from dashpva.viewer.roi_stats_panel import RoiStatsPanel
 
 rot_gen = rotation_cycle(1,5)
 
@@ -127,6 +136,26 @@ class _CornerGrip(QWidget):
             p.drawLine(w - 1, off, off, h - 1)
 
 
+class _RoiStatsWindow(QDialog):
+    """Standalone host for the detached ROI Stats & Plots panel. Closing it hands
+    control back to the viewer, which hides the panel until it is reopened."""
+
+    def __init__(self, viewer):
+        super().__init__(viewer)
+        self._viewer = viewer
+        self.setWindowTitle('ROI Stats & Plots')
+        self.resize(900, 720)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(2, 2, 2, 2)
+
+    def closeEvent(self, event):
+        try:
+            self._viewer._on_roi_stats_window_closed()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
+
 class DiffractionImageWindow(BaseWindow):
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
@@ -171,16 +200,23 @@ class DiffractionImageWindow(BaseWindow):
         # name -> on-image pg.ROI overlay (e.g. "ROI1"), for transform-aware
         # region lookup by consumers such as the waterfall dock.
         self._roi_overlays: dict[str, pg.ROI] = {}
-        self.stats_dialogs = {}
-        self.stats_plot_dialogs = {}
         self.stats_data = {}
         # Manual ROI (ROI dock slot 5): plain movable/rotatable box whose stats
         # are computed locally (not from EPICS). Geometry persists across
         # enable/disable; source is the linear (pre-log) display image.
-        self.manual_roi = None
-        self._manual_roi_geom = None
+        # Manual ROIs (up to 5): plain amber movable/rotatable boxes labelled
+        # M1..M5, stats computed locally (not EPICS) and optionally broadcast as
+        # one soft PV. Viewer-owned so they persist while the panel is closed.
+        self.MAX_MANUAL_ROIS = 5
+        self.manual_rois = []            # [{roi, label, n, key}]
         self._manual_roi_last_frame = -1
         self._manual_roi_source = None
+        self._manual_pva_server = None
+        self._manual_pv_obj = None
+        self._manual_pv_channel = None
+        self.roi_stats_panel = None
+        self._roi_stats_window = None       # lazy standalone host when detached
+        self._roi_stats_detached = False
         self._input_channel = input_channel
         self.pv_prefix.setText(self._input_channel)
         self.pv_prefix.setPlaceholderText("e.g. s6lambda1:Pva1:Image")
@@ -356,9 +392,6 @@ class DiffractionImageWindow(BaseWindow):
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
         self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan_view)
         self.btn_analysis_window.setMenu(self._analysis_menu)
-        for i in range(1, 6):
-            getattr(self, f"btn_Stats{i}").clicked.connect(self.stats_button_clicked)
-            getattr(self, f"btn_PlotStats{i}").clicked.connect(self.stats_plot_button_clicked)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
         self.rotate90degCCW.clicked.connect(self.rotation_count)
@@ -479,8 +512,6 @@ class DiffractionImageWindow(BaseWindow):
         for i in range(1, 5):
             setattr(self, f"lbl_ROI{i}", getattr(self.roi_dock, f"lbl_ROI{i}"))
             setattr(self, f"roi{i}_total_value", getattr(self.roi_dock, f"roi{i}_total_value"))
-        self.lbl_image_total     = self.roi_dock.lbl_image_total
-        self.stats5_total_value  = self.roi_dock.stats5_total_value
         self.chk_show_roi = [
             self.roi_dock.chk_show_roi1,
             self.roi_dock.chk_show_roi2,
@@ -489,12 +520,8 @@ class DiffractionImageWindow(BaseWindow):
         ]
         for chk in self.chk_show_roi:
             chk.stateChanged.connect(self._apply_roi_visibility)
-        for i in range(1, 6):
-            setattr(self, f"btn_Stats{i}", getattr(self.roi_dock, f"btn_Stats{i}"))
-            setattr(self, f"btn_PlotStats{i}", getattr(self.roi_dock, f"btn_PlotStats{i}"))
-        self.chk_enable_manual_roi = self.roi_dock.chk_enable_manual_roi
-        self.manual_roi_total_value = self.roi_dock.manual_roi_total_value
-        self.chk_enable_manual_roi.stateChanged.connect(self._toggle_manual_roi)
+        self.btn_roi_panel = self.roi_dock.btn_roi_panel
+        self.btn_roi_panel.clicked.connect(self.open_roi_stats_panel)
 
         # Analysis dock widgets
         self.btn_analysis_window = self.analysis_dock.btn_analysis_window
@@ -909,6 +936,9 @@ class DiffractionImageWindow(BaseWindow):
         # the terminal "ROIs and stats ready" / error emit from _connect_pv_pollers.
         self.pv_pollers_status.emit(f"Connecting to {self._input_channel}…", "info")
         try:
+            # Manual ROIs are keyed per detector; remember the outgoing prefix so
+            # its boxes can be persisted before we (re)connect to a new one.
+            old_manual_prefix = self.reader.pva_prefix if self.reader is not None else None
             self.stop_timers()
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
@@ -960,6 +990,13 @@ class DiffractionImageWindow(BaseWindow):
             self.set_pixel_ordering()
             self.transpose_image_checked()
             self.reader.start_channel_monitor()
+            # Restore this detector's persisted manual ROIs (swap boxes if the
+            # detector changed; keep them in place if it's the same prefix).
+            try:
+                self._switch_manual_rois_for_channel(old_manual_prefix,
+                                                     self.reader.pva_prefix)
+            except Exception:
+                pass
         except Exception as e:
             print(f'Failed to Connect to {self._input_channel}: {e}')
             # Terminal "error" message hides the spinner via _on_pv_pollers_status.
@@ -1008,8 +1045,6 @@ class DiffractionImageWindow(BaseWindow):
             if self.reader.channel.isMonitorActive():
                 self.reader.stop_channel_monitor()
             self.stop_timers()
-            for key in self.stats_dialogs:
-                self.stats_dialogs[key] = None
             for hkl_pv in self.hkl_pvs.values():
                 hkl_pv.clear_callbacks()
                 hkl_pv.disconnect()
@@ -1019,42 +1054,75 @@ class DiffractionImageWindow(BaseWindow):
             self._set_connection_label(False)
         self._enter_idle_state()
 
-    @staticmethod
-    def _stats_identity(object_name: str) -> tuple:
-        """Map a Stats/Plot button's objectName to (stats_data key, display name).
+    def _ensure_roi_stats_panel(self) -> None:
+        if self.roi_stats_panel is None:
+            self.roi_stats_panel = RoiStatsPanel(parent=self, timer=self.timer_labels)
 
-        Slot 5 is the locally computed Manual ROI (key 'ManualROI'); slots 1-4
-        map straight to 'Stats{N}'. Keyed off objectName, not the button text, so
-        relabeling slot 5 to "Manual ROI" doesn't change the data key.
-        """
-        idx = ''.join(ch for ch in object_name if ch.isdigit())
-        if idx == '5':
-            return 'ManualROI', 'Manual ROI'
-        return f'Stats{idx}', f'Stats{idx}'
+    def open_roi_stats_panel(self) -> None:
+        """Show the ROI stats + plots panel embedded in the ROI dock. If it was
+        detached to its own window, re-embed it. Clicking again while it is already
+        embedded and visible hides it (toggle)."""
+        if self.reader is None:
+            return
+        self._ensure_roi_stats_panel()
+        if self._roi_stats_detached:
+            self._embed_roi_stats()
+            return
+        area = self.roi_dock.panel_area
+        if area.isVisible() and area.widget() is self.roi_stats_panel:
+            area.setVisible(False)          # toggle off
+        else:
+            self._embed_roi_stats()
 
-    def stats_button_clicked(self) -> None:
-        """Open the stats readout dialog for the pressed Stats / Manual ROI button."""
-        if self.reader is not None:
-            stats_text, display = self._stats_identity(self.sender().objectName())
-            self.stats_dialogs[stats_text] = RoiStatsDialog(
-                parent=self, stats_text=stats_text,
-                timer=self.timer_labels, display_name=display)
-            self.stats_dialogs[stats_text].show()
+    def _embed_roi_stats(self) -> None:
+        """Put the panel inside the ROI dock (reparenting it out of the standalone
+        window if it was detached) and make sure the dock is visible."""
+        self._ensure_roi_stats_panel()
+        panel = self.roi_stats_panel
+        if self._roi_stats_window is not None:
+            self._roi_stats_window.layout().removeWidget(panel)
+            self._roi_stats_window.hide()
+        self.roi_dock.panel_area.setWidget(panel)     # reparents into the dock
+        self.roi_dock.panel_area.setVisible(True)
+        panel.show()
+        panel.set_detached(False)
+        self._roi_stats_detached = False
+        self.roi_dock.show()
+        self.roi_dock.raise_()
 
-    def stats_plot_button_clicked(self) -> None:
-        """Open the live time-series plot for the pressed Stats / Manual ROI button."""
-        if self.reader is not None:
-            stats_text, display = self._stats_identity(self.sender().objectName())
-            existing = self.stats_plot_dialogs.get(stats_text)
-            if existing is not None:
-                existing.close()
-            self.stats_plot_dialogs[stats_text] = RoiStatsPlotDialog(
-                parent=self, stats_text=stats_text,
-                timer=self.timer_labels, display_name=display)
-            self.stats_plot_dialogs[stats_text].show()
+    def _detach_roi_stats(self) -> None:
+        """Pop the panel out of the ROI dock into its own resizable window."""
+        self._ensure_roi_stats_panel()
+        panel = self.roi_stats_panel
+        if self._roi_stats_window is None:
+            self._roi_stats_window = _RoiStatsWindow(self)
+        self.roi_dock.panel_area.takeWidget()          # release without deleting
+        self.roi_dock.panel_area.setVisible(False)
+        self._roi_stats_window.layout().addWidget(panel)   # reparents into window
+        panel.show()
+        panel.set_detached(True)
+        self._roi_stats_detached = True
+        self._roi_stats_window.show()
+        self._roi_stats_window.raise_()
+        self._roi_stats_window.activateWindow()
+
+    def toggle_roi_stats_detached(self) -> None:
+        """Detach button handler: embedded <-> standalone window."""
+        if self._roi_stats_detached:
+            self._embed_roi_stats()
+        else:
+            self._detach_roi_stats()
+
+    def _on_roi_stats_window_closed(self) -> None:
+        """Detached window closed: the panel goes away until the ROI Stats & Plots
+        button re-embeds it."""
+        self._roi_stats_detached = False
+        self.roi_dock.panel_area.setVisible(False)
 
     STATS_GROUPS = ('Stats1', 'Stats2', 'Stats3', 'Stats4', 'Stats5')
     STATS_FIELDS = ('Total_RBV', 'MinValue_RBV', 'MaxValue_RBV', 'Sigma_RBV', 'MeanValue_RBV')
+    # COM (center of mass) is computed locally for manual ROIs only, not EPICS ROIs 1-4.
+    _MANUAL_COM_FIELDS = ('ComX_RBV', 'ComY_RBV')
 
     def start_stats_monitors(self) -> None:
         """Connect to Stats PVs built from the detector prefix.
@@ -1209,70 +1277,264 @@ class DiffractionImageWindow(BaseWindow):
             else:
                 roi.hide()
 
-    # -------------------------------------------------------- Manual ROI (slot 5)
-    def _toggle_manual_roi(self) -> None:
-        """Enable/disable the manual ROI overlay from the ROI-dock checkbox."""
-        if self.chk_enable_manual_roi.isChecked():
-            self._ensure_manual_roi()
-        else:
-            self._remove_manual_roi()
+    # ------------------------------------------------------ Manual ROIs (up to 5)
+    def _next_manual_slot(self):
+        """Lowest free slot number 1..MAX_MANUAL_ROIS, or None if all are used."""
+        used = {e['n'] for e in self.manual_rois}
+        for n in range(1, self.MAX_MANUAL_ROIS + 1):
+            if n not in used:
+                return n
+        return None
 
-    def _ensure_manual_roi(self) -> None:
-        """Draw a plain movable/rotatable box (no interior markings). Geometry is
-        restored from the last enabled state so the shape persists."""
-        if self.manual_roi is not None:
-            return
-        image_item = self.image_view.getImageItem()
-        if image_item is None or image_item.image is None:
-            return
-        if self._manual_roi_geom is not None:
-            pos, size, angle = self._manual_roi_geom
-        else:
-            shape = image_item.image.shape
-            iw = int(shape[1]) if len(shape) >= 2 else 100
-            ih = int(shape[0]) if len(shape) >= 2 else 100
-            w = max(4, iw // 4)
-            h = max(4, ih // 4)
-            pos, size, angle = [(iw - w) // 2, (ih - h) // 2], [w, h], 0.0
-        roi = pg.ROI(pos, size, angle=angle, pen=pg.mkPen(ROI_COLORS[4], width=2),
+    def _build_manual_roi(self, n, state):
+        """Create the amber M{n} box from a saved-state dict ({'pos','size','angle'})
+        and register it. Shared by interactive add and restore-from-settings; no
+        frame is required (geometry is explicit)."""
+        roi = pg.ROI([0, 0], [1, 1], pen=pg.mkPen(ROI_COLORS[4], width=2),
                      movable=True, rotatable=True)
         roi.addScaleHandle([1, 1], [0, 0])
         roi.addScaleHandle([0, 0], [1, 1])
         roi.addRotateHandle([1, 0], [0.5, 0.5])
+        try:
+            roi.setState(state)   # applies pos/size/angle
+        except Exception:
+            pass
+        # M{k} label pinned to the box's top-left corner (child -> moves/rotates with it).
+        label = pg.TextItem(f'M{n}', color=ROI_COLORS[4], anchor=(0, 1))
+        label.setParentItem(roi)
+        label.setPos(0, 0)
         self.image_view.addItem(roi)
-        self.manual_roi = roi
+        # Connect AFTER setState so restoring geometry doesn't trigger a save; fires
+        # once per move/resize/rotate gesture (not the per-pixel sigRegionChanged).
+        roi.sigRegionChangeFinished.connect(self._on_manual_roi_changed)
+        entry = {'roi': roi, 'label': label, 'n': n, 'key': f'Manual{n}'}
+        self.manual_rois.append(entry)
+        return entry
+
+    def add_manual_roi(self):
+        """Create a plain amber, movable/rotatable box labelled M{k} whose stats are
+        computed locally. Returns its key ('Manual{k}') or None (full / no frame)."""
+        n = self._next_manual_slot()
+        if n is None:
+            return None
+        image_item = self.image_view.getImageItem()
+        if image_item is None or image_item.image is None:
+            return None
+        shape = image_item.image.shape
+        iw = int(shape[1]) if len(shape) >= 2 else 100
+        ih = int(shape[0]) if len(shape) >= 2 else 100
+        w = max(4, iw // 5)
+        h = max(4, ih // 5)
+        x = (iw - w) // 2 + (n - 1) * 8   # stagger so stacked boxes don't hide
+        y = (ih - h) // 2 + (n - 1) * 8
+        self._build_manual_roi(n, {'pos': [float(x), float(y)],
+                                   'size': [float(w), float(h)], 'angle': 0.0})
+        self._save_manual_rois()
+        self._manual_roi_last_frame = -1
+        self._update_manual_roi_stats(force=True)
+        return f'Manual{n}'
+
+    def remove_manual_roi(self, key) -> None:
+        """Remove the manual ROI with 'Manual{k}' key (box + label + its stats)."""
+        entry = next((e for e in self.manual_rois if e['key'] == key), None)
+        if entry is None:
+            return
+        try:
+            entry['roi'].sigRegionChangeFinished.disconnect(self._on_manual_roi_changed)
+        except Exception:
+            pass
+        try:
+            self.image_view.getView().removeItem(entry['roi'])  # child label goes too
+        except Exception:
+            pass
+        self.manual_rois.remove(entry)
+        prefix = self.reader.pva_prefix if self.reader is not None else None
+        if prefix:
+            for field in (*self.STATS_FIELDS, *self._MANUAL_COM_FIELDS):
+                self.stats_data.pop(f"{prefix}:{key}:{field}", None)
+        self._save_manual_rois()
+
+    # ---------------------------------------- Manual ROI persistence (QSettings)
+    # Stored natively as a QSettings array (no JSON): one element per manual ROI
+    # carrying its detector prefix + slot + geometry (pos/size/angle) as typed
+    # scalars. Keeping the prefix as a stored value (not a group/key name) sidesteps
+    # QSettings key escaping for colon-bearing prefixes like "asdf:asdfe".
+    _MANUAL_ROIS_ARRAY = "manual_rois"
+
+    @staticmethod
+    def _roi_state(roi) -> dict:
+        """pyqtgraph ROI.saveState() reduced to plain floats ({pos,size,angle})."""
+        st = roi.saveState()
+        pos = st.get('pos', (0, 0))
+        size = st.get('size', (1, 1))
+        return {'pos': [float(pos[0]), float(pos[1])],
+                'size': [float(size[0]), float(size[1])],
+                'angle': float(st.get('angle', 0.0) or 0.0)}
+
+    def _manual_prefix(self, prefix=None):
+        """Detector prefix used to key persisted manual ROIs (None if unknown)."""
+        if prefix:
+            return prefix
+        return self.reader.pva_prefix if self.reader is not None else None
+
+    def _read_all_manual_rois(self) -> list:
+        """Every persisted manual ROI as (prefix, n, state) across all detectors."""
+        out = []
+        s = _settings()
+        size = s.beginReadArray(self._MANUAL_ROIS_ARRAY)
+        try:
+            for i in range(size):
+                s.setArrayIndex(i)
+                pfx = s.value("prefix", "", type=str)
+                if not pfx:
+                    continue
+                state = {'pos': [s.value("x", 0.0, type=float),
+                                 s.value("y", 0.0, type=float)],
+                         'size': [s.value("w", 1.0, type=float),
+                                  s.value("h", 1.0, type=float)],
+                         'angle': s.value("angle", 0.0, type=float)}
+                out.append((pfx, s.value("n", 0, type=int), state))
+        finally:
+            s.endArray()
+        return out
+
+    def _write_all_manual_rois(self, records) -> None:
+        """Overwrite the whole persisted array with `records` [(prefix, n, state)]."""
+        s = _settings()
+        s.remove(self._MANUAL_ROIS_ARRAY)   # drop stale indices before rewriting
+        s.beginWriteArray(self._MANUAL_ROIS_ARRAY, len(records))
+        try:
+            for i, (pfx, n, state) in enumerate(records):
+                s.setArrayIndex(i)
+                s.setValue("prefix", pfx)
+                s.setValue("n", int(n))
+                s.setValue("x", float(state['pos'][0]))
+                s.setValue("y", float(state['pos'][1]))
+                s.setValue("w", float(state['size'][0]))
+                s.setValue("h", float(state['size'][1]))
+                s.setValue("angle", float(state.get('angle', 0.0)))
+        finally:
+            s.endArray()
+        s.sync()
+
+    def _save_manual_rois(self, prefix=None) -> None:
+        """Persist the current manual ROIs for their detector prefix (replacing that
+        prefix's entries, leaving other detectors' untouched). Never raises."""
+        prefix = self._manual_prefix(prefix)
+        if not prefix:
+            return
+        try:
+            others = [r for r in self._read_all_manual_rois() if r[0] != prefix]
+            current = [(prefix, e['n'], self._roi_state(e['roi']))
+                       for e in self.manual_rois]
+            self._write_all_manual_rois(others + current)
+        except Exception:
+            pass
+
+    def _restore_manual_rois(self, prefix=None) -> None:
+        """Recreate the saved manual ROIs for a detector prefix (call after
+        clearing). Skips duplicate/over-cap slots; no-op when nothing is stored."""
+        prefix = self._manual_prefix(prefix)
+        if not prefix:
+            return
+        try:
+            records = [r for r in self._read_all_manual_rois() if r[0] == prefix]
+        except Exception:
+            return
+        used = {e['n'] for e in self.manual_rois}
+        for _pfx, n, state in records:
+            if n < 1 or n > self.MAX_MANUAL_ROIS or n in used:
+                continue
+            used.add(n)
+            self._build_manual_roi(n, state)
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
 
-    def _remove_manual_roi(self) -> None:
-        if self.manual_roi is None:
-            return
-        # Remember geometry so re-enabling restores the same box.
-        self._manual_roi_geom = (self.manual_roi.pos(), self.manual_roi.size(),
-                                 self.manual_roi.angle())
-        try:
-            self.image_view.getView().removeItem(self.manual_roi)
-        except Exception:
-            pass
-        self.manual_roi = None
-        # Drop stored manual stats so the label/plots read 0 while disabled.
+    def _clear_manual_roi_overlays(self) -> None:
+        """Remove all manual ROI overlays (box + label + stats) from the view,
+        leaving persisted settings untouched — used when switching detectors."""
         prefix = self.reader.pva_prefix if self.reader is not None else None
-        if prefix:
-            for field in self.STATS_FIELDS:
-                self.stats_data.pop(f'{prefix}:ManualROI:{field}', None)
+        for entry in list(self.manual_rois):
+            try:
+                entry['roi'].sigRegionChangeFinished.disconnect(self._on_manual_roi_changed)
+            except Exception:
+                pass
+            try:
+                self.image_view.getView().removeItem(entry['roi'])
+            except Exception:
+                pass
+            if prefix:
+                for field in (*self.STATS_FIELDS, *self._MANUAL_COM_FIELDS):
+                    self.stats_data.pop(f"{prefix}:{entry['key']}:{field}", None)
+        self.manual_rois = []
+
+    def _on_manual_roi_changed(self, *args) -> None:
+        """Persist geometry after a move/resize/rotate gesture (sigRegionChangeFinished)."""
+        self._save_manual_rois()
+
+    def _switch_manual_rois_for_channel(self, old_prefix, new_prefix) -> None:
+        """On channel (re)connect: keep boxes if the detector is unchanged;
+        otherwise persist the outgoing detector's boxes, clear them, and restore
+        the incoming detector's saved boxes."""
+        if old_prefix == new_prefix:
+            self._save_manual_rois(new_prefix)   # same detector: boxes stay put
+            return
+        if old_prefix:
+            self._save_manual_rois(old_prefix)
+        self._clear_manual_roi_overlays()
+        self._restore_manual_rois(new_prefix)
+
+    @staticmethod
+    def _roi_stats(sub) -> dict:
+        """Five stats in one compact float64 pass (derive mean/std from n/sum/sumsq,
+        no rescans) plus the intensity-weighted centroid as ROI-local axis-index means
+        (_com_ax0/_com_ax1); the caller maps those to absolute detector pixels.
+        Returns {} if empty/all-NaN."""
+        a = np.asarray(sub)
+        has_nan = a.dtype.kind == 'f' and bool(np.isnan(a).any())
+        if a.ndim == 2 and a.shape[0] and a.shape[1]:
+            sum0 = np.nansum(a, axis=1) if has_nan else a.sum(axis=1)   # per axis-0 index
+            sum1 = np.nansum(a, axis=0) if has_nan else a.sum(axis=0)   # per axis-1 index
+        else:
+            sum0 = sum1 = None
+        flat = np.ravel(a)
+        if has_nan:
+            flat = flat[np.isfinite(flat)]
+        if flat.size == 0:
+            return {}
+        flat = flat.astype(np.float64, copy=False)
+        n = flat.size
+        s = float(flat.sum())
+        mean = s / n
+        var = max(float(flat.dot(flat)) / n - mean * mean, 0.0)
+        ax0 = ax1 = 0.0
+        if sum0 is not None and s > 0:   # sum(sum0) == sum(sum1) == s
+            ax0 = float(sum0.astype(np.float64) @ np.arange(sum0.shape[0])) / s
+            ax1 = float(sum1.astype(np.float64) @ np.arange(sum1.shape[0])) / s
+        return {'Total_RBV': s, 'MinValue_RBV': float(flat.min()),
+                'MaxValue_RBV': float(flat.max()), 'MeanValue_RBV': mean,
+                'Sigma_RBV': var ** 0.5, '_com_ax0': ax0, '_com_ax1': ax1}
+
+    @staticmethod
+    def _roi_com_to_image(roi, ax0, ax1):
+        """Map an ROI-local centroid (sub axis-0/axis-1 index means) to absolute
+        detector-pixel coordinates on the displayed axes, honoring the ROI's position
+        and rotation. Returns (x, y)."""
+        try:
+            p = roi.mapToParent(QPointF(float(ax0), float(ax1)))
+            return float(p.x()), float(p.y())
+        except Exception:
+            try:
+                pos = roi.pos()
+                return float(pos.x()) + float(ax0), float(pos.y()) + float(ax1)
+            except Exception:
+                return float(ax0), float(ax1)
 
     def _update_manual_roi_stats(self, force: bool = False) -> None:
-        """Compute Total/Min/Max/Mean/Sigma locally over the manual ROI region and
-        store them under the 'ManualROI' key, so the dock label and the Stats/Plot
-        dialogs consume them exactly like the EPICS ROIs. Frame-guarded; stats are
-        orientation-invariant so transpose/rotate don't matter."""
-        if self.manual_roi is None:
-            # Deferred creation: the box was enabled before a frame was displayed.
-            chk = getattr(self, 'chk_enable_manual_roi', None)
-            if chk is not None and chk.isChecked():
-                self._ensure_manual_roi()  # creates + computes once a frame exists
-            return
-        if self.reader is None:
+        """Frame-guarded local stats for every manual ROI -> stats_data['{prefix}:
+        Manual{k}:{field}'] (+ broadcast). One vectorized pass per ROI; the ~<=5
+        loop is negligible. Hard early-out when no manual ROI exists."""
+        if not self.manual_rois or self.reader is None:
             return
         image_item = self.image_view.getImageItem()
         if image_item is None or image_item.image is None:
@@ -1284,15 +1546,84 @@ class DiffractionImageWindow(BaseWindow):
         source = self._manual_roi_source
         if source is None:
             source = np.asarray(image_item.image)
-        sub = _extract_roi_subarray(source, self.manual_roi, image_item)
-        if sub is None or sub.size == 0 or not np.any(np.isfinite(sub)):
-            return
         prefix = self.reader.pva_prefix
-        self.stats_data[f'{prefix}:ManualROI:Total_RBV'] = float(np.nansum(sub))
-        self.stats_data[f'{prefix}:ManualROI:MinValue_RBV'] = float(np.nanmin(sub))
-        self.stats_data[f'{prefix}:ManualROI:MaxValue_RBV'] = float(np.nanmax(sub))
-        self.stats_data[f'{prefix}:ManualROI:MeanValue_RBV'] = float(np.nanmean(sub))
-        self.stats_data[f'{prefix}:ManualROI:Sigma_RBV'] = float(np.nanstd(sub))
+        for entry in self.manual_rois:
+            sub = _extract_roi_subarray(source, entry['roi'], image_item)
+            if sub is None:
+                continue
+            stats = self._roi_stats(sub)
+            if not stats:
+                continue
+            # COM comes back as ROI-local axis indices; report it in absolute detector
+            # pixels (displayed axes) so it lines up with the image and future q axes.
+            ax0 = stats.pop('_com_ax0', 0.0)
+            ax1 = stats.pop('_com_ax1', 0.0)
+            stats['ComX_RBV'], stats['ComY_RBV'] = self._roi_com_to_image(
+                entry['roi'], ax0, ax1)
+            for field, val in stats.items():
+                self.stats_data[f"{prefix}:{entry['key']}:{field}"] = val
+        if self._manual_pva_server is not None:
+            self._publish_manual_stats(frame_id)
+
+    # --------------------------------------------- Manual ROI broadcast (one PV)
+    def _manual_broadcast_channel(self) -> str:
+        base = (self.reader.pva_prefix if self.reader is not None else '') or 'pvapy'
+        return f'{base}:ManualROI:Stats'
+
+    def start_manual_broadcast(self) -> bool:
+        """Publish all M1..M5 stats on one soft PV so a consumer subscribes once."""
+        try:
+            import pvaccess as pva
+        except Exception:
+            return False
+        self.stop_manual_broadcast()
+        struct = {'frameId': pva.INT}
+        for k in range(1, self.MAX_MANUAL_ROIS + 1):
+            struct[f'm{k}_active'] = pva.BOOLEAN
+            for f in ('total', 'min', 'max', 'mean', 'sigma', 'comx', 'comy'):
+                struct[f'm{k}_{f}'] = pva.DOUBLE
+        try:
+            self._manual_pv_channel = self._manual_broadcast_channel()
+            self._manual_pv_obj = pva.PvObject(struct)
+            self._manual_pva_server = pva.PvaServer()
+            self._manual_pva_server.addRecord(self._manual_pv_channel, self._manual_pv_obj, None)
+            self._manual_pva_server.start()
+        except Exception:
+            self.stop_manual_broadcast()
+            return False
+        self._publish_manual_stats(getattr(self.reader, 'frames_received', 0))
+        return True
+
+    def stop_manual_broadcast(self) -> None:
+        if self._manual_pva_server is not None:
+            try:
+                self._manual_pva_server.stop()
+            except Exception:
+                pass
+        self._manual_pva_server = None
+        self._manual_pv_obj = None
+        self._manual_pv_channel = None
+
+    _MANUAL_FIELD_MAP = {'total': 'Total_RBV', 'min': 'MinValue_RBV', 'max': 'MaxValue_RBV',
+                         'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV',
+                         'comx': 'ComX_RBV', 'comy': 'ComY_RBV'}
+
+    def _publish_manual_stats(self, frame_id) -> None:
+        if self._manual_pva_server is None or self._manual_pv_obj is None:
+            return
+        prefix = self.reader.pva_prefix if self.reader is not None else ''
+        by_slot = {e['n']: e['key'] for e in self.manual_rois}
+        obj = {'frameId': int(frame_id) if frame_id is not None else 0}
+        for k in range(1, self.MAX_MANUAL_ROIS + 1):
+            key = by_slot.get(k)
+            obj[f'm{k}_active'] = key is not None
+            for short, field in self._MANUAL_FIELD_MAP.items():
+                obj[f'm{k}_{short}'] = (
+                    float(self.stats_data.get(f'{prefix}:{key}:{field}', 0.0)) if key else 0.0)
+        try:
+            self._manual_pv_obj.set(obj)
+        except Exception:
+            pass
 
     def freeze_image_checked(self) -> None:
         """
@@ -1855,7 +2186,6 @@ class DiffractionImageWindow(BaseWindow):
             for i in range(1, 5):
                 label = getattr(self, f"roi{i}_total_value")
                 label.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}")
-            self.stats5_total_value.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:ManualROI:Total_RBV', 0.0)):.2f}")
 
     def update_rsm(self) -> None:
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
@@ -2077,10 +2407,14 @@ class DiffractionImageWindow(BaseWindow):
             s = _settings()
             s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
             s.setValue("area_det_window_geom", self.saveGeometry())
+            self._save_manual_rois()
         except Exception:
             pass
-        del self.stats_dialogs # otherwise dialogs stay in memory
-        del self.stats_plot_dialogs
+        if self._roi_stats_window is not None:
+            self._roi_stats_window.close()
+        if self.roi_stats_panel is not None:
+            self.roi_stats_panel.close()
+        self.stop_manual_broadcast()
         if self.mask_viewer is not None:
             self.mask_viewer.close()
         if self.file_writer_thread.isRunning():
