@@ -37,6 +37,10 @@ _STATS = [('Total', 'Total_RBV'), ('Min', 'MinValue_RBV'), ('Max', 'MaxValue_RBV
           ('Mean', 'MeanValue_RBV'), ('Sigma', 'Sigma_RBV')]
 _STAT_NAMES = [n for n, _ in _STATS]
 _STAT_FIELDS = [f for _, f in _STATS]
+# COM columns are shown for manual ROIs (M1-M5) only; EPICS ROIs 1-4 show a dash.
+_COM = [('COM X', 'ComX_RBV'), ('COM Y', 'ComY_RBV')]
+_COM_NAMES = [n for n, _ in _COM]
+_COM_FIELDS = [f for _, f in _COM]
 # Fixed colors for the 5 stat curves in per-curve mode.
 _STAT_CURVE_COLORS = [(31, 119, 180), (44, 160, 44), (214, 39, 40),
                       (255, 127, 14), (148, 103, 189)]
@@ -158,8 +162,8 @@ class RoiStatsPanel(QDialog):
         ctrl.addWidget(self.chk_broadcast)
         layout.addLayout(ctrl)
 
-        self.table = QTableWidget(0, 1 + len(_STATS))
-        self.table.setHorizontalHeaderLabels(['ROI'] + _STAT_NAMES)
+        self.table = QTableWidget(0, 1 + len(_STATS) + len(_COM))
+        self.table.setHorizontalHeaderLabels(['ROI'] + _STAT_NAMES + _COM_NAMES)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.table, stretch=1)
@@ -210,7 +214,7 @@ class RoiStatsPanel(QDialog):
             item = QTableWidgetItem(r['label'])
             item.setForeground(pg.mkColor(r['color']))
             self.table.setItem(row, 0, item)
-            for c in range(len(_STATS)):
+            for c in range(len(_STATS) + len(_COM)):
                 self.table.setItem(row, c + 1, QTableWidgetItem('--'))
         self.lbl_empty.setVisible(not rois)
         self.btn_add.setEnabled(
@@ -300,6 +304,17 @@ class RoiStatsPanel(QDialog):
                 item = self.table.item(row, c + 1)
                 if item is not None:
                     item.setText('--' if val is None else f'{float(val):.3g}')
+            # COM columns: manual ROIs (M1-M5) only; EPICS ROIs 1-4 show an em-dash.
+            is_manual = r['key'].startswith('Manual')
+            for c, field in enumerate(_COM_FIELDS):
+                item = self.table.item(row, 1 + len(_STAT_FIELDS) + c)
+                if item is None:
+                    continue
+                if not is_manual:
+                    item.setText('—')
+                    continue
+                val = self.viewer.stats_data.get(f"{prefix}:{r['key']}:{field}")
+                item.setText('--' if val is None else f'{float(val):.3g}')
 
     def _update_analysis(self):
         key = self.cmb_roi.currentData()

@@ -1029,6 +1029,8 @@ class DiffractionImageWindow(BaseWindow):
 
     STATS_GROUPS = ('Stats1', 'Stats2', 'Stats3', 'Stats4', 'Stats5')
     STATS_FIELDS = ('Total_RBV', 'MinValue_RBV', 'MaxValue_RBV', 'Sigma_RBV', 'MeanValue_RBV')
+    # COM (center of mass) is computed locally for manual ROIs only, not EPICS ROIs 1-4.
+    _MANUAL_COM_FIELDS = ('ComX_RBV', 'ComY_RBV')
 
     def start_stats_monitors(self) -> None:
         """Connect to Stats PVs built from the detector prefix.
@@ -1256,7 +1258,7 @@ class DiffractionImageWindow(BaseWindow):
         self.manual_rois.remove(entry)
         prefix = self.reader.pva_prefix if self.reader is not None else None
         if prefix:
-            for field in self.STATS_FIELDS:
+            for field in (*self.STATS_FIELDS, *self._MANUAL_COM_FIELDS):
                 self.stats_data.pop(f"{prefix}:{key}:{field}", None)
         self._save_manual_rois()
 
@@ -1370,7 +1372,7 @@ class DiffractionImageWindow(BaseWindow):
             except Exception:
                 pass
             if prefix:
-                for field in self.STATS_FIELDS:
+                for field in (*self.STATS_FIELDS, *self._MANUAL_COM_FIELDS):
                     self.stats_data.pop(f"{prefix}:{entry['key']}:{field}", None)
         self.manual_rois = []
 
@@ -1392,10 +1394,18 @@ class DiffractionImageWindow(BaseWindow):
 
     @staticmethod
     def _roi_stats(sub) -> dict:
-        """All 5 stats in one compact float64 pass (min copies): derive mean/std
-        from n/sum/sumsq instead of rescanning. Returns {} if empty/all-NaN."""
-        flat = np.ravel(sub)
-        if flat.size and np.isnan(flat).any():
+        """Five stats in one compact float64 pass (derive mean/std from n/sum/sumsq,
+        no rescans) plus an intensity-weighted COM (ROI-local pixels) from cheap axis
+        sums. Returns {} if empty/all-NaN."""
+        a = np.asarray(sub)
+        has_nan = a.dtype.kind == 'f' and bool(np.isnan(a).any())
+        if a.ndim == 2 and a.shape[0] and a.shape[1]:
+            colsum = np.nansum(a, axis=0) if has_nan else a.sum(axis=0)   # per-column -> X
+            rowsum = np.nansum(a, axis=1) if has_nan else a.sum(axis=1)   # per-row -> Y
+        else:
+            colsum = rowsum = None
+        flat = np.ravel(a)
+        if has_nan:
             flat = flat[np.isfinite(flat)]
         if flat.size == 0:
             return {}
@@ -1404,9 +1414,13 @@ class DiffractionImageWindow(BaseWindow):
         s = float(flat.sum())
         mean = s / n
         var = max(float(flat.dot(flat)) / n - mean * mean, 0.0)
+        comx = comy = 0.0
+        if colsum is not None and s > 0:   # sum(colsum) == sum(rowsum) == s
+            comx = float(colsum.astype(np.float64) @ np.arange(colsum.shape[0])) / s
+            comy = float(rowsum.astype(np.float64) @ np.arange(rowsum.shape[0])) / s
         return {'Total_RBV': s, 'MinValue_RBV': float(flat.min()),
                 'MaxValue_RBV': float(flat.max()), 'MeanValue_RBV': mean,
-                'Sigma_RBV': var ** 0.5}
+                'Sigma_RBV': var ** 0.5, 'ComX_RBV': comx, 'ComY_RBV': comy}
 
     def _update_manual_roi_stats(self, force: bool = False) -> None:
         """Frame-guarded local stats for every manual ROI -> stats_data['{prefix}:
@@ -1449,7 +1463,7 @@ class DiffractionImageWindow(BaseWindow):
         struct = {'frameId': pva.INT}
         for k in range(1, self.MAX_MANUAL_ROIS + 1):
             struct[f'm{k}_active'] = pva.BOOLEAN
-            for f in ('total', 'min', 'max', 'mean', 'sigma'):
+            for f in ('total', 'min', 'max', 'mean', 'sigma', 'comx', 'comy'):
                 struct[f'm{k}_{f}'] = pva.DOUBLE
         try:
             self._manual_pv_channel = self._manual_broadcast_channel()
@@ -1474,7 +1488,8 @@ class DiffractionImageWindow(BaseWindow):
         self._manual_pv_channel = None
 
     _MANUAL_FIELD_MAP = {'total': 'Total_RBV', 'min': 'MinValue_RBV', 'max': 'MaxValue_RBV',
-                         'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV'}
+                         'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV',
+                         'comx': 'ComX_RBV', 'comy': 'ComY_RBV'}
 
     def _publish_manual_stats(self, frame_id) -> None:
         if self._manual_pva_server is None or self._manual_pv_obj is None:
