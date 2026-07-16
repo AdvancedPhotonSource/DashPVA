@@ -9,7 +9,16 @@ import pyqtgraph as pg
 import xrayutilities as xu
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
-from PyQt5.QtCore import QByteArray, QEvent, QSettings, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import (
+    QByteArray,
+    QEvent,
+    QPointF,
+    QSettings,
+    Qt,
+    QThread,
+    QTimer,
+    pyqtSignal,
+)
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -1400,15 +1409,16 @@ class DiffractionImageWindow(BaseWindow):
     @staticmethod
     def _roi_stats(sub) -> dict:
         """Five stats in one compact float64 pass (derive mean/std from n/sum/sumsq,
-        no rescans) plus an intensity-weighted COM (ROI-local pixels) from cheap axis
-        sums. Returns {} if empty/all-NaN."""
+        no rescans) plus the intensity-weighted centroid as ROI-local axis-index means
+        (_com_ax0/_com_ax1); the caller maps those to absolute detector pixels.
+        Returns {} if empty/all-NaN."""
         a = np.asarray(sub)
         has_nan = a.dtype.kind == 'f' and bool(np.isnan(a).any())
         if a.ndim == 2 and a.shape[0] and a.shape[1]:
-            colsum = np.nansum(a, axis=0) if has_nan else a.sum(axis=0)   # per-column -> X
-            rowsum = np.nansum(a, axis=1) if has_nan else a.sum(axis=1)   # per-row -> Y
+            sum0 = np.nansum(a, axis=1) if has_nan else a.sum(axis=1)   # per axis-0 index
+            sum1 = np.nansum(a, axis=0) if has_nan else a.sum(axis=0)   # per axis-1 index
         else:
-            colsum = rowsum = None
+            sum0 = sum1 = None
         flat = np.ravel(a)
         if has_nan:
             flat = flat[np.isfinite(flat)]
@@ -1419,13 +1429,28 @@ class DiffractionImageWindow(BaseWindow):
         s = float(flat.sum())
         mean = s / n
         var = max(float(flat.dot(flat)) / n - mean * mean, 0.0)
-        comx = comy = 0.0
-        if colsum is not None and s > 0:   # sum(colsum) == sum(rowsum) == s
-            comx = float(colsum.astype(np.float64) @ np.arange(colsum.shape[0])) / s
-            comy = float(rowsum.astype(np.float64) @ np.arange(rowsum.shape[0])) / s
+        ax0 = ax1 = 0.0
+        if sum0 is not None and s > 0:   # sum(sum0) == sum(sum1) == s
+            ax0 = float(sum0.astype(np.float64) @ np.arange(sum0.shape[0])) / s
+            ax1 = float(sum1.astype(np.float64) @ np.arange(sum1.shape[0])) / s
         return {'Total_RBV': s, 'MinValue_RBV': float(flat.min()),
                 'MaxValue_RBV': float(flat.max()), 'MeanValue_RBV': mean,
-                'Sigma_RBV': var ** 0.5, 'ComX_RBV': comx, 'ComY_RBV': comy}
+                'Sigma_RBV': var ** 0.5, '_com_ax0': ax0, '_com_ax1': ax1}
+
+    @staticmethod
+    def _roi_com_to_image(roi, ax0, ax1):
+        """Map an ROI-local centroid (sub axis-0/axis-1 index means) to absolute
+        detector-pixel coordinates on the displayed axes, honoring the ROI's position
+        and rotation. Returns (x, y)."""
+        try:
+            p = roi.mapToParent(QPointF(float(ax0), float(ax1)))
+            return float(p.x()), float(p.y())
+        except Exception:
+            try:
+                pos = roi.pos()
+                return float(pos.x()) + float(ax0), float(pos.y()) + float(ax1)
+            except Exception:
+                return float(ax0), float(ax1)
 
     def _update_manual_roi_stats(self, force: bool = False) -> None:
         """Frame-guarded local stats for every manual ROI -> stats_data['{prefix}:
@@ -1448,7 +1473,16 @@ class DiffractionImageWindow(BaseWindow):
             sub = _extract_roi_subarray(source, entry['roi'], image_item)
             if sub is None:
                 continue
-            for field, val in self._roi_stats(sub).items():
+            stats = self._roi_stats(sub)
+            if not stats:
+                continue
+            # COM comes back as ROI-local axis indices; report it in absolute detector
+            # pixels (displayed axes) so it lines up with the image and future q axes.
+            ax0 = stats.pop('_com_ax0', 0.0)
+            ax1 = stats.pop('_com_ax1', 0.0)
+            stats['ComX_RBV'], stats['ComY_RBV'] = self._roi_com_to_image(
+                entry['roi'], ax0, ax1)
+            for field, val in stats.items():
                 self.stats_data[f"{prefix}:{entry['key']}:{field}"] = val
         if self._manual_pva_server is not None:
             self._publish_manual_stats(frame_id)
