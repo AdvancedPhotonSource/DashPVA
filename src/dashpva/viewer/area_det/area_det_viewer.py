@@ -899,6 +899,9 @@ class DiffractionImageWindow(BaseWindow):
         # the terminal "ROIs and stats ready" / error emit from _connect_pv_pollers.
         self.pv_pollers_status.emit(f"Connecting to {self._input_channel}…", "info")
         try:
+            # Manual ROIs are keyed per detector; remember the outgoing prefix so
+            # its boxes can be persisted before we (re)connect to a new one.
+            old_manual_prefix = self.reader.pva_prefix if self.reader is not None else None
             self.stop_timers()
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
@@ -950,6 +953,13 @@ class DiffractionImageWindow(BaseWindow):
             self.set_pixel_ordering()
             self.transpose_image_checked()
             self.reader.start_channel_monitor()
+            # Restore this detector's persisted manual ROIs (swap boxes if the
+            # detector changed; keep them in place if it's the same prefix).
+            try:
+                self._switch_manual_rois_for_channel(old_manual_prefix,
+                                                     self.reader.pva_prefix)
+            except Exception:
+                pass
         except Exception as e:
             print(f'Failed to Connect to {self._input_channel}: {e}')
             # Terminal "error" message hides the spinner via _on_pv_pollers_status.
@@ -1182,6 +1192,31 @@ class DiffractionImageWindow(BaseWindow):
                 return n
         return None
 
+    def _build_manual_roi(self, n, state):
+        """Create the amber M{n} box from a saved-state dict ({'pos','size','angle'})
+        and register it. Shared by interactive add and restore-from-settings; no
+        frame is required (geometry is explicit)."""
+        roi = pg.ROI([0, 0], [1, 1], pen=pg.mkPen(ROI_COLORS[4], width=2),
+                     movable=True, rotatable=True)
+        roi.addScaleHandle([1, 1], [0, 0])
+        roi.addScaleHandle([0, 0], [1, 1])
+        roi.addRotateHandle([1, 0], [0.5, 0.5])
+        try:
+            roi.setState(state)   # applies pos/size/angle
+        except Exception:
+            pass
+        # M{k} label pinned to the box's top-left corner (child -> moves/rotates with it).
+        label = pg.TextItem(f'M{n}', color=ROI_COLORS[4], anchor=(0, 1))
+        label.setParentItem(roi)
+        label.setPos(0, 0)
+        self.image_view.addItem(roi)
+        # Connect AFTER setState so restoring geometry doesn't trigger a save; fires
+        # once per move/resize/rotate gesture (not the per-pixel sigRegionChanged).
+        roi.sigRegionChangeFinished.connect(self._on_manual_roi_changed)
+        entry = {'roi': roi, 'label': label, 'n': n, 'key': f'Manual{n}'}
+        self.manual_rois.append(entry)
+        return entry
+
     def add_manual_roi(self):
         """Create a plain amber, movable/rotatable box labelled M{k} whose stats are
         computed locally. Returns its key ('Manual{k}') or None (full / no frame)."""
@@ -1198,17 +1233,9 @@ class DiffractionImageWindow(BaseWindow):
         h = max(4, ih // 5)
         x = (iw - w) // 2 + (n - 1) * 8   # stagger so stacked boxes don't hide
         y = (ih - h) // 2 + (n - 1) * 8
-        roi = pg.ROI([x, y], [w, h], pen=pg.mkPen(ROI_COLORS[4], width=2),
-                     movable=True, rotatable=True)
-        roi.addScaleHandle([1, 1], [0, 0])
-        roi.addScaleHandle([0, 0], [1, 1])
-        roi.addRotateHandle([1, 0], [0.5, 0.5])
-        # M{k} label pinned to the box's top-left corner (child -> moves/rotates with it).
-        label = pg.TextItem(f'M{n}', color=ROI_COLORS[4], anchor=(0, 1))
-        label.setParentItem(roi)
-        label.setPos(0, 0)
-        self.image_view.addItem(roi)
-        self.manual_rois.append({'roi': roi, 'label': label, 'n': n, 'key': f'Manual{n}'})
+        self._build_manual_roi(n, {'pos': [float(x), float(y)],
+                                   'size': [float(w), float(h)], 'angle': 0.0})
+        self._save_manual_rois()
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
         return f'Manual{n}'
@@ -1219,6 +1246,10 @@ class DiffractionImageWindow(BaseWindow):
         if entry is None:
             return
         try:
+            entry['roi'].sigRegionChangeFinished.disconnect(self._on_manual_roi_changed)
+        except Exception:
+            pass
+        try:
             self.image_view.getView().removeItem(entry['roi'])  # child label goes too
         except Exception:
             pass
@@ -1227,6 +1258,137 @@ class DiffractionImageWindow(BaseWindow):
         if prefix:
             for field in self.STATS_FIELDS:
                 self.stats_data.pop(f"{prefix}:{key}:{field}", None)
+        self._save_manual_rois()
+
+    # ---------------------------------------- Manual ROI persistence (QSettings)
+    # Stored natively as a QSettings array (no JSON): one element per manual ROI
+    # carrying its detector prefix + slot + geometry (pos/size/angle) as typed
+    # scalars. Keeping the prefix as a stored value (not a group/key name) sidesteps
+    # QSettings key escaping for colon-bearing prefixes like "asdf:asdfe".
+    _MANUAL_ROIS_ARRAY = "manual_rois"
+
+    @staticmethod
+    def _roi_state(roi) -> dict:
+        """pyqtgraph ROI.saveState() reduced to plain floats ({pos,size,angle})."""
+        st = roi.saveState()
+        pos = st.get('pos', (0, 0))
+        size = st.get('size', (1, 1))
+        return {'pos': [float(pos[0]), float(pos[1])],
+                'size': [float(size[0]), float(size[1])],
+                'angle': float(st.get('angle', 0.0) or 0.0)}
+
+    def _manual_prefix(self, prefix=None):
+        """Detector prefix used to key persisted manual ROIs (None if unknown)."""
+        if prefix:
+            return prefix
+        return self.reader.pva_prefix if self.reader is not None else None
+
+    def _read_all_manual_rois(self) -> list:
+        """Every persisted manual ROI as (prefix, n, state) across all detectors."""
+        out = []
+        s = _settings()
+        size = s.beginReadArray(self._MANUAL_ROIS_ARRAY)
+        try:
+            for i in range(size):
+                s.setArrayIndex(i)
+                pfx = s.value("prefix", "", type=str)
+                if not pfx:
+                    continue
+                state = {'pos': [s.value("x", 0.0, type=float),
+                                 s.value("y", 0.0, type=float)],
+                         'size': [s.value("w", 1.0, type=float),
+                                  s.value("h", 1.0, type=float)],
+                         'angle': s.value("angle", 0.0, type=float)}
+                out.append((pfx, s.value("n", 0, type=int), state))
+        finally:
+            s.endArray()
+        return out
+
+    def _write_all_manual_rois(self, records) -> None:
+        """Overwrite the whole persisted array with `records` [(prefix, n, state)]."""
+        s = _settings()
+        s.remove(self._MANUAL_ROIS_ARRAY)   # drop stale indices before rewriting
+        s.beginWriteArray(self._MANUAL_ROIS_ARRAY, len(records))
+        try:
+            for i, (pfx, n, state) in enumerate(records):
+                s.setArrayIndex(i)
+                s.setValue("prefix", pfx)
+                s.setValue("n", int(n))
+                s.setValue("x", float(state['pos'][0]))
+                s.setValue("y", float(state['pos'][1]))
+                s.setValue("w", float(state['size'][0]))
+                s.setValue("h", float(state['size'][1]))
+                s.setValue("angle", float(state.get('angle', 0.0)))
+        finally:
+            s.endArray()
+        s.sync()
+
+    def _save_manual_rois(self, prefix=None) -> None:
+        """Persist the current manual ROIs for their detector prefix (replacing that
+        prefix's entries, leaving other detectors' untouched). Never raises."""
+        prefix = self._manual_prefix(prefix)
+        if not prefix:
+            return
+        try:
+            others = [r for r in self._read_all_manual_rois() if r[0] != prefix]
+            current = [(prefix, e['n'], self._roi_state(e['roi']))
+                       for e in self.manual_rois]
+            self._write_all_manual_rois(others + current)
+        except Exception:
+            pass
+
+    def _restore_manual_rois(self, prefix=None) -> None:
+        """Recreate the saved manual ROIs for a detector prefix (call after
+        clearing). Skips duplicate/over-cap slots; no-op when nothing is stored."""
+        prefix = self._manual_prefix(prefix)
+        if not prefix:
+            return
+        try:
+            records = [r for r in self._read_all_manual_rois() if r[0] == prefix]
+        except Exception:
+            return
+        used = {e['n'] for e in self.manual_rois}
+        for _pfx, n, state in records:
+            if n < 1 or n > self.MAX_MANUAL_ROIS or n in used:
+                continue
+            used.add(n)
+            self._build_manual_roi(n, state)
+        self._manual_roi_last_frame = -1
+        self._update_manual_roi_stats(force=True)
+
+    def _clear_manual_roi_overlays(self) -> None:
+        """Remove all manual ROI overlays (box + label + stats) from the view,
+        leaving persisted settings untouched — used when switching detectors."""
+        prefix = self.reader.pva_prefix if self.reader is not None else None
+        for entry in list(self.manual_rois):
+            try:
+                entry['roi'].sigRegionChangeFinished.disconnect(self._on_manual_roi_changed)
+            except Exception:
+                pass
+            try:
+                self.image_view.getView().removeItem(entry['roi'])
+            except Exception:
+                pass
+            if prefix:
+                for field in self.STATS_FIELDS:
+                    self.stats_data.pop(f"{prefix}:{entry['key']}:{field}", None)
+        self.manual_rois = []
+
+    def _on_manual_roi_changed(self, *args) -> None:
+        """Persist geometry after a move/resize/rotate gesture (sigRegionChangeFinished)."""
+        self._save_manual_rois()
+
+    def _switch_manual_rois_for_channel(self, old_prefix, new_prefix) -> None:
+        """On channel (re)connect: keep boxes if the detector is unchanged;
+        otherwise persist the outgoing detector's boxes, clear them, and restore
+        the incoming detector's saved boxes."""
+        if old_prefix == new_prefix:
+            self._save_manual_rois(new_prefix)   # same detector: boxes stay put
+            return
+        if old_prefix:
+            self._save_manual_rois(old_prefix)
+        self._clear_manual_roi_overlays()
+        self._restore_manual_rois(new_prefix)
 
     @staticmethod
     def _roi_stats(sub) -> dict:
@@ -2110,6 +2272,7 @@ class DiffractionImageWindow(BaseWindow):
             s = _settings()
             s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
             s.setValue("area_det_window_geom", self.saveGeometry())
+            self._save_manual_rois()
         except Exception:
             pass
         if self.roi_stats_panel is not None:
