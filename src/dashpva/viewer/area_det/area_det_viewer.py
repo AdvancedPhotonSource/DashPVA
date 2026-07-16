@@ -1263,11 +1263,23 @@ class DiffractionImageWindow(BaseWindow):
         self._apply_roi_visibility()
 
     def _apply_roi_visibility(self) -> None:
-        """An ROI is visible iff the global ``display_rois`` is checked AND
-        its per-ROI checkbox in the ROI dock is checked."""
+        """An EPICS ROI is visible iff the global ``display_rois`` is checked AND
+        its per-ROI checkbox in the ROI dock is checked. Manual ROIs (amber
+        M1..M5) follow the global toggle only; hiding is purely visual — their
+        geometry is preserved and still persisted."""
+        global_on = self.display_rois.isChecked()
+        # Manual ROIs first, independent of the reader: they may already be on
+        # screen from a restore before a live channel is (re)attached.
+        for entry in self.manual_rois:
+            roi = entry.get('roi')
+            if roi is None:
+                continue
+            if global_on:
+                roi.show()
+            else:
+                roi.hide()
         if self.reader is None:
             return
-        global_on = self.display_rois.isChecked()
         for idx, roi in enumerate(self.rois):
             if roi is None:
                 continue
@@ -1329,6 +1341,7 @@ class DiffractionImageWindow(BaseWindow):
         y = (ih - h) // 2 + (n - 1) * 8
         self._build_manual_roi(n, {'pos': [float(x), float(y)],
                                    'size': [float(w), float(h)], 'angle': 0.0})
+        self._apply_roi_visibility()   # honor the global Show ROIs toggle
         self._save_manual_rois()
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
@@ -1447,6 +1460,7 @@ class DiffractionImageWindow(BaseWindow):
                 continue
             used.add(n)
             self._build_manual_roi(n, state)
+        self._apply_roi_visibility()   # restored boxes honor the global toggle
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
 
