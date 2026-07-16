@@ -314,7 +314,13 @@ class RoiStatsPanel(QDialog):
                     item.setText('—')
                     continue
                 val = self.viewer.stats_data.get(f"{prefix}:{r['key']}:{field}")
-                item.setText('--' if val is None else f'{float(val):.3g}')
+                if val is None:
+                    item.setText('--')
+                else:
+                    # Pixel COM: fixed-point (0000.00), no scientific notation up to a
+                    # 10k x 10k detector; only larger values fall back to scientific.
+                    v = float(val)
+                    item.setText(f'{v:.2f}' if abs(v) < 10000 else f'{v:.3g}')
 
     def _update_analysis(self):
         key = self.cmb_roi.currentData()
