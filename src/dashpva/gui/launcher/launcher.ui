@@ -119,12 +119,12 @@
      </item>
 
      <item>
-      <widget class="QPushButton" name="btn_shutdown_all">
+      <widget class="QPushButton" name="btn_processes">
        <property name="toolTip">
-        <string>Force stop all running modules</string>
+        <string>View and manage running modules</string>
        </property>
        <property name="text">
-        <string>Shutdown All</string>
+        <string>Processes</string>
        </property>
       </widget>
      </item>

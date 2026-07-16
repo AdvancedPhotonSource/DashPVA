@@ -823,9 +823,14 @@ class DiffractionImageWindow(BaseWindow):
                 self.reader.image_is_transposed = False
                 
     def trigger_save_caches(self) -> None:
-        if not self.file_writer_thread.isRunning():
+        try:
+            if not self.file_writer_thread.isRunning():
                 self.file_writer_thread.start()
-        self.file_writer.save_caches_to_h5(clear_caches=True)
+            self.file_writer.save_caches_to_h5(clear_caches=True)
+        except ValueError as e:
+            # A save that cannot proceed (e.g. empty/mismatched caches) must
+            # report and be skipped, never crash the viewer.
+            self.update_status(f"Save skipped: {e}", level='warning')
 
     def c_ordering_clicked(self) -> None:
         """
@@ -1643,6 +1648,9 @@ class DiffractionImageWindow(BaseWindow):
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
+                # Share the live HKL values with the reader so its per-frame merge
+                # saves them into the scan H5 (the associator may not attach them).
+                self.reader.hkl_values = self.hkl_data
                 missing = [n for n, v in self.hkl_data.items() if v is None]
                 got = len(self.hkl_data) - len(missing)
                 print(f"[Diffraction Image Viewer] HKL monitors started: "

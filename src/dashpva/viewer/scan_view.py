@@ -166,6 +166,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self.reader.reader_scan_complete.connect(self._on_reader_scan_complete, Qt.QueuedConnection)
             self.h5_handler.hdf5_writer_finished.connect(self._on_writer_finished, Qt.QueuedConnection)
             self.signal_start_monitor.connect(self.reader.start_channel_monitor, Qt.QueuedConnection)
+            self.signal_start_monitor.connect(self.reader.start_scan_monitor, Qt.QueuedConnection)
+            self.signal_start_monitor.connect(self.reader.start_hkl_ca_monitor, Qt.QueuedConnection)
             self.signal_trigger_save.connect(self.h5_handler.save_to_h5, Qt.QueuedConnection)
 
             if hasattr(self.reader, 'scan_state_changed'):
@@ -248,6 +250,19 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         """Callback when the HDF5 file is finished writing."""
         try:
             self.logger.info(message)
+        except Exception:
+            pass
+        # On a successful save, log a concise confirmation with the path + time.
+        try:
+            path = None
+            if 'successfully saved to' in message:
+                path = message.split('successfully saved to', 1)[1].strip()
+            elif message.startswith('Saved to:'):
+                path = message.split('Saved to:', 1)[1].split('\n', 1)[0].strip()
+            if path:
+                now = datetime.now()
+                ts = now.strftime('%Y/%d/%m %H:%M:%S.') + f'{now.microsecond // 1000:03d}'
+                self.logger.info(f'[ScanView] Saved scan to {path} @ {ts}')
         except Exception:
             pass
         if hasattr(self, 'label_indicator'):
