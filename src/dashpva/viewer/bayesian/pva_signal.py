@@ -24,16 +24,20 @@ resolved every DOF/objective to an ``ophyd.EpicsSignal`` (Channel Access only).
 Multi-field PVA objects
 -----------------------
 One PVA channel can carry many scalars (e.g. a phase-fraction NTTable/structure
-with ``monoclinic``/``orthorhombic``/``tetragonal``/``crystalline``).  A
-``PvaSignal`` reads the **whole** structure once; a *field* selects the scalar.
+with ``monoclinic``/``orthorhombic``/``tetragonal``/``crystalline``, or DashPVA's
+manual-ROI ``ManualROI:Stats`` struct).  A ``PvaSignal`` reads the **whole**
+structure once; a *field* selects the scalar.
 
-* Construct with ``field=None`` (default) to expose the whole object under
-  ``read()[name]["value"]`` (a plain dict of ``{field: scalar}`` when the object
-  is a structure/NTTable, or the raw scalar for an NTScalar).  The adapter then
-  caches ONE ``PvaSignal`` per unique channel and each objective picks its field
-  from that single reading — so N objectives sharing a channel read it once.
-* Or construct with an explicit ``field`` to make ``read()`` return just that
-  scalar (handy for a DOF or a single-objective channel).
+* Construct with ``field=None`` (default) and the channel is read **once** per
+  point.  A structure is **decomposed** so ``read()``/``describe()`` report one
+  scalar data_key per field, named ``f"{name}_{field}"`` (Bluesky's event-model
+  has no dict/``object`` dtype, so a struct cannot be a single key); an NTScalar
+  reports the single ``name`` key.  The adapter caches ONE ``PvaSignal`` per
+  channel, so N objectives sharing it read once and each selects its field by
+  name from the same atomic snapshot.
+* Or construct with an explicit ``field`` to make ``read()``/``describe()``
+  return just that scalar under ``name`` (handy for a DOF or single-objective
+  channel).
 
 This module imports ``pvaccess`` lazily so merely importing it is cheap and does
 not require the PVA stack to be present (e.g. on a dev laptop).
@@ -42,6 +46,7 @@ not require the PVA stack to be present (e.g. on a dev laptop).
 from __future__ import annotations
 
 import logging
+import numbers
 import time
 from typing import Any, Dict, Optional
 
@@ -201,6 +206,25 @@ def _first_scalar(v: Any) -> Any:
     return v
 
 
+def _dtype_and_shape(v: Any) -> tuple:
+    """Map a scalar/array value to a Bluesky event-model ``(dtype, shape)``.
+
+    ``dtype`` is one of the event-model primitives
+    (``boolean``/``integer``/``number``/``array``/``string``).  ``bool`` is
+    checked before the numeric types because it subclasses ``int``; ``numbers``
+    is used so numpy scalars (``np.int64``/``np.float64``) classify correctly.
+    """
+    if isinstance(v, bool):
+        return "boolean", []
+    if isinstance(v, numbers.Integral):
+        return "integer", []
+    if isinstance(v, numbers.Real):
+        return "number", []
+    if _is_seq(v):
+        return "array", [len(v)]
+    return "string", []
+
+
 class PvaSignal:
     """Ophyd-like signal over a single PVAccess channel.
 
@@ -288,17 +312,25 @@ class PvaSignal:
         return val
 
     def read(self) -> Dict[str, Dict[str, Any]]:
-        return {self.name: {"value": self.get(), "timestamp": time.time()}}
+        val = self.get()
+        ts = time.time()
+        if self.field is None and isinstance(val, dict):
+            # A multi-field structure: report each field as its own scalar key
+            # (Bluesky has no dict dtype).  One get() -> one atomic snapshot.
+            return {f"{self.name}_{k}": {"value": v, "timestamp": ts}
+                    for k, v in val.items()}
+        return {self.name: {"value": val, "timestamp": ts}}
 
     def describe(self) -> Dict[str, Dict[str, Any]]:
         val = self.get()
-        dtype = (
-            "number" if isinstance(val, (int, float)) else
-            "array" if isinstance(val, (list, tuple)) else
-            "object" if isinstance(val, dict) else
-            "string"
-        )
-        shape = [len(val)] if isinstance(val, (list, tuple)) else []
+        if self.field is None and isinstance(val, dict):
+            out: Dict[str, Dict[str, Any]] = {}
+            for k, v in val.items():
+                dtype, shape = _dtype_and_shape(v)
+                out[f"{self.name}_{k}"] = {
+                    "source": f"PVA:{self.pv}.{k}", "dtype": dtype, "shape": shape}
+            return out
+        dtype, shape = _dtype_and_shape(val)
         return {self.name: {"source": f"PVA:{self.pv}", "dtype": dtype, "shape": shape}}
 
     def read_configuration(self) -> Dict[str, Any]:

@@ -13,8 +13,11 @@ from dashpva.viewer.bayesian.blop_adapter import (
     DOFSpec,
     ObjectiveSpec,
     OptimizerConfig,
+    _make_objective_readables,
+    _objective_reading_value,
     extract_scalar,
 )
+from dashpva.viewer.bayesian.pva_signal import PvaSignal
 
 # ---------------------------------------------------------------------------
 # extract_scalar
@@ -58,6 +61,121 @@ class TestExtractScalar:
         reading = {"det_str": {"value": "not-a-number", "timestamp": 0.0}}
         with pytest.raises(ValueError):
             extract_scalar(reading, None)
+
+
+# ---------------------------------------------------------------------------
+# PvaSignal struct decomposition (bridge -> Bluesky event-model conformance)
+# ---------------------------------------------------------------------------
+
+class _FakePv:
+    """Minimal stand-in for a pvaccess PvObject: toDict() + ['value'] access."""
+
+    def __init__(self, d):
+        self._d = dict(d)
+
+    def toDict(self):
+        return dict(self._d)
+
+    def __getitem__(self, key):
+        return self._d[key]
+
+
+class TestPvaSignalStruct:
+
+    def test_struct_describe_emits_scalar_key_per_field(self):
+        sig = PvaSignal("X:ManualROI:Stats", name="X:ManualROI:Stats")
+        sig._raw_get = lambda: _FakePv(
+            {"frameId": 3, "m1_active": True, "m1_total": 5.0, "m1_comx": 10.0})
+
+        desc = sig.describe()
+        assert set(desc) == {
+            "X:ManualROI:Stats_frameId",
+            "X:ManualROI:Stats_m1_active",
+            "X:ManualROI:Stats_m1_total",
+            "X:ManualROI:Stats_m1_comx",
+        }
+        # Every field maps to a valid event-model primitive (never 'object').
+        assert desc["X:ManualROI:Stats_m1_total"]["dtype"] == "number"
+        assert desc["X:ManualROI:Stats_m1_comx"]["dtype"] == "number"
+        assert desc["X:ManualROI:Stats_m1_active"]["dtype"] == "boolean"
+        assert desc["X:ManualROI:Stats_frameId"]["dtype"] == "integer"
+        assert all(d["dtype"] != "object" for d in desc.values())
+
+    def test_struct_read_keys_match_describe(self):
+        sig = PvaSignal("X:ManualROI:Stats", name="X:ManualROI:Stats")
+        sig._raw_get = lambda: _FakePv({"m1_total": 5.0, "m1_active": False})
+        reading = sig.read()
+        assert set(reading) == set(sig.describe())
+        assert reading["X:ManualROI:Stats_m1_total"]["value"] == 5.0
+        assert reading["X:ManualROI:Stats_m1_active"]["value"] is False
+
+    def test_explicit_field_returns_single_scalar_key(self):
+        sig = PvaSignal("X:ManualROI:Stats", name="roi1", field="m1_total")
+        sig._raw_get = lambda: _FakePv({"m1_total": 7.0, "m1_comx": 10.0})
+        assert sig.get() == 7.0
+        assert sig.describe() == {
+            "roi1": {"source": "PVA:X:ManualROI:Stats", "dtype": "number", "shape": []}
+        }
+        assert sig.read()["roi1"]["value"] == 7.0
+
+    def test_plain_scalar_single_key(self):
+        sig = PvaSignal("X:Total_RBV", name="X:Total_RBV")
+        sig._raw_get = lambda: _FakePv({"value": 42.0})
+        assert sig.describe()["X:Total_RBV"]["dtype"] == "number"
+        assert sig.read()["X:Total_RBV"]["value"] == 42.0
+
+
+# ---------------------------------------------------------------------------
+# _objective_reading_value + _make_objective_readables
+# ---------------------------------------------------------------------------
+
+class _Dev:
+    def __init__(self, name):
+        self.name = name
+
+
+class TestObjectiveReadingValue:
+
+    @staticmethod
+    def _struct_reading():
+        return {
+            "X:Stats_m1_total": {"value": 5.0, "timestamp": 0.0},
+            "X:Stats_m1_comx": {"value": 10.0, "timestamp": 0.0},
+        }
+
+    def test_field_selects_matching_key(self):
+        dev = _Dev("X:Stats")
+        o = ObjectiveSpec(name="roi1", pv="X:Stats", protocol="pva", field="m1_total")
+        assert _objective_reading_value(self._struct_reading(), dev, o) == 5.0
+
+    def test_blank_field_on_struct_raises_listing_fields(self):
+        dev = _Dev("X:Stats")
+        o = ObjectiveSpec(name="roi", pv="X:Stats", protocol="pva", field="")
+        with pytest.raises(ValueError) as ei:
+            _objective_reading_value(self._struct_reading(), dev, o)
+        msg = str(ei.value)
+        assert "m1_total" in msg and "m1_comx" in msg
+
+    def test_plain_scalar_single_key(self):
+        dev = _Dev("det:Total_RBV")
+        reading = {"det:Total_RBV": {"value": 42.0, "timestamp": 0.0}}
+        o = ObjectiveSpec(name="i", pv="det:Total_RBV", protocol="pva", field="")
+        assert _objective_reading_value(reading, dev, o) == 42.0
+
+
+class TestMakeObjectiveReadables:
+
+    def test_struct_objectives_share_one_field_none_signal(self):
+        pytest.importorskip("ophyd")
+        objs = [
+            ObjectiveSpec(name="a", pv="X:Stats", protocol="pva", field="m1_total"),
+            ObjectiveSpec(name="b", pv="X:Stats", protocol="pva", field="m1_comx"),
+        ]
+        reads = _make_objective_readables(objs)
+        # One shared readable -> the channel is read exactly once per point.
+        assert reads["a"] is reads["b"]
+        assert reads["a"].field is None
+        assert reads["a"].name == "X:Stats"
 
 
 # ---------------------------------------------------------------------------

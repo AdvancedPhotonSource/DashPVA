@@ -406,6 +406,31 @@ def select_field(value: Any, field: Optional[str] = None) -> float:
     raise ValueError(f"Non-numeric reading value: {value!r}")
 
 
+def _objective_reading_value(reading: dict, dev: Any, o: "ObjectiveSpec") -> float:
+    """Pull objective *o*'s scalar out of a ``trigger_and_read`` reading.
+
+    A PVA structure readable reports one key per field (``{name}_{field}``); a
+    plain scalar reports a single ``{name}`` key.  Resolve the field-specific key
+    first, then the device name, then a trailing-suffix match.  If the objective
+    reads a decomposed structure but names no field, raise a clear error listing
+    the available fields — never silently optimize on an arbitrary one.
+    """
+    base = getattr(dev, "name", o.name)
+    if o.field:
+        for key in (f"{base}_{o.field}", base, o.name):
+            if key in reading:
+                return select_field(reading[key]["value"], o.field)
+        return select_field(extract_scalar(reading, o.field), o.field)
+    if base in reading:
+        return select_field(reading[base]["value"], o.field)
+    fields = sorted(k[len(base) + 1:] for k in reading if k.startswith(base + "_"))
+    if fields:
+        raise ValueError(
+            f"Objective {o.name!r} reads multi-field PV {o.pv!r}; set its Field to "
+            f"one of {fields} (or use 'Split PVA stream…').")
+    return select_field(extract_scalar(reading, o.name), o.field)
+
+
 # ---------------------------------------------------------------------------
 # Device resolution (IPython namespace -> EPICS -> simulation)
 # ---------------------------------------------------------------------------
@@ -469,10 +494,14 @@ def resolve_devices(
             acts = {d.name: _make_dof_device(d) for d in dofs}
             reads = _make_objective_readables(objectives)
             _add_commit_device(config, acts)
-            logger.info("Constructed CA/PVA devices from channel strings.")
-            return acts, reads, False
         except Exception as exc:  # noqa: BLE001 - fall back to sim
             logger.warning("Device construction failed (%s); using simulation.", exc)
+        else:
+            # Actionable error at Start (propagates, not swallowed into sim) when a
+            # PVA objective targets a structure without a valid field.
+            _validate_pva_objective_fields(objectives, reads)
+            logger.info("Constructed CA/PVA devices from channel strings.")
+            return acts, reads, False
 
     motors, readables = _build_sim_devices(dofs, objectives)
     return motors, readables, True
@@ -492,9 +521,10 @@ def _make_objective_readables(objectives: List["ObjectiveSpec"]) -> Dict[str, An
     """Map each objective name -> a readable device.
 
     CA objectives get their own ``EpicsSignalRO``.  PVA objectives that share a
-    channel share ONE cached :class:`PvaSignal` (field=None, returns the whole
-    object), so the channel is read once per point and each objective selects its
-    own field downstream.
+    channel share ONE cached :class:`PvaSignal` (field=None), so the channel is
+    read once per point; a structure is reported as one scalar data_key per field
+    (``{channel}_{field}``) and each objective selects its field by name
+    downstream (see :func:`_objective_reading_value`).
     """
     from ophyd import EpicsSignalRO
 
@@ -506,13 +536,46 @@ def _make_objective_readables(objectives: List["ObjectiveSpec"]) -> Dict[str, An
             dev = pva_cache.get(bare)
             if dev is None:
                 from dashpva.viewer.bayesian.pva_signal import PvaSignal
-                # name by channel so a shared reading has a stable single key.
+                # name by channel so a shared reading has stable per-field keys.
                 dev = PvaSignal(bare, name=bare, field=None)
                 pva_cache[bare] = dev
             reads[o.name] = dev
         else:
             reads[o.name] = EpicsSignalRO(bare, name=o.name, kind="hinted")
     return reads
+
+
+def _validate_pva_objective_fields(
+    objectives: List["ObjectiveSpec"], reads: Dict[str, Any]
+) -> None:
+    """Fail fast (before the RunEngine) on a mis-targeted multi-field PVA objective.
+
+    Best-effort: probe each shared PVA signal once.  A not-yet-connected PV is
+    skipped (the RunEngine surfaces connection errors later); only a *connected*
+    structure whose objective names a blank or unknown field raises — turning a
+    cryptic mid-scan event-model schema error into an actionable message at Start.
+    """
+    from dashpva.viewer.bayesian.pva_signal import PvaSignal
+
+    for o in objectives:
+        dev = reads.get(o.name)
+        if not isinstance(dev, PvaSignal):
+            continue
+        try:
+            val = dev.get()
+        except Exception:  # noqa: BLE001 - not connected yet; defer to runtime
+            continue
+        if not isinstance(val, dict):
+            continue
+        fld = (o.field or "").strip()
+        if not fld:
+            raise ValueError(
+                f"Objective {o.name!r} reads multi-field PV {o.pv!r}; set its Field "
+                f"to one of {sorted(val)} (or use 'Split PVA stream…').")
+        if fld not in val:
+            raise ValueError(
+                f"Objective {o.name!r}: field {fld!r} not found in {o.pv!r}; "
+                f"available: {sorted(val)}.")
 
 
 def _add_commit_device(config: OptimizerConfig, acts: Dict[str, Any], ns=None) -> None:
@@ -730,15 +793,8 @@ def blop_optimize_plan(
                 outcome = {"_id": sug["_id"]}
                 obj_values: Dict[str, float] = {}
                 for o in objectives:
-                    dev = readables.get(o.name)
-                    key = getattr(dev, "name", o.name)
-                    if key in reading:
-                        raw = reading[key]["value"]
-                    elif o.name in reading:
-                        raw = reading[o.name]["value"]
-                    else:
-                        raw = extract_scalar(reading, o.field or o.name)
-                    val = select_field(raw, o.field)
+                    val = _objective_reading_value(
+                        reading, readables.get(o.name), o)
                     obj_values[o.name] = val
                     # Only optimized objectives are ingested into blop; observe
                     # objectives are recorded (on_point/plots) but not optimized.
