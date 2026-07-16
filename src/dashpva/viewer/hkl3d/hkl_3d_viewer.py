@@ -247,6 +247,7 @@ class HKLImageWindow(BaseWindow):
             self._cum_pts_raw       = None
             self._cum_int_raw       = None
             self.reader.start_channel_monitor()
+            self.reader.start_scan_monitor()
             self.start_timers()
             if not self.plot_mode_dock.is_post_scan:
                 self.plot_mode_dock.start_plot_timer()
