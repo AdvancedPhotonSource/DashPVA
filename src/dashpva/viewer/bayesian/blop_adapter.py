@@ -83,6 +83,10 @@ class DOFSpec:
         ``"float"`` (continuous) or ``"int"`` (integer-valued motor).
     enabled : bool
         If ``False`` the row is ignored when building the agent.
+    protocol : str
+        ``"auto"`` (infer from an optional ``ca://``/``pva://`` prefix on ``pv``,
+        default Channel Access), ``"ca"``, or ``"pva"``.  A PVA DOF is driven
+        through :class:`PvaSignal` (put-completion == the move/settle wait).
     """
 
     name: str
@@ -91,11 +95,12 @@ class DOFSpec:
     hi: float
     kind: str = "float"
     enabled: bool = True
+    protocol: str = "auto"
 
 
 @dataclass
 class ObjectiveSpec:
-    """One optimization objective, read from its own EPICS PV.
+    """One optimization objective, read from a CA or PVA channel.
 
     Attributes
     ----------
@@ -103,15 +108,48 @@ class ObjectiveSpec:
         Objective name reported to the optimizer (must be unique per config).
         Also names the readable, so the value is looked up by this name.
     pv : str
-        The full read PV for this objective's scalar value
-        (e.g. ``"detPV:Stats1:Total_RBV"`` or ``"12idc:scaler1.S2"``).
+        The read channel for this objective's value
+        (e.g. ``"detPV:Stats1:Total_RBV"``, ``"12idc:scaler1.S2"``, or a PVA
+        channel like ``"pva://pvapy:phase:fractions"``).  Several objectives may
+        share ONE PVA channel and each pick a different ``field`` from it.
+    role : str
+        ``"maximize"``, ``"minimize"``, or ``"observe"``.  ``observe`` objectives
+        are read and recorded (plots/metadata) but **not** optimized — so one
+        multi-field PVA stream can be, e.g., maximize=ortho / minimize=mono /
+        observe=tetra.  ``role`` is the source of truth; ``minimize`` is kept in
+        sync for back-compat.
+    protocol : str
+        ``"auto"`` (infer from a ``ca://``/``pva://`` prefix, default CA),
+        ``"ca"``, or ``"pva"``.
+    field : str
+        For a multi-field PVA object, the key/column to select as this
+        objective's scalar (blank for a plain NTScalar channel).
     minimize : bool
-        ``False`` maximizes (peak/align), ``True`` minimizes.
+        Back-compat mirror of ``role == "minimize"``.
     """
 
     name: str = "intensity"
     pv: str = ""
+    role: str = "maximize"
+    protocol: str = "auto"
+    field: str = ""
     minimize: bool = False
+
+    def __post_init__(self) -> None:
+        # ``role`` is the source of truth.  Two back-compat fallbacks:
+        #   * an unknown/blank role derives from the legacy ``minimize`` flag;
+        #   * legacy direct construction ``ObjectiveSpec(minimize=True)`` (role
+        #     left at its "maximize" default) is honored as minimize.
+        if self.role not in ("maximize", "minimize", "observe"):
+            self.role = "minimize" if self.minimize else "maximize"
+        elif self.role == "maximize" and self.minimize:
+            self.role = "minimize"
+        self.minimize = (self.role == "minimize")
+
+    @property
+    def optimized(self) -> bool:
+        """True if this objective is handed to blop (maximize/minimize)."""
+        return self.role in ("maximize", "minimize")
 
 
 @dataclass
@@ -123,13 +161,40 @@ class OptimizerConfig:
     iterations: int = 30
     n_points: int = 1
     acq_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Optional explicit "fire"/commit channel put between the DOF move and the
+    # objective read (e.g. the flash trigger).  Blank -> no fire step.  Its
+    # put-completion is the fire-done / wait-for-fresh-result barrier.
+    # Optional "commit" trigger written AFTER the DOF moves and BEFORE the read
+    # each point (generic: "apply the DOF values and take a measurement").  Blank
+    # -> no commit step (plain move->read).  Point it at a commit bridge, or leave
+    # blank to drive real device PVs directly.
+    commit_pv: str = ""
+    commit_value: float = 1.0
+    # Optional counter channel the commit target advances only after the commit
+    # fully completes (e.g. a bridge's DONE counter).  When set, the commit device
+    # blocks until it advances -> a robust move->commit->read barrier independent
+    # of PVA put-completion timing.  Blank -> rely on put/settle only.
+    commit_done_pv: str = ""
+    # Optional path to persist/resume the Ax optimization state (blop Agent
+    # checkpoint).  Blank -> no checkpointing.
+    checkpoint_path: str = ""
+    # Max seconds the commit step waits for commit_done_pv to advance.  Must
+    # comfortably exceed the real commit time (aligned move + flash power-up +
+    # fresh-fit wait); default is generous so slow moves/flashes don't time out.
+    commit_done_timeout: float = 600.0
 
     # ---- convenience -----------------------------------------------------
     def active_dofs(self) -> List[DOFSpec]:
         return [d for d in self.dofs if d.enabled]
 
     def active_objectives(self) -> List[ObjectiveSpec]:
+        """Every objective that is read each point (optimized AND observed)."""
         return [o for o in self.objectives] or [ObjectiveSpec()]
+
+    def optimized_objectives(self) -> List[ObjectiveSpec]:
+        """Objectives actually handed to blop (maximize/minimize only)."""
+        opt = [o for o in self.active_objectives() if o.optimized]
+        return opt or [ObjectiveSpec()]
 
     def total_points(self) -> int:
         return max(1, self.iterations) * max(1, self.n_points)
@@ -164,8 +229,17 @@ class OptimizerConfig:
             if o.name in onames:
                 return f"Duplicate objective name: {o.name!r}."
             onames.add(o.name)
+            if o.role not in ("maximize", "minimize", "observe"):
+                return f"Objective {o.name!r}: role must be maximize/minimize/observe."
+            if o.protocol not in ("auto", "ca", "pva"):
+                return f"Objective {o.name!r}: protocol must be auto/ca/pva."
             if require_devices and not o.pv.strip():
                 return f"Objective {o.name!r} is missing a read PV."
+        if not any(o.optimized for o in objs):
+            return "At least one objective must be maximize or minimize."
+        for d in dofs:
+            if d.protocol not in ("auto", "ca", "pva"):
+                return f"DOF {d.name!r}: protocol must be auto/ca/pva."
         if self.iterations < 1:
             return "Iterations must be >= 1."
         if self.n_points < 1:
@@ -180,6 +254,11 @@ class OptimizerConfig:
             "ITERATIONS": self.iterations,
             "N_POINTS": self.n_points,
             "ACQ_KWARGS": dict(self.acq_kwargs),
+            "COMMIT_PV": self.commit_pv,
+            "COMMIT_VALUE": self.commit_value,
+            "COMMIT_DONE_PV": self.commit_done_pv,
+            "COMMIT_DONE_TIMEOUT": self.commit_done_timeout,
+            "CHECKPOINT_PATH": self.checkpoint_path,
         }
 
     @classmethod
@@ -193,23 +272,38 @@ class OptimizerConfig:
                 hi=float(d.get("hi", 1.0)),
                 kind=d.get("kind", "float"),
                 enabled=bool(d.get("enabled", True)),
+                protocol=d.get("protocol", "auto"),
             )
             for d in data.get("DOFS", [])
         ]
-        objs = [
-            ObjectiveSpec(
-                name=o.get("name", "intensity"),
-                pv=o.get("pv", ""),
-                minimize=bool(o.get("minimize", False)),
+        objs = []
+        for o in data.get("OBJECTIVES", []):
+            # ``role`` wins when present; else derive from the legacy ``minimize``.
+            role = o.get("role")
+            if role not in ("maximize", "minimize", "observe"):
+                role = "minimize" if bool(o.get("minimize", False)) else "maximize"
+            objs.append(
+                ObjectiveSpec(
+                    name=o.get("name", "intensity"),
+                    pv=o.get("pv", ""),
+                    role=role,
+                    protocol=o.get("protocol", "auto"),
+                    field=o.get("field", ""),
+                )
             )
-            for o in data.get("OBJECTIVES", [])
-        ]
         return cls(
             dofs=dofs,
             objectives=objs,
             iterations=int(data.get("ITERATIONS", 30)),
             n_points=int(data.get("N_POINTS", 1)),
             acq_kwargs=dict(data.get("ACQ_KWARGS", {})),
+            # New COMMIT_* keys; fall back to the legacy FIRE_* keys for setups
+            # saved before the rename.
+            commit_pv=data.get("COMMIT_PV", data.get("FIRE_PV", "")),
+            commit_value=float(data.get("COMMIT_VALUE", data.get("FIRE_VALUE", 1.0))),
+            commit_done_pv=data.get("COMMIT_DONE_PV", data.get("FIRE_DONE_PV", "")),
+            commit_done_timeout=float(data.get("COMMIT_DONE_TIMEOUT", 600.0)),
+            checkpoint_path=data.get("CHECKPOINT_PATH", ""),
         )
 
 
@@ -277,9 +371,58 @@ def extract_scalar(reading: Optional[dict], signal_key: Optional[str] = None) ->
     )
 
 
+def select_field(value: Any, field: Optional[str] = None) -> float:
+    """Coerce a reading *value* (scalar or multi-field dict) to one float.
+
+    Used for PVA objectives that read a whole structure once: ``value`` may be a
+    ``{field: scalar}`` dict (a multi-fraction phase stream), a list/array, or a
+    plain number.  ``field`` names the wanted key when ``value`` is a dict.
+
+    Raises
+    ------
+    KeyError
+        If ``field`` is given but not present in a dict value.
+    ValueError
+        If no numeric value can be resolved.
+    """
+    if isinstance(value, dict):
+        if field:
+            if field not in value:
+                raise KeyError(
+                    f"field={field!r} not in PVA object; available: {list(value)}"
+                )
+            return float(value[field])
+        # No field named: take the first numeric leaf.
+        for v in value.values():
+            if isinstance(v, (int, float, np.integer, np.floating)):
+                return float(v)
+        raise ValueError(f"No numeric field in PVA object; keys: {list(value)}")
+    if isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError("Empty array reading; cannot pick a scalar.")
+        return float(value[0])
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    raise ValueError(f"Non-numeric reading value: {value!r}")
+
+
 # ---------------------------------------------------------------------------
 # Device resolution (IPython namespace -> EPICS -> simulation)
 # ---------------------------------------------------------------------------
+
+def _resolve_protocol(spec_protocol: str, pv: str) -> Tuple[str, str]:
+    """Return ``(protocol, bare_pv)`` honoring an explicit spec protocol first.
+
+    ``spec_protocol`` of ``"ca"``/``"pva"`` forces that protocol (any URI prefix
+    on ``pv`` is still stripped).  ``"auto"`` infers from a ``ca://``/``pva://``
+    prefix, defaulting to Channel Access.
+    """
+    from dashpva.viewer.bayesian.pva_signal import split_protocol
+
+    proto, bare = split_protocol(pv, default="ca")
+    if spec_protocol in ("ca", "pva"):
+        return spec_protocol, bare
+    return proto, bare
 
 def _ipython_ns() -> Optional[dict]:
     try:
@@ -319,26 +462,82 @@ def resolve_devices(
             reads = {o.name: ns.get(o.pv) for o in objectives}
             if all(acts.values()) and all(reads.values()):
                 logger.info("Resolved blop devices from IPython namespace.")
+                _add_commit_device(config, acts, ns=ns)
                 return acts, reads, False
 
         try:
-            from ophyd import EpicsSignal, EpicsSignalRO
-
-            acts = {
-                d.name: EpicsSignal(d.pv, name=d.name, put_complete=True)
-                for d in dofs
-            }
-            reads = {
-                o.name: EpicsSignalRO(o.pv, name=o.name, kind="hinted")
-                for o in objectives
-            }
-            logger.info("Constructed EPICS devices from PV strings.")
+            acts = {d.name: _make_dof_device(d) for d in dofs}
+            reads = _make_objective_readables(objectives)
+            _add_commit_device(config, acts)
+            logger.info("Constructed CA/PVA devices from channel strings.")
             return acts, reads, False
         except Exception as exc:  # noqa: BLE001 - fall back to sim
-            logger.warning("EPICS construction failed (%s); using simulation.", exc)
+            logger.warning("Device construction failed (%s); using simulation.", exc)
 
     motors, readables = _build_sim_devices(dofs, objectives)
     return motors, readables, True
+
+
+def _make_dof_device(d: "DOFSpec"):
+    """Build a settable device for one DOF (CA ``EpicsSignal`` or ``PvaSignal``)."""
+    proto, bare = _resolve_protocol(d.protocol, d.pv)
+    if proto == "pva":
+        from dashpva.viewer.bayesian.pva_signal import PvaSignal
+        return PvaSignal(bare, name=d.name)
+    from ophyd import EpicsSignal
+    return EpicsSignal(bare, name=d.name, put_complete=True)
+
+
+def _make_objective_readables(objectives: List["ObjectiveSpec"]) -> Dict[str, Any]:
+    """Map each objective name -> a readable device.
+
+    CA objectives get their own ``EpicsSignalRO``.  PVA objectives that share a
+    channel share ONE cached :class:`PvaSignal` (field=None, returns the whole
+    object), so the channel is read once per point and each objective selects its
+    own field downstream.
+    """
+    from ophyd import EpicsSignalRO
+
+    reads: Dict[str, Any] = {}
+    pva_cache: Dict[str, Any] = {}
+    for o in objectives:
+        proto, bare = _resolve_protocol(o.protocol, o.pv)
+        if proto == "pva":
+            dev = pva_cache.get(bare)
+            if dev is None:
+                from dashpva.viewer.bayesian.pva_signal import PvaSignal
+                # name by channel so a shared reading has a stable single key.
+                dev = PvaSignal(bare, name=bare, field=None)
+                pva_cache[bare] = dev
+            reads[o.name] = dev
+        else:
+            reads[o.name] = EpicsSignalRO(bare, name=o.name, kind="hinted")
+    return reads
+
+
+def _add_commit_device(config: OptimizerConfig, acts: Dict[str, Any], ns=None) -> None:
+    """Attach the optional commit device under the ``"__commit__"`` key.
+
+    Stored in ``acts`` (never a DOF, so :func:`build_agent` ignores it) and
+    written by :func:`blop_optimize_plan` between the DOF move and the read.
+    """
+    if not (config.commit_pv or "").strip():
+        return
+    if ns is not None:
+        dev = ns.get(config.commit_pv)
+        if dev is not None:
+            acts["__commit__"] = dev
+            return
+    proto, bare = _resolve_protocol("auto", config.commit_pv)
+    done = (config.commit_done_pv or "").strip() or None
+    if proto == "pva":
+        from dashpva.viewer.bayesian.pva_signal import PvaSignal
+        acts["__commit__"] = PvaSignal(
+            bare, name="__commit__", done_channel=done,
+            done_timeout=config.commit_done_timeout)
+    else:
+        from ophyd import EpicsSignal
+        acts["__commit__"] = EpicsSignal(bare, name="__commit__", put_complete=True)
 
 
 def _build_sim_devices(dofs: List["DOFSpec"], objectives: List["ObjectiveSpec"]):
@@ -402,20 +601,30 @@ def build_agent(config: OptimizerConfig, actuators: Dict[str, Any]):
                 RangeDOF(name=d.name, bounds=(d.lo, d.hi), parameter_type=d.kind)
             )
 
+    # Only maximize/minimize objectives go to blop; ``observe`` objectives are
+    # read and recorded in the plan but never handed to the optimizer.
+    opt_specs = config.optimized_objectives()
     objectives = [
-        Objective(name=o.name, minimize=o.minimize) for o in config.active_objectives()
+        Objective(name=o.name, minimize=o.minimize) for o in opt_specs
     ]
 
     def _noop_eval(uid: str, suggestions: list) -> list:  # pragma: no cover
         # Never called: we drive suggest()/ingest() manually in the plan.
         return [{"_id": s.get("_id"), objectives[0].name: 0.0} for s in suggestions]
 
+    # checkpoint_path is an explicit Agent param; take it from the dedicated
+    # config field (drop any stale copy in acq_kwargs to avoid a duplicate kwarg).
+    extra = dict(config.acq_kwargs)
+    extra.pop("checkpoint_path", None)
+    ckpt = (config.checkpoint_path or "").strip() or None
+
     agent = Agent(
         sensors=[],
         dofs=dofs,
         objectives=objectives,
         evaluation_function=_noop_eval,
-        **config.acq_kwargs,
+        checkpoint_path=ckpt,
+        **extra,
     )
     return agent
 
@@ -463,14 +672,29 @@ def blop_optimize_plan(
 
     active_dofs = config.active_dofs()
     objectives = config.active_objectives()
-    read_devices = list(readables.values()) + [actuators[d.name] for d in active_dofs]
+    optimized = [o for o in objectives if o.optimized]
+    commit_dev = actuators.get("__commit__")
+
+    # Unique readable set: PVA objectives sharing a channel share one device, so
+    # dedup by object identity to read each channel exactly once per point.
+    read_devices: List[Any] = []
+    _seen_ids = set()
+    for dev in list(readables.values()) + [actuators[d.name] for d in active_dofs]:
+        if id(dev) not in _seen_ids:
+            _seen_ids.add(id(dev))
+            read_devices.append(dev)
 
     _md = {
         "plan_name": "blop_optimize",
         "dofs": [d.name for d in active_dofs],
         "dof_pvs": [d.pv for d in active_dofs],
+        "dof_protocols": [d.protocol for d in active_dofs],
         "objectives": [o.name for o in objectives],
         "objective_pvs": [o.pv for o in objectives],
+        "objective_roles": [o.role for o in objectives],
+        "objective_fields": [o.field for o in objectives],
+        "optimized": [o.name for o in optimized],
+        "commit_pv": config.commit_pv,
         "iterations": config.iterations,
         "n_points": config.n_points,
     }
@@ -491,31 +715,46 @@ def blop_optimize_plan(
                     pos = sug[d.name]
                     pos = float(np.clip(pos, d.lo, d.hi))  # safety clamp
                     moves += [actuators[d.name], pos]
+                # BARRIER: bps.mv waits every DOF's Status -> all DOFs settled.
                 yield from bps.mv(*moves)
+
+                # Optional commit step AFTER the move, BEFORE the read.  Its
+                # put-completion (or done-counter barrier) is what guarantees the
+                # applied change is complete and a fresh result is available,
+                # i.e. move -> commit -> read ordering.
+                if commit_dev is not None:
+                    yield from bps.mv(commit_dev, config.commit_value)
 
                 reading = yield from bps.trigger_and_read(read_devices, name="primary")
 
                 outcome = {"_id": sug["_id"]}
                 obj_values: Dict[str, float] = {}
                 for o in objectives:
-                    # Each objective has its own readable, named by objective name,
-                    # so its value is an exact key in the merged reading.
-                    if o.name in reading:
-                        val = float(reading[o.name]["value"])
+                    dev = readables.get(o.name)
+                    key = getattr(dev, "name", o.name)
+                    if key in reading:
+                        raw = reading[key]["value"]
+                    elif o.name in reading:
+                        raw = reading[o.name]["value"]
                     else:
-                        val = extract_scalar(reading, o.name)
-                    outcome[o.name] = val
+                        raw = extract_scalar(reading, o.field or o.name)
+                    val = select_field(raw, o.field)
                     obj_values[o.name] = val
+                    # Only optimized objectives are ingested into blop; observe
+                    # objectives are recorded (on_point/plots) but not optimized.
+                    if o.optimized:
+                        outcome[o.name] = val
                 outcomes.append(outcome)
 
                 state["index"] += 1
                 if on_point is not None:
                     params = {d.name: float(sug[d.name]) for d in active_dofs}
+                    primary_name = (optimized or objectives)[0].name
                     on_point(
                         {
                             "params": params,
                             "objectives": obj_values,
-                            "primary": obj_values[objectives[0].name],
+                            "primary": obj_values[primary_name],
                             "index": state["index"],
                         }
                     )
@@ -533,6 +772,59 @@ def blop_optimize_plan(
 _ACQ_KAPPA = 2.0
 
 
+def _best_params(agent) -> Dict[str, Any]:
+    """Best parameterization from the Ax client, or ``{}`` if none yet."""
+    try:
+        result = agent.ax_client.get_best_parameterization()
+        return dict(result[0])  # (parameters, metrics, ...)
+    except Exception:  # noqa: BLE001 - fall back to midpoints
+        return {}
+
+
+def _grid_points_2d(
+    config: OptimizerConfig,
+    x_name: str,
+    y_name: str,
+    grid_n: int,
+    best_params: Dict[str, Any],
+    fixed_overrides: Optional[Dict[str, Any]] = None,
+) -> Tuple[Any, Any, List[dict], Dict[str, Any]]:
+    """Build the (xi, yi, points, fixed) for a 2-D DOF slice.
+
+    Non-axis DOFs are fixed at ``fixed_overrides[name]`` when provided, else the
+    best point, else the range midpoint.  ``points`` is row-major (y outer, x
+    inner) so a reshape to ``(grid_n, grid_n)`` is (ny, nx).
+    """
+    dofs = config.active_dofs()
+    by_name = {d.name: d for d in dofs}
+    xd, yd = by_name[x_name], by_name[y_name]
+    overrides = fixed_overrides or {}
+
+    def _coerce(d: DOFSpec, v: float):
+        return int(round(v)) if d.kind == "int" else float(v)
+
+    fixed: Dict[str, Any] = {}
+    for d in dofs:
+        if d.name in (x_name, y_name):
+            continue
+        if d.name in overrides:
+            val = overrides[d.name]
+        else:
+            val = best_params.get(d.name, 0.5 * (d.lo + d.hi))
+        fixed[d.name] = _coerce(d, val)
+
+    xi = np.linspace(xd.lo, xd.hi, grid_n)
+    yi = np.linspace(yd.lo, yd.hi, grid_n)
+    points = []
+    for yv in yi:                       # y outer, x inner -> row-major (ny, nx)
+        for xv in xi:
+            p = dict(fixed)
+            p[x_name] = _coerce(xd, xv)
+            p[y_name] = _coerce(yd, yv)
+            points.append(p)
+    return xi, yi, points, fixed
+
+
 def predict_surface(
     agent,
     config: OptimizerConfig,
@@ -541,6 +833,8 @@ def predict_surface(
     *,
     grid_n: int = 40,
     kappa: float = _ACQ_KAPPA,
+    fixed_overrides: Optional[Dict[str, Any]] = None,
+    objective: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Evaluate the agent's model over a 2-D grid for the primary objective.
 
@@ -563,40 +857,13 @@ def predict_surface(
     dict with keys: ``x_name, y_name, xi, yi, x_lo, x_hi, y_lo, y_hi, mean, sem,
     acq, objective, minimize, kappa, fixed``.
     """
-    dofs = config.active_dofs()
-    by_name = {d.name: d for d in dofs}
+    by_name = {d.name: d for d in config.active_dofs()}
     xd, yd = by_name[x_name], by_name[y_name]
-    obj = config.active_objectives()[0]
+    opt = config.optimized_objectives()
+    obj = next((o for o in opt if o.name == objective), opt[0])
 
-    # Fix non-selected DOFs at the best point if available, else at the midpoint.
-    # Use the Ax Client API (stable across blop/ax versions) rather than
-    # Agent.get_best_points (only present on newer blop).
-    best_params: Dict[str, Any] = {}
-    try:
-        result = agent.ax_client.get_best_parameterization()
-        best_params = dict(result[0])  # (parameters, metrics, ...)
-    except Exception:  # noqa: BLE001 - fall back to midpoints
-        best_params = {}
-
-    fixed: Dict[str, Any] = {}
-    for d in dofs:
-        if d.name in (x_name, y_name):
-            continue
-        val = best_params.get(d.name, 0.5 * (d.lo + d.hi))
-        fixed[d.name] = int(round(val)) if d.kind == "int" else float(val)
-
-    def _coerce(d: DOFSpec, v: float):
-        return int(round(v)) if d.kind == "int" else float(v)
-
-    xi = np.linspace(xd.lo, xd.hi, grid_n)
-    yi = np.linspace(yd.lo, yd.hi, grid_n)
-    points = []
-    for yv in yi:                       # y outer, x inner -> row-major (ny, nx)
-        for xv in xi:
-            p = dict(fixed)
-            p[x_name] = _coerce(xd, xv)
-            p[y_name] = _coerce(yd, yv)
-            points.append(p)
+    xi, yi, points, fixed = _grid_points_2d(
+        config, x_name, y_name, grid_n, _best_params(agent), fixed_overrides)
 
     preds = agent.ax_client.predict(points)   # list of {metric: (mean, sem)}
     name = obj.name
@@ -620,4 +887,132 @@ def predict_surface(
         "minimize": obj.minimize,
         "kappa": kappa,
         "fixed": fixed,
+    }
+
+
+def predict_surface_multi(
+    agent,
+    config: OptimizerConfig,
+    x_name: str,
+    y_name: str,
+    *,
+    grid_n: int = 40,
+    fixed_overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Predict every optimized objective over a 2-D DOF grid (for the RGB map).
+
+    One ``ax_client.predict`` over the grid; returns per-optimized-objective
+    ``mean``/``sem`` grids shaped ``(grid_n, grid_n)`` (ny, nx).  The GUI blends
+    these per-pixel into a composition (phase-map) image.
+
+    Returns
+    -------
+    dict with keys ``x_name, y_name, xi, yi, x_lo, x_hi, y_lo, y_hi, fixed`` and
+    ``objectives``: ``{name: {"mean": (ny,nx), "sem": (ny,nx), "minimize": bool}}``.
+    """
+    by_name = {d.name: d for d in config.active_dofs()}
+    xd, yd = by_name[x_name], by_name[y_name]
+
+    xi, yi, points, fixed = _grid_points_2d(
+        config, x_name, y_name, grid_n, _best_params(agent), fixed_overrides)
+    preds = agent.ax_client.predict(points)
+
+    objectives: Dict[str, Any] = {}
+    for o in config.optimized_objectives():
+        name = o.name
+        try:
+            mean = np.array([pt[name][0] for pt in preds], dtype=float).reshape(grid_n, grid_n)
+            sem = np.array([pt[name][1] for pt in preds], dtype=float).reshape(grid_n, grid_n)
+        except (KeyError, TypeError):
+            continue
+        objectives[name] = {"mean": mean, "sem": sem, "minimize": o.minimize}
+
+    return {
+        "x_name": x_name,
+        "y_name": y_name,
+        "xi": xi,
+        "yi": yi,
+        "x_lo": xd.lo,
+        "x_hi": xd.hi,
+        "y_lo": yd.lo,
+        "y_hi": yd.hi,
+        "fixed": fixed,
+        "objectives": objectives,
+    }
+
+
+def predict_slice_1d(
+    agent,
+    config: OptimizerConfig,
+    x_name: str,
+    *,
+    grid_n: int = 60,
+    kappa: float = _ACQ_KAPPA,
+    fixed_overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Predict every optimized objective along a 1-D slice of one DOF.
+
+    Complements :func:`predict_surface` (which is a 2-D grid for the *primary*
+    objective only).  Here we sweep a single DOF ``x_name`` — fixing all other
+    DOFs at the current best point (or each range's midpoint if none yet) — and
+    return the model's predicted mean and standard error for **each** optimized
+    objective.  The GUI overlays these as one regression curve per phase on top
+    of the measured phase-fraction scatter ("Objectives vs DOF" view).
+
+    Only ``maximize``/``minimize`` objectives are Ax metrics, so only those get a
+    model curve; ``observe`` phases are shown by the panel as measured points.
+
+    Returns
+    -------
+    dict with keys ``x_name, xi, x_lo, x_hi, fixed, kappa`` and ``objectives``:
+    a mapping ``{obj_name: {"mean": ndarray, "sem": ndarray, "minimize": bool}}``.
+    """
+    dofs = config.active_dofs()
+    by_name = {d.name: d for d in dofs}
+    xd = by_name[x_name]
+    opt_objs = config.optimized_objectives()
+    overrides = fixed_overrides or {}
+
+    best_params = _best_params(agent)
+
+    def _coerce(d: DOFSpec, v: float):
+        return int(round(v)) if d.kind == "int" else float(v)
+
+    # Fix non-x DOFs at an override, else the best point, else the midpoint.
+    fixed: Dict[str, Any] = {}
+    for d in dofs:
+        if d.name == x_name:
+            continue
+        if d.name in overrides:
+            val = overrides[d.name]
+        else:
+            val = best_params.get(d.name, 0.5 * (d.lo + d.hi))
+        fixed[d.name] = _coerce(d, val)
+
+    xi = np.linspace(xd.lo, xd.hi, grid_n)
+    points = []
+    for xv in xi:
+        p = dict(fixed)
+        p[x_name] = _coerce(xd, xv)
+        points.append(p)
+
+    preds = agent.ax_client.predict(points)   # list of {metric: (mean, sem)}
+    objectives: Dict[str, Any] = {}
+    for o in opt_objs:
+        name = o.name
+        try:
+            mean = np.array([pt[name][0] for pt in preds], dtype=float)
+            sem = np.array([pt[name][1] for pt in preds], dtype=float)
+        except (KeyError, TypeError):
+            continue  # metric not modeled yet; skip its curve
+        objectives[name] = {"mean": mean, "sem": sem, "minimize": o.minimize}
+
+    return {
+        "x_name": x_name,
+        "xi": xi,
+        "x_lo": xd.lo,
+        "x_hi": xd.hi,
+        "fixed": fixed,
+        "kappa": kappa,
+        "objectives": objectives,
     }
