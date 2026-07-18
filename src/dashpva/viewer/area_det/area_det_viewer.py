@@ -231,6 +231,11 @@ class DiffractionImageWindow(BaseWindow):
         self._dead_px_last_frame = 0
         self._dead_px_mode = 'illuminated'
 
+        # Live autoscale is throttled (not per-frame) so large frames stay swift;
+        # while the box is checked, levels re-fit at most every AUTOSCALE_INTERVAL_S.
+        self.AUTOSCALE_INTERVAL_S = 2.0
+        self._last_autoscale_ts = 0.0
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
@@ -271,6 +276,11 @@ class DiffractionImageWindow(BaseWindow):
         
         plot = pg.PlotItem()
         self.image_view = pg.ImageView(view=plot)
+        # Large detectors (e.g. 16 MP): let pyqtgraph decimate the image to the
+        # widget's pixel resolution before building the QImage, instead of
+        # rasterizing every pixel each frame and letting Qt shrink the result.
+        # This is the main speedup for big frames (the same trick ImageJ uses).
+        self.image_view.getImageItem().setAutoDownsample(True)
         # Set the default colormap when ImageView is created
         self.image_view.setColorMap(self.cet_colormap)
         # pyqtgraph turns every colormap stop into a draggable triangle on the
@@ -588,9 +598,12 @@ class DiffractionImageWindow(BaseWindow):
         try:
             import psutil  # noqa: F401
             self._psutil = psutil
-            self._psutil.cpu_percent(interval=None)
+            self._proc = psutil.Process()
+            self._psutil.cpu_percent(interval=None)   # prime system-wide reading
+            self._proc.cpu_percent(interval=None)     # prime this-process reading
         except ImportError:
             self._psutil = None
+            self._proc = None
         self._perf_timer = QTimer(self)
         self._perf_timer.setInterval(_PERF_TIMER_INTERVAL_MS)
         self._perf_timer.timeout.connect(self._update_perf_labels)
@@ -598,7 +611,12 @@ class DiffractionImageWindow(BaseWindow):
 
     def _update_perf_labels(self):
         if self._psutil is not None:
-            self._cpu_label.setText(f"CPU: {self._psutil.cpu_percent(interval=None):.0f}%")
+            # app = this process (per-core: ~100% == one saturated core, can exceed
+            # 100% across threads) so a pegged GUI thread is visible; sys = whole
+            # machine, 0-100% averaged over cores.
+            app = self._proc.cpu_percent(interval=None)
+            sysp = self._psutil.cpu_percent(interval=None)
+            self._cpu_label.setText(f"CPU: app {app:.0f}% (1 core) | sys {sysp:.0f}%")
         else:
             try:
                 with open("/proc/stat", "r") as f:
@@ -611,7 +629,7 @@ class DiffractionImageWindow(BaseWindow):
                     dt = total - ptotal
                     didle = idle - pidle
                     if dt > 0:
-                        self._cpu_label.setText(f"CPU: {(dt - didle) * 100.0 / dt:.0f}%")
+                        self._cpu_label.setText(f"CPU: sys {(dt - didle) * 100.0 / dt:.0f}%")
                 self._cpu_prev = (total, idle)
             except OSError:
                 self._cpu_label.setText("CPU: N/A")
@@ -2281,7 +2299,12 @@ class DiffractionImageWindow(BaseWindow):
                                                 autoLevels=False,
                                                 autoHistogramRange=False)
                     if self.chk_autoscale.isChecked():
-                        self.apply_autoscale()
+                        # Throttled: recompute levels at most every few seconds,
+                        # not every frame (percentile over a 16 MP array is costly).
+                        now = time.monotonic()
+                        if now - self._last_autoscale_ts >= self.AUTOSCALE_INTERVAL_S:
+                            self.apply_autoscale()
+                            self._last_autoscale_ts = now
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
                                             y=np.arange(self.image.shape[1]),
@@ -2306,6 +2329,7 @@ class DiffractionImageWindow(BaseWindow):
         if self.chk_autoscale.isChecked() and self.image is not None:
             self.apply_autoscale()
             self._fit_histogram_range(force=True)
+            self._last_autoscale_ts = time.monotonic()   # restart the throttle clock
 
     def apply_autoscale(self) -> None:
         if self.image is None:
