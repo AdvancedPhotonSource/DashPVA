@@ -17,6 +17,11 @@ from dashpva.gui.theme_colors import (
 )
 
 
+def _parse_version(version):
+    """Parse '1.0.3' into (1, 0, 3), ignoring non-numeric parts."""
+    return tuple(int(p) for p in version.split('.') if p.isdigit())
+
+
 class ReleaseCheckWorker(QThread):
     result = pyqtSignal(bool, str, str)  # has_update, tag_name, release_notes
     error = pyqtSignal(str)
@@ -36,7 +41,7 @@ class ReleaseCheckWorker(QThread):
             data = resp.json()
             tag = data.get('tag_name', '')
             notes = data.get('body', '') or ''
-            has_update = tag.lstrip('v') != str(settings.__VERSION__)
+            has_update = _parse_version(tag.lstrip('v')) > _parse_version(str(settings.__VERSION__))
             self.result.emit(has_update, tag, notes)
         except Exception as exc:
             self.error.emit(str(exc))
