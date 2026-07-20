@@ -165,7 +165,7 @@ class RoiStatsPanel(QWidget):
         self.btn_add.clicked.connect(self._add_manual)
         ctrl2.addWidget(self.btn_add)
         self.btn_remove = QPushButton('Remove manual')
-        self.btn_remove.setToolTip('Remove the manual ROI selected in the ROI dropdown')
+        self.btn_remove.setToolTip('Remove the selected manual ROI (or the most recent one)')
         self.btn_remove.clicked.connect(self._remove_manual)
         ctrl2.addWidget(self.btn_remove)
         self.chk_broadcast = QCheckBox('Broadcast as PV')
@@ -244,8 +244,9 @@ class RoiStatsPanel(QWidget):
             for c in range(len(_STATS) + len(_COM)):
                 self.table.setItem(row, c + 1, QTableWidgetItem('--'))
         self.lbl_empty.setVisible(not rois)
-        self.btn_add.setEnabled(
-            len(getattr(self.viewer, 'manual_rois', [])) < getattr(self.viewer, 'MAX_MANUAL_ROIS', 5))
+        manual_n = len(getattr(self.viewer, 'manual_rois', []))
+        self.btn_add.setEnabled(manual_n < getattr(self.viewer, 'MAX_MANUAL_ROIS', 5))
+        self.btn_remove.setEnabled(manual_n > 0)   # nothing to remove -> disabled
         self._rebuild_curves()
 
     def _rebuild_curves(self, *_):
@@ -369,12 +370,29 @@ class RoiStatsPanel(QWidget):
 
     # ---------------------------------------------------------- actions
     def _add_manual(self):
-        self.viewer.add_manual_roi()
+        key = self.viewer.add_manual_roi()
         self._refresh_availability(force=True)
+        if key:                                    # point the dropdown at the new ROI
+            idx = self.cmb_roi.findData(key)
+            if idx >= 0:
+                self.cmb_roi.setCurrentIndex(idx)
+
+    @staticmethod
+    def _manual_remove_target(selected_key, manual_rois):
+        """Key that 'Remove manual' should delete: the dropdown selection when it is
+        a manual ROI, otherwise the most-recently-added manual ROI (highest slot),
+        or None when there are none. Lets the button work even when the shared ROI
+        dropdown is sitting on an EPICS ROI (the reason it 'did nothing' before)."""
+        if selected_key and str(selected_key).startswith('Manual'):
+            return selected_key
+        if not manual_rois:
+            return None
+        return max(manual_rois, key=lambda e: e['n'])['key']
 
     def _remove_manual(self):
-        key = self.cmb_roi.currentData()
-        if key and str(key).startswith('Manual'):
+        key = self._manual_remove_target(
+            self.cmb_roi.currentData(), getattr(self.viewer, 'manual_rois', []))
+        if key:
             self.viewer.remove_manual_roi(key)
             self._refresh_availability(force=True)
 
