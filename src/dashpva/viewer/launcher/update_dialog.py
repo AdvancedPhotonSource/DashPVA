@@ -52,9 +52,28 @@ class PullWorker(QThread):
     finished = pyqtSignal(bool)
 
     def run(self):
+        git_dir = settings.PROJECT_ROOT / '.git'
+        if not git_dir.exists():
+            self.line.emit('This installation is not a git checkout.')
+            self.line.emit('To update, run: pip install --upgrade dashpva')
+            self.line.emit('Then restart DashPVA to apply the update.')
+            self.finished.emit(False)
+            return
         try:
+            fetch = subprocess.run(
+                ['git', 'fetch', 'origin', '--tags'],
+                cwd=str(settings.PROJECT_ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for ln in fetch.stdout:
+                self.line.emit(ln.rstrip())
+            if fetch.returncode != 0:
+                self.finished.emit(False)
+                return
             proc = subprocess.Popen(
-                ['git', 'pull', 'origin', 'main'],
+                ['git', 'checkout', '-f', 'origin/main'],
                 cwd=str(settings.PROJECT_ROOT),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -63,6 +82,7 @@ class PullWorker(QThread):
             for ln in proc.stdout:
                 self.line.emit(ln.rstrip())
             proc.wait()
+            self.line.emit('Update complete — restart DashPVA to apply')
             self.finished.emit(proc.returncode == 0)
         except Exception as exc:
             self.line.emit(f'ERROR: {exc}')
@@ -123,3 +143,4 @@ class UpdateDialog(QDialog):
         else:
             self.lbl_status.setText('Update failed — see output above')
             self.lbl_status.setStyleSheet(status_style(ERROR, bold=True, size=FONT_BODY))
+        self.btn_update.setEnabled(True)
