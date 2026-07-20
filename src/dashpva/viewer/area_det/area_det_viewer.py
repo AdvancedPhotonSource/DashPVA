@@ -590,6 +590,10 @@ class DiffractionImageWindow(BaseWindow):
     def init_perf_statusbar(self):
         sb = self.statusBar()
         self._cpu_label = QLabel("CPU: -%")
+        self._cpu_label.setToolTip(
+            "app = this process's CPU across all cores (like top's per-process "
+            "%CPU; can exceed 100%). sys = system-wide %CPU (like top's %Cpu(s) "
+            "line, not the load average).")
         self._runtime_label = QLabel("Runtime: 0s")
         sb.addPermanentWidget(self._cpu_label)
         sb.addPermanentWidget(self._runtime_label)
@@ -611,12 +615,13 @@ class DiffractionImageWindow(BaseWindow):
 
     def _update_perf_labels(self):
         if self._psutil is not None:
-            # app = this process (per-core: ~100% == one saturated core, can exceed
-            # 100% across threads) so a pegged GUI thread is visible; sys = whole
-            # machine, 0-100% averaged over cores.
+            # app = this PID's CPU across all cores (same convention as top's
+            # per-process %CPU; can exceed 100%). sys = system-wide %CPU (top's
+            # %Cpu(s) line, NOT the load average).
             app = self._proc.cpu_percent(interval=None)
             sysp = self._psutil.cpu_percent(interval=None)
-            self._cpu_label.setText(f"CPU: app {app:.0f}% (1 core) | sys {sysp:.0f}%")
+            self._cpu_label.setText(
+                f"CPU: {app:.0f}% (PID {self._proc.pid}) | sys {sysp:.0f}%")
         else:
             try:
                 with open("/proc/stat", "r") as f:
