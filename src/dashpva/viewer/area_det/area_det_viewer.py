@@ -1614,6 +1614,11 @@ class DiffractionImageWindow(BaseWindow):
             struct[f'm{k}_active'] = pva.BOOLEAN
             for f in ('total', 'min', 'max', 'mean', 'sigma', 'comx', 'comy'):
                 struct[f'm{k}_{f}'] = pva.DOUBLE
+        # Scalarized aggregates so a Bayesian objective can minimize scatter across
+        # all active ROIs at once with a single target (see _scatter_aggregate).
+        struct['scatter_total'] = pva.DOUBLE   # sum of active ROI totals (raw counts)
+        struct['scatter_mean'] = pva.DOUBLE    # avg of active ROI per-pixel means (area-normalized)
+        struct['n_active'] = pva.INT           # number of active manual ROIs
         try:
             self._manual_pv_channel = self._manual_broadcast_channel()
             self._manual_pv_obj = pva.PvObject(struct)
@@ -1640,18 +1645,36 @@ class DiffractionImageWindow(BaseWindow):
                          'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV',
                          'comx': 'ComX_RBV', 'comy': 'ComY_RBV'}
 
+    @staticmethod
+    def _scatter_aggregate(totals, means) -> dict:
+        """Scalarize active manual-ROI stats into single Bayesian-objective targets.
+
+        ``scatter_total`` is the raw sum of ROI totals; ``scatter_mean`` averages
+        the per-pixel ROI means (area-normalized, so a large ROI does not dominate
+        a small one) — the recommended single objective for 'reduce scatter
+        everywhere'. Equal weights; both 0.0 when nothing is active."""
+        n = len(totals)
+        return {'scatter_total': float(sum(totals)),
+                'scatter_mean': float(sum(means) / n) if n else 0.0,
+                'n_active': n}
+
     def _publish_manual_stats(self, frame_id) -> None:
         if self._manual_pva_server is None or self._manual_pv_obj is None:
             return
         prefix = self.reader.pva_prefix if self.reader is not None else ''
         by_slot = {e['n']: e['key'] for e in self.manual_rois}
         obj = {'frameId': int(frame_id) if frame_id is not None else 0}
+        active_totals, active_means = [], []
         for k in range(1, self.MAX_MANUAL_ROIS + 1):
             key = by_slot.get(k)
             obj[f'm{k}_active'] = key is not None
             for short, field in self._MANUAL_FIELD_MAP.items():
                 obj[f'm{k}_{short}'] = (
                     float(self.stats_data.get(f'{prefix}:{key}:{field}', 0.0)) if key else 0.0)
+            if key is not None:
+                active_totals.append(obj[f'm{k}_total'])
+                active_means.append(obj[f'm{k}_mean'])
+        obj.update(self._scatter_aggregate(active_totals, active_means))
         try:
             self._manual_pv_obj.set(obj)
         except Exception:
