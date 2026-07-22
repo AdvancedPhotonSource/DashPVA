@@ -231,6 +231,11 @@ class DiffractionImageWindow(BaseWindow):
         self._dead_px_last_frame = 0
         self._dead_px_mode = 'illuminated'
 
+        # Live autoscale is throttled (not per-frame) so large frames stay swift;
+        # while the box is checked, levels re-fit at most every AUTOSCALE_INTERVAL_S.
+        self.AUTOSCALE_INTERVAL_S = 2.0
+        self._last_autoscale_ts = 0.0
+
         # Initializing but not starting timers so they can be reached by different functions
         self.timer_labels = QTimer()
         self.timer_plot = QTimer()
@@ -271,6 +276,11 @@ class DiffractionImageWindow(BaseWindow):
         
         plot = pg.PlotItem()
         self.image_view = pg.ImageView(view=plot)
+        # Large detectors (e.g. 16 MP): let pyqtgraph decimate the image to the
+        # widget's pixel resolution before building the QImage, instead of
+        # rasterizing every pixel each frame and letting Qt shrink the result.
+        # This is the main speedup for big frames (the same trick ImageJ uses).
+        self.image_view.getImageItem().setAutoDownsample(True)
         # Set the default colormap when ImageView is created
         self.image_view.setColorMap(self.cet_colormap)
         # pyqtgraph turns every colormap stop into a draggable triangle on the
@@ -580,6 +590,10 @@ class DiffractionImageWindow(BaseWindow):
     def init_perf_statusbar(self):
         sb = self.statusBar()
         self._cpu_label = QLabel("CPU: -%")
+        self._cpu_label.setToolTip(
+            "app = this process's CPU across all cores (like top's per-process "
+            "%CPU; can exceed 100%). sys = system-wide %CPU (like top's %Cpu(s) "
+            "line, not the load average).")
         self._runtime_label = QLabel("Runtime: 0s")
         sb.addPermanentWidget(self._cpu_label)
         sb.addPermanentWidget(self._runtime_label)
@@ -588,9 +602,12 @@ class DiffractionImageWindow(BaseWindow):
         try:
             import psutil  # noqa: F401
             self._psutil = psutil
-            self._psutil.cpu_percent(interval=None)
+            self._proc = psutil.Process()
+            self._psutil.cpu_percent(interval=None)   # prime system-wide reading
+            self._proc.cpu_percent(interval=None)     # prime this-process reading
         except ImportError:
             self._psutil = None
+            self._proc = None
         self._perf_timer = QTimer(self)
         self._perf_timer.setInterval(_PERF_TIMER_INTERVAL_MS)
         self._perf_timer.timeout.connect(self._update_perf_labels)
@@ -598,7 +615,13 @@ class DiffractionImageWindow(BaseWindow):
 
     def _update_perf_labels(self):
         if self._psutil is not None:
-            self._cpu_label.setText(f"CPU: {self._psutil.cpu_percent(interval=None):.0f}%")
+            # app = this PID's CPU across all cores (same convention as top's
+            # per-process %CPU; can exceed 100%). sys = system-wide %CPU (top's
+            # %Cpu(s) line, NOT the load average).
+            app = self._proc.cpu_percent(interval=None)
+            sysp = self._psutil.cpu_percent(interval=None)
+            self._cpu_label.setText(
+                f"CPU: {app:.0f}% (PID {self._proc.pid}) | sys {sysp:.0f}%")
         else:
             try:
                 with open("/proc/stat", "r") as f:
@@ -611,7 +634,7 @@ class DiffractionImageWindow(BaseWindow):
                     dt = total - ptotal
                     didle = idle - pidle
                     if dt > 0:
-                        self._cpu_label.setText(f"CPU: {(dt - didle) * 100.0 / dt:.0f}%")
+                        self._cpu_label.setText(f"CPU: sys {(dt - didle) * 100.0 / dt:.0f}%")
                 self._cpu_prev = (total, idle)
             except OSError:
                 self._cpu_label.setText("CPU: N/A")
@@ -1263,11 +1286,23 @@ class DiffractionImageWindow(BaseWindow):
         self._apply_roi_visibility()
 
     def _apply_roi_visibility(self) -> None:
-        """An ROI is visible iff the global ``display_rois`` is checked AND
-        its per-ROI checkbox in the ROI dock is checked."""
+        """An EPICS ROI is visible iff the global ``display_rois`` is checked AND
+        its per-ROI checkbox in the ROI dock is checked. Manual ROIs (amber
+        M1..M5) follow the global toggle only; hiding is purely visual — their
+        geometry is preserved and still persisted."""
+        global_on = self.display_rois.isChecked()
+        # Manual ROIs first, independent of the reader: they may already be on
+        # screen from a restore before a live channel is (re)attached.
+        for entry in self.manual_rois:
+            roi = entry.get('roi')
+            if roi is None:
+                continue
+            if global_on:
+                roi.show()
+            else:
+                roi.hide()
         if self.reader is None:
             return
-        global_on = self.display_rois.isChecked()
         for idx, roi in enumerate(self.rois):
             if roi is None:
                 continue
@@ -1329,6 +1364,7 @@ class DiffractionImageWindow(BaseWindow):
         y = (ih - h) // 2 + (n - 1) * 8
         self._build_manual_roi(n, {'pos': [float(x), float(y)],
                                    'size': [float(w), float(h)], 'angle': 0.0})
+        self._apply_roi_visibility()   # honor the global Show ROIs toggle
         self._save_manual_rois()
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
@@ -1447,6 +1483,7 @@ class DiffractionImageWindow(BaseWindow):
                 continue
             used.add(n)
             self._build_manual_roi(n, state)
+        self._apply_roi_visibility()   # restored boxes honor the global toggle
         self._manual_roi_last_frame = -1
         self._update_manual_roi_stats(force=True)
 
@@ -1582,6 +1619,11 @@ class DiffractionImageWindow(BaseWindow):
             struct[f'm{k}_active'] = pva.BOOLEAN
             for f in ('total', 'min', 'max', 'mean', 'sigma', 'comx', 'comy'):
                 struct[f'm{k}_{f}'] = pva.DOUBLE
+        # Scalarized aggregates so a Bayesian objective can minimize scatter across
+        # all active ROIs at once with a single target (see _scatter_aggregate).
+        struct['scatter_total'] = pva.DOUBLE   # sum of active ROI totals (raw counts)
+        struct['scatter_mean'] = pva.DOUBLE    # avg of active ROI per-pixel means (area-normalized)
+        struct['n_active'] = pva.INT           # number of active manual ROIs
         try:
             self._manual_pv_channel = self._manual_broadcast_channel()
             self._manual_pv_obj = pva.PvObject(struct)
@@ -1608,18 +1650,36 @@ class DiffractionImageWindow(BaseWindow):
                          'mean': 'MeanValue_RBV', 'sigma': 'Sigma_RBV',
                          'comx': 'ComX_RBV', 'comy': 'ComY_RBV'}
 
+    @staticmethod
+    def _scatter_aggregate(totals, means) -> dict:
+        """Scalarize active manual-ROI stats into single Bayesian-objective targets.
+
+        ``scatter_total`` is the raw sum of ROI totals; ``scatter_mean`` averages
+        the per-pixel ROI means (area-normalized, so a large ROI does not dominate
+        a small one) — the recommended single objective for 'reduce scatter
+        everywhere'. Equal weights; both 0.0 when nothing is active."""
+        n = len(totals)
+        return {'scatter_total': float(sum(totals)),
+                'scatter_mean': float(sum(means) / n) if n else 0.0,
+                'n_active': n}
+
     def _publish_manual_stats(self, frame_id) -> None:
         if self._manual_pva_server is None or self._manual_pv_obj is None:
             return
         prefix = self.reader.pva_prefix if self.reader is not None else ''
         by_slot = {e['n']: e['key'] for e in self.manual_rois}
         obj = {'frameId': int(frame_id) if frame_id is not None else 0}
+        active_totals, active_means = [], []
         for k in range(1, self.MAX_MANUAL_ROIS + 1):
             key = by_slot.get(k)
             obj[f'm{k}_active'] = key is not None
             for short, field in self._MANUAL_FIELD_MAP.items():
                 obj[f'm{k}_{short}'] = (
                     float(self.stats_data.get(f'{prefix}:{key}:{field}', 0.0)) if key else 0.0)
+            if key is not None:
+                active_totals.append(obj[f'm{k}_total'])
+                active_means.append(obj[f'm{k}_mean'])
+        obj.update(self._scatter_aggregate(active_totals, active_means))
         try:
             self._manual_pv_obj.set(obj)
         except Exception:
@@ -2267,7 +2327,12 @@ class DiffractionImageWindow(BaseWindow):
                                                 autoLevels=False,
                                                 autoHistogramRange=False)
                     if self.chk_autoscale.isChecked():
-                        self.apply_autoscale()
+                        # Throttled: recompute levels at most every few seconds,
+                        # not every frame (percentile over a 16 MP array is costly).
+                        now = time.monotonic()
+                        if now - self._last_autoscale_ts >= self.AUTOSCALE_INTERVAL_S:
+                            self.apply_autoscale()
+                            self._last_autoscale_ts = now
                 # Separate image update for horizontal average plot
                 self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
                                             y=np.arange(self.image.shape[1]),
@@ -2292,6 +2357,7 @@ class DiffractionImageWindow(BaseWindow):
         if self.chk_autoscale.isChecked() and self.image is not None:
             self.apply_autoscale()
             self._fit_histogram_range(force=True)
+            self._last_autoscale_ts = time.monotonic()   # restart the throttle clock
 
     def apply_autoscale(self) -> None:
         if self.image is None:

@@ -20,6 +20,18 @@ class TestCLI:
         assert result.exit_code == 0
         assert "DashPVA" in result.output
 
+    def test_help_points_to_subcommand_help(self, runner):
+        # The main help must direct users to `DashPVA COMMAND --help` (the working
+        # path) rather than the old, broken `-s`/`-d`/... help flags.
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "sim --help" in result.output
+
+    def test_old_global_help_flags_removed(self, runner):
+        # The confusing broken flags (e.g. -s) are gone; use `DashPVA sim --help`.
+        result = runner.invoke(cli, ["-s"])
+        assert result.exit_code != 0
+
     def test_run_help(self, runner):
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0

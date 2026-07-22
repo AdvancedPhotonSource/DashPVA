@@ -49,7 +49,7 @@ class ImageDock(BaseDock):
         self.plotting_frequency = QSpinBox()
         self.plotting_frequency.setObjectName("plotting_frequency")
         self.plotting_frequency.setRange(1, 999999999)
-        self.plotting_frequency.setValue(5)
+        self.plotting_frequency.setValue(14)
         self.plotting_frequency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addRow(QLabel("Plotting rate (Hz):"), self.plotting_frequency)
 
