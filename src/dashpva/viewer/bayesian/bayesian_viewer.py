@@ -90,6 +90,7 @@ class ScanWorker(QThread):
     scan_error = pyqtSignal(str)
     scan_finished = pyqtSignal()
     agent_ready = pyqtSignal(object)  # the built blop agent (for model surfaces)
+    initial_positions = pyqtSignal(dict, bool)  # (positions, simulated) before the run (fresh start)
 
     def __init__(
         self,
@@ -145,12 +146,23 @@ class ScanWorker(QThread):
             from dashpva.viewer.bayesian.blop_adapter import (
                 blop_optimize_plan,
                 build_agent,
+                read_positions,
                 resolve_devices,
             )
 
             actuators, readables, simulated = resolve_devices(
                 self.config, simulate=self.simulate
             )
+            # On a FRESH start (not a resume), snapshot where the enabled DOFs are
+            # before the optimizer moves anything, so Reset can offer to restore them.
+            if self._existing_agent is None:
+                try:
+                    self.initial_positions.emit(read_positions(
+                        actuators, [d.name for d in self.config.active_dofs()]),
+                        simulated)
+                except Exception:  # noqa: BLE001
+                    logger.warning("Could not read initial DOF positions:\n%s",
+                                   traceback.format_exc())
             # Reuse the existing agent to resume (keeps the Ax trial history);
             # otherwise build a fresh one.
             agent = self._existing_agent or build_agent(self.config, actuators)
@@ -189,6 +201,29 @@ class ScanWorker(QThread):
                 self.scan_error.emit(str(exc))
         finally:
             self.scan_finished.emit()
+
+
+class _MoveWorker(QThread):
+    """Drive the DOF motors to a given point off the GUI thread (motor settle blocks)."""
+
+    done = pyqtSignal(dict, bool)     # moved (name -> commanded pos), simulated
+    failed = pyqtSignal(str)
+
+    def __init__(self, config, params, simulate, parent=None):
+        super().__init__(parent)
+        self._config = config
+        self._params = params
+        self._simulate = simulate
+
+    def run(self) -> None:
+        try:
+            from dashpva.viewer.bayesian.blop_adapter import move_to_point
+            moved, simulated = move_to_point(
+                self._config, self._params, simulate=self._simulate)
+            self.done.emit(moved, simulated)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Move-to-point failed:\n%s", traceback.format_exc())
+            self.failed.emit(str(exc))
 
 
 class _SurfaceWorker(QThread):
@@ -345,6 +380,10 @@ class _PlotPanel(QtWidgets.QWidget):
     surface_multi_requested = pyqtSignal(str, str)
     # Emitted when the user requests a 1-D model slice (objectives vs x_dof).
     slice_requested = pyqtSignal(str)
+    # Emitted when the Primary-objective selection changes (readouts re-rendered).
+    primary_changed = pyqtSignal()
+    # Emitted with a record index when the user clicks a measured point.
+    point_selected = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -395,14 +434,9 @@ class _PlotPanel(QtWidgets.QWidget):
             "measured points, plus a model curve per optimized objective on Update."
         )
         row1.addWidget(self._mode_combo)
-        # Objective selector — used by the single-objective surface modes.
-        self._obj_label = QtWidgets.QLabel("Objective:")
-        row1.addWidget(self._obj_label)
-        self._obj_combo = QtWidgets.QComboBox()
-        self._obj_combo.setToolTip(
-            "Which objective the Predicted surface / σ / UCB views show "
-            "(ignored by the composition and phase-map views).")
-        row1.addWidget(self._obj_combo)
+        # Objective selection lives in the control panel (the "Primary objective"
+        # combo next to the Objectives table); the surface views follow it via
+        # current_objective(), so there is no separate picker here.
         self._update_btn = QtWidgets.QPushButton("Update surface")
         self._update_btn.setToolTip(
             "Compute the model surface for the selected DOF pair from the current "
@@ -477,8 +511,8 @@ class _PlotPanel(QtWidgets.QWidget):
         self._x_combo.currentIndexChanged.connect(self._on_axes_changed)
         self._y_combo.currentIndexChanged.connect(self._on_axes_changed)
         self._mode_combo.currentIndexChanged.connect(self._render_projection)
-        self._obj_combo.currentIndexChanged.connect(self._render_projection)
         self._update_btn.clicked.connect(self._on_update_clicked)
+        self._scatter.sigClicked.connect(self._on_scatter_clicked)
 
         # data state
         self._dof_names: List[str] = []
@@ -494,7 +528,9 @@ class _PlotPanel(QtWidgets.QWidget):
         self._slice_key: Optional[str] = None       # x_name it was for
         # DOF bounds (name -> (lo, hi, kind)) for the fixed-DOF sliders.
         self._dof_bounds: Dict[str, tuple] = {}
-        self._opt_names: List[str] = []  # optimized objective names (surface selector)
+        self._opt_names: List[str] = []  # optimized objective names (primary + surface selector)
+        self._obj_minimize: Dict[str, bool] = {}  # optimized name -> minimize (direction)
+        self._primary_name: Optional[str] = None  # selected primary (from control panel)
         # Fixed non-axis DOF values (name -> value) + their slider/label widgets.
         self._fixed_vals: Dict[str, float] = {}
         self._fixed_widgets: Dict[str, tuple] = {}  # name -> (slider, value_label)
@@ -504,12 +540,15 @@ class _PlotPanel(QtWidgets.QWidget):
     # -- setup ------------------------------------------------------------
     def reset(self, dofs, minimize: bool,
               obj_names: Optional[List[str]] = None,
-              opt_names: Optional[List[str]] = None) -> None:
+              opt_names: Optional[List[str]] = None,
+              opt_minimize: Optional[Dict[str, bool]] = None) -> None:
         """Reset for a new run.
 
         ``dofs`` is a list of DOFSpec-like objects (``.name/.lo/.hi/.kind``);
         ``obj_names`` are ALL objectives (for composition color / points),
-        ``opt_names`` the optimized ones (for the surface objective selector).
+        ``opt_names`` the optimized ones (primary + surface selector), and
+        ``opt_minimize`` maps each optimized name -> its minimize flag (direction),
+        so the Primary-objective dropdown can flip the trace/star direction.
         """
         self._dof_names = [d.name for d in dofs]
         self._dof_bounds = {
@@ -518,6 +557,7 @@ class _PlotPanel(QtWidgets.QWidget):
         }
         self._obj_names = list(obj_names or [])
         self._opt_names = list(opt_names or [])
+        self._obj_minimize = dict(opt_minimize or {})
         self._records = []
         self._best_idx = None
         self._minimize = minimize
@@ -537,10 +577,6 @@ class _PlotPanel(QtWidgets.QWidget):
         if self._colorbar is not None:
             self._colorbar.setVisible(False)
         self._clear_obj_series()
-        self._obj_combo.blockSignals(True)
-        self._obj_combo.clear()
-        self._obj_combo.addItems(self._opt_names)
-        self._obj_combo.blockSignals(False)
         for combo in (self._x_combo, self._y_combo):
             combo.blockSignals(True)
             combo.clear()
@@ -549,6 +585,7 @@ class _PlotPanel(QtWidgets.QWidget):
         if len(self._dof_names) > 1:
             self._y_combo.setCurrentIndex(1)
         self._rebuild_fixed_sliders()
+        self._recompute_primary()
         self._render_projection()
 
     # -- fixed-DOF sliders ------------------------------------------------
@@ -601,7 +638,7 @@ class _PlotPanel(QtWidgets.QWidget):
         return dict(self._fixed_vals)
 
     def current_objective(self) -> Optional[str]:
-        return self._obj_combo.currentText() or None
+        return self.primary_name()
 
     def current_dof_pair(self) -> tuple:
         return self._x_combo.currentText(), self._y_combo.currentText()
@@ -613,21 +650,79 @@ class _PlotPanel(QtWidgets.QWidget):
         self._refresh_update_btn()
 
     # -- live update ------------------------------------------------------
+    def primary_name(self) -> Optional[str]:
+        """The objective the readouts (trace, star, Move-to-best) currently follow."""
+        if self._primary_name and self._primary_name in self._opt_names:
+            return self._primary_name
+        return self._opt_names[0] if self._opt_names else None
+
+    def set_primary(self, name: Optional[str]) -> None:
+        """Set the primary objective (from the control-panel selector) and re-render
+        the trace / star / Move-to-best target instantly, from stored data."""
+        self._primary_name = name or None
+        self._recompute_primary()
+        self._render_projection()
+        self.primary_changed.emit()
+
+    def _primary_value(self, record: dict) -> float:
+        """That record's value for the selected primary (from its per-objective dict,
+        falling back to the run-time 'primary')."""
+        objs = record.get("objectives", {})
+        return float(objs.get(self.primary_name(), record.get("primary", 0.0)))
+
+    def _recompute_primary(self) -> None:
+        """Recompute the convergence trace + best index for the SELECTED primary
+        objective from the stored per-point values, and relabel the y-axis. Lets the
+        Primary dropdown re-render instantly without a re-run."""
+        name = self.primary_name()
+        if name is not None and name in self._obj_minimize:
+            self._minimize = self._obj_minimize[name]
+        if not self._records:
+            self._measured_curve.setData([], [])
+            self._best_curve.setData([], [])
+            self._best_idx = None
+        else:
+            primaries = [self._primary_value(r) for r in self._records]
+            if self._minimize:
+                best_run = np.minimum.accumulate(primaries)
+                self._best_idx = int(np.argmin(primaries))
+            else:
+                best_run = np.maximum.accumulate(primaries)
+                self._best_idx = int(np.argmax(primaries))
+            xs = list(range(1, len(primaries) + 1))
+            self._measured_curve.setData(xs, primaries)
+            self._best_curve.setData(xs, list(best_run))
+        direction = "minimize" if self._minimize else "maximize"
+        self._conv.setLabel("left", f"{name} ({direction})" if name else "Objective")
+
+    def _on_scatter_clicked(self, *args) -> None:
+        """Clicking a measured point emits its record index (viewer moves there).
+
+        pyqtgraph emits ``sigClicked`` as ``(scatter, points)`` or
+        ``(scatter, points, event)`` across versions, so locate the points list
+        rather than binding a fixed signature."""
+        pts = None
+        for a in args:
+            try:
+                if len(a) and hasattr(a[0], "data"):
+                    pts = a
+                    break
+            except TypeError:
+                continue
+        if not pts:
+            return
+        idx = pts[0].data()
+        if idx is not None:
+            self.point_selected.emit(int(idx))
+
+    def record_at(self, idx: int) -> Optional[dict]:
+        if 0 <= idx < len(self._records):
+            return self._records[idx]
+        return None
+
     def add_point(self, payload: dict) -> None:
         self._records.append(payload)
-        primaries = [r["primary"] for r in self._records]
-
-        # best-so-far trace
-        if self._minimize:
-            best_run = np.minimum.accumulate(primaries)
-            self._best_idx = int(np.argmin(primaries))
-        else:
-            best_run = np.maximum.accumulate(primaries)
-            self._best_idx = int(np.argmax(primaries))
-        xs = list(range(1, len(primaries) + 1))
-        self._measured_curve.setData(xs, primaries)
-        self._best_curve.setData(xs, list(best_run))
-
+        self._recompute_primary()
         self._render_projection()
 
     def best_record(self) -> Optional[dict]:
@@ -724,9 +819,6 @@ class _PlotPanel(QtWidgets.QWidget):
         self._y_combo.setToolTip(
             "Not used in this view — Y is each objective's value (one series per "
             "objective)." if obj_vs_dof else "")
-        # Objective picker: only the single-objective surfaces (mean/σ/UCB) use it.
-        self._obj_combo.setEnabled(single_obj_mode)
-        self._obj_label.setEnabled(single_obj_mode)
         # Fixed-DOF sliders: only meaningful when a MODEL prediction is shown
         # (they slice the model); hidden for raw measured points.
         self._fixed_box.setVisible(bool(self._fixed_widgets) and uses_model)
@@ -843,6 +935,8 @@ class _PlotPanel(QtWidgets.QWidget):
             return
         xs = np.array([r["params"].get(xname, np.nan) for r in self._records])
         ys = np.array([r["params"].get(yname, np.nan) for r in self._records])
+        # Tag each point with its record index so a click can move to that point.
+        indices = list(range(len(self._records)))
         if composition and self._obj_names:
             # Color each point by its measured phase composition (all objectives).
             n = len(self._obj_names)
@@ -852,19 +946,19 @@ class _PlotPanel(QtWidgets.QWidget):
             rgb = composition_rgb(fr, n)          # (m, 3) uint8
             brushes = [pg.mkBrush(int(c[0]), int(c[1]), int(c[2])) for c in rgb]
             pen = pg.mkPen("k", width=0.5) if surface_mode else pg.mkPen(None)
-            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pen)
+            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pen, data=indices)
         elif surface_mode:
             # On a colored surface, draw plain outlined points so they stay visible.
             self._scatter.setData(
                 x=xs, y=ys, brush=pg.mkBrush(255, 255, 255, 150),
-                pen=pg.mkPen("k", width=0.5),
+                pen=pg.mkPen("k", width=0.5), data=indices,
             )
         else:
-            vals = np.array([r["primary"] for r in self._records], dtype=float)
+            vals = np.array([self._primary_value(r) for r in self._records], dtype=float)
             vmin, vmax = np.nanmin(vals), np.nanmax(vals)
             norm = (vals - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(vals)
             brushes = [pg.mkBrush(*self._cmap.map(float(n), mode="byte")) for n in norm]
-            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pg.mkPen(None))
+            self._scatter.setData(x=xs, y=ys, brush=brushes, pen=pg.mkPen(None), data=indices)
         if self._best_idx is not None:
             self._best_marker.setData(x=[xs[self._best_idx]], y=[ys[self._best_idx]])
 
@@ -1195,9 +1289,13 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
                 ObjectiveSpec(
                     name=(name_item.text() if name_item else "").strip(),
                     pv=(pv_item.text() if pv_item else "").strip(),
-                    protocol=self.cellWidget(r, 2).currentText(),
+                    # cell widgets can be absent while a row is mid-build (a table
+                    # signal may fire before setCellWidget) — default defensively.
+                    protocol=(self.cellWidget(r, 2).currentText()
+                              if self.cellWidget(r, 2) else "auto"),
                     field=(self.item(r, 3).text().strip() if self.item(r, 3) else ""),
-                    role=self.cellWidget(r, 4).currentText(),
+                    role=(self.cellWidget(r, 4).currentText()
+                          if self.cellWidget(r, 4) else "maximize"),
                 )
             )
         return out
@@ -1226,6 +1324,10 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._surface_worker: Optional[_SurfaceWorker] = None
         self._surface_multi_worker: Optional[_SurfaceMultiWorker] = None
         self._slice_worker: Optional[_SliceWorker] = None
+        self._move_worker: Optional[_MoveWorker] = None
+        self._multiobj_notice_shown = False  # once-per-session multi-objective caveat
+        self._original_positions: Optional[dict] = None  # enabled-DOF pos before a run
+        self._last_run_simulated = False  # gate restore-on-reset to real runs only
         self._stopping = False  # True between a Stop request and the worker ending
         # Central-profile config source (None -> local QSettings fallback) and the
         # name of the currently-loaded named setup within that profile.
@@ -1244,6 +1346,8 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._plots.surface_requested.connect(self._on_surface_requested)
         self._plots.surface_multi_requested.connect(self._on_surface_multi_requested)
         self._plots.slice_requested.connect(self._on_slice_requested)
+        self._plots.primary_changed.connect(self._refresh_best_label)
+        self._plots.point_selected.connect(self._on_point_selected)
 
         self._load_initial()
 
@@ -1295,6 +1399,24 @@ class BayesianViewer(QtWidgets.QMainWindow):
         obj_btns.addWidget(split_obj)
         obj_btns.addStretch(1)
         outer.addLayout(obj_btns)
+
+        # Primary objective — which objective the readouts (convergence trace,
+        # best-so-far star, and Move to best) follow. Optimization always uses ALL
+        # objectives jointly; this selector is display-only.
+        prim_row = QtWidgets.QHBoxLayout()
+        prim_row.addWidget(QtWidgets.QLabel("Primary objective:"))
+        self._primary_combo = QtWidgets.QComboBox()
+        self._primary_combo.setToolTip(
+            "Which objective the convergence trace, the best-so-far star, and "
+            "'Move to best' follow. Optimization always uses ALL objectives "
+            "jointly; this only changes what the readouts display.")
+        self._primary_combo.currentTextChanged.connect(self._on_primary_combo_changed)
+        prim_row.addWidget(self._primary_combo, 1)
+        outer.addLayout(prim_row)
+        # Keep the primary list in sync as objectives are added / removed / renamed.
+        self._obj_table.itemChanged.connect(lambda *_: self._refresh_primary_combo())
+        self._obj_table.model().rowsInserted.connect(lambda *_: self._refresh_primary_combo())
+        self._obj_table.model().rowsRemoved.connect(lambda *_: self._refresh_primary_combo())
 
         # Run controls
         outer.addWidget(self._section_label("Run controls"))
@@ -1447,6 +1569,14 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._best_lbl = QtWidgets.QLabel("")
         self._best_lbl.setWordWrap(True)
         fl.addWidget(self._best_lbl)
+        self._move_best_btn = QtWidgets.QPushButton("Move to best")
+        self._move_best_btn.setToolTip(
+            "Drive the motors to the best-observed point for the selected Primary "
+            "objective. In a multi-objective run that is one objective's best, not a "
+            "joint optimum — click a point on the 2-D projection to pick a trade-off.")
+        self._move_best_btn.setEnabled(False)
+        self._move_best_btn.clicked.connect(self._on_move_best)
+        fl.addWidget(self._move_best_btn)
 
         # ---- assemble: scroll (stretch) + fixed footer -----------------
         container = QtWidgets.QWidget()
@@ -1828,8 +1958,27 @@ class BayesianViewer(QtWidgets.QMainWindow):
     # Start / stop
     # ------------------------------------------------------------------
 
+    def _refresh_primary_combo(self) -> None:
+        """Populate the Primary-objective combo from the current optimized objectives
+        (maximize/minimize rows), preserving the selection when still present."""
+        names = [o.name for o in self._obj_table.specs()
+                 if o.role in ("maximize", "minimize") and o.name.strip()]
+        cur = self._primary_combo.currentText()
+        self._primary_combo.blockSignals(True)
+        self._primary_combo.clear()
+        self._primary_combo.addItems(names)
+        if cur in names:
+            self._primary_combo.setCurrentText(cur)
+        self._primary_combo.blockSignals(False)
+
+    def _on_primary_combo_changed(self, name: str) -> None:
+        # _plots exists once the display panel is built; guard the early edits.
+        if getattr(self, "_plots", None) is not None:
+            self._plots.set_primary(name or None)
+
     def _on_start(self) -> None:
         simulate = self._simulate.isChecked()
+        self._refresh_primary_combo()   # reflect any role/name edits before running
         # If a previous run is still tearing down, finish stopping it first so we
         # never run two RunEngines at once.
         if self._worker is not None and self._worker.isRunning():
@@ -1862,13 +2011,26 @@ class BayesianViewer(QtWidgets.QMainWindow):
                 return
             run_cfg = cfg
             self._agent_config = cfg
+            opt = cfg.optimized_objectives()
             self._plots.reset(
                 cfg.active_dofs(),
-                cfg.optimized_objectives()[0].minimize,
+                opt[0].minimize,
                 [o.name for o in cfg.active_objectives()],
-                [o.name for o in cfg.optimized_objectives()],
+                [o.name for o in opt],
+                {o.name: o.minimize for o in opt},
             )
             self._best_lbl.setText("")
+            if len(opt) > 1 and not self._multiobj_notice_shown:
+                self._multiobj_notice_shown = True
+                QtWidgets.QMessageBox.information(
+                    self, "Multi-objective run",
+                    "You have multiple optimized objectives. The convergence trace, "
+                    "the best-so-far star, and 'Move to best' follow only the selected "
+                    f"Primary objective (currently '{opt[0].name}') — there is no "
+                    "single joint best. The optimizer still uses all objectives "
+                    "together. Click a point on the 2-D projection to move to a "
+                    "trade-off you choose.")
+            self._plots.set_primary(self._primary_combo.currentText() or None)
 
         self._persist_local_state()
         self._stopping = False
@@ -1884,10 +2046,12 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._worker.scan_error.connect(self._on_scan_error)
         self._worker.scan_finished.connect(self._on_scan_finished)
         self._worker.agent_ready.connect(self._on_agent_ready)
+        self._worker.initial_positions.connect(self._on_initial_positions)
         self._worker.start()
 
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
+        self._refresh_move_best_enabled()   # disabled while a run is in progress
         self._status_lbl.setText("Status: Resuming…" if resuming else "Status: Optimizing…")
         self._status_lbl.setStyleSheet(status_style(WARNING))
 
@@ -1908,15 +2072,20 @@ class BayesianViewer(QtWidgets.QMainWindow):
             self._stopping = True
             self._worker.request_abort()
             self._worker.wait(5000)
+        # Offer to restore the pre-run DOF positions BEFORE clearing state (needs
+        # the config + captured positions; snapshots them if the user says yes).
+        restoring = self._maybe_restore_original()
         self._worker = None
         self._stopping = False
         self._agent = None
         self._agent_config = None
+        self._original_positions = None
         self._plots.reset([], minimize=False, obj_names=[])  # clear plots, surface, axes
         self._plots.set_update_enabled(False)
         self._best_lbl.setText("")
-        self._status_lbl.setText("Status: Idle")
-        self._status_lbl.setStyleSheet(status_style(TEXT_MUTED))
+        if not restoring:   # a restore move keeps its own "Moving…" status
+            self._status_lbl.setText("Status: Idle")
+            self._status_lbl.setStyleSheet(status_style(TEXT_MUTED))
         self._reset_buttons()
 
     # ------------------------------------------------------------------
@@ -1927,12 +2096,120 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._plots.add_point(payload)
         total = self._iterations.value() * self._n_points.value()
         self._status_lbl.setText(f"Status: Measuring… ({payload['index']}/{total})")
+        self._refresh_best_label()
+
+    def _refresh_best_label(self) -> None:
+        """Update the best-so-far label + Move-to-best button for the selected primary."""
+        best = self._plots.best_record()
+        if best is None:
+            self._best_lbl.setText("")
+        else:
+            name = self._plots.primary_name()
+            val = best.get("objectives", {}).get(name, best.get("primary", 0.0))
+            params = ", ".join(f"{k}={v:.4g}" for k, v in best["params"].items())
+            self._best_lbl.setText(f"Best {name}: {float(val):.5g}  @  {params}")
+        self._refresh_move_best_enabled()
+
+    def _refresh_move_best_enabled(self) -> None:
+        running = self._worker is not None and self._worker.isRunning()
+        moving = self._move_worker is not None and self._move_worker.isRunning()
+        has_best = self._plots.best_record() is not None
+        self._move_best_btn.setEnabled(has_best and not running and not moving)
+
+    def _on_move_best(self) -> None:
         best = self._plots.best_record()
         if best is not None:
-            params = ", ".join(f"{k}={v:.4g}" for k, v in best["params"].items())
-            self._best_lbl.setText(
-                f"Best so far: {best['primary']:.5g}  @  {params}"
-            )
+            self._start_move(best["params"], "best", best_record=best)
+
+    def _on_point_selected(self, idx: int) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            return  # don't move mid-run
+        rec = self._plots.record_at(idx)
+        if rec is not None:
+            self._start_move(rec["params"], "selected point", best_record=rec)
+
+    def _start_move(self, params: dict, label: str, best_record=None) -> None:
+        cfg = self._agent_config
+        if cfg is None or not params:
+            return
+        pos_txt = "\n".join(f"  {k} = {v:.5g}" for k, v in params.items())
+        caveat = ""
+        if best_record is not None and len(cfg.optimized_objectives()) > 1:
+            name = self._plots.primary_name()
+            others = ", ".join(
+                f"{k}={v:.4g}" for k, v in best_record.get("objectives", {}).items())
+            caveat = (f"\n\nThis is the best of the primary objective '{name}' only, "
+                      f"not a joint optimum.\nObjective values here: {others}")
+        sim = self._simulate.isChecked()
+        sim_note = "\n\n(Simulate is on — sim motors only.)" if sim else ""
+        if QtWidgets.QMessageBox.question(
+                self, f"Move motors to {label}",
+                f"Move the motors to the {label} point?\n\n{pos_txt}{caveat}{sim_note}",
+                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+        ) != QtWidgets.QMessageBox.Ok:
+            return
+        self._start_move_raw(cfg, params, label, sim)
+
+    def _start_move_raw(self, cfg, params: dict, label: str, sim: bool) -> None:
+        """Start the move worker (caller has already confirmed). ``cfg`` is passed
+        explicitly so callers can snapshot it before clearing ``_agent_config``."""
+        self._move_best_btn.setEnabled(False)
+        self._status_lbl.setText(f"Status: Moving to {label}…")
+        self._status_lbl.setStyleSheet(status_style(WARNING))
+        self._move_worker = _MoveWorker(cfg, dict(params), sim)
+        self._move_worker.done.connect(self._on_move_done)
+        self._move_worker.failed.connect(self._on_move_failed)
+        self._move_worker.start()
+
+    def _on_move_done(self, moved: dict, simulated: bool) -> None:
+        where = ", ".join(f"{k}={v:.4g}" for k, v in moved.items())
+        tag = " (simulated)" if simulated else ""
+        self._status_lbl.setText(f"Status: Moved{tag} — {where}")
+        self._status_lbl.setStyleSheet(status_style(SUCCESS))
+        self._refresh_move_best_enabled()
+
+    def _on_move_failed(self, msg: str) -> None:
+        self._status_lbl.setText("Status: Move failed")
+        self._status_lbl.setStyleSheet(status_style(ERROR))
+        self._refresh_move_best_enabled()
+        QtWidgets.QMessageBox.critical(self, "Move failed", msg)
+
+    def _on_initial_positions(self, positions: dict, simulated: bool) -> None:
+        """Snapshot the enabled DOFs' positions before the run (fresh start), plus
+        whether the run actually resolved to sim devices, so Reset restores only real
+        motors (this catches Simulate=off falling back to sim on a device error)."""
+        self._original_positions = dict(positions) if positions else None
+        self._last_run_simulated = bool(simulated)
+
+    def _maybe_restore_original(self) -> bool:
+        """On Reset, offer to move the enabled DOFs back to their pre-run positions
+        (only when a real optimization ran and we captured the starting state).
+        Returns True if a restore move was started."""
+        cfg = self._agent_config
+        orig = self._original_positions
+        # Simulate runs move throwaway sim motors — nothing real to restore, so Reset
+        # just clears (no dialog). Only offer restore after a real optimization.
+        if (self._last_run_simulated or cfg is None or not orig
+                or self._plots.best_record() is None):
+            return False
+        targets = {d.name: orig[d.name] for d in cfg.active_dofs() if d.name in orig}
+        if not targets:
+            return False
+        pos_txt = "\n".join(f"  {k} = {v:.5g}" for k, v in targets.items())
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Question)
+        box.setWindowTitle("Reset — restore motors?")
+        box.setText(
+            "Reset will clear this optimization.\n\nMove the enabled DOFs back to "
+            f"their positions from before the run?\n\n{pos_txt}")
+        back_btn = box.addButton("Move them back", QtWidgets.QMessageBox.AcceptRole)
+        box.addButton("Keep current (optimized)", QtWidgets.QMessageBox.RejectRole)
+        box.exec_()
+        if box.clickedButton() is back_btn:
+            # cfg is snapshotted here; _on_reset clears _agent_config right after.
+            self._start_move_raw(cfg, targets, "original position", False)
+            return True
+        return False
 
     def _on_scan_error(self, msg: str) -> None:
         self._status_lbl.setText("Status: Error")
@@ -2083,12 +2360,22 @@ class BayesianViewer(QtWidgets.QMainWindow):
             "+ Iterations (rounds):" if resuming else "Iterations (rounds):")
         self._total_caption.setText(
             "+ Total evaluations:" if resuming else "Total evaluations:")
+        self._refresh_move_best_enabled()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._persist_local_state()
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_abort()
             self._worker.wait(3000)
+        if self._move_worker is not None and self._move_worker.isRunning():
+            # A move can run up to move_to_point's settle_timeout; drop its signals
+            # so it can't fire into a destroyed window, then wait briefly.
+            try:
+                self._move_worker.done.disconnect()
+                self._move_worker.failed.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._move_worker.wait(3000)
         # Stop the model-surface thread too, and drop its signals, so it can't fire
         # into a destroyed widget if the window is closed mid "Update surface".
         if self._surface_worker is not None and self._surface_worker.isRunning():
