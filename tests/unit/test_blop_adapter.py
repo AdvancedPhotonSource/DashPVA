@@ -178,6 +178,58 @@ class TestMakeObjectiveReadables:
         assert reads["a"].name == "X:Stats"
 
 
+class TestMoveToPoint:
+
+    @staticmethod
+    def _cfg():
+        return OptimizerConfig(
+            dofs=[DOFSpec(name="x", pv="x", lo=0.0, hi=10.0),
+                  DOFSpec(name="y", pv="y", lo=0.0, hi=10.0)],
+            objectives=[ObjectiveSpec(name="i", pv="det")],
+            iterations=1, n_points=1,
+        )
+
+    def test_moves_and_clamps(self):
+        pytest.importorskip("ophyd")
+        from dashpva.viewer.bayesian.blop_adapter import move_to_point
+        moved, simulated = move_to_point(
+            self._cfg(), {"x": 3.0, "y": 999.0}, simulate=True)  # y over hi -> clamped
+        assert simulated is True
+        assert moved == {"x": 3.0, "y": 10.0}
+
+    def test_absent_dof_is_skipped(self):
+        pytest.importorskip("ophyd")
+        from dashpva.viewer.bayesian.blop_adapter import move_to_point
+        moved, _ = move_to_point(self._cfg(), {"x": 5.0}, simulate=True)  # no "y"
+        assert moved == {"x": 5.0}
+
+
+class _ReadDev:
+    def __init__(self, v):
+        self._v = v
+
+    def read(self):
+        return {"m": {"value": self._v, "timestamp": 0.0}}
+
+
+class _BadDev:
+    def read(self):
+        raise RuntimeError("boom")
+
+
+class TestReadPositions:
+
+    def test_reads_present_skips_absent(self):
+        from dashpva.viewer.bayesian.blop_adapter import read_positions
+        out = read_positions({"x": _ReadDev(3.0), "y": _ReadDev(4.0)}, ["x", "y", "z"])
+        assert out == {"x": 3.0, "y": 4.0}   # z absent from the actuators
+
+    def test_skips_erroring_device(self):
+        from dashpva.viewer.bayesian.blop_adapter import read_positions
+        out = read_positions({"x": _ReadDev(1.0), "y": _BadDev()}, ["x", "y"])
+        assert out == {"x": 1.0}
+
+
 # ---------------------------------------------------------------------------
 # OptimizerConfig.validate
 # ---------------------------------------------------------------------------

@@ -633,6 +633,82 @@ def _build_sim_devices(dofs: List["DOFSpec"], objectives: List["ObjectiveSpec"])
 
 
 # ---------------------------------------------------------------------------
+# Move motors outside a plan (Move-to-best / click-to-move)
+# ---------------------------------------------------------------------------
+
+def resolve_actuators(
+    config: OptimizerConfig, *, simulate: bool = False
+) -> Tuple[Dict[str, Any], bool]:
+    """Resolve ONLY the DOF motors (never objectives) to ophyd movables.
+
+    Used to move motors outside a Bluesky plan.  Resolving DOFs alone means a
+    misconfigured *objective* PV cannot trigger the simulation fallback and
+    silently move sim motors instead of the real ones.  Returns
+    ``(actuators, simulated)``.
+    """
+    dofs = config.active_dofs()
+    if not simulate:
+        ns = _ipython_ns()
+        if ns is not None:
+            acts = {d.name: ns.get(d.pv) for d in dofs}
+            if all(acts.values()):
+                return acts, False
+        try:
+            return {d.name: _make_dof_device(d) for d in dofs}, False
+        except Exception as exc:  # noqa: BLE001 - fall back to sim
+            logger.warning("DOF construction failed (%s); using simulation.", exc)
+    motors, _ = _build_sim_devices(dofs, [])
+    return motors, True
+
+
+def move_to_point(
+    config: OptimizerConfig,
+    params: Dict[str, float],
+    *,
+    simulate: bool = False,
+    settle_timeout: float = 120.0,
+) -> Tuple[Dict[str, float], bool]:
+    """Drive each active DOF to ``params[name]`` (clamped to ``[lo, hi]``), blocking
+    until settled.  Returns ``(moved, simulated)`` where ``moved`` maps DOF name ->
+    the clamped position commanded.  DOFs absent from ``params`` are skipped; a
+    failed/timed-out move raises ``RuntimeError``.
+    """
+    actuators, simulated = resolve_actuators(config, simulate=simulate)
+    moved: Dict[str, float] = {}
+    for d in config.active_dofs():
+        if d.name not in params:
+            continue
+        dev = actuators.get(d.name)
+        if dev is None:
+            continue
+        pos = float(np.clip(params[d.name], d.lo, d.hi))
+        try:
+            dev.set(pos).wait(timeout=settle_timeout)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Move of DOF {d.name!r} to {pos} failed: {exc}") from exc
+        moved[d.name] = pos
+    return moved, simulated
+
+
+def read_positions(actuators: Dict[str, Any], names) -> Dict[str, float]:
+    """Best-effort read of the current value of each named actuator.
+
+    Returns ``{name: value}`` for those that read successfully (used to snapshot
+    the DOFs' starting positions so a later Reset can offer to restore them)."""
+    out: Dict[str, float] = {}
+    for name in names:
+        dev = actuators.get(name)
+        if dev is None:
+            continue
+        try:
+            reading = dev.read()
+            out[name] = float(next(iter(reading.values()))["value"])
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not read position of DOF %r", name)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Agent construction
 # ---------------------------------------------------------------------------
 
