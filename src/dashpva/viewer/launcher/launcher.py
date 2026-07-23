@@ -55,7 +55,6 @@ class LauncherDialog(QDialog):
         self._next_proc_id = 1
         self._process_manager = None
         self._launch_buttons: dict = {}
-        self._launch_counts: dict = {}
         self._timer = QTimer(self)
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._poll_processes)
@@ -205,9 +204,9 @@ class LauncherDialog(QDialog):
         if btn is not None:
             btn.setEnabled(False)
 
-        count = self._launch_counts.get(key, 0) + 1
-        self._launch_counts[key] = count
-        instance_label = label if count == 1 else f'{label} ({count})'
+        used = {e.get('instance') for e in self.processes.values() if e.get('key') == key}
+        instance = next(i for i in range(1, len(used) + 2) if i not in used)
+        instance_label = label if instance == 1 else f'{label} ({instance - 1})'
 
         kwargs = {}
         if quiet:
@@ -232,7 +231,9 @@ class LauncherDialog(QDialog):
 
         proc_id = self._next_proc_id
         self._next_proc_id += 1
-        self.processes[proc_id] = {'popen': p, 'label': instance_label, 'key': key, 'btn': btn}
+        self.processes[proc_id] = {
+            'popen': p, 'label': instance_label, 'key': key, 'instance': instance, 'btn': btn
+        }
         self._update_status()
         self._refresh_process_manager()
         # Fallback: re-enable after 3 s in case the process exits before _poll sees it
