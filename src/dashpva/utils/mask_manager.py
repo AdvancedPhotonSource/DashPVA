@@ -179,7 +179,8 @@ class MaskManager:
         if self.mask is None:
             logger.warning("No mask to save")
             return None
-        save_path = path or os.path.join(self.masks_dir, self.DEFAULT_MASK_FILENAME)
+        default_path = os.path.join(self.masks_dir, self.DEFAULT_MASK_FILENAME)
+        save_path = path or default_path
         np.save(save_path, self.mask)
         self.mask_path = save_path
         logger.info(f"Saved active mask: {save_path} ({self.num_masked_pixels} masked pixels)")
