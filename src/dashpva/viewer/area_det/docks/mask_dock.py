@@ -43,8 +43,9 @@ class MaskDock(BaseDock):
         load_show = QHBoxLayout()
         self.btn_load_mask = QPushButton("Load Mask")
         load_show.addWidget(self.btn_load_mask)
-        self.btn_show_mask = QPushButton("Show Mask")
-        load_show.addWidget(self.btn_show_mask)
+        self.btn_edit_mask = QPushButton("Edit Mask")
+        self.btn_edit_mask.setToolTip("Open the mask editor (creates a blank mask if none exists)")
+        load_show.addWidget(self.btn_edit_mask)
         layout.addRow(load_show)
 
         detect_clear = QHBoxLayout()
