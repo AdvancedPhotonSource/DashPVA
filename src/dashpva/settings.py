@@ -189,6 +189,10 @@ PVA_MONITOR_SERVER_QUEUE_SIZE: int = 250
 # 'record[queueSize=N]' enlarges the server monitor queue (see above).
 PVA_MONITOR_REQUEST: str = f'field() record[queueSize={PVA_MONITOR_SERVER_QUEUE_SIZE}]'
 
+# Max depth of the mask-editor undo/redo history (static — not config-driven).
+# Each entry is a full boolean mask copy, so this bounds editor memory use.
+MASK_UNDO_MAX: int = 20
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
