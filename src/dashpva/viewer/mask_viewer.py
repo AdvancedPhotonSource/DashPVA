@@ -501,18 +501,26 @@ class MaskViewerWindow(QDialog):
         self._line_start = None
         self.lbl_info.setText(self._info_text())
 
-    def _event_native(self, scene_pos):
-        """Map a scene position to a detector-native (row, col), or None if the
-        point is outside the mask."""
+    def _event_native(self, scene_pos, clamp=False):
+        """Map a scene position to a detector-native (row, col). Returns None if
+        the point is outside the mask, unless ``clamp`` is set, in which case the
+        point is pinned to the nearest edge so a stroke that leaves the image
+        still fills up to the boundary instead of vanishing."""
         mouse_point = self.plot_item.vb.mapSceneToView(scene_pos)
         # pyqtgraph pixel (i,j) occupies [i, i+1) x [j, j+1) — use floor
         vx = int(np.floor(mouse_point.x()))
         vy = int(np.floor(mouse_point.y()))
         display_mask = self._get_display_mask()
-        if not (0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]):
+        if clamp:
+            vx = min(max(vx, 0), display_mask.shape[0] - 1)
+            vy = min(max(vy, 0), display_mask.shape[1] - 1)
+        elif not (0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]):
             return None
         row, col = self._display_to_native(vx, vy)
-        if not (0 <= row < self.mask.shape[0] and 0 <= col < self.mask.shape[1]):
+        if clamp:
+            row = min(max(row, 0), self.mask.shape[0] - 1)
+            col = min(max(col, 0), self.mask.shape[1] - 1)
+        elif not (0 <= row < self.mask.shape[0] and 0 <= col < self.mask.shape[1]):
             return None
         return row, col
 
@@ -550,9 +558,7 @@ class MaskViewerWindow(QDialog):
         elif t == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
             if self._edit_press_pt is None:
                 return False
-            pt = self._event_native(gv.mapToScene(event.pos()))
-            if pt is None:
-                return True
+            pt = self._event_native(gv.mapToScene(event.pos()), clamp=True)
 
             self._edit_dragging = True
 
@@ -574,7 +580,7 @@ class MaskViewerWindow(QDialog):
             if self._edit_press_pt is None:
                 return False
 
-            pt = self._event_native(gv.mapToScene(event.pos())) or self._edit_press_pt
+            pt = self._event_native(gv.mapToScene(event.pos()), clamp=True) or self._edit_press_pt
             press_pt = self._edit_press_pt
 
             if not self._edit_dragging:
