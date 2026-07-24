@@ -681,14 +681,32 @@ class DiffractionImageWindow(BaseWindow):
 
         # Warn if mask shape doesn't match current image
         if self.reader is not None and hasattr(self.reader, 'shape') and len(self.reader.shape) >= 2:
-            img_shape = self.reader.shape[:2]
+            img_shape = tuple(self.reader.shape[:2])
             if new_mask.shape != img_shape:
-                QMessageBox.warning(
-                    self, 'Shape Mismatch',
-                    f'Mask shape {new_mask.shape} does not match '
-                    f'image shape {img_shape}.\n\n'
-                    f'The mask will be resized automatically, but this '
-                    f'may indicate a configuration issue.')
+                if new_mask.shape == img_shape[::-1]:
+                    # Pure axes swap (e.g. a 100x400 mask on a 400x100 detector):
+                    # a transpose matches the detector exactly and is lossless,
+                    # whereas the automatic resize would resample/downsample the
+                    # mask. Offer the transpose; the user can still flip
+                    # orientation afterward in the mask viewer.
+                    reply = QMessageBox.question(
+                        self, 'Rotate Mask?',
+                        f'Mask shape {new_mask.shape} is the transpose of the '
+                        f'detector shape {img_shape}.\n\n'
+                        f'Rotate the mask to match the detector? This preserves '
+                        f'resolution (recommended).\n\n'
+                        f'Choose No to resize instead, which may downsample the '
+                        f'mask.',
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                    if reply == QMessageBox.Yes:
+                        new_mask = new_mask.T
+                else:
+                    QMessageBox.warning(
+                        self, 'Shape Mismatch',
+                        f'Mask shape {new_mask.shape} does not match '
+                        f'image shape {img_shape}.\n\n'
+                        f'The mask will be resized automatically, but this '
+                        f'may indicate a configuration issue.')
 
         self.mask_manager.combine_masks(new_mask, replace=replace)
         self.mask_manager.mask_sources.append(filepath)
