@@ -1,20 +1,39 @@
 import subprocess
 
 from PyQt5 import uic
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtWidgets import QDialog
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QDialog, QMessageBox
 
 import dashpva.settings as settings
 from dashpva.gui import ui_path
 from dashpva.gui.theme_colors import (
     ERROR,
     FONT_BODY,
+    FONT_HEADING,
+    FONT_LARGE,
+    FONT_SUBHEADING,
     INFO,
     SUCCESS,
+    TEXT_PRIMARY,
     TEXT_SECONDARY,
     WARNING,
     status_style,
 )
+
+
+def _block_html(heading, body, command=None):
+    """Build a large, emphasised warning for the update-blocked dialog, using
+    the theme's colours and font sizes."""
+    html = (
+        f'<div style="font-size:{FONT_HEADING}; font-weight:800; color:{ERROR};">{heading}</div>'
+        f'<div style="font-size:{FONT_SUBHEADING}; color:{TEXT_PRIMARY}; margin-top:10px;">{body}</div>'
+    )
+    if command:
+        html += (
+            f'<div style="font-family:monospace; font-size:{FONT_SUBHEADING}; font-weight:700; '
+            f'color:{INFO}; margin-top:8px;">{command}</div>'
+        )
+    return html
 
 
 def _parse_version(version):
@@ -109,12 +128,12 @@ class UpdateDialog(QDialog):
     def _on_check_result(self, has_update, tag, notes):
         self._latest_tag = tag
         if has_update:
-            self.lbl_status.setText(f'Update available: {tag}')
-            self.lbl_status.setStyleSheet(status_style(WARNING, bold=True, size=FONT_BODY))
+            self.lbl_status.setText(f'Update available:   v{settings.__VERSION__}   →   {tag}')
+            self.lbl_status.setStyleSheet(status_style(WARNING, bold=True, size=FONT_LARGE))
             self.btn_update.setVisible(True)
         else:
-            self.lbl_status.setText(f'v{settings.__VERSION__}  ✓  Up to date')
-            self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True, size=FONT_BODY))
+            self.lbl_status.setText(f'v{settings.__VERSION__}   ✓   Up to date')
+            self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True, size=FONT_LARGE))
         self._show_notes(notes)
 
     def _show_notes(self, notes):
@@ -130,8 +149,52 @@ class UpdateDialog(QDialog):
         self.lbl_status.setText(f'Could not check for updates: {msg}')
         self.lbl_status.setStyleSheet(status_style(TEXT_SECONDARY, size=FONT_BODY))
 
+    def _preflight_block_reason(self):
+        """Return an HTML warning if updating in place is unsafe, else None. Guards
+        a developer's work: the tag checkout would move them off a feature branch
+        or overwrite uncommitted changes, so block unless on main (or already
+        detached from a prior update) with a clean tree."""
+        try:
+            root = str(settings.PROJECT_ROOT)
+            branch = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                cwd=root, text=True, stderr=subprocess.STDOUT,
+            ).strip()
+            dirty = bool(subprocess.check_output(
+                ['git', 'status', '--porcelain'],
+                cwd=root, text=True, stderr=subprocess.STDOUT,
+            ).strip())
+        except Exception as exc:
+            return _block_html('COULD NOT VERIFY GIT STATE',
+                               f'The update was stopped to be safe.<br>{exc}')
+        if branch not in ('main', 'HEAD'):
+            return _block_html(
+                '⚠  YOU HAVE CHANGED THE BRANCH',
+                f"You are on <b>{branch}</b>, not <b>main</b>. Updating checks out the "
+                f"release tag and <b>could destroy the work on your branch.</b>"
+                f"<br><br>Switch to main, then click Update again:",
+                'git checkout main',
+            )
+        if dirty:
+            return _block_html(
+                '⚠  YOU HAVE CHANGES THAT CAN BE OVERWRITTEN',
+                "Uncommitted changes in the repository <b>could be overwritten</b> "
+                "by the update.<br><br>Store your changes and click Update again:",
+                'git stash push -m "my changes"',
+            )
+        return None
+
     def _start_pull(self):
         if not self._latest_tag:
+            return
+        reason = self._preflight_block_reason()
+        if reason is not None:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle('Update blocked')
+            msg.setTextFormat(Qt.RichText)
+            msg.setText(reason)
+            msg.exec_()
             return
         self.btn_update.setEnabled(False)
         self.lbl_status.setText(f'Updating to {self._latest_tag}…')
