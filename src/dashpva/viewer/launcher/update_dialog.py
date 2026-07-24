@@ -51,19 +51,34 @@ class PullWorker(QThread):
     line = pyqtSignal(str)
     finished = pyqtSignal(bool)
 
+    def __init__(self, tag, parent=None):
+        super().__init__(parent)
+        self.tag = tag
+
     def run(self):
+        # Fetch the release tag and check it out so both code and version match
+        # the release, instead of pulling the tip of main.
+        commands = [
+            ['git', 'fetch', 'origin', 'tag', self.tag],
+            ['git', 'checkout', self.tag],
+        ]
         try:
-            proc = subprocess.Popen(
-                ['git', 'pull', 'origin', 'main'],
-                cwd=str(settings.PROJECT_ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            for ln in proc.stdout:
-                self.line.emit(ln.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode == 0)
+            for cmd in commands:
+                self.line.emit(f'$ {" ".join(cmd)}')
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(settings.PROJECT_ROOT),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                for ln in proc.stdout:
+                    self.line.emit(ln.rstrip())
+                proc.wait()
+                if proc.returncode != 0:
+                    self.finished.emit(False)
+                    return
+            self.finished.emit(True)
         except Exception as exc:
             self.line.emit(f'ERROR: {exc}')
             self.finished.emit(False)
@@ -74,9 +89,11 @@ class UpdateDialog(QDialog):
         super().__init__(parent)
         uic.loadUi(ui_path("install", "update_dialog.ui"), self)
         self.btn_update.setProperty("role", "info")
+        self.lbl_notes_header.setStyleSheet(status_style(TEXT_SECONDARY, bold=True))
 
         self._check_worker = None
         self._pull_worker = None
+        self._latest_tag = None
 
         self.btn_update.clicked.connect(self._start_pull)
         self.btn_close.clicked.connect(self.accept)
@@ -90,29 +107,41 @@ class UpdateDialog(QDialog):
         self._check_worker.start()
 
     def _on_check_result(self, has_update, tag, notes):
+        self._latest_tag = tag
         if has_update:
             self.lbl_status.setText(f'Update available: {tag}')
             self.lbl_status.setStyleSheet(status_style(WARNING, bold=True, size=FONT_BODY))
-            if notes.strip():
-                self.txt_notes.setPlainText(notes)
-                self.txt_notes.setVisible(True)
             self.btn_update.setVisible(True)
         else:
-            self.lbl_status.setText(f'✓ v{settings.__VERSION__} is the latest')
+            self.lbl_status.setText(f'v{settings.__VERSION__}  ✓  Up to date')
             self.lbl_status.setStyleSheet(status_style(SUCCESS, bold=True, size=FONT_BODY))
+        self._show_notes(notes)
+
+    def _show_notes(self, notes):
+        """Reveal the Release Notes section (divider + header + text), or keep it
+        hidden when there are no notes for the latest release."""
+        text = (notes or '').strip()
+        self.lbl_notes_header.setText('Release Notes')
+        self.txt_notes.setMarkdown(text)
+        for w in (self.line_notes, self.lbl_notes_header, self.txt_notes):
+            w.setVisible(bool(text))
 
     def _on_check_error(self, msg):
         self.lbl_status.setText(f'Could not check for updates: {msg}')
         self.lbl_status.setStyleSheet(status_style(TEXT_SECONDARY, size=FONT_BODY))
 
     def _start_pull(self):
+        if not self._latest_tag:
+            return
         self.btn_update.setEnabled(False)
-        self.lbl_status.setText('Pulling update…')
+        self.lbl_status.setText(f'Updating to {self._latest_tag}…')
         self.lbl_status.setStyleSheet(status_style(INFO, size=FONT_BODY))
+        self.lbl_notes_header.setText('Update log')
         self.txt_notes.clear()
-        self.txt_notes.setVisible(True)
-        self._pull_worker = PullWorker()
-        self._pull_worker.line.connect(self.txt_notes.appendPlainText)
+        for w in (self.line_notes, self.lbl_notes_header, self.txt_notes):
+            w.setVisible(True)
+        self._pull_worker = PullWorker(self._latest_tag)
+        self._pull_worker.line.connect(self.txt_notes.append)
         self._pull_worker.finished.connect(self._on_pull_finished)
         self._pull_worker.start()
 
