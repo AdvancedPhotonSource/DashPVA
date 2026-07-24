@@ -201,6 +201,10 @@ RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 
+# Max depth of the mask-editor undo/redo history (static — not config-driven).
+# Each entry is a full boolean mask copy, so this bounds editor memory use.
+MASK_UNDO_MAX: int = 20
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
