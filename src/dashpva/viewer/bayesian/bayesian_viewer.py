@@ -1181,6 +1181,8 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
     """Editable table of objectives (usually one)."""
 
     COLS = ["Name", "Read PV", "Protocol", "Field", "Role"]
+    # Fires on any change to the optimized set (add / remove / rename / role).
+    objectives_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(0, len(self.COLS), parent)
@@ -1195,6 +1197,7 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         self.setColumnWidth(2, 74)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.setMaximumHeight(180)
+        self.itemChanged.connect(lambda *_: self.objectives_changed.emit())
 
     def add_objective(self, spec: Optional[ObjectiveSpec] = None) -> None:
         # When the user clicks "Add objective" (no spec), give the new row a
@@ -1202,6 +1205,7 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         # (objective names must be distinct; duplicates fail validation).
         if spec is None:
             spec = ObjectiveSpec(name=self._unique_default_name())
+        self.blockSignals(True)   # build the whole row before any refresh fires
         r = self.rowCount()
         self.insertRow(r)
         self.setItem(r, 0, QtWidgets.QTableWidgetItem(spec.name))
@@ -1232,6 +1236,12 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
             "maximize / minimize are optimized by the model; observe is only "
             "recorded (plotted/logged), not optimized.")
         self.setCellWidget(r, 4, role)
+        self.blockSignals(False)
+        # Role/protocol changes (and the add itself) change which objectives are
+        # optimized, so refresh the Primary list on any of them.
+        role.currentTextChanged.connect(lambda *_: self.objectives_changed.emit())
+        proto.currentTextChanged.connect(lambda *_: self.objectives_changed.emit())
+        self.objectives_changed.emit()
 
     def split_pva_stream(self, channel: str, fields: List[str]) -> None:
         """Add one objective row per field, all bound to one PVA channel.
@@ -1276,9 +1286,13 @@ class _ObjectiveTable(QtWidgets.QTableWidget):
         rows = sorted({i.row() for i in self.selectedIndexes()}, reverse=True)
         if not rows and self.rowCount() > 1:
             rows = [self.rowCount() - 1]
+        removed = False
         for r in rows:
             if self.rowCount() > 1:  # always keep at least one objective
                 self.removeRow(r)
+                removed = True
+        if removed:
+            self.objectives_changed.emit()
 
     def specs(self) -> List[ObjectiveSpec]:
         out: List[ObjectiveSpec] = []
@@ -1414,9 +1428,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         prim_row.addWidget(self._primary_combo, 1)
         outer.addLayout(prim_row)
         # Keep the primary list in sync as objectives are added / removed / renamed.
-        self._obj_table.itemChanged.connect(lambda *_: self._refresh_primary_combo())
-        self._obj_table.model().rowsInserted.connect(lambda *_: self._refresh_primary_combo())
-        self._obj_table.model().rowsRemoved.connect(lambda *_: self._refresh_primary_combo())
+        self._obj_table.objectives_changed.connect(self._refresh_primary_combo)
 
         # Run controls
         outer.addWidget(self._section_label("Run controls"))
