@@ -48,9 +48,34 @@
     </widget>
    </item>
 
+   <!-- Release notes divider + header (hidden until notes are shown) -->
+   <item>
+    <widget class="QFrame" name="line_notes">
+     <property name="frameShape">
+      <enum>QFrame::HLine</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lbl_notes_header">
+     <property name="text">
+      <string>Release Notes</string>
+     </property>
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+
    <!-- Release notes / git output (hidden until needed) -->
    <item>
-    <widget class="QPlainTextEdit" name="txt_notes">
+    <widget class="QTextEdit" name="txt_notes">
      <property name="readOnly">
       <bool>true</bool>
      </property>
