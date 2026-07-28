@@ -1018,7 +1018,7 @@ wheels = [
 
 [[package]]
 name = "dashpva"
-version = "1.0.3"
+version = "1.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "bitshuffle" },
