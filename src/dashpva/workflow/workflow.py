@@ -2002,7 +2002,7 @@ class Workflow(QDialog, LogMixin):
             root = parent
         for i in range(root.childCount()):
             child = root.child(i)
-            key = child.text(0)
+            key = child.text(0).rstrip('*')
             if child.childCount() > 0:
                 result[key] = self._extract_tree_to_dict(child)
             else:

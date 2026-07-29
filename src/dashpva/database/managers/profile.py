@@ -9,6 +9,22 @@ from dashpva.database.db import get_session
 from dashpva.database.models.profile import Profile, ProfileConfig
 
 
+def _strip_trailing_asterisks(obj: Any) -> Any:
+    """Recursively strip trailing '*' from dict keys (UI edit markers).
+    When both 'X' and 'X*' are present, 'X' (clean) wins.
+    """
+    if isinstance(obj, dict):
+        result = {}
+        for key, value in obj.items():
+            clean_key = key.rstrip('*') if isinstance(key, str) else key
+            result[clean_key] = _strip_trailing_asterisks(value)
+        return result
+    elif isinstance(obj, list):
+        return [_strip_trailing_asterisks(item) for item in obj]
+    else:
+        return obj
+
+
 class ProfileManager:
 
     # ------------------------------------------------------------------ #
@@ -310,7 +326,7 @@ class ProfileManager:
         """Store the full TOML dict as a JSON blob for reliable round-trip export."""
         session = get_session()
         try:
-            # Remove any existing JSON blob for this profile
+            toml_data = _strip_trailing_asterisks(toml_data)
             session.query(ProfileConfig).filter_by(
                 profile_id=profile_id, config_type='__toml__', config_key='__data__'
             ).delete()
