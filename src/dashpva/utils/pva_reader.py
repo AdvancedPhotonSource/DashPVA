@@ -621,6 +621,7 @@ class PVAReader(QObject):
                 self._queue.cancelWaitForPut()
             except Exception:
                 pass
+            self._queue = None
         if self._consumer_thread is not None:
             self._consumer_thread.join(timeout=2.0)
             self._consumer_thread = None
@@ -634,6 +635,28 @@ class PVAReader(QObject):
                 camonitor_clear(pv_name)
             except Exception:
                 pass
+        for pv_name in list(self.metadata_ca):
+            try:
+                camonitor_clear(pv_name)
+            except Exception:
+                pass
+        for dim_key in ['X', 'Y', 'Z', 'Theta']:
+            roi_list = getattr(self, f'ROI_{dim_key}', [])
+            for roi_idx in range(len(roi_list)):
+                for i in range(1, 5):
+                    pv_name = f'{self.INPUT_CHANNEL}ROI{roi_idx+1}:{dim_key}{i}_RBV'
+                    try:
+                        camonitor_clear(pv_name)
+                    except Exception:
+                        pass
+        self.reset_caches()
+        if hasattr(self, 'cached_ca'):
+            self.cached_ca.clear()
+        self._process_callback = None
+        self.pva_object = None
+        self.image = None
+        self.rsm_attributes = None
+        self.pv_attributes = None
 
     def start_roi_backup_monitor(self) -> None:
         """Connect to ROI PVs with a tight per-PV timeout.

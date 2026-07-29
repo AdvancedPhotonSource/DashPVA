@@ -1,5 +1,6 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
+import gc
 import sys
 
 import numpy as np
@@ -163,6 +164,25 @@ class HKLImageWindow(BaseWindow):
 
         self.show()
 
+    def _teardown_reader(self) -> None:
+        """Fully disconnect and release the current reader, its signals, and all resources."""
+        if self.reader is None:
+            return
+        try:
+            self.reader.reader_scan_complete.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            self.reader.reader_new_frame.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            self.reader.stop_channel_monitor()
+        except Exception:
+            pass
+        self.reader = None
+        gc.collect()
+
     def start_timers(self) -> None:
         """
         Starts timers for updating labels and plotting at specified frequencies.
@@ -179,12 +199,12 @@ class HKLImageWindow(BaseWindow):
     def start_live_view_clicked(self) -> None:
         """
         Initializes the connections to the PVA channel using the provided Channel Name.
-        
+
         This method ensures that any existing connections are cleared and re-initialized.
         Also starts monitoring the stats and adds ROIs to the viewer.
         """
         try:
-            # A double check to make sure there isn't a connection already when starting
+            app_settings.reload()
             self.stop_timers()
             self.plotter.clear()
             if self.reader is None:
@@ -205,15 +225,10 @@ class HKLImageWindow(BaseWindow):
                     self.file_writer.hdf5_writer_finished.disconnect()
                 except (RuntimeError, TypeError):
                     pass
-                if self.reader.channel.isMonitorActive():
-                    try:
-                        self.reader.stop_channel_monitor()
-                    except Exception:
-                        pass
                 if self.file_writer_thread.isRunning():
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
-                del self.reader
+                self._teardown_reader()
                 self.reader = PVAReader(input_channel=self._input_channel,
                                          viewer_type='rsm')
                 self.file_writer.pva_reader = self.reader
@@ -221,10 +236,6 @@ class HKLImageWindow(BaseWindow):
             self.btn_plot_cache.clicked.connect(self.update_image_from_button)
             self.reader.reader_scan_complete.connect(self.update_image_from_scan)
             self.reader.reader_new_frame.connect(self._on_new_frame)
-            #self.images_plotted.connect(self.trigger_save_caches)
-            #self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished)
-            if self.reader.CACHING_MODE == 'scan':
-                self.file_writer_thread.start()
         except Exception as e:
             try:
                 if hasattr(self, 'logger'):
@@ -260,15 +271,10 @@ class HKLImageWindow(BaseWindow):
 
         This method also updates the UI to reflect the disconnected state.
         """
-        if self.reader is not None:
-            if self.reader.channel.isMonitorActive():
-                try:
-                    self.reader.stop_channel_monitor()
-                except Exception:
-                    pass
-            self.stop_timers()
-            self.provider_name.setText('N/A')
-            self._set_connection_label(False)
+        self._teardown_reader()
+        self.stop_timers()
+        self.provider_name.setText('N/A')
+        self._set_connection_label(False)
 
     def trigger_save_caches(self, clear_caches:bool=True) -> None:
         if not self.file_writer_thread.isRunning():
@@ -579,15 +585,15 @@ class HKLImageWindow(BaseWindow):
             self.plotter.render()
     
     def closeEvent(self, event):
-        """pass
-        Custom close event to clean up resources, including stat dialogs.
+        """Custom close event to clean up resources, including stat dialogs.
 
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        self._teardown_reader()
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
-            self.file_writer_thread
+            self.file_writer_thread.wait()
         super().closeEvent(event)
 
     def open_3d_slice_window(self) -> None:
