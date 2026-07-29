@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QDockWidget, QMenu
 

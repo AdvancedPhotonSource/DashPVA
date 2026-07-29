@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Single source of truth for DashPVA UI colors and font sizes.
 

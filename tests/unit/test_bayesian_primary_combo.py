@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Primary-objective combo tracks the optimized objectives.
 
 Regression for a bug where the Primary combo refreshed on add/remove/rename but

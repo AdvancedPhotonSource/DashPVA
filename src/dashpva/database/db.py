@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 # """
 # SQLAlchemy models for DashPVA profile management
 # """

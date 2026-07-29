@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for the Bayesian ``profile_store`` (named setups in the central profile).
 
 Uses a temporary ``.toml`` file as the ``ConfigSource`` locator, so it exercises the

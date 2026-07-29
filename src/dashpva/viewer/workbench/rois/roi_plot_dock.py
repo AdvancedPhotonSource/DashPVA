@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 ROI Plot Dock for Workbench (Configurable X/Y Metrics)
 

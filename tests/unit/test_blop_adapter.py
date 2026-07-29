@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.viewer.bayesian.blop_adapter.
 
 The pure-Python config/extraction logic is tested directly. A blop integration

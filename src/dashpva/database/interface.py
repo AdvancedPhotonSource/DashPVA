@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 DatabaseInterface: Public facade for all database operations in DashPVA.
 

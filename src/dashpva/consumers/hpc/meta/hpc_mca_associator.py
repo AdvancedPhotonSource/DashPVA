@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Associate SIS3820 MCA channel-access readings with a detector image stream.
 
 Purpose-built metadata associator for the 12-ID-C PILATUS + SIS3820 setup: for

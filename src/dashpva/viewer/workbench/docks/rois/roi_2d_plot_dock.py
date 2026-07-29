@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 ROI 2D Plot Dock for Workbench (X/Y/Z Scatter Plot with Color Scale)
 

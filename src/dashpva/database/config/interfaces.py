@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Interfaces for configuration sources (DB and TOML) used by DashPVA.
 """

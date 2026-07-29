@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 import sys
 from pathlib import Path
 from typing import List, Tuple

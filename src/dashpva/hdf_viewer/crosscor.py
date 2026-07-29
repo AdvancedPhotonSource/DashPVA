@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 # ######################################################################
 # @Author Peco Myint and Mark Sutton
 # @last edit 11/06/2019

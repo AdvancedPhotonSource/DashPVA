@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Fast multi-phase XRD fitting that bypasses lmfit's inner-loop overhead.
 

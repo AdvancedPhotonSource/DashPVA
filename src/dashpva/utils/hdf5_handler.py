@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 HDF5 Handler — Qt signal wrapper around HDF5Writer.
 All write logic lives in HDF5Writer; this class exists as a connectable QObject slot.

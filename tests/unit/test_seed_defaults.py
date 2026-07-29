@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.scripts.seed_settings_defaults_sql — seeding & idempotency.
 
 Covers the seed script's two responsibilities:

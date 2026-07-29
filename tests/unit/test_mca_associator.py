@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Unit tests for HpcMcaAssociator (MCA-to-image time association)."""
 
 import time

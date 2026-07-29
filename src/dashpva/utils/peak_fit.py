@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Fast 1D peak fitting for live beam-profile metrology.
 
 Pure numpy/scipy (no ssrl-xrd-tools), so this works in every install tier

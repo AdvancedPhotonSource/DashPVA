@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Dock Window
 A lightweight secondary QMainWindow intended to host dockable tools.
