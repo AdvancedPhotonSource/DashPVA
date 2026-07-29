@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 This script sets up a CA IOC (using pva.CaIoc) to broadcast a set of PVs
 exclusively via the Channel Access (CA) protocol. It includes:

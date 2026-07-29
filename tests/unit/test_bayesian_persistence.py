@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Persistence tests for the Bayesian viewer.
 
 Two paths:

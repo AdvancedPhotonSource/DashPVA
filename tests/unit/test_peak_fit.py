@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Unit tests for dashpva.utils.peak_fit (edition-agnostic numpy/scipy fitter)."""
 
 import numpy as np

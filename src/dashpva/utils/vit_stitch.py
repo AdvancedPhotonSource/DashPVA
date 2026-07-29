@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 LiveStitch-style patching/stitching for vit:1:input_phase.
 Produces five panels: transmission, diffraction, beam position, NN prediction, NN stitched.

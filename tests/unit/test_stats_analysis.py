@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.utils.stats_analysis — scientific correctness of 1D analysis."""
 
 import numpy as np

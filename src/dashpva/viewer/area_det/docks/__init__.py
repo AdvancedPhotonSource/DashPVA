@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Area Detector 2D viewer docks."""
 
 from dashpva.viewer.area_det.docks.analysis_dock import AnalysisDock

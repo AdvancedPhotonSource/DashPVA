@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Manual ROIs must obey the global 'Show ROIs' toggle (regression).
 
 The global ``display_rois`` checkbox once hid only the EPICS ROIs 1-4; the amber

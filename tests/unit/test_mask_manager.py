@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.utils.mask_manager — mask load/save/combine/apply."""
 
 import json

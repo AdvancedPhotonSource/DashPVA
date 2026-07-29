@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """DashPVA viewer.launcher package.
 
 Ensures relative imports in submodules (e.g., launcher.py) work reliably

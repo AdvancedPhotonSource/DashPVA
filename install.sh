@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 set -euo pipefail
 
 # ─────────────────────────────────────────────

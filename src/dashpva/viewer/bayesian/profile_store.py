@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Named Bayesian optimizer setups stored in the app's central profile.
 
 The optimizer's DOF/objective PVs are exportable configuration, so they live in the

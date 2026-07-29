@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Moving 2D probe-beam PVA simulator for testing the Beam Profiler dock.
 
 Publishes an NTNDArray image on a PVA channel (consumable by the area detector

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 3D Controls wiring for Workbench and other viewers.
 Encapsulates signal connections for 3D-specific UI elements.

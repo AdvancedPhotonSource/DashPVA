@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Remove-manual-ROI target selection (PR #117 review fix).
 
 The 'Remove manual' button used to silently do nothing when the shared ROI

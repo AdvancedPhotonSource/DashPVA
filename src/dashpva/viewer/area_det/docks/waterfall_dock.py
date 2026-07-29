@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Live waterfall-plot dock for the area detector viewer.
 
 On each plotting tick *for which a new detector frame has arrived*, the dock

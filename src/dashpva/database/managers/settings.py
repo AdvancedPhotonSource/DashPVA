@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 from typing import Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session, selectinload

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Verify pvapy.cli.hpcConsumer resolves from the same interpreter DashPVA launches."""
 
 import subprocess

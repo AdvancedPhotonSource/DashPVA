@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 from pathlib import Path
 
 _GUI_DIR = Path(__file__).resolve().parent
