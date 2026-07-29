@@ -188,14 +188,14 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 # drains them; when the consumer falls behind the queue fills and pvapy drops
 # the newest frame (counted as nRejected) rather than overrunning the monitor
 # thread and crashing the viewer. Memory is bounded at this depth × frame size.
-PVA_MONITOR_QUEUE_SIZE: int = 512
+PVA_MONITOR_QUEUE_SIZE: int = 128
 
 # Server-side pvAccess monitor queue depth for this subscription. This is the
 # buffer where high-rate frames are dropped (uniqueId gaps) when the client
 # can't drain fast enough; it is separate from the client-side
 # PVA_MONITOR_QUEUE_SIZE above. Deeper = absorbs larger bursts, but the server
 # holds this many full frames in memory (depth × frame size).
-PVA_MONITOR_SERVER_QUEUE_SIZE: int = 250
+PVA_MONITOR_SERVER_QUEUE_SIZE: int = 64
 
 # pvapy monitor request descriptor for the PVA reader (static — not
 # config-driven). 'field()' selects the full NTNDArray structure (value, codec,
