@@ -89,7 +89,9 @@ DashPVA run           # Open the launcher menu
 DashPVA detector      # Launch Area Detector Viewer
 DashPVA hkl3d         # Launch HKL 3D Viewer
 DashPVA setup         # Run PVA workflow setup
-DashPVA setup --ioc   # Run simulator setup
+DashPVA ioc                # Launch the RSM-parameter IOC simulator (GUI)
+DashPVA ioc --no-gui       # Run the RSM-parameter IOC headless
+DashPVA ioc --prefix xidb  # Set the IOC PV prefix (default: pvapy)
 DashPVA workbench     # Launch Workbench data analysis tool
 DashPVA h5viewer      # Launch HDF5 Viewer
 DashPVA bayesian      # Launch Bayesian 2D Scan Viewer

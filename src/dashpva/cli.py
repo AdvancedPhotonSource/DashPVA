@@ -62,14 +62,8 @@ def detector(pv, prefix):
 
 
 @cli.command()
-@click.option('--ioc', is_flag=True, help='Run the simulator setup instead of the standard setup.')
-def setup(ioc):
-    """Sets up the PVA workflow or the simulator."""
-    if ioc:
-        click.echo('Running simulator setup...')
-        subprocess.Popen([sys.executable, '-m', 'dashpva.consumers.caIOC_servers.sim_rsm_data'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return
-
+def setup():
+    """Sets up the PVA workflow."""
     click.echo('Running standard PVA setup...')
     exit_code = subprocess.run([sys.executable, '-m', 'dashpva.workflow.workflow']).returncode
     sys.exit(exit_code)
