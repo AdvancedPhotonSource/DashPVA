@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Regression test for the waterfall new-frame guard.
 
 The waterfall is driven by the viewer's plot timer, which can fire faster than

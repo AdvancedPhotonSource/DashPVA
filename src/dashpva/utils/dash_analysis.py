@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Dash Analysis Module
 

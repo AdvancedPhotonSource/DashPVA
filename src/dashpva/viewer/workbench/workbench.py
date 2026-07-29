@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Workbench Window
 A PyQt-based application for analyzing HDF5 data with 2D visualization capabilities.

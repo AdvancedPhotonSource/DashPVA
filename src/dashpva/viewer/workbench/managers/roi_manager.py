@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 ROI Manager for Workbench
 Centralizes ROI lifecycle, docks, stats computation, and interactions to shorten WorkbenchWindow.

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Consolidated ROI stats + plots window for the area detector viewer.
 
 Replaces the per-ROI Stats/Plot popups with one window that shows every

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 from dashpva.gui import ui_path
 
 from .base_tab import BaseTab

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """End-to-end Bayesian-optimization simulation tests via the DashPVA blop integration.
 
 These exercise the *real* ``blop.ax.Agent`` optimizer through DashPVA's adapter

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Smoke tests verifying all packages import cleanly after the src/ restructure."""
 
 import importlib

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 HKL 3D Plot Dock for Workbench (Minimal)
 

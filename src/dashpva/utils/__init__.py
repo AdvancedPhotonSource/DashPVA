@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 _LAZY_IMPORTS = {
     "HDF5Writer": "dashpva.utils.hdf5_writer",
     "HDF5Loader": "dashpva.utils.hdf5_loader",

@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Manual-ROI scatter aggregate — the scalarized Bayesian-objective helper.
 
 ``DiffractionImageWindow._scatter_aggregate`` collapses the active manual ROIs'

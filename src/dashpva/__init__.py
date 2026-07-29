@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """DashPVA: Distributed Analysis and Streaming Hub with Process Variable Access."""
 
 import tomllib

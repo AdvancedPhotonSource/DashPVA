@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.scripts.seed_profile_defaults_sql — default profile JSON seeding.
 
 Covers the script's two surfaces:

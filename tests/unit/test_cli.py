@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.cli — Click CLI commands."""
 
 from unittest.mock import patch

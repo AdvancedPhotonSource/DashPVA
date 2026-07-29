@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Seed the default per-profile config (the JSON blob in profile_configs.__data__)
 using raw SQL.

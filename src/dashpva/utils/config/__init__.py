@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """
 Configuration repository and sources for DashPVA settings.
 

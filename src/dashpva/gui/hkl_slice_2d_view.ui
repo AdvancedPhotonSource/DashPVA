@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) UChicago Argonne, LLC -->
+<!-- See LICENSE file for details -->
 <ui version="4.0">
  <class>HKLSlice2DViewWidget</class>
  <widget class="QWidget" name="HKLSlice2DViewWidget">

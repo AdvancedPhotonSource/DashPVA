@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy import Column, ForeignKey, Integer, String, Text

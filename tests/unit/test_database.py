@@ -1,3 +1,5 @@
+# Copyright (C) UChicago Argonne, LLC
+# See LICENSE file for details
 """Tests for dashpva.database — profile CRUD and setting values."""
 
 import pytest
