@@ -41,6 +41,20 @@ except Exception:
     ConfigSource = None  # type: ignore[assignment]
 
 
+def _strip_trailing_asterisks(obj: Any) -> Any:
+    """Recursively strip trailing '*' from dict keys (UI edit markers)."""
+    if isinstance(obj, dict):
+        result = {}
+        for key, value in obj.items():
+            clean_key = key.rstrip('*') if isinstance(key, str) else key
+            result[clean_key] = _strip_trailing_asterisks(value)
+        return result
+    elif isinstance(obj, list):
+        return [_strip_trailing_asterisks(item) for item in obj]
+    else:
+        return obj
+
+
 # NeXus / HDF5 structure definition (static — not config-driven)
 HDF5_STRUCTURE = {
     "nexus": {
@@ -277,6 +291,7 @@ def reload() -> None:
 
     src = ConfigSource(eff) if ConfigSource else None
     cfg = src.load() if src else {}
+    cfg = _strip_trailing_asterisks(cfg)
     CONFIG = cfg
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
 
@@ -613,6 +628,7 @@ class Settings:
             cfg = src.load() if src else {}
         except Exception:
             cfg = {}
+        cfg = _strip_trailing_asterisks(cfg)
         self.CONFIG = cfg
 
         # Core
