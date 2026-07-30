@@ -2757,7 +2757,14 @@ class Workflow(QDialog, LogMixin):
                 self._on_apply_save()
         for key in list(self.processes.keys()):
             self.workers[key][0].stop()
-            self.processes[key].wait()
+            try:
+                self.processes[key].wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(self.processes[key].pid), signal.SIGKILL)
+                except Exception:
+                    pass
+                self.processes[key].wait()
             del self.processes[key]
             del self.workers[key]
         event.accept()
