@@ -295,17 +295,15 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             return None, None, None
 
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
-        _MISSING = object()
+        if hkl_attr.keys() != old_attr.keys():
+            return True
         for key, value in hkl_attr.items():
-            old_val = old_attr.get(key, _MISSING)
-            if old_val is _MISSING:
-                return True
+            old = old_attr[key]
             if isinstance(value, np.ndarray):
-                if not np.array_equal(value, old_val):
+                if not np.array_equal(value, old):
                     return True
-            else:
-                if old_val != value:
-                    return True
+            elif old != value:
+                return True
         return False
 
     def decompress_image(self, pvObject):
