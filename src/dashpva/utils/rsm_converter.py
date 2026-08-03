@@ -1,6 +1,7 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
-from typing import Optional
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import h5py
 import numpy as np
@@ -10,6 +11,24 @@ import xrayutilities as xu
 This module provides a concise RSMConverter focused on the essential
 pipeline: reading metadata, building geometry, and computing Q-space.
 """
+
+
+@dataclass
+class FileGeometry:
+    """Frame-invariant xrayutilities geometry for one HDF5 scan file.
+
+    Energy, UB, beam directions, and detector setup are constant across every
+    frame of a scan; only sample/detector circle *positions* vary per frame.
+    Built once via RSMConverter.build_file_geometry() so callers processing
+    many frames (e.g. a gridding pass) don't rebuild QConversion/HXRD on every
+    frame the way create_rsm() does (kept as-is there for backward
+    compatibility with existing single-frame callers).
+    """
+    hxrd: "xu.HXRD"
+    ub: np.ndarray
+    energy_eV: float
+    shape: Tuple[int, ...]
+
 
 class Data:
     """Simple container for 3D points and intensities."""
@@ -160,46 +179,109 @@ class RSMConverter:
 
     def get_sample_and_detector_circles(self, h5_file: h5py.File, frame: int):
         """Return lists of direction strings and positions for sample and detector circles."""
-        sc_dir, sc_pos, dc_dir, dc_pos = [], [], [], []
+        sample_paths, detector_paths = self._resolve_circle_paths(h5_file)
+        sc_dir = [self._first_str(h5_file[f"{p}/DIRECTION_AXIS"]) for p in sample_paths]
+        dc_dir = [self._first_str(h5_file[f"{p}/DIRECTION_AXIS"]) for p in detector_paths]
+        sc_pos = [self._read_position(h5_file, p, frame) for p in sample_paths]
+        dc_pos = [self._read_position(h5_file, p, frame) for p in detector_paths]
+        return sc_dir, sc_pos, dc_dir, dc_pos
+
+    def _resolve_circle_paths(self, h5_file: h5py.File) -> Tuple[List[str], List[str]]:
+        """Return (sample_paths, detector_paths): the resolved HKL group paths
+        for sample/detector circles, in circle order. Prefers the numbered
+        SAMPLE_CIRCLE_AXIS_1..4 / DETECTOR_CIRCLE_AXIS_1..2 groups, falling
+        back to the legacy MU/ETA/CHI/PHI / NU/DELTA named groups — same
+        precedence get_sample_and_detector_circles has always used.
+        """
         hkl_base = "entry/data/metadata/HKL"
         sample_priority = ["MU", "ETA", "CHI", "PHI"]
         detector_priority = ["NU", "DELTA"]
 
-        # Prefer fallback SAMPLE_CIRCLE_AXIS_1..4 if available, else canonical
-        fallback_found = False
-        for i in range(1, 5):
-            path = f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}"
-            if path in h5_file:
-                fallback_found = True
-                dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                sc_dir.append(dir_val)
-                sc_pos.append(self._read_position(h5_file, path, frame))
-        if not fallback_found:
-            for axis in sample_priority:
-                path = f"{hkl_base}/{axis}"
-                if path in h5_file:
-                    dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                    sc_dir.append(dir_val)
-                    sc_pos.append(self._read_position(h5_file, path, frame))
+        sample_paths = [f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}" for i in range(1, 5)
+                         if f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}" in h5_file]
+        if not sample_paths:
+            sample_paths = [f"{hkl_base}/{axis}" for axis in sample_priority
+                             if f"{hkl_base}/{axis}" in h5_file]
 
-        # Prefer fallback DETECTOR_CIRCLE_AXIS_1..2 if available, else canonical
-        fallback_d_found = False
-        for i in range(1, 3):
-            path = f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}"
-            if path in h5_file:
-                fallback_d_found = True
-                dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                dc_dir.append(dir_val)
-                dc_pos.append(self._read_position(h5_file, path, frame))
-        if not fallback_d_found:
-            for axis in detector_priority:
-                path = f"{hkl_base}/{axis}"
-                if path in h5_file:
-                    dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                    dc_dir.append(dir_val)
-                    dc_pos.append(self._read_position(h5_file, path, frame))
+        detector_paths = [f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}" for i in range(1, 3)
+                           if f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}" in h5_file]
+        if not detector_paths:
+            detector_paths = [f"{hkl_base}/{axis}" for axis in detector_priority
+                               if f"{hkl_base}/{axis}" in h5_file]
 
-        return list(sc_dir), list(sc_pos), list(dc_dir), list(dc_pos)
+        return sample_paths, detector_paths
+
+    def get_circle_directions(self, h5_file: h5py.File) -> Tuple[List[str], List[str]]:
+        """Return (sc_dir, dc_dir): the frame-invariant circle axis-direction
+        strings. Split out of get_sample_and_detector_circles so a caller
+        processing many frames of the same file can resolve directions once
+        instead of once per frame (see build_file_geometry)."""
+        sample_paths, detector_paths = self._resolve_circle_paths(h5_file)
+        sc_dir = [self._first_str(h5_file[f"{p}/DIRECTION_AXIS"]) for p in sample_paths]
+        dc_dir = [self._first_str(h5_file[f"{p}/DIRECTION_AXIS"]) for p in detector_paths]
+        return sc_dir, dc_dir
+
+    def get_circle_positions_batch(self, h5_file: h5py.File, start: int, stop: int) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """Return (sc_pos_arrays, dc_pos_arrays): one 1-D array of length
+        (stop - start) per circle axis, covering frames [start, stop). Used by
+        q_for_frames to make a single batched Ang2Q.area call instead of one
+        call per frame."""
+        sample_paths, detector_paths = self._resolve_circle_paths(h5_file)
+        sc_pos = [self._read_position_batch(h5_file, p, start, stop) for p in sample_paths]
+        dc_pos = [self._read_position_batch(h5_file, p, start, stop) for p in detector_paths]
+        return sc_pos, dc_pos
+
+    def _read_position_batch(self, h5_file: h5py.File, axis_path: str, start: int, stop: int) -> np.ndarray:
+        """Batch version of _read_position: positions for frames [start, stop)."""
+        pos_path = f"{axis_path}/POSITION"
+        if pos_path in h5_file:
+            arr = np.ravel(h5_file[pos_path][...])
+            return arr[start:stop].astype(float)
+        all_positions = self._collect_hkl_positions(h5_file)
+        if all_positions:
+            _, arr = all_positions[0]
+            idx = np.clip(np.arange(start, stop), 0, len(arr) - 1)
+            return arr[idx].astype(float)
+        raise KeyError(f"No POSITION dataset found at {pos_path} or under entry/data/metadata/HKL/**")
+
+    def build_file_geometry(self, h5_file: h5py.File) -> FileGeometry:
+        """Build QConversion/HXRD/Ang2Q.init_area ONCE for this file, instead
+        of once per frame the way create_rsm() does. Reuse the returned
+        FileGeometry across every frame/batch of this file via q_for_frames."""
+        shape = h5_file["entry/data/data"].shape
+        sc_dir, dc_dir = self.get_circle_directions(h5_file)
+        primary, inplane, surface, ub, energy = self.get_physics_params(h5_file)
+        qconv = xu.experiment.QConversion(sc_dir, dc_dir, primary)
+        hxrd = xu.HXRD(inplane, surface, en=energy, qconv=qconv)
+        p_dir1, p_dir2, cch1, cch2, nch1, nch2, pw1, pw2, dist, roi = self.get_detector_setup(h5_file, shape)
+        hxrd.Ang2Q.init_area(
+            p_dir1, p_dir2,
+            cch1=cch1, cch2=cch2,
+            Nch1=nch1, Nch2=nch2,
+            pwidth1=pw1, pwidth2=pw2,
+            distance=dist,
+            roi=roi,
+        )
+        return FileGeometry(hxrd=hxrd, ub=ub, energy_eV=energy, shape=shape)
+
+    def q_for_frames(self, geom: FileGeometry, h5_file: h5py.File, start: int, stop: int):
+        """Angles -> Q for frames [start, stop) via a single batched
+        Ang2Q.area call. Returns (qx, qy, qz), each shaped (stop - start, H, W)
+        -- not raveled and not mask-filtered, so callers can boolean-index out
+        masked pixels before raveling.
+        """
+        sc_pos, dc_pos = self.get_circle_positions_batch(h5_file, start, stop)
+        angles = [*sc_pos, *dc_pos]
+        qx, qy, qz = geom.hxrd.Ang2Q.area(*angles, UB=geom.ub)
+        n = stop - start
+        if n == 1 and qx.ndim == 2:
+            # xrayutilities' Ang2Q.area drops the leading batch axis when
+            # Npoints == 1 (experiment.py: `if Npoints == 1: ... return
+            # qpos[:, :, 0], ...`) -- restore it so callers can always rely on
+            # a (n_frames, H, W) shape, even for a batch of exactly one frame
+            # (e.g. the last partial batch of a scan).
+            qx, qy, qz = qx[np.newaxis, ...], qy[np.newaxis, ...], qz[np.newaxis, ...]
+        return qx, qy, qz
 
     # UB helpers
     def get_ub_matrix_from_file(self, h5_file: h5py.File) -> np.ndarray:

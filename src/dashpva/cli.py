@@ -113,6 +113,14 @@ def phasefitter():
     sys.exit(exit_code)
 
 
+@cli.command()
+def rsmgrid():
+    """Launch RSM Volume Builder — merge scan(s) into a gridded reciprocal-space volume."""
+    click.echo('Running RSM Volume Builder')
+    exit_code = subprocess.run([sys.executable, '-m', 'dashpva.viewer.rsmgrid.rsm_grid_builder']).returncode
+    sys.exit(exit_code)
+
+
 _SIM_MODULE = 'dashpva.consumers.caIOC_servers.ad_sim_server_modified'
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

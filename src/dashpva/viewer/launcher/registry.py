@@ -110,6 +110,14 @@ VIEWS = [
         'requires': ('standalone',),
     },
     {
+        'key': 'rsmgrid',
+        'label': 'RSM Volume Builder',
+        'section': 'Post Analysis',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'rsmgrid'],
+        'tooltip': 'Merge scan(s) into a gridded reciprocal-space volume (CLI: DashPVA rsmgrid)',
+        'requires': ('standalone',),
+    },
+    {
         'key': 'metadata_converter',
         'label': 'Metadata Converter',
         'section': 'Tools',
