@@ -62,17 +62,27 @@ def detector(pv, prefix):
 
 
 @cli.command()
-@click.option('--ioc', is_flag=True, help='Run the simulator setup instead of the standard setup.')
-def setup(ioc):
-    """Sets up the PVA workflow or the simulator."""
-    if ioc:
-        click.echo('Running simulator setup...')
-        subprocess.Popen([sys.executable, '-m', 'dashpva.consumers.caIOC_servers.sim_rsm_data'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return
-
+def setup():
+    """Sets up the PVA workflow."""
     click.echo('Running standard PVA setup...')
     exit_code = subprocess.run([sys.executable, '-m', 'dashpva.workflow.workflow']).returncode
     sys.exit(exit_code)
+
+
+@cli.command('ioc')
+@click.option('--prefix', default='pvapy', metavar='PREFIX',
+              help='IOC PV prefix (e.g. xidb); a trailing ":" is added if missing. Defaults to pvapy.')
+@click.option('--gui/--no-gui', default=True,
+              help='Show the IOC control GUI (default). Use --no-gui to run the IOC headless.')
+def ioc(prefix, gui):
+    """Launch the RSM-parameter IOC simulator (GUI + headless CaIoc)."""
+    click.echo('Running RSM-parameter IOC simulator' + ('' if gui else ' (headless)'))
+    cmd = [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter', '--prefix', prefix.strip()]
+    if not gui:
+        cmd.append('--ioc-mode')
+    exit_code = subprocess.run(cmd).returncode
+    sys.exit(exit_code)
+
 
 @cli.command()
 def bayesian():
