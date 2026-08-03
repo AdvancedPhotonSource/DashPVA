@@ -411,8 +411,11 @@ class HDF5Loader(LogMixin):
                     for key in md_grp.keys():
                         try:
                             ds = md_grp[key]
-                            # Try to read as string safely, otherwise as numeric/array
-                            if hasattr(ds, 'asstr'):
+                            # asstr() exists on every h5py Dataset regardless of dtype but
+                            # raises TypeError unless the dtype is actually a string type --
+                            # check_string_dtype is the correct way to tell numeric datasets
+                            # apart from string ones (a plain hasattr check does not).
+                            if h5py.check_string_dtype(ds.dtype) is not None:
                                 val = ds.asstr()[()]
                             else:
                                 val = ds[()]
@@ -1151,7 +1154,9 @@ class HDF5Loader(LogMixin):
                     for key in md_grp.keys():
                         try:
                             ds = md_grp[key]
-                            if hasattr(ds, 'asstr'):
+                            # See load_h5_volume_3d for why check_string_dtype (not hasattr)
+                            # is required here.
+                            if h5py.check_string_dtype(ds.dtype) is not None:
                                 val = ds.asstr()[()]
                             else:
                                 val = ds[()]
@@ -1519,7 +1524,7 @@ def discover_hkl_axis_labels(file_path: str) -> dict:
                 if not isinstance(ds, h5py.Dataset):
                     return None
                 try:
-                    val = ds.asstr()[()] if hasattr(ds, 'asstr') else ds[()]
+                    val = ds.asstr()[()] if h5py.check_string_dtype(ds.dtype) is not None else ds[()]
                 except Exception:
                     return None
                 # Normalize to str
