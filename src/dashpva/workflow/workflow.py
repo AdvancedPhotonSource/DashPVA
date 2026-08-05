@@ -1507,10 +1507,7 @@ class Workflow(QDialog, LogMixin):
     def _walk_store(self, node, path):
         for i in range(node.childCount()):
             item = node.child(i)
-            raw = item.text(0)
-            key = raw[:-1] if raw.endswith('*') else raw
-            if raw.endswith('*'):
-                item.setText(0, key)
+            key = item.text(0)
             item.setForeground(0, QtGui.QBrush())
             cur = path + [key]
             if item.childCount() == 0:
@@ -1520,35 +1517,14 @@ class Workflow(QDialog, LogMixin):
             else:
                 self._walk_store(item, cur)
 
-    def _clear_edit_markers(self, node=None):
-        if node is None:
-            node = self.treeWidgetConfig.invisibleRootItem()
-        self.treeWidgetConfig.blockSignals(True)
-        self._strip_markers(node)
-        self.treeWidgetConfig.blockSignals(False)
-        self._edited_item_ids.clear()
-        self._update_config_action_state()
-
-    def _strip_markers(self, node):
-        for i in range(node.childCount()):
-            item = node.child(i)
-            if item.text(0).endswith('*'):
-                item.setText(0, item.text(0)[:-1])
-            item.setForeground(0, QtGui.QBrush())
-            self._strip_markers(item)
-
     def _mark_item_edited(self, item):
         self._edited_item_ids.add(id(item))
         self._update_config_action_state()
         warn = QtGui.QBrush(QtGui.QColor(WARNING))
         self.treeWidgetConfig.blockSignals(True)
-        if not item.text(0).endswith('*'):
-            item.setText(0, item.text(0) + '*')
         item.setForeground(0, warn)
         parent = item.parent()
         while parent:
-            if not parent.text(0).endswith('*'):
-                parent.setText(0, parent.text(0) + '*')
             parent.setForeground(0, warn)
             parent = parent.parent()
         self.treeWidgetConfig.blockSignals(False)
@@ -1556,14 +1532,10 @@ class Workflow(QDialog, LogMixin):
     def _unmark_item_edited(self, item):
         self._edited_item_ids.discard(id(item))
         self.treeWidgetConfig.blockSignals(True)
-        if item.text(0).endswith('*'):
-            item.setText(0, item.text(0)[:-1])
         item.setForeground(0, QtGui.QBrush())
         parent = item.parent()
         while parent:
             if not any(id(parent.child(i)) in self._edited_item_ids for i in range(parent.childCount())):
-                if parent.text(0).endswith('*'):
-                    parent.setText(0, parent.text(0)[:-1])
                 parent.setForeground(0, QtGui.QBrush())
             parent = parent.parent()
         self.treeWidgetConfig.blockSignals(False)
@@ -1623,9 +1595,7 @@ class Workflow(QDialog, LogMixin):
     def _collect_flat(self, node, path, result):
         for i in range(node.childCount()):
             item = node.child(i)
-            raw = item.text(0)
-            key = raw[:-1] if raw.endswith('*') else raw
-            cur = path + [key]
+            cur = path + [item.text(0)]
             if item.childCount() == 0:
                 result['.'.join(cur)] = item.text(1)
             else:
@@ -1637,9 +1607,7 @@ class Workflow(QDialog, LogMixin):
             found = None
             for i in range(node.childCount()):
                 child = node.child(i)
-                raw = child.text(0)
-                key = raw[:-1] if raw.endswith('*') else raw
-                if key == part:
+                if child.text(0) == part:
                     found = child
                     break
             if found is None:
@@ -1823,9 +1791,8 @@ class Workflow(QDialog, LogMixin):
                 return
         else:
             self._save_tree_to_active_profile()
-        self._tree_snapshot = self._snapshot_tree()
         self._structural_changed = False
-        self._clear_edit_markers()
+        self._store_snapshot()
 
     def _on_reseed(self):
         reply = QMessageBox.question(
@@ -2002,7 +1969,7 @@ class Workflow(QDialog, LogMixin):
             root = parent
         for i in range(root.childCount()):
             child = root.child(i)
-            key = child.text(0).rstrip('*')
+            key = child.text(0)
             if child.childCount() > 0:
                 result[key] = self._extract_tree_to_dict(child)
             else:
