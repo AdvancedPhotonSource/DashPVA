@@ -102,6 +102,7 @@ class PVAReader(QObject):
         self.config = {}
         self.rois = {}
         self._roi_names = ['ROI1', 'ROI2', 'ROI3', 'ROI4']
+        self._active_roi_pvs = []
         self.stats = {}
         self.CONSUMER_MODE = ''
         self.OUTPUT_FILE_LOCATION = ''
@@ -651,13 +652,18 @@ class PVAReader(QObject):
         self.pv_attributes = None
 
     def _clear_roi_backup_monitor(self) -> None:
-        """Clear the CA camonitors started by ``start_roi_backup_monitor``."""
-        for roi in list(self.rois):
-            for dimension in ('MinX', 'MinY', 'SizeX', 'SizeY'):
-                try:
-                    camonitor_clear(f'{self.pva_prefix}:{roi}:{dimension}')
-                except Exception:
-                    pass
+        """Clear the CA camonitors ``start_roi_backup_monitor`` actually started.
+
+        Uses the recorded PV names rather than re-deriving them from
+        ``self.rois``/``self.pva_prefix`` — reconstruction drifts out of sync
+        whenever the subscription naming convention changes.
+        """
+        for pv_name in self._active_roi_pvs:
+            try:
+                camonitor_clear(pv_name)
+            except Exception:
+                pass
+        self._active_roi_pvs = []
 
     def start_roi_backup_monitor(self) -> None:
         """Connect to ROI PVs with a tight per-PV timeout.
@@ -688,8 +694,9 @@ class PVAReader(QObject):
                 continue
             self.rois[roi] = collected
             for dimension in dims:
-                camonitor(pvname=f'{self.pva_prefix}:{roi}:{dimension}',
-                          callback=self.roi_backup_callback)
+                pv_name = f'{self.pva_prefix}:{roi}:{dimension}'
+                camonitor(pvname=pv_name, callback=self.roi_backup_callback)
+                self._active_roi_pvs.append(pv_name)
 
     def start_metadata_ca_monitor(self) -> None:
         """
