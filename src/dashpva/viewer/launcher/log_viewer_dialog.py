@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 
 from PyQt5 import uic
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QDialog
 
 from dashpva.gui import configure_app, ui_path
@@ -63,6 +64,14 @@ class LogViewerDialog(QDialog):
         self.btn_close.clicked.connect(self.close)
         self._load_log()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self):
+        sb = self.text_log.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
     def _load_log(self):
         try:
             path = Path(self.log_file)
@@ -73,8 +82,7 @@ class LogViewerDialog(QDialog):
                 lines = f.readlines()
             tail = lines[-_MAX_LINES:] if len(lines) > _MAX_LINES else lines
             self.text_log.setHtml(_lines_to_html(tail))
-            sb = self.text_log.verticalScrollBar()
-            sb.setValue(sb.maximum())
+            self._scroll_to_bottom()
         except Exception as e:
             self.text_log.setPlainText(f"Error reading log:\n{e}")
 

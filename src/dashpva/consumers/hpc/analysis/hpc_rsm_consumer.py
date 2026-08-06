@@ -295,18 +295,16 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             return None, None, None
 
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
-        # if len(previous_data) != len(metadata):
-        #         dicts_equal = False
-        #     else:
+        if hkl_attr.keys() != old_attr.keys():
+            return True
         for key, value in hkl_attr.items():
+            old = old_attr[key]
             if isinstance(value, np.ndarray):
-                arrs_equal = np.array_equal(value, old_attr[key])
-                if not arrs_equal:
+                if not np.array_equal(value, old):
                     return True
-            elif old_attr[key] != hkl_attr[key]:
+            elif old != value:
                 return True
-        else:
-            return False
+        return False
 
     def decompress_image(self, pvObject):
         """Return image pixels as a NumPy array, handling compressed (lz4) and uncompressed payloads.

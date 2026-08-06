@@ -6,10 +6,11 @@ from typing import Any, Dict, List, Optional
 import toml
 
 from dashpva.database.db import get_session
+from dashpva.database.managers.base import BaseManager
 from dashpva.database.models.profile import Profile, ProfileConfig
 
 
-class ProfileManager:
+class ProfileManager(BaseManager):
 
     # ------------------------------------------------------------------ #
     # Profiles CRUD
@@ -240,7 +241,10 @@ class ProfileManager:
                 q = q.filter_by(config_type=config_type)
             # Exclude internal JSON blob records
             q = q.filter(ProfileConfig.config_type != '__toml__')
-            return q.all()
+            configs = q.all()
+            for cfg in configs:
+                cfg.config_key = self.clean(cfg.config_key)
+            return configs
         except Exception:
             return []
         finally:
@@ -264,7 +268,7 @@ class ProfileManager:
             config = session.query(ProfileConfig).filter_by(id=config_id).first()
             if not config:
                 return False
-            config.config_value = str(new_value)
+            config.config_value = self.clean(str(new_value))
             session.commit()
             return True
         except Exception:
@@ -310,7 +314,7 @@ class ProfileManager:
         """Store the full TOML dict as a JSON blob for reliable round-trip export."""
         session = get_session()
         try:
-            # Remove any existing JSON blob for this profile
+            toml_data = self.clean(toml_data)
             session.query(ProfileConfig).filter_by(
                 profile_id=profile_id, config_type='__toml__', config_key='__data__'
             ).delete()
@@ -346,7 +350,7 @@ class ProfileManager:
                 profile_id=profile_id, config_type='__toml__', config_key='__data__'
             ).first()
             if blob:
-                return json.loads(blob.config_value)
+                return self.clean(json.loads(blob.config_value))
             return {}
         except Exception:
             return {}

@@ -89,6 +89,11 @@ def init_database():
             seed_defaults()
         except Exception as exc:
             log.warning("seed_defaults() failed on new database: %s", exc)
+    try:
+        from dashpva.scripts.clean_asterisks_sql import clean_database
+        clean_database()
+    except Exception as exc:
+        log.warning("clean_database() failed: %s", exc)
     # Issue 2: set flag only after all operations succeed
     _init_done = True
     log.debug("Database initialized (new_db=%s)", is_new_db)

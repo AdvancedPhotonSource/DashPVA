@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union
 from sqlalchemy.orm import Session, selectinload
 
 from dashpva.database.db import get_session
+from dashpva.database.managers.base import BaseManager
 from dashpva.database.models.setting_value import SettingValue
 from dashpva.database.models.settings import Settings
 
@@ -12,7 +13,7 @@ from dashpva.database.models.settings import Settings
 # DetachedInstanceError when accessing .values or .children after session close.
 _SETTING_OPTS = [selectinload(Settings.values), selectinload(Settings.children)]
 
-class SettingsManager:
+class SettingsManager(BaseManager):
     """
     CRUD operations for the Settings table with individual setting values.
     """
@@ -188,7 +189,7 @@ class SettingsManager:
             setting = session.query(Settings).filter(Settings.name == setting_name).first()
             if not setting:
                 return False
-            
+
             setting_value = SettingValue(setting_id=setting.id, key=key)
             setting_value.set_value(value)
             session.add(setting_value)
@@ -204,6 +205,7 @@ class SettingsManager:
         """Update an existing setting value."""
         session = self._session()
         try:
+            key = self.clean(key)
             setting_value = session.query(SettingValue).filter(
                 SettingValue.setting_id == setting_id,
                 SettingValue.key == key
@@ -225,18 +227,19 @@ class SettingsManager:
         """Update an existing setting value by setting name."""
         session = self._session()
         try:
+            key = self.clean(key)
             setting = session.query(Settings).filter(Settings.name == setting_name).first()
             if not setting:
                 return False
-            
+
             setting_value = session.query(SettingValue).filter(
                 SettingValue.setting_id == setting.id,
                 SettingValue.key == key
             ).first()
-            
+
             if not setting_value:
                 return False
-            
+
             setting_value.set_value(value)
             session.commit()
             return True
@@ -340,7 +343,7 @@ class SettingsManager:
             )
             if not setting:
                 return {}
-            return setting.get_all_values()
+            return self.clean(setting.get_all_values())
         finally:
             session.close()
 
@@ -356,7 +359,7 @@ class SettingsManager:
             )
             if not setting:
                 return []
-            return [(sv.key, sv.get_value(), sv.value_type) for sv in setting.values]
+            return [(self.clean(sv.key), sv.get_value(), sv.value_type) for sv in setting.values]
         finally:
             session.close()
 
@@ -367,7 +370,7 @@ class SettingsManager:
             setting = session.query(Settings).filter(Settings.name == setting_name).first()
             if not setting:
                 return {}
-            return setting.get_all_values()
+            return self.clean(setting.get_all_values())
         finally:
             session.close()
 
