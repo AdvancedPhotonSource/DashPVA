@@ -11,26 +11,23 @@ are left untouched.
 import json
 import sqlite3
 
-import dashpva.settings as _settings
-from dashpva.database.managers.base import BaseManager
-
-_DB_FILE = _settings.PROJECT_ROOT / "dashpva.db"
-DB_PATH = str(_DB_FILE)
-
-_cleaner = BaseManager()
-
 
 def clean_database() -> None:
-    if not _DB_FILE.exists():
+    import dashpva.settings as _settings
+    from dashpva.database.managers.base import BaseManager
+
+    db_file = _settings.PROJECT_ROOT / "dashpva.db"
+    if not db_file.exists():
         return
-    conn = sqlite3.connect(DB_PATH)
+    cleaner = BaseManager()
+    conn = sqlite3.connect(str(db_file))
     try:
         cur = conn.cursor()
 
         for row_id, key in cur.execute(
             "SELECT id, config_key FROM profile_configs WHERE config_type != '__toml__'"
         ).fetchall():
-            cleaned = _cleaner.clean(key)
+            cleaned = cleaner.clean(key)
             if cleaned != key:
                 cur.execute("UPDATE profile_configs SET config_key=? WHERE id=?", (cleaned, row_id))
 
@@ -41,12 +38,12 @@ def clean_database() -> None:
                 data = json.loads(raw)
             except (TypeError, ValueError):
                 continue
-            cleaned = _cleaner.clean(data)
+            cleaned = cleaner.clean(data)
             if cleaned != data:
                 cur.execute("UPDATE profile_configs SET config_value=? WHERE id=?", (json.dumps(cleaned), row_id))
 
         for row_id, key in cur.execute("SELECT id, key FROM setting_values").fetchall():
-            cleaned = _cleaner.clean(key)
+            cleaned = cleaner.clean(key)
             if cleaned != key:
                 cur.execute("UPDATE setting_values SET key=? WHERE id=?", (cleaned, row_id))
 
