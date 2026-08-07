@@ -646,7 +646,7 @@ class DiffractionImageWindow(BaseWindow):
 
     def load_mask_clicked(self):
         filepath, _ = QFileDialog.getOpenFileName(
-            self, 'Load Mask File', '',
+            self, 'Load Mask File', self.mask_manager.masks_dir,
             'Mask files (*.edf *.npy *.tif *.tiff *.json);;'
             'EDF files (*.edf);;NumPy files (*.npy);;'
             'TIFF files (*.tif *.tiff);;'
