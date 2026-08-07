@@ -243,8 +243,9 @@ class MaskViewerWindow(QDialog):
         if not self._undo_stack:
             return
         self._redo_stack.append(self.mask.copy())
+        prev_shape = self.mask.shape
         self.mask = self._undo_stack.pop()
-        self._refresh_overlay()
+        self._refresh_shape_change(prev_shape)
         self.mask_updated.emit(self.mask)
         self._update_undo_buttons()
 
@@ -252,10 +253,20 @@ class MaskViewerWindow(QDialog):
         if not self._redo_stack:
             return
         self._undo_stack.append(self.mask.copy())
+        prev_shape = self.mask.shape
         self.mask = self._redo_stack.pop()
-        self._refresh_overlay()
+        self._refresh_shape_change(prev_shape)
         self.mask_updated.emit(self.mask)
         self._update_undo_buttons()
+
+    def _refresh_shape_change(self, prev_shape):
+        """Full redraw if the mask's shape changed (e.g. undoing a transpose/rotate),
+        otherwise the cheap overlay-only refresh."""
+        if self.mask.shape != prev_shape:
+            self._view_ready = False
+            self._refresh_display()
+        else:
+            self._refresh_overlay()
 
     def _clear_drawing(self):
         self._push_undo()
