@@ -47,6 +47,7 @@ class MaskViewerWindow(QDialog):
         self.parent_viewer = parent
         # ALWAYS detector-native orientation
         self.mask = mask.copy().astype(bool)
+        self._original_mask = self.mask.copy()  # snapshot at open, for the close-time save/discard prompt
         self.mask_path = mask_path
         self._editing = False
         self._show_image = False
@@ -214,6 +215,24 @@ class MaskViewerWindow(QDialog):
         QShortcut(QKeySequence.Undo, self, self.undo)
         QShortcut(QKeySequence.Redo, self, self.redo)
         self._update_undo_buttons()
+
+    def closeEvent(self, event):
+        if not np.array_equal(self.mask, self._original_mask):
+            reply = QMessageBox.question(
+                self, 'Unsaved Changes',
+                'This mask has changes since it was opened. Save before closing?',
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save)
+            if reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if reply == QMessageBox.Discard:
+                self.mask = self._original_mask.copy()
+                self.mask_updated.emit(self.mask)
+        event.accept()
+
+    def reject(self):
+        self.close()
 
     def showEvent(self, event):
         super().showEvent(event)
