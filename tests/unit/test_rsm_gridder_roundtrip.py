@@ -6,6 +6,7 @@ Grid dimensions are deliberately ASYMMETRIC everywhere in this file: with
 nx == ny == nz an axis permutation anywhere in the pipeline still produces a
 correctly-shaped array, so a transpose bug would go undetected.
 """
+import h5py
 import numpy as np
 import pytest
 import xrayutilities as xu
@@ -37,9 +38,9 @@ class TestHotPixelRoundtrip:
 
     def test_hot_pixel_maps_to_expected_voxel_after_roundtrip(self, tmp_path):
         scan_path = str(tmp_path / "scan.h5")
-        make_synthetic_scan_h5(scan_path, n_frames=3, shape=(4, 4),
-                                hot_pixel=(1, 1, 2), hot_value=1e6)
-        expected_q = _expected_q(scan_path, 1, 1, 2)
+        make_synthetic_scan_h5(scan_path, n_frames=3, shape=(3, 5),
+                                hot_pixel=(1, 1, 3), hot_value=1e6)
+        expected_q = _expected_q(scan_path, 1, 1, 3)
 
         result = build_volume([scan_path], nx=5, ny=6, nz=7, use_mask=False)
         assert result.volume.shape == (5, 6, 7)
@@ -68,6 +69,13 @@ class TestHotPixelRoundtrip:
         assert list(loader.file_metadata["grid_dimensions_cells"]) == [5, 6, 7]
         np.testing.assert_allclose(loader.file_metadata["voxel_spacing"], metadata["voxel_spacing"])
         np.testing.assert_allclose(loader.file_metadata["grid_origin"], metadata["grid_origin"])
+
+        with h5py.File(out_path, "r") as h5_file:
+            saved = h5_file["entry/data/metadata"]
+            assert saved["coordinate_system"].asstr()[()] == "HKL"
+            assert saved["gridder"].asstr()[()] == "xrayutilities.Gridder3D"
+            assert saved["source_energies_eV"][...].tolist() == [10000.0]
+            assert saved["source_ub_matrices_shape"][...].tolist() == [1, 3, 3]
 
     def test_grid_origin_is_cell_corner_not_bin_center(self, tmp_path):
         # Gridder3D's axes are bin CENTERS; the PyVista viewer treats
@@ -162,7 +170,7 @@ class TestMonitorNormalization:
         path = str(tmp_path / "scan.h5")
         make_synthetic_scan_h5(path, n_frames=2, shape=(4, 4),
                                 ca_monitor=("I0", np.array([1.0, 0.0])))
-        with pytest.raises(RSMMergeError, match="zero"):
+        with pytest.raises(RSMMergeError, match="strictly positive"):
             build_volume([path], nx=4, ny=5, nz=6, use_mask=False, monitor_dataset="I0")
 
 

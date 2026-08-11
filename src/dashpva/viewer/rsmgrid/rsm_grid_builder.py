@@ -22,6 +22,9 @@ from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.rsm_gridder import (
     RSMMergeError,
     build_volume,
+    detector_shapes_for_files,
+    ensure_memory_available,
+    estimate_grid_memory,
     list_monitor_candidates,
     volume_result_to_metadata,
 )
@@ -81,7 +84,8 @@ class RSMGridWorker(QThread):
             metadata = volume_result_to_metadata(result)
             self.log.emit(
                 f"Gridded {result.num_points_binned} point(s) "
-                f"({result.num_points_excluded_by_mask} excluded by mask). "
+                f"({result.num_points_excluded_by_mask} excluded by mask, "
+                f"{result.num_points_excluded_nonfinite} non-finite). "
                 f"Writing {self.output_path}..."
             )
             ok = HDF5Loader().save_vol_to_h5(self.output_path, result.volume, metadata=metadata)
@@ -102,6 +106,8 @@ class RSMGridBuilderDialog(QDialog):
         super().__init__()
         uic.loadUi(ui_path("rsmgrid", "rsm_grid_builder.ui"), self)
         self.worker = None
+        self._detector_shapes = []
+        self._detector_shape_error = None
 
         self.btn_add_files.clicked.connect(self._add_files)
         self.btn_remove_file.clicked.connect(self._remove_selected_file)
@@ -109,6 +115,8 @@ class RSMGridBuilderDialog(QDialog):
         self.btn_start.clicked.connect(self._start)
         self.btn_cancel.clicked.connect(self._cancel)
         self.btn_close.clicked.connect(self.close)
+        for spinbox in (self.spn_nx, self.spn_ny, self.spn_nz):
+            spinbox.valueChanged.connect(self._update_memory_estimate)
         self._refresh_monitors()
 
         try:
@@ -117,6 +125,7 @@ class RSMGridBuilderDialog(QDialog):
             out_base = './outputs'
         default_name = f"rsm_volume_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5"
         self.txt_output_file.setText(str(Path(out_base) / default_name))
+        self._update_memory_estimate()
 
     # ---------- Helpers ----------
     def _append_log(self, text):
@@ -124,6 +133,40 @@ class RSMGridBuilderDialog(QDialog):
 
     def _filenames(self):
         return [self.lst_files.item(i).text() for i in range(self.lst_files.count())]
+
+    @staticmethod
+    def _format_bytes(value):
+        value = float(value)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if value < 1024.0 or unit == "TiB":
+                return f"{value:.2f} {unit}"
+            value /= 1024.0
+
+    def _memory_estimate(self):
+        args = (self.spn_nx.value(), self.spn_ny.value(), self.spn_nz.value())
+        if self._detector_shape_error:
+            raise RSMMergeError(self._detector_shape_error)
+        return estimate_grid_memory(
+            *args, detector_shapes=self._detector_shapes
+        )
+
+    def _refresh_detector_shapes(self):
+        try:
+            self._detector_shapes = detector_shapes_for_files(self._filenames())
+            self._detector_shape_error = None
+        except RSMMergeError as exc:
+            self._detector_shapes = []
+            self._detector_shape_error = str(exc)
+
+    def _update_memory_estimate(self, *_args):
+        try:
+            estimate = self._memory_estimate()
+            self.lbl_memory_estimate.setText(
+                f"Estimated peak RAM: {self._format_bytes(estimate.peak_bytes)}; "
+                f"float32 output: {self._format_bytes(estimate.output_bytes)}"
+            )
+        except RSMMergeError as exc:
+            self.lbl_memory_estimate.setText(f"Memory estimate unavailable: {exc}")
 
     # ---------- File list ----------
     def _add_files(self):
@@ -135,11 +178,15 @@ class RSMGridBuilderDialog(QDialog):
                 self.lst_files.addItem(f)
                 existing.add(f)
         self._refresh_monitors()
+        self._refresh_detector_shapes()
+        self._update_memory_estimate()
 
     def _remove_selected_file(self):
         for item in self.lst_files.selectedItems():
             self.lst_files.takeItem(self.lst_files.row(item))
         self._refresh_monitors()
+        self._refresh_detector_shapes()
+        self._update_memory_estimate()
 
     def _refresh_monitors(self):
         """Repopulate the monitor combo from the first file's CA metadata,
@@ -169,6 +216,11 @@ class RSMGridBuilderDialog(QDialog):
         output_path = self.txt_output_file.text().strip()
         if not output_path:
             QMessageBox.warning(self, 'No Output', 'Choose an output file.')
+            return
+        try:
+            ensure_memory_available(self._memory_estimate())
+        except RSMMergeError as exc:
+            QMessageBox.critical(self, 'Unsafe Grid Size', str(exc))
             return
         try:
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ path -- both alone (batch size 1) and as a genuine multi-frame batch.
 import h5py
 import numpy as np
 import pytest
+import xrayutilities as xu
 
 from dashpva.utils.rsm_converter import RSMConverter
 
@@ -21,11 +22,44 @@ from ._synthetic_hdf5 import make_synthetic_scan_h5
 @pytest.fixture()
 def scan_path(tmp_path):
     path = str(tmp_path / "scan.h5")
-    make_synthetic_scan_h5(path, n_frames=4, shape=(4, 4))
+    make_synthetic_scan_h5(path, n_frames=4, shape=(3, 5))
     return path
 
 
 class TestGeometryRefactorEquivalence:
+
+    def test_detector_center_retains_subpixel_precision(self, scan_path):
+        with h5py.File(scan_path, "r+") as h5_file:
+            center = h5_file[
+                "entry/data/metadata/HKL/DETECTOR_SETUP/CENTER_CHANNEL_PIXEL"
+            ]
+            center[...] = np.array([1.25, 2.75])
+            setup = RSMConverter().get_detector_setup(
+                h5_file, h5_file["entry/data/data"].shape
+            )
+        assert setup[2:4] == pytest.approx((1.25, 2.75))
+
+    def test_asymmetric_detector_matches_independent_reference(self, scan_path):
+        converter = RSMConverter()
+        with h5py.File(scan_path, "r") as h5_file:
+            geom = converter.build_file_geometry(h5_file)
+            actual = converter.q_for_frames(geom, h5_file, 0, 4)
+
+        qconv = xu.experiment.QConversion(["z-"], ["z-"], [0.0, 1.0, 0.0])
+        reference = xu.HXRD(
+            [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], en=10000.0, qconv=qconv
+        )
+        reference.Ang2Q.init_area(
+            "x+", "z+", cch1=1, cch2=2, Nch1=3, Nch2=5,
+            pwidth1=1.0, pwidth2=1.0, distance=500.0, roi=[0, 3, 0, 5]
+        )
+        expected = reference.Ang2Q.area(
+            np.linspace(0.0, 10.0, 4), np.full(4, 20.0), UB=np.eye(3)
+        )
+
+        for actual_axis, expected_axis in zip(actual, expected):
+            assert actual_axis.shape == (4, 3, 5)
+            np.testing.assert_allclose(actual_axis, expected_axis, atol=1e-9)
 
     def test_single_frame_batches_match_create_rsm(self, scan_path):
         converter = RSMConverter()
@@ -64,3 +98,17 @@ class TestGeometryRefactorEquivalence:
                 assert sc_dir == ["z-"]
                 assert dc_dir == ["z-"]
                 assert len(sc_pos) == 1 and len(dc_pos) == 1
+
+    def test_legacy_circle_names_remain_supported(self, scan_path):
+        with h5py.File(scan_path, "r+") as h5_file:
+            hkl = h5_file["entry/data/metadata/HKL"]
+            hkl.move("SAMPLE_CIRCLE_AXIS_1", "MU")
+            hkl.move("DETECTOR_CIRCLE_AXIS_1", "DELTA")
+            sc_dir, sc_pos, dc_dir, dc_pos = RSMConverter().get_sample_and_detector_circles(
+                h5_file, frame=2
+            )
+
+        assert sc_dir == ["z-"]
+        assert dc_dir == ["z-"]
+        assert sc_pos == pytest.approx([np.linspace(0.0, 10.0, 4)[2]])
+        assert dc_pos == pytest.approx([20.0])

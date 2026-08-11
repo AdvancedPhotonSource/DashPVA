@@ -29,4 +29,3 @@ dashpva.db
 .dashpva_locator
 logs/
 .ruff_cache/
-src/dashpva/viewer/config.json

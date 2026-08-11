@@ -29,18 +29,20 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import h5py
 import numpy as np
+import psutil
 import xrayutilities as xu
 
+import dashpva.settings as app_settings
 from dashpva.utils.rsm_converter import RSMConverter
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ENERGY_RTOL = 1e-4
-DEFAULT_UB_ATOL = 1e-4
+DEFAULT_ENERGY_RTOL = app_settings.RSM_GRID_ENERGY_RELATIVE_TOLERANCE
+DEFAULT_UB_ATOL = app_settings.RSM_GRID_UB_ABSOLUTE_TOLERANCE
 # Per-batch budget for the qx/qy/qz float64 arrays plus their mask-filtered
 # copies. rsMap3D budgets bytes rather than frames for the same reason: a fixed
 # frame count that is fine on a 512^2 detector needs many GB on a 2048^2 one.
-DEFAULT_BATCH_BYTES = 256 * 1024 * 1024
+DEFAULT_BATCH_BYTES = app_settings.RSM_GRID_BATCH_MEMORY_BYTES
 CA_GROUP = "entry/data/metadata/ca"
 
 
@@ -85,6 +87,119 @@ class VolumeResult:
     per_file_info: List[FileValidationInfo]
     num_points_binned: int
     num_points_excluded_by_mask: int
+    num_points_excluded_nonfinite: int
+    monitor_dataset: Optional[str]
+    mask_applied: bool
+    mask_transposed: bool
+    batch_bytes: int
+    memory_estimate: "GridMemoryEstimate"
+
+
+@dataclass(frozen=True)
+class GridMemoryEstimate:
+    peak_bytes: int
+    grid_bytes: int
+    batch_bytes: int
+    output_bytes: int
+
+
+def estimate_grid_memory(
+    nx: int,
+    ny: int,
+    nz: int,
+    detector_shapes: Sequence[Tuple[int, int]] = (),
+    batch_bytes: int = DEFAULT_BATCH_BYTES,
+) -> GridMemoryEstimate:
+    """Conservative peak for Gridder3D plus the largest processing batch.
+
+    Gridder3D holds two float64 voxel arrays and ``.data`` materializes a
+    third. The batch allowance covers coordinate/intensity originals, masked
+    copies, and worst-case finite-filter copies.
+    """
+    if nx < 1 or ny < 1 or nz < 1:
+        raise RSMMergeError(f"Grid dimensions must be positive, got {(nx, ny, nz)}.")
+    if batch_bytes < 1:
+        raise RSMMergeError(f"batch_bytes must be positive, got {batch_bytes}.")
+
+    voxels = int(nx) * int(ny) * int(nz)
+    grid_bytes = voxels * 24
+    output_bytes = voxels * 4
+    actual_batch_bytes = batch_bytes
+    if detector_shapes:
+        actual_batch_bytes = 0
+        for shape in detector_shapes:
+            per_frame = (
+                int(np.prod(shape)) * app_settings.RSM_GRID_WORKING_BYTES_PER_PIXEL
+            )
+            frames = max(1, batch_bytes // max(per_frame, 1))
+            actual_batch_bytes = max(actual_batch_bytes, frames * per_frame)
+    return GridMemoryEstimate(
+        peak_bytes=grid_bytes + actual_batch_bytes,
+        grid_bytes=grid_bytes,
+        batch_bytes=actual_batch_bytes,
+        output_bytes=output_bytes,
+    )
+
+
+def ensure_memory_available(
+    estimate: GridMemoryEstimate,
+    available_bytes: Optional[int] = None,
+    max_fraction: float = app_settings.RSM_GRID_MAX_MEMORY_FRACTION,
+) -> None:
+    """Reject a build whose conservative peak exceeds the safe RAM budget."""
+    if not np.isfinite(max_fraction) or not 0 < max_fraction <= 1:
+        raise RSMMergeError(
+            f"max_fraction must be finite and in (0, 1], got {max_fraction!r}."
+        )
+    available = int(
+        psutil.virtual_memory().available if available_bytes is None else available_bytes
+    )
+    budget = int(available * max_fraction)
+    if estimate.peak_bytes > budget:
+        required_gib = estimate.peak_bytes / 1024**3
+        budget_gib = budget / 1024**3
+        raise RSMMergeError(
+            f"Estimated peak memory is {required_gib:.2f} GiB, exceeding the "
+            f"safe budget of {budget_gib:.2f} GiB ({max_fraction:.0%} of "
+            "currently available RAM). Reduce nx, ny, or nz."
+        )
+
+
+def detector_shapes_for_files(
+    filenames: Sequence[str],
+) -> List[Tuple[int, int]]:
+    """Read detector frame shapes once for memory estimation."""
+    detector_shapes = []
+    for filename in filenames:
+        try:
+            with h5py.File(filename, "r") as h5_file:
+                data_shape = h5_file["entry/data/data"].shape
+                if len(data_shape) != 3 or data_shape[0] < 1:
+                    raise ValueError(
+                        "entry/data/data must have shape "
+                        f"(frames, direction1, direction2), got {data_shape}."
+                    )
+                detector_shapes.append(tuple(data_shape[1:]))
+        except Exception as exc:
+            raise RSMMergeError(f"Invalid scan file '{filename}': {exc}") from exc
+    return detector_shapes
+
+
+def estimate_files_memory(
+    filenames: Sequence[str],
+    nx: int,
+    ny: int,
+    nz: int,
+    batch_bytes: int = DEFAULT_BATCH_BYTES,
+) -> GridMemoryEstimate:
+    """Read only detector shapes and estimate the requested build's peak."""
+    return estimate_grid_memory(
+        nx,
+        ny,
+        nz,
+        detector_shapes=detector_shapes_for_files(filenames),
+        batch_bytes=batch_bytes,
+    )
 
 
 def _resolve_mask(mask_manager, use_mask: bool, mask_transposed: bool) -> Optional[np.ndarray]:
@@ -111,24 +226,38 @@ def _mask_and_ravel(qx, qy, qz, mask, intensity=None):
     """
     if mask is None:
         flat_i = None if intensity is None else intensity.ravel()
-        return qx.ravel(), qy.ravel(), qz.ravel(), flat_i, 0
-    if mask.shape != qx.shape[1:]:
-        raise RSMMergeError(
-            f"Mask shape {mask.shape} does not match detector frame shape "
-            f"{qx.shape[1:]}. A mask captured at one detector binning/ROI "
-            f"cannot be applied to a scan taken at a different one. If the "
-            f"mask was made with the viewer transposed, set mask_transposed."
-        )
-    keep = ~mask
-    flat_i = None if intensity is None else intensity[:, keep].ravel()
-    num_excluded = int(np.count_nonzero(mask)) * qx.shape[0]
-    return qx[:, keep].ravel(), qy[:, keep].ravel(), qz[:, keep].ravel(), flat_i, num_excluded
+        qx_f, qy_f, qz_f = qx.ravel(), qy.ravel(), qz.ravel()
+        excluded = 0
+    else:
+        if mask.shape != qx.shape[1:]:
+            raise RSMMergeError(
+                f"Mask shape {mask.shape} does not match detector frame shape "
+                f"{qx.shape[1:]}. A mask captured at one detector binning/ROI "
+                f"cannot be applied to a scan taken at a different one. If the "
+                f"mask was made with the viewer transposed, set mask_transposed."
+            )
+        keep = ~mask
+        qx_f, qy_f, qz_f = qx[:, keep].ravel(), qy[:, keep].ravel(), qz[:, keep].ravel()
+        flat_i = None if intensity is None else intensity[:, keep].ravel()
+        excluded = int(np.count_nonzero(mask)) * qx.shape[0]
+
+    finite = np.isfinite(qx_f) & np.isfinite(qy_f) & np.isfinite(qz_f)
+    if flat_i is not None:
+        finite &= np.isfinite(flat_i)
+    num_nonfinite = int(finite.size - np.count_nonzero(finite))
+    if num_nonfinite:
+        qx_f, qy_f, qz_f = qx_f[finite], qy_f[finite], qz_f[finite]
+        if flat_i is not None:
+            flat_i = flat_i[finite]
+    return qx_f, qy_f, qz_f, flat_i, excluded, num_nonfinite
 
 
 def _batch_size_for(detector_shape: Tuple[int, int], batch_bytes: int) -> int:
     """Frames per batch that keep the qx/qy/qz arrays and their masked copies
     within batch_bytes. Always at least 1."""
-    per_frame = int(np.prod(detector_shape)) * 8 * 6  # 3 coord arrays, doubled by masked copies
+    per_frame = (
+        int(np.prod(detector_shape)) * app_settings.RSM_GRID_WORKING_BYTES_PER_PIXEL
+    )
     return max(1, batch_bytes // max(per_frame, 1))
 
 
@@ -160,10 +289,10 @@ def _read_monitor(h5_file, monitor_dataset: Optional[str], n_frames: int,
             f"values but the scan has {n_frames} frames."
         )
     values = values[:n_frames]
-    if np.any(values == 0):
+    if not np.isfinite(values).all() or np.any(values <= 0):
         raise RSMMergeError(
-            f"Monitor '{monitor_dataset}' in '{filename}' contains zero values; "
-            f"cannot normalize (would divide by zero)."
+            f"Monitor '{monitor_dataset}' in '{filename}' must contain only "
+            f"finite, strictly positive values."
         )
     return values
 
@@ -187,7 +316,7 @@ def compute_file_bounds(
         xmax = ymax = zmax = -np.inf
         for start, stop in _iter_batches(n_frames, batch_size):
             qx, qy, qz = converter.q_for_frames(geom, f, start, stop)
-            qx_f, qy_f, qz_f, _, _ = _mask_and_ravel(qx, qy, qz, mask)
+            qx_f, qy_f, qz_f, _, _, _ = _mask_and_ravel(qx, qy, qz, mask)
             if qx_f.size:
                 xmin, xmax = min(xmin, float(qx_f.min())), max(xmax, float(qx_f.max()))
                 ymin, ymax = min(ymin, float(qy_f.min())), max(ymax, float(qy_f.max()))
@@ -197,7 +326,7 @@ def compute_file_bounds(
 
     if not np.isfinite([xmin, xmax, ymin, ymax, zmin, zmax]).all():
         raise RSMMergeError(
-            f"No unmasked pixels remain in '{filename}' -- cannot determine a "
+            f"No finite, unmasked pixels remain in '{filename}' -- cannot determine a "
             f"grid range. Check that the mask is not excluding the whole detector."
         )
 
@@ -265,6 +394,7 @@ def build_volume(
     batch_bytes: int = DEFAULT_BATCH_BYTES,
     energy_rtol: float = DEFAULT_ENERGY_RTOL,
     ub_atol: float = DEFAULT_UB_ATOL,
+    memory_limit_fraction: Optional[float] = app_settings.RSM_GRID_MAX_MEMORY_FRACTION,
     progress_cb: Optional[Callable[[int, int], None]] = None,
     warn: Optional[Callable[[str], None]] = None,
 ) -> VolumeResult:
@@ -280,6 +410,8 @@ def build_volume(
         batch_bytes: per-batch memory budget for the coordinate arrays.
         energy_rtol, ub_atol: consistency-warning thresholds (see
             validate_consistency) -- these warn, they do not block.
+        memory_limit_fraction: safe fraction of currently available RAM;
+            ``None`` disables the guard for an explicitly managed script/HPC job.
         progress_cb: called with (frames_done, frames_total) across both passes.
         warn: called with each consistency-warning message.
     """
@@ -287,6 +419,14 @@ def build_volume(
         raise RSMMergeError(f"nx, ny, nz must each be >= 2 (got {nx}, {ny}, {nz}).")
     if not filenames:
         raise RSMMergeError("No input files given.")
+    if batch_bytes < 1:
+        raise RSMMergeError(f"batch_bytes must be positive, got {batch_bytes}.")
+
+    memory_estimate = estimate_files_memory(
+        filenames, nx, ny, nz, batch_bytes=batch_bytes
+    )
+    if memory_limit_fraction is not None:
+        ensure_memory_available(memory_estimate, max_fraction=memory_limit_fraction)
 
     converter = RSMConverter()
     mask = _resolve_mask(mask_manager, use_mask, mask_transposed)
@@ -298,8 +438,14 @@ def build_volume(
     for index, filename in enumerate(filenames):
         if progress_cb is not None:
             progress_cb(index, len(filenames))
-        bounds, info = compute_file_bounds(filename, converter, mask=mask,
-                                            batch_bytes=batch_bytes)
+        try:
+            bounds, info = compute_file_bounds(
+                filename, converter, mask=mask, batch_bytes=batch_bytes
+            )
+        except RSMMergeError:
+            raise
+        except Exception as exc:
+            raise RSMMergeError(f"Invalid RSM metadata in '{filename}': {exc}") from exc
         per_file_bounds.append(bounds)
         per_file_info.append(info)
 
@@ -321,6 +467,7 @@ def build_volume(
     frames_done = 0
     num_points_binned = 0
     num_points_excluded_by_mask = 0
+    num_points_excluded_nonfinite = 0
 
     for filename, info in zip(filenames, per_file_info):
         with h5py.File(filename, "r") as f:
@@ -333,14 +480,28 @@ def build_volume(
                 intensity = np.asarray(data_ds[start:stop], dtype=float)
                 if monitor is not None:
                     intensity = intensity / monitor[start:stop, np.newaxis, np.newaxis]
-                qx_f, qy_f, qz_f, int_f, n_excl = _mask_and_ravel(qx, qy, qz, mask, intensity)
+                qx_f, qy_f, qz_f, int_f, n_excl, n_nonfinite = _mask_and_ravel(
+                    qx, qy, qz, mask, intensity
+                )
                 if qx_f.size:
                     gridder(qx_f, qy_f, qz_f, int_f)
                 num_points_binned += int(qx_f.size)
                 num_points_excluded_by_mask += n_excl
+                num_points_excluded_nonfinite += n_nonfinite
                 frames_done += (stop - start)
                 if progress_cb is not None:
                     progress_cb(frames_done, total_frames)
+
+    if num_points_binned == 0:
+        raise RSMMergeError("No finite, unmasked detector points remain to grid.")
+    if num_points_excluded_nonfinite:
+        message = (
+            f"Excluded {num_points_excluded_nonfinite} point(s) with non-finite "
+            "coordinates or intensity."
+        )
+        logger.warning(message)
+        if warn is not None:
+            warn(message)
 
     return VolumeResult(
         volume=gridder.data,
@@ -350,6 +511,12 @@ def build_volume(
         per_file_info=per_file_info,
         num_points_binned=num_points_binned,
         num_points_excluded_by_mask=num_points_excluded_by_mask,
+        num_points_excluded_nonfinite=num_points_excluded_nonfinite,
+        monitor_dataset=monitor_dataset,
+        mask_applied=mask is not None,
+        mask_transposed=bool(mask is not None and mask_transposed),
+        batch_bytes=batch_bytes,
+        memory_estimate=memory_estimate,
     )
 
 
@@ -378,6 +545,7 @@ def volume_result_to_metadata(result: VolumeResult, extra: Optional[dict] = None
     dz = float(zaxis[1] - zaxis[0]) if len(zaxis) > 1 else 0.0
     volume = result.volume
     ref = result.per_file_info[0]
+    ub_matrices = np.stack([info.ub for info in result.per_file_info])
 
     metadata = {
         "voxel_spacing": [dx, dy, dz],
@@ -391,12 +559,18 @@ def volume_result_to_metadata(result: VolumeResult, extra: Optional[dict] = None
         "axes_labels": ["H", "K", "L"],
         "intensity_range": [float(volume.min()), float(volume.max())] if volume.size else [0.0, 0.0],
         "source_files": [info.filename for info in result.per_file_info],
-        "energy_eV": ref.energy_eV,
-        # Flat 9 elements so save_vol_to_h5 stores it as a numeric dataset
-        # rather than a stringified repr.
-        "ub_matrix": ref.ub.ravel().tolist(),
+        "source_energies_eV": [info.energy_eV for info in result.per_file_info],
+        "source_ub_matrices": ub_matrices.ravel().tolist(),
+        "source_ub_matrices_shape": list(ub_matrices.shape),
+        "coordinate_system": "HKL",
+        "gridder": "xrayutilities.Gridder3D",
+        "monitor_dataset": result.monitor_dataset or "",
+        "mask_applied": result.mask_applied,
+        "mask_transposed": result.mask_transposed,
+        "batch_memory_bytes": result.batch_bytes,
         "num_points_binned": result.num_points_binned,
         "num_points_excluded_by_mask": result.num_points_excluded_by_mask,
+        "num_points_excluded_nonfinite": result.num_points_excluded_nonfinite,
     }
     if extra:
         metadata.update(extra)

@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
 
 # Import BaseTab using existing tabs package alias
 from dashpva.gui import ui_path
+from dashpva.utils.hdf5_loader import HDF5Loader
 
 from .base_tab import BaseTab
 from .range_slider import RangeSlider
@@ -34,6 +35,42 @@ except ImportError:
 # Worker for off-UI-thread 3D prep
 from dashpva.utils.rsm_converter import RSMConverter
 from dashpva.viewer.workbench.workers import Render3D
+
+
+def build_volume_grid(volume, metadata=None):
+    """Build cell-centered HKL ImageData from DashPVA volume metadata."""
+    if not PYVISTA_AVAILABLE:
+        raise RuntimeError("PyVista is not available.")
+    array = np.asarray(volume)
+    if array.ndim != 3 or array.size == 0:
+        raise ValueError(f"Expected a non-empty 3D volume, got shape {array.shape}.")
+
+    metadata = metadata or {}
+    spacing_value = metadata.get('voxel_spacing')
+    origin_value = metadata.get('grid_origin')
+    spacing = np.asarray(
+        (1.0, 1.0, 1.0) if spacing_value is None else spacing_value,
+        dtype=float,
+    ).ravel()
+    origin = np.asarray(
+        (0.0, 0.0, 0.0) if origin_value is None else origin_value,
+        dtype=float,
+    ).ravel()
+    if spacing.size != 3 or not np.isfinite(spacing).all() or np.any(spacing <= 0):
+        raise ValueError(f"voxel_spacing must contain three finite positive values, got {spacing}.")
+    if origin.size != 3 or not np.isfinite(origin).all():
+        raise ValueError(f"grid_origin must contain three finite values, got {origin}.")
+
+    array_order = str(metadata.get('array_order') or 'F').upper()
+    if array_order not in {'F', 'C'}:
+        raise ValueError(f"array_order must be 'F' or 'C', got {array_order!r}.")
+
+    grid = pv.ImageData()
+    grid.dimensions = (np.asarray(array.shape, dtype=int) + 1).tolist()
+    grid.spacing = tuple(spacing)
+    grid.origin = tuple(origin)
+    grid.cell_data['intensity'] = array.flatten(order=array_order)
+    return grid
 
 
 class Workspace3D(BaseTab):
@@ -204,6 +241,7 @@ class Workspace3D(BaseTab):
         # Point cloud passed to the renderer (strided or full)
         self._display_points = None
         self._display_intensities = None
+        self._data_mode = None
         # Data extents for mapping slider 0-1000 to actual HKL float values
         self._h_min_data = self._h_max_data = None
         self._k_min_data = self._k_max_data = None
@@ -558,6 +596,69 @@ class Workspace3D(BaseTab):
                 pass
 
     # === Loading & Plotting ===
+    def _set_data_mode(self, mode):
+        """Keep point-only controls inactive for a dense volume."""
+        self._data_mode = mode
+        point_mode = mode == 'points'
+        for widget in (
+            getattr(self, 'gb_hkl_range', None),
+            getattr(self, 'gb_downsample', None),
+            getattr(self, 'cb_show_slice', None),
+        ):
+            if widget is not None:
+                widget.setEnabled(point_mode)
+        if not point_mode:
+            self.cb_show_slice.setChecked(False)
+
+    def _load_volume(self, file_path, loader):
+        volume, _shape = loader.load_h5_volume_3d(file_path)
+        if volume.size == 0:
+            raise ValueError(loader.last_error or "The volume dataset is empty.")
+        grid = build_volume_grid(volume, loader.file_metadata)
+
+        self.plotter.clear()
+        self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        self.volume_grid = grid
+        self.cloud_mesh_3d = None
+        self._raw_points = None
+        self._raw_intensities = None
+        self._display_points = None
+        self._display_intensities = None
+        self._remove_plane_widget()
+        self.slab_actor = None
+
+        finite = np.asarray(volume)[np.isfinite(volume)]
+        if finite.size == 0:
+            raise ValueError("The volume contains no finite intensities.")
+        self._data_intensity_min = float(finite.min())
+        self._data_intensity_max = float(finite.max())
+        if self._data_intensity_min == self._data_intensity_max:
+            display_max = self._data_intensity_min + 1e-6
+        else:
+            display_max = self._data_intensity_max
+        self.sb_min_intensity_3d.setRange(self._data_intensity_min, display_max)
+        self.sb_max_intensity_3d.setRange(self._data_intensity_min, display_max)
+        self.sb_min_intensity_3d.setValue(self._data_intensity_min)
+        self.sb_max_intensity_3d.setValue(display_max)
+
+        self.points_actor = self.plotter.add_volume(
+            volume=grid,
+            scalars='intensity',
+            name='cloud_volume',
+            reset_camera=True,
+            show_scalar_bar=True,
+        )
+        self.plotter.show_bounds(
+            mesh=grid,
+            xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+            bounds=grid.bounds,
+        )
+        self._set_data_mode('volume')
+        self.on_3d_colormap_changed()
+        self.update_intensity()
+        self.plotter.reset_camera()
+        self.plotter.render()
+
     def load_data(self):
         """Load dataset and render using the tab's local plotter."""
         mw = self.main_window
@@ -579,6 +680,26 @@ class Workspace3D(BaseTab):
                 if not file_name:
                     return
                 file_path = file_name
+            loader = HDF5Loader()
+            file_info = loader.get_file_info(file_path, raw=True)
+            data_type = file_info.get('data_type', '')
+            if isinstance(data_type, (bytes, np.bytes_)):
+                data_type = data_type.decode('utf-8')
+            if str(data_type).lower() == 'volume':
+                try:
+                    self._load_volume(file_path, loader)
+                except Exception as exc:
+                    QMessageBox.warning(
+                        self, '3D Load Failed',
+                        f'Could not load volume from:\n{file_path}\n\nError: {exc}'
+                    )
+                    return
+                if hasattr(mw, 'tabWidget_analysis'):
+                    index = mw.tabWidget_analysis.indexOf(self)
+                    mw.tabWidget_analysis.setCurrentIndex(index)
+                mw.update_status("3D Volume Rendering Complete")
+                return
+
             conv = RSMConverter()
             # 2. Load the raw data
             try:
@@ -613,6 +734,7 @@ class Workspace3D(BaseTab):
                     # IMPORTANT: Tell the worker to plot to THIS tab's plotter
                     # We pass 'self.plotter' instead of 'mw'
                     self._render3d_worker.plot_3d_points(self)
+                    self._set_data_mode('points')
                     # Cache a reference to the main points/cloud actor for fast updates
                     try:
                         if "points" in self.plotter.actors:
@@ -749,7 +871,7 @@ class Workspace3D(BaseTab):
 
     def on_plane_update(self, normal, origin):
         """Extracts points near the plane to simulate a 3D slice."""
-        if self.cloud_mesh_3d is None:
+        if self._data_mode != 'points' or self.cloud_mesh_3d is None:
             return
 
         # Plane math: (Point - Origin) ⋅ Normal
@@ -1138,7 +1260,6 @@ class Workspace3D(BaseTab):
         try:
             has_data = bool(self.cloud_mesh_3d is not None or getattr(self, 'points_actor', None) is not None)
             for w in [getattr(self, "cb_show_points", None),
-                      getattr(self, "cb_show_slice", None),
                       getattr(self, "sb_min_intensity_3d", None),
                       getattr(self, "sb_max_intensity_3d", None)]:
                 try:
@@ -1146,6 +1267,8 @@ class Workspace3D(BaseTab):
                         w.setEnabled(has_data)
                 except Exception:
                     pass
+            if self.cb_show_slice is not None:
+                self.cb_show_slice.setEnabled(has_data and self._data_mode == 'points')
         except Exception:
             pass
 
@@ -1393,6 +1516,8 @@ class Workspace3D(BaseTab):
             pass
 
     def view_slice_normal(self):
+        if self._data_mode != 'points':
+            return
         try:
             normal, origin = self.get_plane_state()
             normal = self.normalize_vector(normal)

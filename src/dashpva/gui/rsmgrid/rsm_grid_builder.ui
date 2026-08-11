@@ -19,7 +19,7 @@
    <item>
     <widget class="QLabel" name="lbl_desc">
      <property name="text">
-      <string>Merge one or more scan HDF5 files into a single gridded 3D reciprocal-space volume (rsMap3D-style). Add every file that is part of the same crystal orientation/energy; merging inconsistent scans is rejected.</string>
+      <string>Merge one or more completed scan HDF5 files into a gridded 3D HKL volume. Each file uses its own energy and UB; differences are reported for scientific review.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -169,6 +169,16 @@
        <widget class="QComboBox" name="cmb_monitor">
         <property name="toolTip">
          <string>Per-frame monitor (I0) signal from entry/data/metadata/ca/. Without it, scans taken at different exposure or attenuation will not match in intensity where they overlap.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="6">
+       <widget class="QLabel" name="lbl_memory_estimate">
+        <property name="text">
+         <string>Estimated peak RAM: calculating…</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
