@@ -73,6 +73,34 @@ def build_volume_grid(volume, metadata=None):
     return grid
 
 
+def seed_intensity_spinboxes(sb_min, sb_max, data_min, data_max):
+    """Seed the Min/Max intensity boxes from a data range.
+
+    Gridder3D voxels are per-bin means (and may be I0-normalized), so the range
+    can be far below 1 -- pick decimals from the span so counts and normalized
+    means are both representable.
+    """
+    lo = float(data_min)
+    hi = float(data_max)
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        raise ValueError(f"Intensity range must be finite, got ({data_min}, {data_max}).")
+    if hi < lo:
+        lo, hi = hi, lo
+    span = hi - lo
+    if span <= 0:
+        span = abs(hi) or 1.0
+        hi = lo + span
+    decimals = 2 if span >= 100 else (4 if span >= 1 else 6)
+    step = max(span / 100.0, 10.0 ** -decimals)
+    for spinbox in (sb_min, sb_max):
+        spinbox.setDecimals(decimals)
+        spinbox.setRange(lo, hi)
+        spinbox.setSingleStep(step)
+    sb_min.setValue(lo)
+    sb_max.setValue(hi)
+    return lo, hi
+
+
 class Workspace3D(BaseTab):
     """
     3D Tab encapsulating 3D viewer setup, loading, and plotting operations.
@@ -632,14 +660,10 @@ class Workspace3D(BaseTab):
             raise ValueError("The volume contains no finite intensities.")
         self._data_intensity_min = float(finite.min())
         self._data_intensity_max = float(finite.max())
-        if self._data_intensity_min == self._data_intensity_max:
-            display_max = self._data_intensity_min + 1e-6
-        else:
-            display_max = self._data_intensity_max
-        self.sb_min_intensity_3d.setRange(self._data_intensity_min, display_max)
-        self.sb_max_intensity_3d.setRange(self._data_intensity_min, display_max)
-        self.sb_min_intensity_3d.setValue(self._data_intensity_min)
-        self.sb_max_intensity_3d.setValue(display_max)
+        seed_intensity_spinboxes(
+            self.sb_min_intensity_3d, self.sb_max_intensity_3d,
+            self._data_intensity_min, self._data_intensity_max,
+        )
 
         self.points_actor = self.plotter.add_volume(
             volume=grid,
