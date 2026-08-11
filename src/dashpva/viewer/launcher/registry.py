@@ -31,8 +31,8 @@ VIEWS = [
         'key': 'ioc_rsm_parameter',
         'label': 'HKL Setup (IOC RSM parameter)',
         'section': 'Setup',
-        'cmd': [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter'],
-        'tooltip': 'Launch IOC for RSM conversion parameters (motor PVs, energy, detector setup)',
+        'cmd': [sys.executable, '-m', 'dashpva.cli', 'ioc'],
+        'tooltip': 'Launch IOC for RSM conversion parameters (CLI: DashPVA ioc)',
         'requires': ('area-det',),
     },
     # stream live

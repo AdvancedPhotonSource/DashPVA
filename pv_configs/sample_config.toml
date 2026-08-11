@@ -35,66 +35,66 @@ CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describe
 [ROI]
 
     [ROI.ROI1]
-    MIN_X = 'xlambda:ROI1:MinX'
-    MIN_Y = 'xlambda:ROI1:MinY'
-    SIZE_X = 'xlambda:ROI1:SizeX'
-    SIZE_Y = 'xlambda:ROI1:SizeY'
+    MIN_X = 'ROI1:MinX'
+    MIN_Y = 'ROI1:MinY'
+    SIZE_X = 'ROI1:SizeX'
+    SIZE_Y = 'ROI1:SizeY'
 
     [ROI.ROI2]
-    MIN_X = 'xlambda:ROI2:MinX'
-    MIN_Y = 'xlambda:ROI2:MinY'
-    SIZE_X = 'xlambda:ROI2:SizeX'
-    SIZE_Y = 'xlambda:ROI2:SizeY'
+    MIN_X = 'ROI2:MinX'
+    MIN_Y = 'ROI2:MinY'
+    SIZE_X = 'ROI2:SizeX'
+    SIZE_Y = 'ROI2:SizeY'
 
     [ROI.ROI3]
-    MIN_X = 'xlambda:ROI3:MinX'
-    MIN_Y = 'xlambda:ROI3:MinY'
-    SIZE_X = 'xlambda:ROI3:SizeX'
-    SIZE_Y = 'xlambda:ROI3:SizeY'
+    MIN_X = 'ROI3:MinX'
+    MIN_Y = 'ROI3:MinY'
+    SIZE_X = 'ROI3:SizeX'
+    SIZE_Y = 'ROI3:SizeY'
 
     [ROI.ROI4]
-    MIN_X = 'xlambda:ROI4:MinX'
-    MIN_Y = 'xlambda:ROI4:MinY'
-    SIZE_X = 'xlambda:ROI4:SizeX'
-    SIZE_Y = 'xlambda:ROI4:SizeY'
+    MIN_X = 'ROI4:MinX'
+    MIN_Y = 'ROI4:MinY'
+    SIZE_X = 'ROI4:SizeX'
+    SIZE_Y = 'ROI4:SizeY'
 
 # Section for Stats PVs
 [STATS]
 
     [STATS.STATS1]
-    TOTAL = 'xlambda:Stats1:Total_RBV'
-    MIN = 'xlambda:Stats1:MinValue_RBV'
-    MAX = 'xlambda:Stats1:MaxValue_RBV'
-    SIGMA = 'xlambda:Stats1:Sigma_RBV'
-    MEAN = 'xlambda:Stats1:MeanValue_RBV'
+    TOTAL = 'Stats1:Total_RBV'
+    MIN = 'Stats1:MinValue_RBV'
+    MAX = 'Stats1:MaxValue_RBV'
+    SIGMA = 'Stats1:Sigma_RBV'
+    MEAN = 'Stats1:MeanValue_RBV'
 
     [STATS.STATS2]
-    TOTAL = 'xlambda:Stats2:Total_RBV'
-    MIN = 'xlambda:Stats2:MinValue_RBV'
-    MAX = 'xlambda:Stats2:MaxValue_RBV'
-    SIGMA = 'xlambda:Stats2:Sigma_RBV'
-    MEAN = 'xlambda:Stats2:MeanValue_RBV'
+    TOTAL = 'Stats2:Total_RBV'
+    MIN = 'Stats2:MinValue_RBV'
+    MAX = 'Stats2:MaxValue_RBV'
+    SIGMA = 'Stats2:Sigma_RBV'
+    MEAN = 'Stats2:MeanValue_RBV'
 
     [STATS.STATS3]
-    TOTAL = 'xlambda:Stats3:Total_RBV'
-    MIN = 'xlambda:Stats3:MinValue_RBV'
-    MAX = 'xlambda:Stats3:MaxValue_RBV'
-    SIGMA = 'xlambda:Stats3:Sigma_RBV'
-    MEAN = 'xlambda:Stats3:MeanValue_RBV'
+    TOTAL = 'Stats3:Total_RBV'
+    MIN = 'Stats3:MinValue_RBV'
+    MAX = 'Stats3:MaxValue_RBV'
+    SIGMA = 'Stats3:Sigma_RBV'
+    MEAN = 'Stats3:MeanValue_RBV'
 
     [STATS.STATS4]
-    TOTAL = 'xlambda:Stats4:Total_RBV'
-    MIN = 'xlambda:Stats4:MinValue_RBV'
-    MAX = 'xlambda:Stats4:MaxValue_RBV'
-    SIGMA = 'xlambda:Stats4:Sigma_RBV'
-    MEAN = 'xlambda:Stats4:MeanValue_RBV'
+    TOTAL = 'Stats4:Total_RBV'
+    MIN = 'Stats4:MinValue_RBV'
+    MAX = 'Stats4:MaxValue_RBV'
+    SIGMA = 'Stats4:Sigma_RBV'
+    MEAN = 'Stats4:MeanValue_RBV'
 
     [STATS.STATS5]
-    TOTAL = 'xlambda:Stats5:Total_RBV'
-    MIN = 'xlambda:Stats5:MinValue_RBV'
-    MAX = 'xlambda:Stats5:MaxValue_RBV'
-    SIGMA = 'xlambda:Stats5:Sigma_RBV'
-    MEAN = 'xlambda:Stats5:MeanValue_RBV'
+    TOTAL = 'Stats5:Total_RBV'
+    MIN = 'Stats5:MinValue_RBV'
+    MAX = 'Stats5:MaxValue_RBV'
+    SIGMA = 'Stats5:Sigma_RBV'
+    MEAN = 'Stats5:MeanValue_RBV'
 
 # Section for Analysis PVs
 # These PVs are used in the analysis server, not on the User side.
@@ -105,39 +105,68 @@ CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describe
 
 [HKL]
 
+    # Axis list published by the IOC RSM Parameter simulator tool
+    # (consumers/ioc_rsm_parameter.py). A profile with no HKL.AXES entry falls
+    # back to 4 generic, unconfigured axes at runtime (see
+    # dashpva.consumers.ioc_rsm_store.DEFAULT_AXES) — never a specific
+    # beamline's layout.
+    [[HKL.AXES]]
+    name = 'Axis1'
+    source_pv = ''
+    axis_number = 1
+    direction = 'x+'
+
+    [[HKL.AXES]]
+    name = 'Axis2'
+    source_pv = ''
+    axis_number = 2
+    direction = 'x+'
+
+    [[HKL.AXES]]
+    name = 'Axis3'
+    source_pv = ''
+    axis_number = 3
+    direction = 'x+'
+
+    [[HKL.AXES]]
+    name = 'Axis4'
+    source_pv = ''
+    axis_number = 4
+    direction = 'x+'
+
     [HKL.SAMPLE_CIRCLE_AXIS_1]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
-    
+    AXIS_NUMBER = 'Mu:AxisNumber'
+    DIRECTION_AXIS = 'Mu:DirectionAxis'
+    POSITION = 'Mu:Position'
+
     [HKL.SAMPLE_CIRCLE_AXIS_2]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
+    AXIS_NUMBER = 'Eta:AxisNumber'
+    DIRECTION_AXIS = 'Eta:DirectionAxis'
+    POSITION = 'Eta:Position'
 
     [HKL.SAMPLE_CIRCLE_AXIS_3]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
+    AXIS_NUMBER = 'Chi:AxisNumber'
+    DIRECTION_AXIS = 'Chi:DirectionAxis'
+    POSITION = 'Chi:Position'
 
     [HKL.SAMPLE_CIRCLE_AXIS_4]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
+    AXIS_NUMBER = 'Phi:AxisNumber'
+    DIRECTION_AXIS = 'Phi:DirectionAxis'
+    POSITION = 'Phi:Position'
 
     [HKL.DETECTOR_CIRCLE_AXIS_1]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
+    AXIS_NUMBER = 'Nu:AxisNumber'
+    DIRECTION_AXIS = 'Nu:DirectionAxis'
+    POSITION = 'Nu:Position'
 
     [HKL.DETECTOR_CIRCLE_AXIS_2]
-    AXIS_NUMBER = 'ioc:motor:AxisNumber'
-    DIRECTION_AXIS = 'ioc:motor:DirectionAxis'
-    POSITION = 'ioc:motor:Position'
+    AXIS_NUMBER = 'Delta:AxisNumber'
+    DIRECTION_AXIS = 'Delta:DirectionAxis'
+    POSITION = 'Delta:Position'
 
     [HKL.SPEC]
-    ENERGY_VALUE = 'ioc:spec:Energy:Value'
-    UB_MATRIX_VALUE = 'ioc:spec:UB_matrix:Value'
+    ENERGY_VALUE = 'Energy:Value'
+    UB_MATRIX_VALUE = 'UB_matrix:Value'
 
     [HKL.PRIMARY_BEAM_DIRECTION]
     AXIS_NUMBER_1 = 'PrimaryBeamDirection:AxisNumber1'
@@ -162,4 +191,21 @@ CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describe
     SIZE = 'DetectorSetup:Size'
     UNITS = 'DetectorSetup:Units'
 
-    
+# Section for the IOC RSM Parameter simulator tool (consumers/ioc_rsm_parameter.py).
+# Defines its UB/beam/detector geometry defaults. The axis list itself lives
+# under HKL.AXES above (shared with the other HKL/RSM consumers) — see
+# dashpva.consumers.ioc_rsm_store for the read/write contract.
+[IOC_RSM_PARAMETER]
+ENERGY_SOURCE_PV = ''
+UB_MATRIX = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+PRIMARY_BEAM = [0, 1, 0]
+INPLANE_REF = [0, 1, 0]
+SAMPLE_NORMAL = [0, 0, 1]
+
+    [IOC_RSM_PARAMETER.DETECTOR]
+    pixel_dir1 = 'z-'
+    pixel_dir2 = 'x-'
+    center = [300, 300]
+    size = [28.38, 28.38]
+    distance = 400.644
+    units = 'mm'

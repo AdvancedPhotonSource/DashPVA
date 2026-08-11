@@ -39,6 +39,23 @@ def hkl3d():
 
 
 @cli.command()
+@click.option('--prefix', 'prefix', default=None, metavar='PREFIX',
+              help='IOC prefix for the RSM conversion parameters (e.g. 6idb1).')
+def ioc(prefix):
+    """Launch the IOC RSM parameter tool (HKL Setup).
+
+    With no --prefix the tool uses its persisted/neutral default; the prefix is
+    also settable from the tool's own Apply button.
+    """
+    click.echo('Running IOC RSM parameter tool')
+    cmd = [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter']
+    if prefix and prefix.strip():
+        cmd += ['--prefix', prefix.strip()]
+    exit_code = subprocess.run(cmd).returncode
+    sys.exit(exit_code)
+
+
+@cli.command()
 @click.option('--pv', 'pv', default=None, metavar='CHANNEL',
               help='Open a full PVA channel directly, used verbatim (e.g. s6lambda1:Pva1:Image).')
 @click.option('--prefix', 'prefix', default=None, metavar='PREFIX',

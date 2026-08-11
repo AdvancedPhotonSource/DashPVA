@@ -22,59 +22,21 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Persistent config
-# ─────────────────────────────────────────────────────────────────────────────
-
-_CONFIG_FILE = os.path.expanduser('~/.config/ioc_rsm_parameter.json')
-
-def _load_config() -> dict:
-    try:
-        with open(_CONFIG_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def _save_config(cfg: dict) -> None:
-    try:
-        os.makedirs(os.path.dirname(_CONFIG_FILE), exist_ok=True)
-        with open(_CONFIG_FILE, 'w') as f:
-            json.dump(cfg, f, indent=2)
-    except Exception as e:
-        print(f'Config save error: {e}', flush=True)
-
+from dashpva.consumers import ioc_rsm_store
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared configuration
 # ─────────────────────────────────────────────────────────────────────────────
+# The IOC prefix is per-profile app config (settings.IOC_PREFIX) — the single
+# source of truth, same as every other PV-prefixed tool in the app. The axis
+# list and UB/beam/detector defaults live in the active DB profile too (see
+# ioc_rsm_store.py) so both follow the profile selected elsewhere in the app.
 
-DEFAULT_PREFIX = '6idb:'
-
-MOTOR_AXES = [
-    {'name': 'Mu',    'source_pv': '6idb1:m28.RBV', 'axis_number': 1, 'direction': 'x+'},
-    {'name': 'Eta',   'source_pv': '6idb1:m17.RBV', 'axis_number': 2, 'direction': 'z-'},
-    {'name': 'Chi',   'source_pv': '6idb1:m19.RBV', 'axis_number': 3, 'direction': 'y+'},
-    {'name': 'Phi',   'source_pv': '6idb1:m20.RBV', 'axis_number': 4, 'direction': 'z-'},
-    {'name': 'Nu',    'source_pv': '6idb1:m29.RBV', 'axis_number': 1, 'direction': 'x+'},
-    {'name': 'Delta', 'source_pv': '6idb1:m18.RBV', 'axis_number': 2, 'direction': 'z-'},
-]
-
-DEFAULT_ENERGY_SOURCE_PV = '6idb:spec:Energy'
-DEFAULT_UB            = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-DEFAULT_PRIMARY_BEAM  = [0, 1, 0]
-DEFAULT_INPLANE_REF   = [0, 1, 0]
-DEFAULT_SAMPLE_NORMAL = [0, 0, 1]
-DEFAULT_DETECTOR = {
-    'pixel_dir1': 'z-',
-    'pixel_dir2': 'x-',
-    'center':     [300, 300],
-    'size':       [28.38, 28.38],
-    'distance':   400.644,
-    'units':      'mm',
-}
+DEFAULT_PREFIX = ''
 
 POLL_INTERVAL    = 0.01   # IOC publish rate  (100 Hz)
 CAGET_INTERVAL   = 0.02   # PV-source refresh (50 Hz)
@@ -85,7 +47,7 @@ SNAPSHOT_EVERY   = 5      # emit GUI snapshot every N IOC cycles (~20 Hz)
 # IOC subprocess  (pvaccess only — NO PyQt5)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run_ioc(prefix: str) -> None:
+def _run_ioc(prefix: str, config: ioc_rsm_store.IOCRSMConfig) -> None:
     # Duplicate stdin fd NOW, before pvaccess/EPICS init may close or redirect fd 0
     _cmd_fd = os.dup(0)
 
@@ -114,18 +76,18 @@ def _run_ioc(prefix: str) -> None:
     def build_db():
         p = prefix
         lines = []
-        for ax in MOTOR_AXES:
-            lines.append(_ai(f"{p}{ax['name']}:Position"))
-            lines.append(_ai(f"{p}{ax['name']}:AxisNumber"))
-            lines.append(_so(f"{p}{ax['name']}:DirectionAxis", ax['direction']))
-            lines.append(_so(f"{p}{ax['name']}:SpecMotorName", ax['name']))
-        lines.append(_ai(f"{p}spec:Energy:Value"))
-        lines.append(_wf(f"{p}spec:UB_matrix:Value", 9))
+        for ax in config.axes:
+            lines.append(_ai(f"{p}{ax.name}:Position"))
+            lines.append(_ai(f"{p}{ax.name}:AxisNumber"))
+            lines.append(_so(f"{p}{ax.name}:DirectionAxis", ax.direction))
+            lines.append(_so(f"{p}{ax.name}:SpecMotorName", ax.name))
+        lines.append(_ai(f"{p}Energy:Value"))
+        lines.append(_wf(f"{p}UB_matrix:Value", 9))
         for grp in ['PrimaryBeamDirection', 'InplaneReferenceDirection',
                     'SampleSurfaceNormalDirection']:
             for i in [1, 2, 3]:
                 lines.append(_ai(f"{p}{grp}:AxisNumber{i}"))
-        d = DEFAULT_DETECTOR
+        d = config.detector
         lines.append(_so(f"{p}DetectorSetup:PixelDirection1", d['pixel_dir1']))
         lines.append(_so(f"{p}DetectorSetup:PixelDirection2", d['pixel_dir2']))
         lines.append(_wf(f"{p}DetectorSetup:CenterChannelPixel", 2))
@@ -168,26 +130,11 @@ def _run_ioc(prefix: str) -> None:
             except Exception as e:
                 print(f'IOC put [{rec}]: {e}', flush=True)
 
-    def safe_float(pv):
-        try:
-            v = _caget(pv, timeout=0.3)
-            return float(v) if v is not None else 0.0
-        except Exception:
-            return 0.0
-
-    def resolve(src):
-        """Return (value, is_static). If src is a float string → static value.
-           Otherwise treat as PV name and caget."""
-        try:
-            return float(src), True
-        except ValueError:
-            return safe_float(src), False
-
     # ── Local state (updated from stdin pipe) ─────────────────────────────
     _lock = threading.Lock()
     _state = {
-        'motor': {ax['name']: ax['source_pv'] for ax in MOTOR_AXES},
-        'energy': DEFAULT_ENERGY_SOURCE_PV,
+        'motor': {ax.name: ax.source_pv for ax in config.axes},
+        'energy': config.energy_source_pv,
     }
 
     # Open from the duplicated fd (line-buffered) so pvaccess closing fd 0
@@ -241,18 +188,18 @@ def _run_ioc(prefix: str) -> None:
 
     p = prefix
     # Motor per-axis static fields (set in .db but must be in _current_vals too)
-    for ax in MOTOR_AXES:
-        ioc_put(caIoc, f"{p}{ax['name']}:AxisNumber",    float(ax['axis_number']))
-        ioc_put(caIoc, f"{p}{ax['name']}:DirectionAxis", ax['direction'])
-        ioc_put(caIoc, f"{p}{ax['name']}:SpecMotorName", ax['name'])
-    ioc_put(caIoc, f"{p}spec:UB_matrix:Value", DEFAULT_UB[:])
-    for i, v in enumerate(DEFAULT_PRIMARY_BEAM):
+    for ax in config.axes:
+        ioc_put(caIoc, f"{p}{ax.name}:AxisNumber",    float(ax.axis_number))
+        ioc_put(caIoc, f"{p}{ax.name}:DirectionAxis", ax.direction)
+        ioc_put(caIoc, f"{p}{ax.name}:SpecMotorName", ax.name)
+    ioc_put(caIoc, f"{p}UB_matrix:Value", list(config.ub_matrix))
+    for i, v in enumerate(config.primary_beam):
         ioc_put(caIoc, f"{p}PrimaryBeamDirection:AxisNumber{i+1}", float(v))
-    for i, v in enumerate(DEFAULT_INPLANE_REF):
+    for i, v in enumerate(config.inplane_ref):
         ioc_put(caIoc, f"{p}InplaneReferenceDirection:AxisNumber{i+1}", float(v))
-    for i, v in enumerate(DEFAULT_SAMPLE_NORMAL):
+    for i, v in enumerate(config.sample_normal):
         ioc_put(caIoc, f"{p}SampleSurfaceNormalDirection:AxisNumber{i+1}", float(v))
-    d = DEFAULT_DETECTOR
+    d = config.detector
     ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection1",    d['pixel_dir1'])
     ioc_put(caIoc, f"{p}DetectorSetup:PixelDirection2",    d['pixel_dir2'])
     ioc_put(caIoc, f"{p}DetectorSetup:CenterChannelPixel", [float(v) for v in d['center']])
@@ -304,6 +251,20 @@ def _run_ioc(prefix: str) -> None:
             print(f'[IOC] PV recovered: {src!r}', flush=True)
         return result
 
+    def _status(src):
+        """'none' — no source configured; 'down' — source PV not connecting;
+           'ok' — static value or a live/connecting PV. Read by the GUI to
+           decide between showing 'None', a red '--', or the formatted value."""
+        src = (src or '').strip()
+        if not src:
+            return 'none'
+        try:
+            float(src)
+            return 'ok'
+        except ValueError:
+            pass
+        return 'down' if src in _pv_down else 'ok'
+
     # ── Background caget poll for static IOC records (2 Hz) ──────────────
     # Uses caget on our own IOC's PV names so external CA writes (caput from
     # scan software, alignment tools, etc.) are reflected in the snapshot.
@@ -345,19 +306,21 @@ def _run_ioc(prefix: str) -> None:
                 motor_srcs = dict(_state['motor'])
                 energy_src = _state['energy']
 
-            motor_vals = {ax['name']: _get(motor_srcs[ax['name']]) for ax in MOTOR_AXES}
+            motor_vals = {ax.name: _get(motor_srcs[ax.name]) for ax in config.axes}
             energy_val = _get(energy_src)
 
-            for ax in MOTOR_AXES:
-                ioc_put(caIoc, f"{p}{ax['name']}:Position", motor_vals[ax['name']])
-            ioc_put(caIoc, f"{p}spec:Energy:Value", energy_val)
+            for ax in config.axes:
+                ioc_put(caIoc, f"{p}{ax.name}:Position", motor_vals[ax.name])
+            ioc_put(caIoc, f"{p}Energy:Value", energy_val)
 
             # Snapshot: _current_vals has every value ever written via ioc_put;
             # overlay the fast-changing motor/energy values on top.
             _loop_n += 1
             if _loop_n % SNAPSHOT_EVERY == 0:
                 snap = dict(_current_vals)
-                print(json.dumps({'type': 'values', 'data': snap}), flush=True)
+                status = {ax.name: _status(motor_srcs[ax.name]) for ax in config.axes}
+                status['ENERGY'] = _status(energy_src)
+                print(json.dumps({'type': 'values', 'data': snap, 'status': status}), flush=True)
 
         except Exception as e:
             print(f'Update error: {e}', flush=True)
@@ -374,58 +337,68 @@ def _run_ioc(prefix: str) -> None:
 # GUI  (PyQt5 only — NO pvaccess)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _all_pv_names(prefix: str) -> list:
-    """Return [(pv_name, description)] for every record the IOC publishes."""
+def _all_pv_names(prefix: str, config: ioc_rsm_store.IOCRSMConfig) -> list:
+    """Return [(pv_name, description, status_key)] for every record the IOC
+    publishes. status_key indexes the IOC's per-cycle 'status' snapshot
+    (axis name, or 'ENERGY') for the handful of rows backed by a source PV;
+    None for everything else (fixed geometry, never source-driven)."""
     p = prefix
     pvs = []
-    for ax in MOTOR_AXES:
-        pvs.append((f"{p}{ax['name']}:Position",      f"{ax['name']} position"))
-        pvs.append((f"{p}{ax['name']}:AxisNumber",    f"{ax['name']} axis number"))
-        pvs.append((f"{p}{ax['name']}:DirectionAxis", f"{ax['name']} direction"))
-        pvs.append((f"{p}{ax['name']}:SpecMotorName", f"{ax['name']} spec name"))
-    pvs.append((f"{p}spec:Energy:Value",         'Energy value (keV)'))
-    pvs.append((f"{p}spec:UB_matrix:Value",      'UB matrix (9 elements)'))
+    for ax in config.axes:
+        pvs.append((f"{p}{ax.name}:Position",      f"{ax.name} position", ax.name))
+        pvs.append((f"{p}{ax.name}:AxisNumber",    f"{ax.name} axis number", None))
+        pvs.append((f"{p}{ax.name}:DirectionAxis", f"{ax.name} direction", None))
+        pvs.append((f"{p}{ax.name}:SpecMotorName", f"{ax.name} spec name", None))
+    pvs.append((f"{p}Energy:Value",         'Energy value (keV)', 'ENERGY'))
+    pvs.append((f"{p}UB_matrix:Value",      'UB matrix (9 elements)', None))
     for grp, desc in [
         ('PrimaryBeamDirection',         'Primary beam'),
         ('InplaneReferenceDirection',    'Inplane ref'),
         ('SampleSurfaceNormalDirection', 'Sample normal'),
     ]:
         for i in [1, 2, 3]:
-            pvs.append((f"{p}{grp}:AxisNumber{i}", f'{desc} axis {i}'))
-    pvs.append((f"{p}DetectorSetup:PixelDirection1",    'Detector pixel dir 1'))
-    pvs.append((f"{p}DetectorSetup:PixelDirection2",    'Detector pixel dir 2'))
-    pvs.append((f"{p}DetectorSetup:CenterChannelPixel", 'Detector center (px)'))
-    pvs.append((f"{p}DetectorSetup:Size",               'Detector size (mm)'))
-    pvs.append((f"{p}DetectorSetup:Distance",           'Detector distance (mm)'))
-    pvs.append((f"{p}DetectorSetup:Units",              'Detector units'))
-    pvs.append((f"{p}ScanOn:Value",   'Scan on flag'))
-    pvs.append((f"{p}FilePath:Value", 'File path'))
-    pvs.append((f"{p}FileName:Value", 'File name'))
+            pvs.append((f"{p}{grp}:AxisNumber{i}", f'{desc} axis {i}', None))
+    pvs.append((f"{p}DetectorSetup:PixelDirection1",    'Detector pixel dir 1', None))
+    pvs.append((f"{p}DetectorSetup:PixelDirection2",    'Detector pixel dir 2', None))
+    pvs.append((f"{p}DetectorSetup:CenterChannelPixel", 'Detector center (px)', None))
+    pvs.append((f"{p}DetectorSetup:Size",               'Detector size (mm)', None))
+    pvs.append((f"{p}DetectorSetup:Distance",           'Detector distance (mm)', None))
+    pvs.append((f"{p}DetectorSetup:Units",              'Detector units', None))
+    pvs.append((f"{p}ScanOn:Value",   'Scan on flag', None))
+    pvs.append((f"{p}FilePath:Value", 'File path', None))
+    pvs.append((f"{p}FileName:Value", 'File name', None))
     return pvs
 
 
-def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
-             init_motors: dict, init_energy: str, on_config_change) -> None:
+def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_ioc,
+             pv_values: dict, pv_status: dict, pv_lock, save_config, reload_config,
+             profile_label: str = '') -> None:
     """
-    pv_values / pv_lock : shared dict populated by _fwd() in main().
-    init_motors          : {axis_name: source} restored from config.
-    init_energy          : energy source restored from config.
-    on_config_change     : called with (motor_sources, energy_source) on any edit.
+    pv_values / pv_status / pv_lock : shared dicts populated by _fwd() in main().
+                           pv_status maps axis name (or 'ENERGY') -> 'none' |
+                           'down' | 'ok', driving the None/red-'--'/value display
+                           for rows backed by a source PV (see _all_pv_names).
+    config               : IOCRSMConfig currently active (axes + geometry).
+    send_cmd             : live PV-source rebind on the running IOC (no restart).
+    restart_ioc          : restart_ioc(new_prefix, new_config) — relaunch the IOC.
+    save_config          : save_config(cfg) — persist cfg to the active profile.
+    reload_config        : reload_config() -> (IOCRSMConfig, profile_label).
+    profile_label        : name of the profile/TOML the config was loaded from,
+                           so the user can see where it's coming from.
     """
     from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+    from PyQt5.QtGui import QBrush, QColor
     from PyQt5.QtWidgets import (
         QApplication,
-        QGridLayout,
         QGroupBox,
         QHBoxLayout,
         QHeaderView,
         QLabel,
         QLineEdit,
-        QMainWindow,
         QProgressBar,
         QPushButton,
         QScrollArea,
-        QStatusBar,
+        QSpinBox,
         QTableWidget,
         QTableWidgetItem,
         QVBoxLayout,
@@ -433,6 +406,59 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
     )
 
     from dashpva.gui import configure_app
+    from dashpva.viewer.core.base_window import BaseWindow
+
+    class _AxisTable(QTableWidget):
+        """Editable table of IOC-published motor axes (one axis per row)."""
+
+        COLS = ['Name', 'Source PV or static value', 'Axis #', 'Direction']
+
+        def __init__(self, parent=None):
+            super().__init__(0, len(self.COLS), parent)
+            self.setHorizontalHeaderLabels(self.COLS)
+            self.verticalHeader().setVisible(False)
+            hdr = self.horizontalHeader()
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+            hdr.setSectionResizeMode(2, QHeaderView.Fixed)
+            hdr.setSectionResizeMode(3, QHeaderView.Fixed)
+            self.setColumnWidth(2, 60)
+            self.setColumnWidth(3, 80)
+            self.setSelectionBehavior(QTableWidget.SelectRows)
+            self.setMinimumHeight(150)
+
+        def add_axis(self, spec=None):
+            spec = spec or ioc_rsm_store.AxisSpec(name=f'Axis{self.rowCount() + 1}')
+            r = self.rowCount()
+            self.insertRow(r)
+            self.setItem(r, 0, QTableWidgetItem(spec.name))
+            self.setItem(r, 1, QTableWidgetItem(spec.source_pv))
+            spin = QSpinBox()
+            spin.setRange(1, 8)
+            spin.setValue(spec.axis_number)
+            self.setCellWidget(r, 2, spin)
+            self.setItem(r, 3, QTableWidgetItem(spec.direction))
+
+        def remove_selected(self):
+            rows = sorted({i.row() for i in self.selectedIndexes()}, reverse=True)
+            if not rows and self.rowCount():
+                rows = [self.rowCount() - 1]
+            for r in rows:
+                self.removeRow(r)
+
+        def axes(self):
+            out = []
+            for r in range(self.rowCount()):
+                name_item = self.item(r, 0)
+                pv_item = self.item(r, 1)
+                dir_item = self.item(r, 3)
+                out.append(ioc_rsm_store.AxisSpec(
+                    name=(name_item.text() if name_item else '').strip(),
+                    source_pv=(pv_item.text() if pv_item else '').strip(),
+                    axis_number=self.cellWidget(r, 2).value(),
+                    direction=(dir_item.text() if dir_item else '').strip(),
+                ))
+            return out
 
     def _lbl(text, bold=False):
         w = QLabel(text)
@@ -456,7 +482,11 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
         return str(v)
 
     class PollWorker(QThread):
-        """Reads PV values from the shared dict and emits formatted strings."""
+        """Reads PV values from the shared dict and emits (text, is_down) pairs.
+
+        Rows backed by a source PV (status_key set) show 'None' when unconfigured
+        or a red '--' when the source PV isn't connecting — never a fabricated
+        value; everything else shows the live formatted value."""
         results_ready = pyqtSignal(list)
 
         def __init__(self, pvs):
@@ -468,8 +498,17 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             while self._running:
                 with pv_lock:
                     snap = dict(pv_values)
-                values = [_fmt(snap.get(pv)) for pv, _ in self._pvs]
-                self.results_ready.emit(values)
+                    status = dict(pv_status)
+                results = []
+                for pv, _desc, status_key in self._pvs:
+                    st = status.get(status_key) if status_key else None
+                    if st == 'none':
+                        results.append(('None', False))
+                    elif st == 'down':
+                        results.append(('--', True))
+                    else:
+                        results.append((_fmt(snap.get(pv)), False))
+                self.results_ready.emit(results)
                 # ~20 Hz display refresh
                 for _ in range(10):
                     if not self._running:
@@ -479,13 +518,15 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
         def stop(self):
             self._running = False
 
-    class SimulatorWindow(QMainWindow):
+    class SimulatorWindow(BaseWindow):
         def __init__(self):
-            super().__init__()
+            super().__init__(viewer_name='IOC RSM Parameter', visible_actions=[])
             self.setWindowTitle('IOC for RSM conversion parameter')
             self._prefix = prefix
+            self._config = config
+            self._profile_label = profile_label
             self._build_ui()
-            self._worker = PollWorker(_all_pv_names(self._prefix))
+            self._worker = PollWorker(_all_pv_names(self._prefix, self._config))
             self._worker.results_ready.connect(self._apply_results)
             self._worker.start()
 
@@ -501,7 +542,6 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             root.addWidget(self._build_input_group())
             root.addWidget(self._build_pv_table_group())
             root.addStretch()
-            self.setStatusBar(QStatusBar())
             self._progress = QProgressBar()
             self._progress.setFixedWidth(170)
             self._progress.setTextVisible(False)
@@ -518,108 +558,165 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
         def _hide_progress(self):
             self._progress.setVisible(False)
 
+        def _restart_and_refresh_pv_table(self, new_prefix, new_config, status_msg):
+            """Relaunch the IOC subprocess, then rebuild the poll worker and the
+               All IOC Records table for the (possibly changed) record set."""
+            self._progress.setRange(0, 100)
+            self._progress.setValue(0)
+            self._progress.setVisible(True)
+            QApplication.processEvents()
+            self._prefix = new_prefix
+            self._config = new_config
+            restart_ioc(new_prefix, new_config)
+            self._progress.setValue(40)
+            QApplication.processEvents()
+            self._worker.stop()
+            self._worker.wait(2000)
+            self._progress.setValue(70)
+            QApplication.processEvents()
+            self._all_pvs = _all_pv_names(self._prefix, self._config)
+            self._pv_table.setRowCount(len(self._all_pvs))
+            self._pv_val_items = []
+            for row, (pv, _desc, _status_key) in enumerate(self._all_pvs):
+                self._pv_table.setItem(row, 0, QTableWidgetItem(pv))
+                item = QTableWidgetItem('—')
+                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                self._pv_table.setItem(row, 1, item)
+                self._pv_val_items.append(item)
+            self._fit_pv_table_height()
+            self._worker = PollWorker(_all_pv_names(self._prefix, self._config))
+            self._worker.results_ready.connect(self._apply_results)
+            self._worker.start()
+            self._progress.setValue(100)
+            QApplication.processEvents()
+            self.statusBar().showMessage(status_msg)
+            self._progress.setVisible(False)
+
         def _build_input_group(self):
             grp = QGroupBox('Source PV Inputs  —  enter a PV name or a static number')
-            grid = QGridLayout(grp)
-            grid.setSpacing(6)
+            root = QVBoxLayout(grp)
+            root.setSpacing(6)
 
-            # Prefix row
-            grid.addWidget(_lbl('Prefix', bold=True), 0, 0)
-            prefix_row = QWidget()
-            prefix_lay = QHBoxLayout(prefix_row)
-            prefix_lay.setContentsMargins(0, 0, 0, 0)
-            prefix_lay.setSpacing(4)
+            # Prefix + Reload row
+            top_row = QWidget()
+            top_lay = QHBoxLayout(top_row)
+            top_lay.setContentsMargins(0, 0, 0, 0)
+            top_lay.setSpacing(4)
+            top_lay.addWidget(_lbl('Prefix', bold=True))
             self._prefix_edit = QLineEdit(self._prefix)
             self._prefix_edit.setPlaceholderText('e.g. 6idb:')
-            btn_apply_prefix = QPushButton('Apply')
-            btn_apply_prefix.setFixedWidth(60)
+            top_lay.addWidget(self._prefix_edit, 1)
+            self._profile_lbl = _lbl(f'Profile: {self._profile_label or "(none — using defaults)"}')
+            top_lay.addWidget(self._profile_lbl)
+            btn_apply_prefix = QPushButton('Apply prefix')
             def _on_apply_prefix():
-                self._progress.setRange(0, 100)
-                self._progress.setValue(0)
-                self._progress.setVisible(True)
-                self.statusBar().showMessage('Applying prefix…')
-                QApplication.processEvents()
                 new_prefix = self._prefix_edit.text().strip()
-                if not new_prefix.endswith(':'):
+                if new_prefix and not new_prefix.endswith(':'):
                     new_prefix += ':'
                     self._prefix_edit.setText(new_prefix)
-                self._prefix = new_prefix
+                from dashpva import settings
+                settings.save_ioc_prefix(new_prefix.rstrip(':'))
                 grp.setTitle(f'Source PV Inputs  —  prefix: {new_prefix}')
-                restart_ioc(new_prefix)
-                self._progress.setValue(40)
-                QApplication.processEvents()
-                # Restart the PV poll worker with the new prefix PV names
-                self._worker.stop()
-                self._worker.wait(2000)
-                self._progress.setValue(70)
-                QApplication.processEvents()
-                self._all_pvs = _all_pv_names(new_prefix)
-                self._pv_table.setRowCount(len(self._all_pvs))
-                self._pv_val_items = []
-                for row, (pv, _) in enumerate(self._all_pvs):
-                    self._pv_table.setItem(row, 0, QTableWidgetItem(pv))
-                    item = QTableWidgetItem('—')
-                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-                    self._pv_table.setItem(row, 1, item)
-                    self._pv_val_items.append(item)
-                self._fit_pv_table_height()
-                self._worker = PollWorker(_all_pv_names(new_prefix))
-                self._worker.results_ready.connect(self._apply_results)
-                self._worker.start()
-                self._progress.setValue(100)
-                QApplication.processEvents()
-                self.statusBar().showMessage(f'IOC restarted with prefix: {new_prefix}')
-                self._progress.setVisible(False)
+                self._restart_and_refresh_pv_table(
+                    new_prefix, self._config, f'IOC restarted with prefix: {new_prefix}')
             btn_apply_prefix.clicked.connect(_on_apply_prefix)
-            prefix_lay.addWidget(self._prefix_edit)
-            prefix_lay.addWidget(btn_apply_prefix)
-            grid.addWidget(prefix_row, 0, 1)
+            top_lay.addWidget(btn_apply_prefix)
+            btn_reload = QPushButton('Reload from active profile')
+            def _on_reload():
+                new_config, label = reload_config()
+                self._profile_label = label
+                self._profile_lbl.setText(f'Profile: {label or "(none — using defaults)"}')
+                self._axis_table.blockSignals(True)
+                self._axis_table.setRowCount(0)
+                for ax in new_config.axes:
+                    self._axis_table.add_axis(ax)
+                self._axis_table.blockSignals(False)
+                self._energy_edit.setText(new_config.energy_source_pv)
+                self._restart_and_refresh_pv_table(
+                    self._prefix, new_config, 'IOC reloaded from active profile')
+            btn_reload.clicked.connect(_on_reload)
+            top_lay.addWidget(btn_reload)
+            root.addWidget(top_row)
 
-            grid.addWidget(_lbl('Axis / Channel', bold=True), 1, 0)
-            grid.addWidget(_lbl('Source PV or static value (editable)', bold=True), 1, 1)
+            # Axis table — Name/Axis#/Direction edits are structural (need "Apply
+            # axes" below); Source PV edits live-rebind immediately, no restart.
+            root.addWidget(_lbl('Motor Axes', bold=True))
+            self._axis_table = _AxisTable()
+            for ax in self._config.axes:
+                self._axis_table.add_axis(ax)
+            root.addWidget(self._axis_table)
 
-            # Current motor sources — kept in sync for config saving
-            self._cur_motors = {
-                ax['name']: init_motors.get(ax['name'], ax['source_pv'])
-                for ax in MOTOR_AXES
-            }
-            self._cur_energy = init_energy
+            axis_btn_row = QWidget()
+            axis_btn_lay = QHBoxLayout(axis_btn_row)
+            axis_btn_lay.setContentsMargins(0, 0, 0, 0)
+            btn_add_axis = QPushButton('+ Add axis')
+            btn_add_axis.clicked.connect(lambda: self._axis_table.add_axis())
+            btn_rm_axis = QPushButton('− Remove selected')
+            btn_rm_axis.clicked.connect(self._axis_table.remove_selected)
+            btn_apply_axes = QPushButton('Apply axes')
+            def _on_apply_axes():
+                new_config = ioc_rsm_store.IOCRSMConfig(
+                    axes=self._axis_table.axes(),
+                    energy_source_pv=self._energy_edit.text().strip(),
+                    ub_matrix=list(self._config.ub_matrix),
+                    primary_beam=list(self._config.primary_beam),
+                    inplane_ref=list(self._config.inplane_ref),
+                    sample_normal=list(self._config.sample_normal),
+                    detector=dict(self._config.detector),
+                )
+                save_config(new_config)
+                self._restart_and_refresh_pv_table(
+                    self._prefix, new_config, 'IOC restarted with updated axes')
+            btn_apply_axes.clicked.connect(_on_apply_axes)
+            axis_btn_lay.addWidget(btn_add_axis)
+            axis_btn_lay.addWidget(btn_rm_axis)
+            axis_btn_lay.addStretch()
+            axis_btn_lay.addWidget(btn_apply_axes)
+            root.addWidget(axis_btn_row)
 
-            def _notify():
-                on_config_change(dict(self._cur_motors), self._cur_energy)
-
-            self._motor_pv_edits = []
-            for row, ax in enumerate(MOTOR_AXES, start=2):
-                grid.addWidget(_lbl(ax['name']), row, 0)
-                edit = _le(self._cur_motors[ax['name']])
-                def _on_motor(name=ax['name'], e=edit):
-                    val = e.text().strip()
-                    self._cur_motors[name] = val
-                    send_cmd({'type': 'motor', 'name': name, 'value': val})
-                    _notify()
-                    self._flash_applying()
-                edit.editingFinished.connect(_on_motor)
-                grid.addWidget(edit, row, 1)
-                self._motor_pv_edits.append(edit)
-
-            energy_row = len(MOTOR_AXES) + 2
-            grid.addWidget(_lbl('X-ray Energy'), energy_row, 0)
-            self._energy_edit = _le(self._cur_energy)
+            # Energy row
+            energy_row = QWidget()
+            energy_lay = QHBoxLayout(energy_row)
+            energy_lay.setContentsMargins(0, 0, 0, 0)
+            energy_lay.addWidget(_lbl('X-ray Energy'))
+            self._energy_edit = _le(self._config.energy_source_pv)
+            self._energy_edit.setPlaceholderText(
+                'PV name or static value  (e.g. 6idb:spec:Energy)')
             def _on_energy():
                 val = self._energy_edit.text().strip()
-                self._cur_energy = val
+                self._config.energy_source_pv = val
                 send_cmd({'type': 'energy', 'value': val})
-                _notify()
+                save_config(self._config)
                 self._flash_applying()
             self._energy_edit.editingFinished.connect(_on_energy)
-            grid.addWidget(self._energy_edit, energy_row, 1)
-            grid.setColumnStretch(1, 1)
+            energy_lay.addWidget(self._energy_edit, 1)
+            root.addWidget(energy_row)
+
+            def _on_axis_item_changed(item):
+                # Live rebind for the Source PV column only — the published record
+                # set is unchanged, so no restart is needed. Name/axis#/direction
+                # edits require the explicit "Apply axes" button (they change the
+                # .db layout the IOC subprocess was built with).
+                if item.column() != 1:
+                    return
+                row = item.row()
+                name_item = self._axis_table.item(row, 0)
+                if name_item is None or row >= len(self._config.axes):
+                    return
+                name = name_item.text().strip()
+                val = item.text().strip()
+                self._config.axes[row].source_pv = val
+                send_cmd({'type': 'motor', 'name': name, 'value': val})
+                save_config(self._config)
+                self._flash_applying()
+            self._axis_table.itemChanged.connect(_on_axis_item_changed)
+
             return grp
 
         def _build_pv_table_group(self):
             grp = QGroupBox('All IOC Records')
             lay = QVBoxLayout(grp)
-            self._all_pvs = _all_pv_names(self._prefix)
+            self._all_pvs = _all_pv_names(self._prefix, self._config)
             self._pv_table = QTableWidget(len(self._all_pvs), 2)
             self._pv_table.setHorizontalHeaderLabels(['PV Name', 'Value'])
             self._pv_table.horizontalHeader().setSectionResizeMode(
@@ -630,7 +727,7 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             self._pv_table.setEditTriggers(QTableWidget.NoEditTriggers)
             self._pv_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             self._pv_val_items = []
-            for row, (pv, _) in enumerate(self._all_pvs):
+            for row, (pv, _desc, _status_key) in enumerate(self._all_pvs):
                 self._pv_table.setItem(row, 0, QTableWidgetItem(pv))
                 item = QTableWidgetItem('—')
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -649,9 +746,10 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
             header = t.horizontalHeader().height() or 24
             t.setMinimumHeight(row_total + header + 2 * t.frameWidth())
 
-        def _apply_results(self, values):
-            for item, text in zip(self._pv_val_items, values):
+        def _apply_results(self, results):
+            for item, (text, is_down) in zip(self._pv_val_items, results):
                 item.setText(text)
+                item.setForeground(QBrush(QColor(Qt.red)) if is_down else QBrush())
             self.statusBar().showMessage(
                 f'Last update: {time.strftime("%H:%M:%S")}')
 
@@ -672,37 +770,58 @@ def _run_gui(prefix: str, send_cmd, restart_ioc, pv_values: dict, pv_lock,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    cfg = _load_config()
-
     parser = argparse.ArgumentParser(description='IOC for RSM conversion parameter')
-    parser.add_argument('--prefix', default=cfg.get('prefix', DEFAULT_PREFIX))
+    parser.add_argument('--prefix', default=None,
+                         help='Defaults to the active profile\'s IOC_PREFIX')
+    parser.add_argument('--config-file', default=None, help=argparse.SUPPRESS)
     parser.add_argument('--ioc-mode', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if not args.prefix.endswith(':'):
+    if args.prefix is None:
+        from dashpva import settings
+        if not args.ioc_mode:
+            try:
+                settings.reload()
+            except Exception:
+                pass
+        args.prefix = settings.IOC_PREFIX or DEFAULT_PREFIX
+
+    if args.prefix and not args.prefix.endswith(':'):
         args.prefix += ':'
 
     if args.ioc_mode:
-        _run_ioc(args.prefix)
+        # Fresh subprocess, no shared Python state — the config is handed off via
+        # a one-shot temp JSON file written by _launch_ioc_proc() below.
+        if args.config_file:
+            with open(args.config_file) as f:
+                config = ioc_rsm_store.IOCRSMConfig.from_full_dict(json.load(f))
+            os.unlink(args.config_file)
+        else:
+            config = ioc_rsm_store.default_config()
+        _run_ioc(args.prefix, config)
         return
 
-    # Persist the prefix used this session
-    cfg['prefix'] = args.prefix
-    _save_config(cfg)
+    src, profile_label = ioc_rsm_store.active_source()
+    config = ioc_rsm_store.load_config(src)
+    _src_holder = [src]
 
-    # Shared dict: IOC subprocess writes JSON snapshots to stdout;
+    # Shared dicts: IOC subprocess writes JSON snapshots to stdout;
     # _fwd() parses them here so the GUI never needs caget.
     _pv_values = {}
+    _pv_status = {}   # pv_name -> 'none' | 'down' | 'ok' (see _run_ioc._status)
     _pv_lock   = threading.Lock()
     _ioc_handle = [None]   # mutable holder so restart_ioc can swap the process
     _cmd_lock   = threading.Lock()
 
     _ready = threading.Event()
 
-    def _launch_ioc_proc(prefix):
+    def _launch_ioc_proc(prefix, cfg):
+        tmp = tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.json')
+        json.dump(cfg.to_full_dict(), tmp)
+        tmp.close()
         proc = subprocess.Popen(
             [sys.executable, os.path.abspath(__file__),
-             '--ioc-mode', '--prefix', prefix],
+             '--ioc-mode', '--prefix', prefix, '--config-file', tmp.name],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -717,6 +836,7 @@ def main():
                     if msg.get('type') == 'values':
                         with _pv_lock:
                             _pv_values.update(msg['data'])
+                            _pv_status.update(msg.get('status') or {})
                         _ready.set()
                         continue
                 except (json.JSONDecodeError, AttributeError):
@@ -738,7 +858,7 @@ def main():
             except Exception as e:
                 print(f'send_cmd error: {e}', flush=True)
 
-    def restart_ioc(new_prefix):
+    def restart_ioc(new_prefix, new_config):
         old = _ioc_handle[0]
         if old is not None:
             try:
@@ -751,36 +871,28 @@ def main():
                     pass
         with _pv_lock:
             _pv_values.clear()
-        _launch_ioc_proc(new_prefix)
-        cfg['prefix'] = new_prefix
-        _save_config(cfg)
+            _pv_status.clear()
+        _launch_ioc_proc(new_prefix, new_config)
         print(f'IOC restarted with prefix={new_prefix}', flush=True)
 
-    _launch_ioc_proc(args.prefix)
+    def save_config(cfg):
+        ioc_rsm_store.save_config(_src_holder[0], cfg)
+
+    def reload_config():
+        new_src, label = ioc_rsm_store.active_source()
+        _src_holder[0] = new_src
+        return ioc_rsm_store.load_config(new_src), label
+
+    _launch_ioc_proc(args.prefix, config)
 
     # Wait up to 15 s for the first JSON snapshot from the IOC
     print(f'Waiting for IOC (prefix={args.prefix}) …', flush=True)
     if not _ready.wait(timeout=15):
         print('Warning: IOC did not respond within 15 s — opening GUI anyway.', flush=True)
 
-    # Restore saved motor / energy sources and push them to the IOC
-    saved_motors = cfg.get('motor_sources', {})
-    saved_energy = cfg.get('energy_source', DEFAULT_ENERGY_SOURCE_PV)
-    for ax in MOTOR_AXES:
-        src = saved_motors.get(ax['name'], ax['source_pv'])
-        if src != ax['source_pv']:
-            send_cmd({'type': 'motor', 'name': ax['name'], 'value': src})
-    if saved_energy != DEFAULT_ENERGY_SOURCE_PV:
-        send_cmd({'type': 'energy', 'value': saved_energy})
-
-    def _on_config_change(motor_sources: dict, energy_source: str):
-        cfg['motor_sources'] = motor_sources
-        cfg['energy_source'] = energy_source
-        _save_config(cfg)
-
     try:
-        _run_gui(args.prefix, send_cmd, restart_ioc, _pv_values, _pv_lock,
-                 saved_motors, saved_energy, _on_config_change)
+        _run_gui(args.prefix, config, send_cmd, restart_ioc, _pv_values, _pv_status,
+                 _pv_lock, save_config, reload_config, profile_label)
     finally:
         proc = _ioc_handle[0]
         if proc is not None:
