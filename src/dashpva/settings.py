@@ -191,6 +191,16 @@ PVA_MONITOR_SERVER_QUEUE_SIZE: int = 64
 # 'record[queueSize=N]' enlarges the server monitor queue (see above).
 PVA_MONITOR_REQUEST: str = f'field() record[queueSize={PVA_MONITOR_SERVER_QUEUE_SIZE}]'
 
+# RSM Volume Builder memory policy. Batching bounds the coordinate arrays, but the
+# dense Gridder3D result scales with nx * ny * nz, so reject unsafe peaks up front.
+RSM_GRID_BATCH_MEMORY_BYTES: int = 256 * 1024 * 1024
+RSM_GRID_MAX_MEMORY_FRACTION: float = 0.70
+RSM_GRID_WORKING_BYTES_PER_PIXEL: int = 96
+RSM_GRID_ENERGY_RELATIVE_TOLERANCE: float = 1e-4
+RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
+RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
+RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
