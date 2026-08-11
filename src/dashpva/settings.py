@@ -33,7 +33,7 @@ Usage:
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 try:
     from dashpva.utils.config.source import ConfigSource
@@ -211,6 +211,7 @@ METADATA_PVA: Dict[str, Any] = {}
 ROI: Dict[str, Any] = {}
 STATS: Dict[str, Any] = {}
 HKL: Dict[str, Any] = {}
+HKL_AXES: List[Dict[str, Any]] = []
 ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
@@ -223,6 +224,10 @@ CONSUMERS_PATH: Optional[str] = None
 CONFIG: Dict[str, Any] = {}
 SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
+# Human-readable name of the active profile (or TOML filename) — the same
+# source LOCATOR/SOURCE_TYPE were just resolved from. Lets any consumer show
+# "which config is this?" without its own DatabaseInterface lookup.
+PROFILE_NAME: Optional[str] = None
 
 # Active TOML config path — set by the Settings dialog or resolved from the locator.
 # Resolved TOML path for components that need a direct file path.
@@ -261,15 +266,40 @@ def ensure_path() -> Optional[str]:
     return ConfigSource(eff).ensure_path()
 
 
+def _resolve_profile_name(source_type: Optional[str], locator: Optional[Union[int, str]]) -> Optional[str]:
+    """Best-effort human name for the active source (profile name or TOML filename)."""
+    if locator is None:
+        return None
+    if source_type == "toml":
+        return os.path.basename(str(locator))
+    try:
+        from dashpva.database import DatabaseInterface
+
+        db = DatabaseInterface()
+        if isinstance(locator, int):
+            prof = db.get_profile_by_id(locator)
+        elif isinstance(locator, str) and locator.startswith("profile:"):
+            prof = db.get_profile_by_name(locator[len("profile:"):])
+        elif isinstance(locator, str) and locator:
+            prof = db.get_profile_by_name(locator)
+        else:
+            prof = db.get_selected_profile()
+        if prof is not None:
+            return prof.name
+    except Exception:
+        pass
+    return None
+
+
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
-    global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
+    global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE, PROFILE_NAME
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
-    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
+    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, HKL_AXES, ANALYSIS
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
@@ -279,6 +309,7 @@ def reload() -> None:
     cfg = src.load() if src else {}
     CONFIG = cfg
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
+    PROFILE_NAME = _resolve_profile_name(SOURCE_TYPE, eff)
 
     try:
         TOML_FILE = ensure_path()
@@ -349,9 +380,15 @@ def reload() -> None:
     METADATA_CA = metadata.get('CA', {}) or {}
     METADATA_PVA = metadata.get('PVA', {}) or {}
 
-    ROI = cfg.get('ROI', {}) or {}
-    STATS = cfg.get('STATS', {}) or {}
-    HKL = cfg.get('HKL', {}) or {}
+    # Seeds store bare suffixes (e.g. "Mu:Position", "ROI1:MinX"); prepend the
+    # prefix here so a single IOC_PREFIX / DETECTOR_PREFIX drives every PV.
+    ROI = _resolve_section(cfg.get('ROI', {}) or {}, DETECTOR_PREFIX)
+    STATS = _resolve_section(cfg.get('STATS', {}) or {}, DETECTOR_PREFIX)
+    HKL = _resolve_section(cfg.get('HKL', {}) or {}, IOC_PREFIX)
+    # IOC RSM Parameter tool's motor axis list — a list of dicts (name/source_pv/
+    # axis_number/direction), not a flat PV-suffix map, so _resolve_section leaves
+    # it untouched.
+    HKL_AXES = HKL.get('AXES') or []
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
@@ -400,40 +437,70 @@ def _get_effective_locator() -> Union[int, str, None]:
     return None
 
 
+def _resolve_section(section: dict, prefix: Optional[str]) -> dict:
+    """Prepend *prefix* to bare-suffix PV values in a ROI/STATS/HKL section.
+
+    Seeds store bare suffixes (e.g. "Mu:Position", "ROI1:MinX"); a single prefix
+    then drives every PV. A value that is already qualified — more than one ':'
+    (a full/cross-IOC PV) or already starting with the prefix — is left untouched.
+    """
+    if not prefix:
+        return section
+    p = prefix if prefix.endswith(':') else prefix + ':'
+    resolved = {}
+    for group_key, group_dict in section.items():
+        if isinstance(group_dict, dict):
+            resolved[group_key] = {
+                k: (v if not isinstance(v, str) or not v
+                      or v.count(':') > 1 or v.startswith(p)
+                    else p + v)
+                for k, v in group_dict.items()
+            }
+        else:
+            resolved[group_key] = group_dict
+    return resolved
+
+
 def save_detector_prefix(prefix: str) -> bool:
-    """Persist *prefix* to the active config source, update the module global,
-    and rewrite ROI/STATS PV names to use the new prefix."""
-    global DETECTOR_PREFIX, ROI, STATS
-    old_prefix = DETECTOR_PREFIX
+    """Persist *prefix* to the active config source and re-resolve settings.
+
+    ROI/STATS PV names are derived from DETECTOR_PREFIX at reload (see
+    _resolve_section), so persisting the prefix and reloading is enough — no
+    per-PV rewriting needed."""
+    global DETECTOR_PREFIX
     DETECTOR_PREFIX = prefix
-    update: dict = {'DETECTOR_PREFIX': prefix}
-    if old_prefix and old_prefix != prefix:
-        ROI = _reprefix(ROI, old_prefix, prefix)
-        STATS = _reprefix(STATS, old_prefix, prefix)
-        update['ROI'] = ROI
-        update['STATS'] = STATS
     eff = _get_effective_locator()
     if eff is None or ConfigSource is None:
         return False
     try:
         src = ConfigSource(eff)
-        return src.save(update)
+        saved = src.save({'DETECTOR_PREFIX': prefix})
     except Exception:
         return False
+    if saved:
+        reload()
+    return saved
 
 
-def _reprefix(section: dict, old: str, new: str) -> dict:
-    """Replace the detector prefix in all PV name values within a ROI/STATS section."""
-    rebuilt = {}
-    for group_key, group_dict in section.items():
-        if isinstance(group_dict, dict):
-            rebuilt[group_key] = {
-                k: v.replace(old, new, 1) if isinstance(v, str) else v
-                for k, v in group_dict.items()
-            }
-        else:
-            rebuilt[group_key] = group_dict
-    return rebuilt
+def save_ioc_prefix(prefix: str) -> bool:
+    """Persist *prefix* to the active config source and re-resolve settings.
+
+    HKL PV names are derived from IOC_PREFIX at reload (see _resolve_section),
+    so persisting the prefix and reloading is enough — no per-PV rewriting
+    needed."""
+    global IOC_PREFIX
+    IOC_PREFIX = prefix
+    eff = _get_effective_locator()
+    if eff is None or ConfigSource is None:
+        return False
+    try:
+        src = ConfigSource(eff)
+        saved = src.save({'IOC_PREFIX': prefix})
+    except Exception:
+        return False
+    if saved:
+        reload()
+    return saved
 
 
 def get_input_channel(fallback: str = "pvapy:image") -> str:
@@ -509,6 +576,7 @@ class Settings:
         self.locator: Optional[Union[int, str]] = None
         self._source: Optional[Any] = None  # only set for custom source objects
         self.CONFIG: Dict[str, Any] = {}
+        self.PROFILE_NAME: Optional[str] = None
         self.PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
         # Public attributes mirroring module-level constants
@@ -537,6 +605,7 @@ class Settings:
         self.ROI: Dict[str, Any] = {}
         self.STATS: Dict[str, Any] = {}
         self.HKL: Dict[str, Any] = {}
+        self.HKL_AXES: List[Dict[str, Any]] = []
         self.ANALYSIS: Dict[str, Any] = {}
 
         self.LOG_PATH: Optional[str] = None
@@ -614,6 +683,7 @@ class Settings:
         except Exception:
             cfg = {}
         self.CONFIG = cfg
+        self.PROFILE_NAME = _resolve_profile_name(self.source_type, self.locator)
 
         # Core
         self.PROJECT_ROOT = PROJECT_ROOT
@@ -678,9 +748,11 @@ class Settings:
         self.METADATA_CA = metadata.get('CA', {}) or {}
         self.METADATA_PVA = metadata.get('PVA', {}) or {}
 
-        self.ROI = cfg.get('ROI', {}) or {}
-        self.STATS = cfg.get('STATS', {}) or {}
-        self.HKL = cfg.get('HKL', {}) or {}
+        # See module reload(): seeds are bare suffixes, prefix applied here.
+        self.ROI = _resolve_section(cfg.get('ROI', {}) or {}, self.DETECTOR_PREFIX)
+        self.STATS = _resolve_section(cfg.get('STATS', {}) or {}, self.DETECTOR_PREFIX)
+        self.HKL = _resolve_section(cfg.get('HKL', {}) or {}, self.IOC_PREFIX)
+        self.HKL_AXES = self.HKL.get('AXES') or []
         self.ANALYSIS = cfg.get('ANALYSIS', {}) or {}
 
         # AppSettings
