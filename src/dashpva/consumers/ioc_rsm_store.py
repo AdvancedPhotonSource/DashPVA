@@ -49,7 +49,7 @@ AXES_KEY = "AXES"
 # Generic, unconfigured fallback template — used only when a profile has no
 # HKL.AXES entry yet. Deliberately not a specific beamline's axis layout.
 DEFAULT_AXES = [
-    {'name': f'Axis{i}', 'source_pv': '', 'axis_number': i, 'direction': 'x+'}
+    {'name': f'Axis{i}', 'source_pv': '', 'axis_number': i, 'direction': 'x+', 'role': 'sample'}
     for i in range(1, 5)
 ]
 
@@ -70,12 +70,17 @@ DEFAULT_DETECTOR = {
 
 @dataclass
 class AxisSpec:
-    """One IOC-published motor axis (name, its source PV/value, and geometry)."""
+    """One motor axis: name, its live position PV, static geometry (axis
+    number/direction), and which HKL circle group (sample/detector) it
+    belongs to. This is the single representation shared by the IOC
+    simulator and every real HKL/RSM consumer (see settings.HKL_SAMPLE_CIRCLES
+    / HKL_DETECTOR_CIRCLES)."""
 
     name: str
     source_pv: str = ""
     axis_number: int = 1
     direction: str = "x+"
+    role: str = "sample"
 
 
 def _axes_from_raw(raw: Any) -> Optional[List[AxisSpec]]:
@@ -89,6 +94,7 @@ def _axes_from_raw(raw: Any) -> Optional[List[AxisSpec]]:
             source_pv=a.get("source_pv", ""),
             axis_number=int(a.get("axis_number", 1)),
             direction=a.get("direction", "x+"),
+            role=a.get("role", "sample"),
         )
         for a in raw
     ]
@@ -209,8 +215,8 @@ def load_config(src: Any) -> IOCRSMConfig:
 def save_config(src: Any, cfg: IOCRSMConfig) -> bool:
     """Write ``cfg``: UB/beam/detector to ``IOC_RSM_PARAMETER``, axes to
     ``HKL.AXES``. Load-modify-save on the HKL table so other HKL keys already
-    in the profile (SAMPLE_CIRCLE_AXIS_N, DETECTOR_SETUP, ...) are preserved.
-    Reloads ``settings`` afterward so ``settings.HKL_AXES`` reflects the change
+    in the profile (SPEC, DETECTOR_SETUP, ...) are preserved. Reloads
+    ``settings`` afterward so ``settings.HKL_AXES`` reflects the change
     immediately."""
     if src is None:
         return False

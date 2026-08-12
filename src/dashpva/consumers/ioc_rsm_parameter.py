@@ -390,6 +390,7 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
     from PyQt5.QtGui import QBrush, QColor
     from PyQt5.QtWidgets import (
         QApplication,
+        QComboBox,
         QGroupBox,
         QHBoxLayout,
         QHeaderView,
@@ -411,7 +412,7 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
     class _AxisTable(QTableWidget):
         """Editable table of IOC-published motor axes (one axis per row)."""
 
-        COLS = ['Name', 'Source PV or static value', 'Axis #', 'Direction']
+        COLS = ['Name', 'Source PV or static value', 'Axis #', 'Direction', 'Role']
 
         def __init__(self, parent=None):
             super().__init__(0, len(self.COLS), parent)
@@ -422,8 +423,10 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
             hdr.setSectionResizeMode(1, QHeaderView.Stretch)
             hdr.setSectionResizeMode(2, QHeaderView.Fixed)
             hdr.setSectionResizeMode(3, QHeaderView.Fixed)
+            hdr.setSectionResizeMode(4, QHeaderView.Fixed)
             self.setColumnWidth(2, 60)
             self.setColumnWidth(3, 80)
+            self.setColumnWidth(4, 90)
             self.setSelectionBehavior(QTableWidget.SelectRows)
             self.setMinimumHeight(150)
 
@@ -438,6 +441,10 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
             spin.setValue(spec.axis_number)
             self.setCellWidget(r, 2, spin)
             self.setItem(r, 3, QTableWidgetItem(spec.direction))
+            role = QComboBox()
+            role.addItems(['sample', 'detector'])
+            role.setCurrentText(spec.role if spec.role in ('sample', 'detector') else 'sample')
+            self.setCellWidget(r, 4, role)
 
         def remove_selected(self):
             rows = sorted({i.row() for i in self.selectedIndexes()}, reverse=True)
@@ -457,6 +464,7 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
                     source_pv=(pv_item.text() if pv_item else '').strip(),
                     axis_number=self.cellWidget(r, 2).value(),
                     direction=(dir_item.text() if dir_item else '').strip(),
+                    role=self.cellWidget(r, 4).currentText(),
                 ))
             return out
 
@@ -664,9 +672,10 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
                     sample_normal=list(self._config.sample_normal),
                     detector=dict(self._config.detector),
                 )
-                save_config(new_config)
-                self._restart_and_refresh_pv_table(
-                    self._prefix, new_config, 'IOC restarted with updated axes')
+                ok = save_config(new_config)
+                msg = ('IOC restarted with updated axes' if ok else
+                       'IOC restarted with updated axes — NOT saved to profile (no active profile)')
+                self._restart_and_refresh_pv_table(self._prefix, new_config, msg)
             btn_apply_axes.clicked.connect(_on_apply_axes)
             axis_btn_lay.addWidget(btn_add_axis)
             axis_btn_lay.addWidget(btn_rm_axis)
@@ -686,7 +695,8 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
                 val = self._energy_edit.text().strip()
                 self._config.energy_source_pv = val
                 send_cmd({'type': 'energy', 'value': val})
-                save_config(self._config)
+                if not save_config(self._config):
+                    self.statusBar().showMessage('NOT saved to profile (no active profile)')
                 self._flash_applying()
             self._energy_edit.editingFinished.connect(_on_energy)
             energy_lay.addWidget(self._energy_edit, 1)
@@ -707,7 +717,8 @@ def _run_gui(prefix: str, config: ioc_rsm_store.IOCRSMConfig, send_cmd, restart_
                 val = item.text().strip()
                 self._config.axes[row].source_pv = val
                 send_cmd({'type': 'motor', 'name': name, 'value': val})
-                save_config(self._config)
+                if not save_config(self._config):
+                    self.statusBar().showMessage('NOT saved to profile (no active profile)')
                 self._flash_applying()
             self._axis_table.itemChanged.connect(_on_axis_item_changed)
 
@@ -876,7 +887,11 @@ def main():
         print(f'IOC restarted with prefix={new_prefix}', flush=True)
 
     def save_config(cfg):
-        ioc_rsm_store.save_config(_src_holder[0], cfg)
+        if _src_holder[0] is None:
+            # No profile was resolvable at GUI startup (e.g. tool launched before
+            # any profile was selected) — re-resolve once before giving up.
+            _src_holder[0], _ = ioc_rsm_store.active_source()
+        return ioc_rsm_store.save_config(_src_holder[0], cfg)
 
     def reload_config():
         new_src, label = ioc_rsm_store.active_source()
