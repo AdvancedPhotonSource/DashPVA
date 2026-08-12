@@ -2010,6 +2010,10 @@ class Workflow(QDialog, LogMixin):
                 for pv_channel in pvs_dict.values():
                     if pv_channel:
                         ca_pvs += f'ca://{pv_channel},'
+        for axis in app_settings.HKL_AXES:
+            pv_channel = axis.get('source_pv')
+            if pv_channel:
+                ca_pvs += f'ca://{pv_channel},'
         all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
         return all_pvs
 

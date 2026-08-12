@@ -144,11 +144,17 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
 
         self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set()
-        for section in self.hkl_config.values():
+        for section_name, section in self.hkl_config.items():
+            if section_name == 'AXES':
+                continue
             if isinstance(section, dict):
                 for channel in section.values():
                     if channel:
                         self.hkl_pv_channels.add(channel)
+        for axis in (self.hkl_config.get('AXES') or []):
+            pv = axis.get('source_pv')
+            if pv:
+                self.hkl_pv_channels.add(pv)
         
         # Log configuration via central logger instead of writing to a file
         try:

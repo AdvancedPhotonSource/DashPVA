@@ -29,6 +29,8 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         # Config Variables
         self.hkl_config = {}
+        self.hkl_sample_circles = []
+        self.hkl_detector_circles = []
 
         # Statistics
         self.nFramesProcessed = 0
@@ -153,12 +155,21 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         self.config = config
         self.hkl_config = self.config.get('HKL') or {}
+        hkl_axes = self.hkl_config.get('AXES') or []
+        self.hkl_sample_circles = [a for a in hkl_axes if a.get('role') == 'sample']
+        self.hkl_detector_circles = [a for a in hkl_axes if a.get('role') == 'detector']
         self.hkl_pv_channels = set()
-        for section in self.hkl_config.values():
+        for section_name, section in self.hkl_config.items():
+            if section_name == 'AXES':
+                continue
             if isinstance(section, dict):
                 for channel in section.values():
                     if channel:
                         self.hkl_pv_channels.add(channel)
+        for axis in hkl_axes:
+            pv = axis.get('source_pv')
+            if pv:
+                self.hkl_pv_channels.add(pv)
 
     def parse_hkl_ndattributes(self, pva_object):
         """
@@ -190,20 +201,14 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         det_circle_positions = []
 
         if len(hkl_attr) == len(self.hkl_pv_channels):
-            # loop sorting pv channels
-            for section, pv_dict in self.hkl_config.items():
-                if section.startswith('SAMPLE_CIRCLE'):
-                    for pv_name in pv_dict.values():
-                        if pv_name.endswith('DirectionAxis'):
-                            sample_circle_directions.append(hkl_attr[pv_name])
-                        elif pv_name.endswith('Position'):
-                            sample_circle_positions.append(hkl_attr[pv_name])
-                elif section.startswith('DETECTOR_CIRCLE'):
-                    for pv_name in pv_dict.values():
-                        if pv_name.endswith('DirectionAxis'):
-                            det_circle_directions.append(hkl_attr[pv_name])
-                        elif pv_name.endswith('Position'):
-                            det_circle_positions.append(hkl_attr[pv_name])
+            # axis_number/direction are static config values (see settings.HKL_AXES);
+            # only position is a live per-frame PV.
+            for axis in self.hkl_sample_circles:
+                sample_circle_directions.append(axis.get('direction'))
+                sample_circle_positions.append(hkl_attr.get(axis.get('source_pv')))
+            for axis in self.hkl_detector_circles:
+                det_circle_directions.append(axis.get('direction'))
+                det_circle_positions.append(hkl_attr.get(axis.get('source_pv')))
 
         return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
 

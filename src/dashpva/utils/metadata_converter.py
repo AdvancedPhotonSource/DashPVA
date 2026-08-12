@@ -138,6 +138,12 @@ def _process_structure(h5_file: h5py.File, current_path: str, mapping_dict: dict
     for key, value in mapping_dict.items():
         new_path = f"{current_path}/{key}"
 
+        if key == "AXES":
+            # Handled in _rename_motor_positions_and_link_hkl — each entry
+            # becomes its own HKL/<name> group with static
+            # axis_number/direction/role attrs, not a nested TOML dict.
+            continue
+
         if isinstance(value, dict):
             h5_file.require_group(new_path)
             _process_structure(h5_file, new_path, value, axis_lookup, stats, base_group, include)
@@ -213,15 +219,22 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
     """
     Rename PV-named datasets under motor_positions to axis labels and link HKL POSITION to them.
 
+    Group keys come from two sources: legacy nested TOML dicts under HKL (e.g.
+    'DETECTOR_SETUP'), and — new format — each entry of the HKL.AXES list,
+    keyed by its own 'name' (e.g. 'Mu'), with 'source_pv' standing in for
+    'POSITION' and axis_number/direction/role copied onto the HKL/<name>
+    group as static attrs (see settings.HKL_AXES / hdf5_writer.py).
+
     Axis labels are resolved in priority order:
       1) If {base_group}/HKL/<GROUP>/NAME exists in the HDF5 file, use its string value (uppercased).
-      2) Else, if mapping['HKL'][<GROUP>]['NAME'] exists in TOML, use it (uppercased).
+      2) Else, if the group is an AXES entry, use its 'name' (uppercased); or if
+         mapping['HKL'][<GROUP>]['NAME'] exists in TOML, use it (uppercased).
       3) Else, derive from the POSITION PV string via motor-ID lookup built from METADATA.CA
          (e.g. '6idb1:m17_RBV:Position' → motor_id 'm17' → 'ETA').
       If none of the three sources yields a label, log a warning and skip that group.
 
     For each HKL group discovered (union of groups in the TOML and those present in the file):
-      - Read its POSITION string from the TOML section for that group.
+      - Read its POSITION/source_pv string from the TOML section for that group.
       - Resolve the dataset path via resolve_pv_dataset (prefers base_group/motor_positions for position PVs).
       - Copy data to {base_group}/motor_positions/{AXIS} using copy_dataset_like.
       - Set units attribute to "deg" on the axis dataset.
@@ -253,6 +266,10 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
 
     def _read_name_from_mapping(group_key: str) -> str | None:
         try:
+            if group_key in axes_by_name:
+                nm = axes_by_name[group_key].get("name")
+                if isinstance(nm, str) and nm.strip():
+                    return nm.strip().upper()
             if isinstance(mapping, dict):
                 hk = mapping.get("HKL", {})
                 grp = hk.get(group_key, {}) if isinstance(hk, dict) else {}
@@ -263,13 +280,21 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
             pass
         return None
 
-    # Build the set of HKL group keys from both mapping and the file content
+    hkl_section = mapping.get("HKL", {}) if isinstance(mapping, dict) else {}
+    axes_by_name = {
+        a.get("name"): a
+        for a in (hkl_section.get("AXES") or [])
+        if isinstance(a, dict) and a.get("name")
+    }
+
+    # Build the set of HKL group keys from both mapping and the file content.
+    # AXES entries contribute their own 'name' as a group key (new format:
+    # one HKL/<name> group per axis) rather than the list itself.
     group_keys = set()
     try:
-        if isinstance(mapping, dict):
-            hk = mapping.get("HKL", {})
-            if isinstance(hk, dict):
-                group_keys.update(list(hk.keys()))
+        if isinstance(hkl_section, dict):
+            group_keys.update(k for k, v in hkl_section.items() if isinstance(v, dict))
+            group_keys.update(axes_by_name.keys())
     except Exception:
         pass
     try:
@@ -281,8 +306,6 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
         pass
     if not group_keys:
         return
-
-    hkl_section = mapping.get("HKL", {}) if isinstance(mapping, dict) else {}
 
     # Derive axis label per group using priority order:
     #   1. NAME dataset in HDF5 file
@@ -322,11 +345,13 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
         print(f"\n[rename] Processing group '{group_key}' -> axis '{axis_label}'")
         group_map = hkl_section.get(group_key)
         if not isinstance(group_map, dict):
+            group_map = axes_by_name.get(group_key)
+        if not isinstance(group_map, dict):
             print("  SKIP: group not found in TOML mapping")
             logger.warning(f"HKL group '{group_key}' not found in mapping; skipping axis '{axis_label}'.")
             continue
 
-        pv = group_map.get("POSITION")
+        pv = group_map.get("POSITION") or group_map.get("source_pv")
         if not isinstance(pv, str):
             print("  SKIP: no POSITION key in TOML for this group")
             logger.warning(f"No POSITION PV string for HKL group '{group_key}'; skipping axis '{axis_label}'.")
@@ -405,7 +430,16 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
 
         try:
             # Ensure HKL group exists
-            h5_file.require_group(hk_group_path)
+            hk_grp = h5_file.require_group(hk_group_path)
+
+            # New format: stamp static axis_number/direction/role attrs (see
+            # settings.HKL_AXES / hdf5_writer.py) so rsm_converter.py's
+            # role-based reader recognizes this as a sample/detector circle.
+            axis_cfg = axes_by_name.get(group_key)
+            if axis_cfg:
+                hk_grp.attrs['axis_number'] = axis_cfg.get('axis_number', 1)
+                hk_grp.attrs['direction'] = axis_cfg.get('direction', 'x+')
+                hk_grp.attrs['role'] = axis_cfg.get('role', 'sample')
 
             # Replace POSITION with soft link — skip if already pointing to the correct target (idempotent)
             # When force=True the guard is bypassed and the link is always rewritten

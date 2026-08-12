@@ -1480,9 +1480,10 @@ class HDF5Loader(LogMixin):
 def discover_hkl_axis_labels(file_path: str) -> dict:
     """
     Discover friendly HKL axis/motor labels from /entry/data/metadata/HKL only.
-    
+
     New format:
-      - Read NAME datasets under SAMPLE_CIRCLE_AXIS_1..4 and DETECTOR_CIRCLE_AXIS_1..2
+      - One group per axis, named after the axis (e.g. Mu, Chi), with a
+        ``role`` attr ("sample" | "detector")
     Legacy format:
       - If NAME is not present but MU/ETA/CHI/PHI/NU/DELTA subgroups exist, use those identifiers
     
@@ -1512,33 +1513,23 @@ def discover_hkl_axis_labels(file_path: str) -> dict:
             grp = f[base]
             labels['present'] = True
 
-            def _read_name_from(subgrp) -> Optional[str]:
-                if not isinstance(subgrp, h5py.Group):
-                    return None
-                ds = subgrp.get('NAME')
-                if not isinstance(ds, h5py.Dataset):
-                    return None
-                try:
-                    val = ds.asstr()[()] if hasattr(ds, 'asstr') else ds[()]
-                except Exception:
-                    return None
-                # Normalize to str
-                if isinstance(val, (bytes, np.bytes_)):
-                    try:
-                        val = val.decode('utf-8', errors='ignore')
-                    except Exception:
-                        val = str(val)
-                return str(val)
-
-            # New format axes discovery
-            for i in range(1, 5):
-                nm = _read_name_from(grp.get(f'SAMPLE_CIRCLE_AXIS_{i}'))
-                if nm:
-                    labels['sample_axes'].append(nm)
-            for i in range(1, 3):
-                nm = _read_name_from(grp.get(f'DETECTOR_CIRCLE_AXIS_{i}'))
-                if nm:
-                    labels['detector_axes'].append(nm)
+            # New format axes discovery: one group per axis, named after the
+            # axis, with a 'role' attr — no fixed slot names to enumerate.
+            _non_axis_groups = {
+                'SPEC', 'DETECTOR_SETUP', 'PRIMARY_BEAM_DIRECTION',
+                'INPLANE_REFERENCE_DIRECITON', 'SAMPLE_SURFACE_NORMAL_DIRECITON',
+            }
+            for key in grp.keys():
+                if key in _non_axis_groups:
+                    continue
+                sub = grp.get(key)
+                if not isinstance(sub, h5py.Group):
+                    continue
+                role = sub.attrs.get('role')
+                if role == 'detector':
+                    labels['detector_axes'].append(key)
+                elif role == 'sample':
+                    labels['sample_axes'].append(key)
 
             # Legacy fallback when NAME not present
             for key in ('MU', 'ETA', 'CHI', 'PHI'):

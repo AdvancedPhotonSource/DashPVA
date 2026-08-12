@@ -1831,12 +1831,21 @@ class DiffractionImageWindow(BaseWindow):
                 self.hkl_config = self.reader.config["HKL"]
                 if not self.hkl_pvs:
                     for section, pv_dict in self.hkl_config.items():
+                        if section == 'AXES':
+                            continue
                         for section_key, pv_name in pv_dict.items():
                             if pv_name not in self.hkl_pvs:
                                 self.hkl_pvs[pv_name] = PV(
                                     pvname=pv_name,
                                     connection_timeout=0.15,
                                 )
+                    for axis in (self.hkl_config.get('AXES') or []):
+                        pv_name = axis.get('source_pv')
+                        if pv_name and pv_name not in self.hkl_pvs:
+                            self.hkl_pvs[pv_name] = PV(
+                                pvname=pv_name,
+                                connection_timeout=0.15,
+                            )
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
@@ -1880,49 +1889,33 @@ class DiffractionImageWindow(BaseWindow):
     def hkl_setup(self) -> None:
         if (self.hkl_config is not None) and (not self.stop_hkl.isChecked()):
             try:
+                # axis_number/direction/name are static config values (see
+                # settings.HKL_AXES); only position is a live per-frame PV.
+                axes = self.hkl_config.get('AXES') or []
+                sample_axes = [a for a in axes if a.get('role') == 'sample']
+                det_axes = [a for a in axes if a.get('role') == 'detector']
+
                 # Get everything for the sample circles
-                sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
-                self.sample_circle_directions = []
-                self.sample_circle_names = []
+                self.sample_circle_directions = [a.get('direction') for a in sample_axes]
+                self.sample_circle_names = [a.get('name') for a in sample_axes]
                 self.sample_circle_positions = []
-                for pv_key in sample_circle_keys:
-                    if pv_key.endswith('DirectionAxis'):
-                        direction = self.hkl_data.get(pv_key)
-                        if direction is None:
-                            raise ValueError(f"Missing sample circle direction PV data: {pv_key}")
-                        self.sample_circle_directions.append(direction)
-                    elif pv_key.endswith('SpecMotorName'):
-                        name = self.hkl_data.get(pv_key)
-                        if name is None:
-                            raise ValueError(f"Missing sample circle motor name PV data: {pv_key}")
-                        self.sample_circle_names.append(name)
-                    elif pv_key.endswith('Position'):
-                        position = self.hkl_data.get(pv_key)
-                        if position is None:
-                            raise ValueError(f"Missing sample circle position PV data: {pv_key}")
-                        self.sample_circle_positions.append(position)
-                
+                for a in sample_axes:
+                    pv_key = a.get('source_pv')
+                    position = self.hkl_data.get(pv_key)
+                    if position is None:
+                        raise ValueError(f"Missing sample circle position PV data: {pv_key}")
+                    self.sample_circle_positions.append(position)
+
                 # Get everything for the detector circles
-                det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
-                self.det_circle_directions = []
-                self.det_circle_names = []
+                self.det_circle_directions = [a.get('direction') for a in det_axes]
+                self.det_circle_names = [a.get('name') for a in det_axes]
                 self.det_circle_positions = []
-                for pv_key in det_circle_keys:
-                    if pv_key.endswith('DirectionAxis'):
-                        direction = self.hkl_data.get(pv_key)
-                        if direction is None:
-                            raise ValueError(f"Missing detector circle direction PV data: {pv_key}")
-                        self.det_circle_directions.append(direction)
-                    elif pv_key.endswith('SpecMotorName'):
-                        name = self.hkl_data.get(pv_key)
-                        if name is None:
-                            raise ValueError(f"Missing detector circle motor name PV data: {pv_key}")
-                        self.det_circle_names.append(name)
-                    elif pv_key.endswith('Position'):
-                        position = self.hkl_data.get(pv_key)
-                        if position is None:
-                            raise ValueError(f"Missing detector circle position PV data: {pv_key}")
-                        self.det_circle_positions.append(position)
+                for a in det_axes:
+                    pv_key = a.get('source_pv')
+                    position = self.hkl_data.get(pv_key)
+                    if position is None:
+                        raise ValueError(f"Missing detector circle position PV data: {pv_key}")
+                    self.det_circle_positions.append(position)
                 
                 # Primary Beam Direction
                 primary_beam_pvs = self.hkl_config.get('PRIMARY_BEAM_DIRECTION', {}).values()

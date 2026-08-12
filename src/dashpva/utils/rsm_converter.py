@@ -160,44 +160,56 @@ class RSMConverter:
 
     def get_sample_and_detector_circles(self, h5_file: h5py.File, frame: int):
         """Return lists of direction strings and positions for sample and detector circles."""
-        sc_dir, sc_pos, dc_dir, dc_pos = [], [], [], []
         hkl_base = "entry/data/metadata/HKL"
         sample_priority = ["MU", "ETA", "CHI", "PHI"]
         detector_priority = ["NU", "DELTA"]
+        non_axis_groups = {
+            "SPEC", "DETECTOR_SETUP", "PRIMARY_BEAM_DIRECTION",
+            "INPLANE_REFERENCE_DIRECITON", "SAMPLE_SURFACE_NORMAL_DIRECITON",
+        }
 
-        # Prefer fallback SAMPLE_CIRCLE_AXIS_1..4 if available, else canonical
-        fallback_found = False
-        for i in range(1, 5):
-            path = f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}"
+        # New format: one group per axis under HKL, named after the axis,
+        # with 'role'/'direction'/'axis_number' attrs (static — see
+        # settings.HKL_AXES). axis_number recovers the original rotation
+        # order since HDF5 group iteration order isn't guaranteed.
+        sample_axes, detector_axes = [], []
+        if hkl_base in h5_file:
+            for key in h5_file[hkl_base].keys():
+                if key in non_axis_groups:
+                    continue
+                grp = h5_file[f"{hkl_base}/{key}"]
+                if not isinstance(grp, h5py.Group):
+                    continue
+                role = grp.attrs.get("role")
+                if role == "sample":
+                    sample_axes.append((grp.attrs.get("axis_number", 0), key))
+                elif role == "detector":
+                    detector_axes.append((grp.attrs.get("axis_number", 0), key))
+
+        if sample_axes or detector_axes:
+            sample_axes.sort(key=lambda t: t[0])
+            detector_axes.sort(key=lambda t: t[0])
+            sc_dir = [h5_file[f"{hkl_base}/{key}"].attrs.get("direction") for _, key in sample_axes]
+            sc_pos = [self._read_position(h5_file, f"{hkl_base}/{key}", frame) for _, key in sample_axes]
+            dc_dir = [h5_file[f"{hkl_base}/{key}"].attrs.get("direction") for _, key in detector_axes]
+            dc_pos = [self._read_position(h5_file, f"{hkl_base}/{key}", frame) for _, key in detector_axes]
+            return sc_dir, sc_pos, dc_dir, dc_pos
+
+        # Legacy fallback: fixed canonical motor-name groups with a
+        # DIRECTION_AXIS dataset instead of a 'direction' attr.
+        sc_dir, sc_pos, dc_dir, dc_pos = [], [], [], []
+        for axis in sample_priority:
+            path = f"{hkl_base}/{axis}"
             if path in h5_file:
-                fallback_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 sc_dir.append(dir_val)
                 sc_pos.append(self._read_position(h5_file, path, frame))
-        if not fallback_found:
-            for axis in sample_priority:
-                path = f"{hkl_base}/{axis}"
-                if path in h5_file:
-                    dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                    sc_dir.append(dir_val)
-                    sc_pos.append(self._read_position(h5_file, path, frame))
-
-        # Prefer fallback DETECTOR_CIRCLE_AXIS_1..2 if available, else canonical
-        fallback_d_found = False
-        for i in range(1, 3):
-            path = f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}"
+        for axis in detector_priority:
+            path = f"{hkl_base}/{axis}"
             if path in h5_file:
-                fallback_d_found = True
                 dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
                 dc_dir.append(dir_val)
                 dc_pos.append(self._read_position(h5_file, path, frame))
-        if not fallback_d_found:
-            for axis in detector_priority:
-                path = f"{hkl_base}/{axis}"
-                if path in h5_file:
-                    dir_val = self._first_str(h5_file[f"{path}/DIRECTION_AXIS"])
-                    dc_dir.append(dir_val)
-                    dc_pos.append(self._read_position(h5_file, path, frame))
 
         return list(sc_dir), list(sc_pos), list(dc_dir), list(dc_pos)
 
