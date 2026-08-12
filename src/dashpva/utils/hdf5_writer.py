@@ -199,12 +199,16 @@ class HDF5Writer(QObject, LogMixin):
                         for k, pv in sec.items():
                             self._write_scan_pv_dataset(sec_grp, k, pv, merged_metadata)
 
-                for base in ['SAMPLE_CIRCLE_AXIS_1', 'SAMPLE_CIRCLE_AXIS_2', 'SAMPLE_CIRCLE_AXIS_3', 'SAMPLE_CIRCLE_AXIS_4', 'DETECTOR_CIRCLE_AXIS_1', 'DETECTOR_CIRCLE_AXIS_2']:
-                    sec = hkl_cfg.get(base, {})
-                    if sec:
-                        grp = hkl_root.create_group(base)
-                        for k, pv in sec.items():
-                            self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
+                for axis in settings.HKL_AXES:
+                    name = axis.get('name')
+                    pv = axis.get('source_pv')
+                    if not name or not pv:
+                        continue
+                    grp = hkl_root.create_group(name)
+                    grp.attrs['axis_number'] = axis.get('axis_number', 1)
+                    grp.attrs['direction'] = axis.get('direction', 'x+')
+                    grp.attrs['role'] = axis.get('role', 'sample')
+                    self._write_scan_pv_dataset(grp, 'POSITION', pv, merged_metadata)
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
@@ -275,12 +279,11 @@ class HDF5Writer(QObject, LogMixin):
             ub_grp['value'] = h5py.SoftLink(f'/{ub_src}')
         geo_grp = sample_grp.require_group('geometry')
         geo_grp.attrs['NX_class'] = sample_cfg['geometry']['NX_class']
-        for field, axis_cfg in sample_cfg['geometry'].items():
-            if field == 'NX_class' or not isinstance(axis_cfg, dict):
-                continue
-            target_path = f"{base_group}/HKL/{axis_cfg.get('target', '')}"
-            if target_path in h5f and field not in geo_grp:
-                geo_grp[field] = h5py.SoftLink(f'/{target_path}')
+        for axis in settings.HKL_SAMPLE_CIRCLES:
+            name = axis.get('name')
+            target_path = f"{base_group}/HKL/{name}"
+            if name and target_path in h5f and name not in geo_grp:
+                geo_grp[name] = h5py.SoftLink(f'/{target_path}')
 
     def merge_metadata(self, attributes):
         all_keys = set()

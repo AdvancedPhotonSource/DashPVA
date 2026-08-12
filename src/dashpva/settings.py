@@ -73,12 +73,11 @@ HDF5_STRUCTURE = {
                         "NX_class": "NXcollection",
                         "target": "HKL/SPEC/UB_MATRIX_VALUE"
                     },
+                    # One rotation entry per sample axis, built dynamically from
+                    # settings.HKL_SAMPLE_CIRCLES (see hdf5_writer._apply_nx_structure)
+                    # instead of a fixed sample_phi/chi/eta/mu remap.
                     "geometry": {
-                        "NX_class": "NXtransformations",
-                        "sample_phi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_4", "type": "rotation"},
-                        "sample_chi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_3", "type": "rotation"},
-                        "sample_eta": {"target": "HKL/SAMPLE_CIRCLE_AXIS_2", "type": "rotation"},
-                        "sample_mu":  {"target": "HKL/SAMPLE_CIRCLE_AXIS_1", "type": "rotation"}
+                        "NX_class": "NXtransformations"
                     }
                 },
 
@@ -212,6 +211,8 @@ ROI: Dict[str, Any] = {}
 STATS: Dict[str, Any] = {}
 HKL: Dict[str, Any] = {}
 HKL_AXES: List[Dict[str, Any]] = []
+HKL_SAMPLE_CIRCLES: List[Dict[str, Any]] = []
+HKL_DETECTOR_CIRCLES: List[Dict[str, Any]] = []
 ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
@@ -299,7 +300,7 @@ def reload() -> None:
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
-    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, HKL_AXES, ANALYSIS
+    global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, HKL_AXES, HKL_SAMPLE_CIRCLES, HKL_DETECTOR_CIRCLES, ANALYSIS
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
@@ -385,10 +386,13 @@ def reload() -> None:
     ROI = _resolve_section(cfg.get('ROI', {}) or {}, DETECTOR_PREFIX)
     STATS = _resolve_section(cfg.get('STATS', {}) or {}, DETECTOR_PREFIX)
     HKL = _resolve_section(cfg.get('HKL', {}) or {}, IOC_PREFIX)
-    # IOC RSM Parameter tool's motor axis list — a list of dicts (name/source_pv/
-    # axis_number/direction), not a flat PV-suffix map, so _resolve_section leaves
-    # it untouched.
-    HKL_AXES = HKL.get('AXES') or []
+    # Motor axis list — a list of dicts (name/source_pv/axis_number/direction/
+    # role), not a flat PV-suffix map, so _resolve_section leaves it untouched;
+    # resolve each axis's source_pv separately. This is the single source of
+    # truth for every HKL/RSM consumer's sample/detector circles.
+    HKL_AXES = _resolve_axes(HKL.get('AXES') or [], IOC_PREFIX)
+    HKL_SAMPLE_CIRCLES = [a for a in HKL_AXES if a.get('role') == 'sample']
+    HKL_DETECTOR_CIRCLES = [a for a in HKL_AXES if a.get('role') == 'detector']
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
@@ -458,6 +462,23 @@ def _resolve_section(section: dict, prefix: Optional[str]) -> dict:
             }
         else:
             resolved[group_key] = group_dict
+    return resolved
+
+
+def _resolve_axes(axes: List[Dict[str, Any]], prefix: Optional[str]) -> List[Dict[str, Any]]:
+    """Prepend *prefix* to each axis's bare-suffix ``source_pv``, same rule as
+    ``_resolve_section`` (which skips list values entirely, so HKL.AXES needs
+    this separately)."""
+    if not prefix:
+        return axes
+    p = prefix if prefix.endswith(':') else prefix + ':'
+    resolved = []
+    for axis in axes:
+        axis = dict(axis)
+        v = axis.get('source_pv')
+        if isinstance(v, str) and v and v.count(':') <= 1 and not v.startswith(p):
+            axis['source_pv'] = p + v
+        resolved.append(axis)
     return resolved
 
 
@@ -606,6 +627,8 @@ class Settings:
         self.STATS: Dict[str, Any] = {}
         self.HKL: Dict[str, Any] = {}
         self.HKL_AXES: List[Dict[str, Any]] = []
+        self.HKL_SAMPLE_CIRCLES: List[Dict[str, Any]] = []
+        self.HKL_DETECTOR_CIRCLES: List[Dict[str, Any]] = []
         self.ANALYSIS: Dict[str, Any] = {}
 
         self.LOG_PATH: Optional[str] = None
@@ -752,7 +775,9 @@ class Settings:
         self.ROI = _resolve_section(cfg.get('ROI', {}) or {}, self.DETECTOR_PREFIX)
         self.STATS = _resolve_section(cfg.get('STATS', {}) or {}, self.DETECTOR_PREFIX)
         self.HKL = _resolve_section(cfg.get('HKL', {}) or {}, self.IOC_PREFIX)
-        self.HKL_AXES = self.HKL.get('AXES') or []
+        self.HKL_AXES = _resolve_axes(self.HKL.get('AXES') or [], self.IOC_PREFIX)
+        self.HKL_SAMPLE_CIRCLES = [a for a in self.HKL_AXES if a.get('role') == 'sample']
+        self.HKL_DETECTOR_CIRCLES = [a for a in self.HKL_AXES if a.get('role') == 'detector']
         self.ANALYSIS = cfg.get('ANALYSIS', {}) or {}
 
         # AppSettings
