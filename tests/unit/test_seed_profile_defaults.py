@@ -244,4 +244,5 @@ class TestSeedProfileDefaultsWrite:
         assert read_back == DEFAULT_PROFILE_DATA
         # Sanity: nested structure preserved (not flattened or stringified)
         assert isinstance(read_back["CACHE_OPTIONS"]["ALIGNMENT"], dict)
-        assert isinstance(read_back["HKL"]["SAMPLE_CIRCLE_AXIS_1"], dict)
+        assert isinstance(read_back["HKL"]["AXES"], list)
+        assert read_back["HKL"]["AXES"][0]["role"] == "sample"

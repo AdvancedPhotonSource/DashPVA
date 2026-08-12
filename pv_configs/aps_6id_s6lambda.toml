@@ -84,35 +84,48 @@ MAX = "s6lambda1:Stats4:MaxValue_RBV"
 SIGMA = "s6lambda1:Stats4:Sigma_RBV"
 MEAN = "s6lambda1:Stats4:MeanValue_RBV"
 
-[HKL.SAMPLE_CIRCLE_AXIS_1]
-AXIS_NUMBER = "6idb1:Mu:AxisNumber"
-DIRECTION_AXIS = "6idb1:Mu:DirectionAxis"
-POSITION = "6idb1:Mu:Position"
+[[HKL.AXES]]
+name = "Mu"
+source_pv = "6idb1:Mu:Position"
+axis_number = 1
+direction = "x+"
+role = "sample"
 
-[HKL.SAMPLE_CIRCLE_AXIS_2]
-AXIS_NUMBER = "6idb1:Eta:AxisNumber"
-DIRECTION_AXIS = "6idb1:Eta:DirectionAxis"
-POSITION = "6idb1:Eta:Position"
+[[HKL.AXES]]
+name = "Eta"
+source_pv = "6idb1:Eta:Position"
+axis_number = 2
+direction = "z-"
+role = "sample"
 
-[HKL.SAMPLE_CIRCLE_AXIS_3]
-AXIS_NUMBER = "6idb1:Chi:AxisNumber"
-DIRECTION_AXIS = "6idb1:Chi:DirectionAxis"
-POSITION = "6idb1:Chi:Position"
+[[HKL.AXES]]
+name = "Chi"
+source_pv = "6idb1:Chi:Position"
+axis_number = 3
+direction = "y+"
+role = "sample"
 
-[HKL.SAMPLE_CIRCLE_AXIS_4]
-AXIS_NUMBER = "6idb1:Phi:AxisNumber"
-DIRECTION_AXIS = "6idb1:Phi:DirectionAxis"
-POSITION = "6idb1:Phi:Position"
+[[HKL.AXES]]
+name = "Phi"
+source_pv = "6idb1:Phi:Position"
+axis_number = 4
+direction = "z-"
+role = "sample"
 
-[HKL.DETECTOR_CIRCLE_AXIS_1]
-AXIS_NUMBER = "6idb1:Nu:AxisNumber"
-DIRECTION_AXIS = "6idb1:Nu:DirectionAxis"
-POSITION = "6idb1:Nu:Position"
+[[HKL.AXES]]
+name = "Nu"
+source_pv = "6idb1:Nu:Position"
+axis_number = 1
+direction = "x+"
+role = "detector"
 
-[HKL.DETECTOR_CIRCLE_AXIS_2]
-AXIS_NUMBER = "6idb1:Delta:AxisNumber"
-DIRECTION_AXIS = "6idb1:Delta:DirectionAxis"
-POSITION = "6idb1:Delta:Position"
+[[HKL.AXES]]
+name = "Delta"
+source_pv = "6idb1:Delta:Position"
+axis_number = 2
+direction = "z-"
+role = "detector"
+
 
 [HKL.SPEC]
 ENERGY_VALUE = "6idb1:spec:Energy:Value"

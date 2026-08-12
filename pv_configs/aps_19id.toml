@@ -85,32 +85,41 @@ MAX = "19idXRD:Stats4:MaxValue_RBV"
 SIGMA = "19idXRD:Stats4:Sigma_RBV"
 MEAN = "19idXRD:Stats4:MeanValue_RBV"
 
-[HKL.SAMPLE_CIRCLE_AXIS_1]
-AXIS_NUMBER = "19idMMC:m4_RBV:AxisNumber"
-DIRECTION_AXIS = "19idMMC:m4_RBV:DirectionAxis"
-POSITION = "19idMMC:m4_RBV:Position"
+[[HKL.AXES]]
+name = 'Mu'
+source_pv = '19idMMC:m4_RBV:Position'
+axis_number = 1
+direction = 'x+'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_2]
-AXIS_NUMBER = "Eta:AxisNumber"
-DIRECTION_AXIS = "Eta:DirectionAxis"
-POSITION = "Eta:Position"
+[[HKL.AXES]]
+name = 'Eta'
+source_pv = 'Eta:Position'
+axis_number = 2
+direction = 'z-'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_3]
-AXIS_NUMBER = "Chi:AxisNumber"
-DIRECTION_AXIS = "Chi:DirectionAxis"
-POSITION = "Chi:Position"
+[[HKL.AXES]]
+name = 'Chi'
+source_pv = 'Chi:Position'
+axis_number = 3
+direction = 'y+'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_4]
+[[HKL.AXES]]
+name = 'Nu'
+source_pv = '19IDRobot:Last_Position_Yaw:Position'
+axis_number = 1
+direction = 'x+'
+role = 'detector'
 
-[HKL.DETECTOR_CIRCLE_AXIS_1]
-AXIS_NUMBER = "19IDRobot:Last_Position_Yaw:AxisNumber"
-DIRECTION_AXIS = "19IDRobot:Last_Position_Yaw:DirectionAxis"
-POSITION = "19IDRobot:Last_Position_Yaw:Position"
+[[HKL.AXES]]
+name = 'Delta'
+source_pv = '19IDRobot:Last_Position_Pitch:Position'
+axis_number = 2
+direction = 'z-'
+role = 'detector'
 
-[HKL.DETECTOR_CIRCLE_AXIS_2]
-AXIS_NUMBER = "19IDRobot:Last_Position_Pitch:AxisNumber"
-DIRECTION_AXIS = "19IDRobot:Last_Position_Pitch:DirectionAxis"
-POSITION = "19IDRobot:Last_Position_Pitch:Position"
 
 [HKL.SPEC]
 ENERGY_VALUE = "19idDCM:SM3_RBV:Value"

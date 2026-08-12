@@ -140,36 +140,14 @@ DEFAULT_PROFILE_DATA: Dict[str, Any] = {
         },
     },
     "HKL": {
-        "SAMPLE_CIRCLE_AXIS_1": {
-            "AXIS_NUMBER": "Mu:AxisNumber",
-            "DIRECTION_AXIS": "Mu:DirectionAxis",
-            "POSITION": "Mu:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_2": {
-            "AXIS_NUMBER": "Eta:AxisNumber",
-            "DIRECTION_AXIS": "Eta:DirectionAxis",
-            "POSITION": "Eta:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_3": {
-            "AXIS_NUMBER": "Chi:AxisNumber",
-            "DIRECTION_AXIS": "Chi:DirectionAxis",
-            "POSITION": "Chi:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_4": {
-            "AXIS_NUMBER": "Phi:AxisNumber",
-            "DIRECTION_AXIS": "Phi:DirectionAxis",
-            "POSITION": "Phi:Position",
-        },
-        "DETECTOR_CIRCLE_AXIS_1": {
-            "AXIS_NUMBER": "Nu:AxisNumber",
-            "DIRECTION_AXIS": "Nu:DirectionAxis",
-            "POSITION": "Nu:Position",
-        },
-        "DETECTOR_CIRCLE_AXIS_2": {
-            "AXIS_NUMBER": "Delta:AxisNumber",
-            "DIRECTION_AXIS": "Delta:DirectionAxis",
-            "POSITION": "Delta:Position",
-        },
+        "AXES": [
+            {"name": "Mu", "source_pv": "Mu:Position", "axis_number": 1, "direction": "x+", "role": "sample"},
+            {"name": "Eta", "source_pv": "Eta:Position", "axis_number": 2, "direction": "z-", "role": "sample"},
+            {"name": "Chi", "source_pv": "Chi:Position", "axis_number": 3, "direction": "y+", "role": "sample"},
+            {"name": "Phi", "source_pv": "Phi:Position", "axis_number": 4, "direction": "z-", "role": "sample"},
+            {"name": "Nu", "source_pv": "Nu:Position", "axis_number": 1, "direction": "x+", "role": "detector"},
+            {"name": "Delta", "source_pv": "Delta:Position", "axis_number": 2, "direction": "z-", "role": "detector"},
+        ],
         "SPEC": {
             "ENERGY_VALUE": "Energy:Value",
             "UB_MATRIX_VALUE": "UB_matrix:Value",

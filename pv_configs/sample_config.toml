@@ -105,64 +105,54 @@ CACHING_MODE = 'alignment' # options: '', 'alignment', 'scan', or 'bin' describe
 
 [HKL]
 
-    # Axis list published by the IOC RSM Parameter simulator tool
+    # Axis list — single source of truth for both the real RSM/geometry
+    # calculation and the IOC RSM Parameter simulator tool
     # (consumers/ioc_rsm_parameter.py). A profile with no HKL.AXES entry falls
     # back to 4 generic, unconfigured axes at runtime (see
     # dashpva.consumers.ioc_rsm_store.DEFAULT_AXES) — never a specific
     # beamline's layout.
     [[HKL.AXES]]
-    name = 'Axis1'
-    source_pv = ''
+    name = 'Mu'
+    source_pv = 'Mu:Position'
     axis_number = 1
     direction = 'x+'
+    role = 'sample'
 
     [[HKL.AXES]]
-    name = 'Axis2'
-    source_pv = ''
+    name = 'Eta'
+    source_pv = 'Eta:Position'
     axis_number = 2
-    direction = 'x+'
+    direction = 'z-'
+    role = 'sample'
 
     [[HKL.AXES]]
-    name = 'Axis3'
-    source_pv = ''
+    name = 'Chi'
+    source_pv = 'Chi:Position'
     axis_number = 3
-    direction = 'x+'
+    direction = 'y+'
+    role = 'sample'
 
     [[HKL.AXES]]
-    name = 'Axis4'
-    source_pv = ''
+    name = 'Phi'
+    source_pv = 'Phi:Position'
     axis_number = 4
+    direction = 'z-'
+    role = 'sample'
+
+    [[HKL.AXES]]
+    name = 'Nu'
+    source_pv = 'Nu:Position'
+    axis_number = 1
     direction = 'x+'
+    role = 'detector'
 
-    [HKL.SAMPLE_CIRCLE_AXIS_1]
-    AXIS_NUMBER = 'Mu:AxisNumber'
-    DIRECTION_AXIS = 'Mu:DirectionAxis'
-    POSITION = 'Mu:Position'
+    [[HKL.AXES]]
+    name = 'Delta'
+    source_pv = 'Delta:Position'
+    axis_number = 2
+    direction = 'z-'
+    role = 'detector'
 
-    [HKL.SAMPLE_CIRCLE_AXIS_2]
-    AXIS_NUMBER = 'Eta:AxisNumber'
-    DIRECTION_AXIS = 'Eta:DirectionAxis'
-    POSITION = 'Eta:Position'
-
-    [HKL.SAMPLE_CIRCLE_AXIS_3]
-    AXIS_NUMBER = 'Chi:AxisNumber'
-    DIRECTION_AXIS = 'Chi:DirectionAxis'
-    POSITION = 'Chi:Position'
-
-    [HKL.SAMPLE_CIRCLE_AXIS_4]
-    AXIS_NUMBER = 'Phi:AxisNumber'
-    DIRECTION_AXIS = 'Phi:DirectionAxis'
-    POSITION = 'Phi:Position'
-
-    [HKL.DETECTOR_CIRCLE_AXIS_1]
-    AXIS_NUMBER = 'Nu:AxisNumber'
-    DIRECTION_AXIS = 'Nu:DirectionAxis'
-    POSITION = 'Nu:Position'
-
-    [HKL.DETECTOR_CIRCLE_AXIS_2]
-    AXIS_NUMBER = 'Delta:AxisNumber'
-    DIRECTION_AXIS = 'Delta:DirectionAxis'
-    POSITION = 'Delta:Position'
 
     [HKL.SPEC]
     ENERGY_VALUE = 'Energy:Value'

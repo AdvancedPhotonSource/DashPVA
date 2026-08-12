@@ -94,35 +94,48 @@ MAX = "BL172:eiger4M:Stats4:MaxValue_RBV"
 SIGMA = "BL172:eiger4M:Stats4:Sigma_RBV"
 MEAN = "BL172:eiger4M:Stats4:MeanValue_RBV"
 
-[HKL.SAMPLE_CIRCLE_AXIS_1]
-AXIS_NUMBER = "6idb1:m28_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m28_RBV:DirectionAxis"
-POSITION = "6idb1:m28_RBV:Position"
+[[HKL.AXES]]
+name = 'Mu'
+source_pv = '6idb1:m28_RBV:Position'
+axis_number = 1
+direction = 'x+'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_2]
-AXIS_NUMBER = "6idb1:m17_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m17_RBV:DirectionAxis"
-POSITION = "6idb1:m17_RBV:Position"
+[[HKL.AXES]]
+name = 'Eta'
+source_pv = '6idb1:m17_RBV:Position'
+axis_number = 2
+direction = 'z-'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_3]
-AXIS_NUMBER = "6idb1:m19_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m19_RBV:DirectionAxis"
-POSITION = "6idb1:m19_RBV:Position"
+[[HKL.AXES]]
+name = 'Chi'
+source_pv = '6idb1:m19_RBV:Position'
+axis_number = 3
+direction = 'y+'
+role = 'sample'
 
-[HKL.SAMPLE_CIRCLE_AXIS_4]
-AXIS_NUMBER = "6idb1:m20_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m20_RBV:DirectionAxis"
-POSITION = "6idb1:m20_RBV:Position"
+[[HKL.AXES]]
+name = 'Phi'
+source_pv = '6idb1:m20_RBV:Position'
+axis_number = 4
+direction = 'z-'
+role = 'sample'
 
-[HKL.DETECTOR_CIRCLE_AXIS_1]
-AXIS_NUMBER = "6idb1:m29_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m29_RBV:DirectionAxis"
-POSITION = "6idb1:m29_RBV:Position"
+[[HKL.AXES]]
+name = 'Nu'
+source_pv = '6idb1:m29_RBV:Position'
+axis_number = 1
+direction = 'x+'
+role = 'detector'
 
-[HKL.DETECTOR_CIRCLE_AXIS_2]
-AXIS_NUMBER = "6idb1:m18_RBV:AxisNumber"
-DIRECTION_AXIS = "6idb1:m18_RBV:DirectionAxis"
-POSITION = "6idb1:m18_RBV:Position"
+[[HKL.AXES]]
+name = 'Delta'
+source_pv = '6idb1:m18_RBV:Position'
+axis_number = 2
+direction = 'z-'
+role = 'detector'
+
 
 [HKL.SPEC]
     ENERGY_VALUE = '6idb:spec:Energy:Value'
