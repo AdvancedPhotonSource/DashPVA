@@ -65,6 +65,7 @@ class MaskViewerWindow(QDialog):
         self._last_brush = None      # last-stamped native pt (gap-free brush)
         self._view_ready = False     # True after first setRange so zoom is preserved
         self._resume_plotting = False  # timer_plot was active before an edit-mode pause
+        self._canvas_shape = None    # set by _refresh_display(): shown image's own resolution
 
         # Display-only orientation — initialized from parent viewer
         # so the mask appears the same way as the diffraction pattern
@@ -117,6 +118,16 @@ class MaskViewerWindow(QDialog):
         self.lbl_info = QLabel(self._info_text())
         self.lbl_info.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_info)
+
+        # Shown only when the mask and the live diffraction image are different
+        # resolutions — edits still land in the right place (scaled), but the
+        # scaling can distort fine detail in the mask (e.g. thin lines widening
+        # or thinning under up/downsampling).
+        self.lbl_shape_warning = QLabel()
+        self.lbl_shape_warning.setObjectName('lbl_mask_shape_warning')
+        self.lbl_shape_warning.setAlignment(Qt.AlignCenter)
+        self.lbl_shape_warning.setVisible(False)
+        layout.addWidget(self.lbl_shape_warning)
 
         # Controls row 1: overlay + alpha
         overlay_row = QHBoxLayout()
@@ -416,6 +427,7 @@ class MaskViewerWindow(QDialog):
         """Full redraw: grayscale base layer (diffraction image or black) plus
         the red mask overlay. Use _refresh_overlay for cheap mask-only updates
         during interactive drawing."""
+        mask_disp_shape = self._display_shape()
         base = None
         if self._show_image:
             img = self._get_current_image()
@@ -435,16 +447,54 @@ class MaskViewerWindow(QDialog):
                         if rng > 0 else np.zeros_like(img_float))
 
         if base is None:
-            base = np.zeros(self._display_shape(), dtype=np.float32)
+            base = np.zeros(mask_disp_shape, dtype=np.float32)
+
+        # The canvas is the diffraction image's own resolution while it's shown
+        # (a previously-saved mask can be a different resolution than the live
+        # detector — different ROI/binning) — never warp the image to the
+        # mask's shape. The mask overlay is resampled to match in
+        # _refresh_overlay(), and click coordinates are scaled back to the
+        # mask's own array in _event_native(), so editing still lands on the
+        # right pixels.
+        self._canvas_shape = base.shape[:2]
+        shape_mismatch = self._show_image and self._canvas_shape != mask_disp_shape
+        self.lbl_shape_warning.setVisible(shape_mismatch)
+        if shape_mismatch:
+            self.lbl_shape_warning.setText(
+                f"Mask ({mask_disp_shape[0]}x{mask_disp_shape[1]}) and image "
+                f"({self._canvas_shape[0]}x{self._canvas_shape[1]}) don't match — "
+                f"there may be distortion."
+            )
 
         self.image_view.setColorMap(pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 255, 255)]))
         self.image_view.setImage(base.astype(np.float32), autoRange=False,
                                  autoLevels=False, levels=(0, 1))
-        self.mask_overlay.setRect(QRectF(0, 0, base.shape[0], base.shape[1]))
+        # setImage() must run before setRect(): pg.ImageItem computes setRect's
+        # scale against whatever image size it has *at that moment* — calling
+        # setRect on a still-imageless ImageItem bakes in a scale against a
+        # placeholder 1x1 size, and a later setImage() never recomputes it,
+        # leaving the item's real (scene-mapped) bounds squared (e.g. a
+        # 100x400 mask reporting bounds of 10000x160000).
+        self._refresh_overlay()
+        self.image_view.getImageItem().setRect(QRectF(0, 0, *self._canvas_shape))
+        self.mask_overlay.setRect(QRectF(0, 0, *self._canvas_shape))
+        # Only fit the range here for shape changes while already visible (e.g.
+        # transpose/rotate mid-session) — the very first fit is deferred to
+        # showEvent's _apply_initial_range, once the dialog has real geometry.
         if not self._view_ready and self.isVisible():
             self.plot_item.vb.autoRange(padding=0.02)
             self._view_ready = True
-        self._refresh_overlay()
+
+    @staticmethod
+    def _nearest_resize(arr, out_shape):
+        """Nearest-neighbor resize of a 2D array to out_shape via index arrays —
+        used to render the mask overlay at the diffraction image's own
+        resolution when it differs from the mask's."""
+        in_h, in_w = arr.shape
+        out_h, out_w = out_shape
+        row_idx = np.arange(out_h) * in_h // out_h
+        col_idx = np.arange(out_w) * in_w // out_w
+        return arr[row_idx][:, col_idx]
 
     def _refresh_overlay(self, update_info=True):
         """Cheap update of just the red mask layer — no base-image recompute.
@@ -453,6 +503,8 @@ class MaskViewerWindow(QDialog):
         does a full-mask np.sum, too slow to run on every mouse-move.
         """
         display_mask = self._get_display_mask()
+        if self._canvas_shape != display_mask.shape:
+            display_mask = self._nearest_resize(display_mask, self._canvas_shape)
         self.mask_overlay.setImage(display_mask.astype(np.float32),
                                    autoLevels=False, levels=(0, 1))
         self.mask_overlay.setOpacity(self._alpha if self._show_image else 1.0)
@@ -462,6 +514,7 @@ class MaskViewerWindow(QDialog):
     def _toggle_image_overlay(self, state):
         self._show_image = (state == Qt.Checked)
         self._refresh_display()
+        self.plot_item.vb.autoRange(padding=0.02)
 
     def _alpha_changed(self, value):
         self._alpha = value / 100.0
