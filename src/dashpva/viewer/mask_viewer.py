@@ -64,6 +64,7 @@ class MaskViewerWindow(QDialog):
         self._stroke_snapshot = None # mask copy for rect/line live preview restore
         self._last_brush = None      # last-stamped native pt (gap-free brush)
         self._view_ready = False     # True after first setRange so zoom is preserved
+        self._resume_plotting = False  # timer_plot was active before an edit-mode pause
 
         # Display-only orientation — initialized from parent viewer
         # so the mask appears the same way as the diffraction pattern
@@ -232,6 +233,7 @@ class MaskViewerWindow(QDialog):
                 self.mask_updated.emit(self.mask)
             elif reply == QMessageBox.Save:
                 self._save_mask()
+        self._pause_live_plotting(False)
         event.accept()
 
     def reject(self):
@@ -534,11 +536,33 @@ class MaskViewerWindow(QDialog):
         self._editing = (state == Qt.Checked)
         # Disable ViewBox pan/zoom while drawing so mouse events are ours alone.
         self.plot_item.vb.setMouseEnabled(x=not self._editing, y=not self._editing)
+        self._pause_live_plotting(self._editing)
         self._line_start = None
         self._edit_press_pt = None
         self._edit_dragging = False
         self._stroke_snapshot = None
         self._last_brush = None
+
+    def _pause_live_plotting(self, pause):
+        """Stop the parent viewer's live-plot timer while drawing on large detectors.
+
+        On large detectors, the per-frame redraw (mask apply, transpose,
+        rotate, log, autoscale) can consume most or all of the timer_plot
+        period, starving this dialog's own repaint so drawn strokes don't
+        visibly appear until streaming stops. Below settings.MASK_EDITOR_PAUSE_MIN_PIXELS
+        that contention doesn't happen, so leave the live view running.
+        """
+        if self.mask.size < settings.MASK_EDITOR_PAUSE_MIN_PIXELS:
+            return
+        timer = getattr(self.parent_viewer, 'timer_plot', None)
+        if timer is None:
+            return
+        if pause:
+            self._resume_plotting = timer.isActive()
+            timer.stop()
+        elif self._resume_plotting:
+            timer.start()
+            self._resume_plotting = False
 
     def _tool_changed(self, *_):
         """Reset any in-progress line when the active tool changes."""

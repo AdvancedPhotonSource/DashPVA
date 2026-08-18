@@ -207,6 +207,12 @@ RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 # Eiger detector).
 MASK_UNDO_MAX: int = 20
 
+# Mask editor only pauses the parent viewer's live-plot timer while drawing on
+# detectors at or above this many pixels (static — not config-driven). Below
+# this, timer_plot's per-frame cost doesn't come close to starving the editor's
+# own repaint, so pausing the live view would just be a needless interruption.
+MASK_EDITOR_PAUSE_MIN_PIXELS: int = 1_000_000
+
 # Cache + convenience
 CACHING_MODE: Optional[str] = None
 CACHE_OPTIONS: Dict[str, Any] = {}
