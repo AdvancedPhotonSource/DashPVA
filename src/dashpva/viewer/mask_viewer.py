@@ -150,7 +150,8 @@ class MaskViewerWindow(QDialog):
 
         self.btn_redo = QPushButton()
         self.btn_redo.setIcon(qta.icon('fa5s.redo'))
-        self.btn_redo.setToolTip('Redo (Ctrl+Y)')
+        redo_keys = QKeySequence(QKeySequence.Redo).toString(QKeySequence.NativeText)
+        self.btn_redo.setToolTip(f'Redo ({redo_keys})')
         self.btn_redo.setFixedWidth(32)
         self.btn_redo.clicked.connect(self.redo)
         row_ops.addWidget(self.btn_redo)
@@ -229,6 +230,8 @@ class MaskViewerWindow(QDialog):
             if reply == QMessageBox.Discard:
                 self.mask = self._original_mask.copy()
                 self.mask_updated.emit(self.mask)
+            elif reply == QMessageBox.Save:
+                self._save_mask()
         event.accept()
 
     def reject(self):
@@ -327,27 +330,32 @@ class MaskViewerWindow(QDialog):
             data = np.rot90(data, k=self._rot_num)
         return data
 
+    def _display_shape(self):
+        """Shape _get_display_mask() would produce, without building a copy."""
+        h, w = self.mask.shape
+        m, n = (w, h) if self._is_transposed else (h, w)  # shape just before rot90
+        return (n, m) if self._rot_num % 2 else (m, n)
+
     def _display_to_native(self, disp_i, disp_j):
         """Reverse-map display coordinates back to detector-native indices.
 
-        Uses a probe array to exactly invert the forward transform chain
-        (transpose then rot90) so edit-mode clicks modify the correct pixel.
+        Closed-form inverse of the forward transform chain (transpose then
+        rot90): both are index permutations, so this is direct arithmetic
+        instead of building a probe array and scanning it with argwhere —
+        this runs on every mouse-move while drawing.
         """
-        display_mask = self._get_display_mask()
-        probe = np.zeros(display_mask.shape, dtype=bool)
-        probe[disp_i, disp_j] = True
-
-        # Undo rot90(k) = apply rot90(4-k)
-        if self._rot_num:
-            probe = np.rot90(probe, k=(4 - self._rot_num))
-        # Undo transpose
-        if self._is_transposed:
-            probe = probe.T
-
-        idx = np.argwhere(probe)
-        if len(idx) == 0:
-            return -1, -1
-        return int(idx[0, 0]), int(idx[0, 1])
+        h, w = self.mask.shape
+        m, n = (w, h) if self._is_transposed else (h, w)  # shape just before rot90
+        k = self._rot_num % 4
+        if k == 0:
+            ti, tj = disp_i, disp_j
+        elif k == 1:
+            ti, tj = disp_j, n - 1 - disp_i
+        elif k == 2:
+            ti, tj = m - 1 - disp_i, n - 1 - disp_j
+        else:  # k == 3
+            ti, tj = m - 1 - disp_j, disp_i
+        return (tj, ti) if self._is_transposed else (ti, tj)
 
     def _get_current_image(self):
         """Get current diffraction image from parent viewer if available."""
@@ -382,10 +390,9 @@ class MaskViewerWindow(QDialog):
     # ------------------------------------------------------------------
 
     def _get_parent_display_settings(self):
-        """Get display settings (log, levels, colormap) from parent viewer."""
+        """Get display settings (log, levels) from parent viewer."""
         log_on = False
         levels = None
-        colormap = None
         if self.parent_viewer is not None:
             if hasattr(self.parent_viewer, 'log_image'):
                 log_on = self.parent_viewer.log_image.isChecked()
@@ -394,20 +401,17 @@ class MaskViewerWindow(QDialog):
                     levels = self.parent_viewer.image_view.getLevels()
                 except Exception:
                     pass
-            if hasattr(self.parent_viewer, 'cet_colormap'):
-                colormap = self.parent_viewer.cet_colormap
-        return log_on, levels, colormap
+        return log_on, levels
 
     def _refresh_display(self):
         """Full redraw: grayscale base layer (diffraction image or black) plus
         the red mask overlay. Use _refresh_overlay for cheap mask-only updates
         during interactive drawing."""
-        display_mask = self._get_display_mask()
         base = None
         if self._show_image:
             img = self._get_current_image()
             if img is not None:
-                log_on, parent_levels, _ = self._get_parent_display_settings()
+                log_on, parent_levels = self._get_parent_display_settings()
                 img = self._transform_data_for_display(img)
                 img_float = img.astype(np.float64)
                 if log_on:
@@ -422,7 +426,7 @@ class MaskViewerWindow(QDialog):
                         if rng > 0 else np.zeros_like(img_float))
 
         if base is None:
-            base = np.zeros(display_mask.shape, dtype=np.float32)
+            base = np.zeros(self._display_shape(), dtype=np.float32)
 
         self.image_view.setColorMap(pg.ColorMap([0.0, 1.0], [(0, 0, 0), (255, 255, 255)]))
         self.image_view.setImage(base.astype(np.float32), autoRange=False,
@@ -436,13 +440,18 @@ class MaskViewerWindow(QDialog):
                 self._view_ready = True
         self._refresh_overlay()
 
-    def _refresh_overlay(self):
-        """Cheap update of just the red mask layer — no base-image recompute."""
+    def _refresh_overlay(self, update_info=True):
+        """Cheap update of just the red mask layer — no base-image recompute.
+
+        ``update_info`` is False during interactive dragging: _info_text()
+        does a full-mask np.sum, too slow to run on every mouse-move.
+        """
         display_mask = self._get_display_mask()
         self.mask_overlay.setImage(display_mask.astype(np.float32),
                                    autoLevels=False, levels=(0, 1))
         self.mask_overlay.setOpacity(self._alpha if self._show_image else 1.0)
-        self.lbl_info.setText(self._info_text())
+        if update_info:
+            self.lbl_info.setText(self._info_text())
 
     def _toggle_image_overlay(self, state):
         self._show_image = (state == Qt.Checked)
@@ -469,6 +478,7 @@ class MaskViewerWindow(QDialog):
 
         # self.mask is always detector-native — safe to save directly
         np.save(self.mask_path, self.mask)
+        self._original_mask = self.mask.copy()
         self.mask_updated.emit(self.mask)
         num_masked = int(np.sum(self.mask))
         h, w = self.mask.shape
@@ -540,11 +550,11 @@ class MaskViewerWindow(QDialog):
         # pyqtgraph pixel (i,j) occupies [i, i+1) x [j, j+1) — use floor
         vx = int(np.floor(mouse_point.x()))
         vy = int(np.floor(mouse_point.y()))
-        display_mask = self._get_display_mask()
+        disp_shape = self._display_shape()
         if clamp:
-            vx = min(max(vx, 0), display_mask.shape[0] - 1)
-            vy = min(max(vy, 0), display_mask.shape[1] - 1)
-        elif not (0 <= vx < display_mask.shape[0] and 0 <= vy < display_mask.shape[1]):
+            vx = min(max(vx, 0), disp_shape[0] - 1)
+            vy = min(max(vy, 0), disp_shape[1] - 1)
+        elif not (0 <= vx < disp_shape[0] and 0 <= vy < disp_shape[1]):
             return None
         row, col = self._display_to_native(vx, vy)
         if clamp:
@@ -580,7 +590,7 @@ class MaskViewerWindow(QDialog):
 
             if tool == 'Brush':
                 self._push_undo()
-                self._paint_disk(pt[0], pt[1], self.spn_thickness.value(), value)
+                self._paint_disk(pt[0], pt[1], self._thickness_to_radius(self.spn_thickness.value()), value)
                 self._refresh_overlay()
             # Rectangle / Line: don't modify mask yet — wait to distinguish click from drag
             return True
@@ -594,7 +604,7 @@ class MaskViewerWindow(QDialog):
 
             if tool == 'Brush':
                 self._stamp_along(self._last_brush or pt, pt,
-                                  max(1, self.spn_thickness.value()), value)
+                                  self._thickness_to_radius(self.spn_thickness.value()), value)
                 self._last_brush = pt
             elif tool == 'Rectangle':
                 self.mask[:] = self._stroke_snapshot
@@ -603,7 +613,7 @@ class MaskViewerWindow(QDialog):
                 self.mask[:] = self._stroke_snapshot
                 start = self._line_start if self._line_start is not None else self._edit_press_pt
                 self._paint_line(start, pt, self.spn_thickness.value(), value)
-            self._refresh_overlay()
+            self._refresh_overlay(update_info=False)
             return True
 
         elif t == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
@@ -662,6 +672,16 @@ class MaskViewerWindow(QDialog):
     # Paint helpers (always operate in detector-native coordinates)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _thickness_to_radius(thickness):
+        """Convert a "Size" spinbox value (pixel width) to a _paint_disk radius.
+
+        _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2 makes
+        the brush's Size mean the same pixel width as Rectangle's side and
+        Line's thickness.
+        """
+        return max(1, int(round((thickness + 1) / 2)))
+
     def _paint_disk(self, row, col, radius, value):
         """Set a circular region of pixels (native coords) to ``value``."""
         radius = max(1, int(radius))
@@ -702,6 +722,4 @@ class MaskViewerWindow(QDialog):
 
     def _paint_line(self, start, end, thickness, value):
         """Set a thick line between two native-coord points to ``value``."""
-        # _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2.
-        radius = max(1, int(round((thickness + 1) / 2)))
-        self._stamp_along(start, end, radius, value)
+        self._stamp_along(start, end, self._thickness_to_radius(thickness), value)

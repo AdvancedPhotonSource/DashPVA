@@ -201,8 +201,10 @@ RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 
-# Max depth of the mask-editor undo/redo history (static — not config-driven).
-# Each entry is a full boolean mask copy, so this bounds editor memory use.
+# Max number of mask-editor undo/redo snapshots kept (static — not config-driven).
+# Bounds snapshot count, not bytes: each entry is a full boolean mask copy, so
+# both stacks full is up to MASK_UNDO_MAX * 2 * mask.nbytes (~360 MB for a 16M-pixel
+# Eiger detector).
 MASK_UNDO_MAX: int = 20
 
 # Cache + convenience

@@ -716,7 +716,8 @@ class DiffractionImageWindow(BaseWindow):
         self._update_mask_labels()
 
     def edit_mask_clicked(self):
-        if self.mask_manager.mask is None:
+        mask = self.mask_manager.mask
+        if mask is None:
             det_shape = None
             if self.reader is not None and len(getattr(self.reader, 'shape', ())) >= 2:
                 det_shape = tuple(int(v) for v in self.reader.shape[:2])
@@ -724,17 +725,22 @@ class DiffractionImageWindow(BaseWindow):
                 QMessageBox.warning(self, 'No Frame',
                                     'Start live view first so the detector size is known.')
                 return
-            self.mask_manager.combine_masks(np.zeros(det_shape, dtype=bool), replace=True)
-            self.mask_manager.save_active_mask()
-            self._update_mask_labels()
-        self._open_mask_viewer(edit=True, show_image=True)
+            # Not written to mask_manager/disk here — just handed to the editor.
+            # It only becomes the real mask once the user makes an actual edit
+            # (_on_mask_edited), so opening-then-closing without editing is a no-op.
+            mask = np.zeros(det_shape, dtype=bool)
+        self._open_mask_viewer(show_image=True, mask=mask)
 
-    def _open_mask_viewer(self, edit: bool = False, show_image: bool = False):
-        """(Re)open the mask editor window for the current mask."""
+    def _open_mask_viewer(self, edit: bool = False, show_image: bool = False, mask=None):
+        """(Re)open the mask editor window for the current mask.
+
+        ``mask`` overrides mask_manager.mask, e.g. for a fresh blank mask
+        from edit_mask_clicked that hasn't been saved/adopted yet.
+        """
         if self.mask_viewer is not None:
             self.mask_viewer.close()
         self.mask_viewer = MaskViewerWindow(
-            mask=self.mask_manager.mask,
+            mask=self.mask_manager.mask if mask is None else mask,
             mask_path=self.mask_manager.mask_path,
             parent=self)
         self.mask_viewer.mask_updated.connect(self._on_mask_edited)
