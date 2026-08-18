@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pyqtgraph as pg
 import qtawesome as qta
-from PyQt5.QtCore import QEvent, QRectF, Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -240,14 +240,21 @@ class MaskViewerWindow(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         if not self._view_ready:
-            if self._show_image:
-                img = self._get_current_image()
-                shape = self._transform_data_for_display(img).shape if img is not None else self._get_display_mask().shape
-            else:
-                shape = self._get_display_mask().shape
-            self.plot_item.vb.setRange(
-                xRange=(0, shape[0]), yRange=(0, shape[1]), padding=0.02)
-            self._view_ready = True
+            # Defer to let Qt finish laying out the just-shown dialog first —
+            # fitting the range against not-yet-final geometry is what makes
+            # the initial view come up zoomed in far too much.
+            QTimer.singleShot(0, self._apply_initial_range)
+
+    def _apply_initial_range(self):
+        if self._view_ready:
+            return
+        # autoRange() fits the view to the items already on the scene while
+        # respecting the ImageView's locked (square-pixel) aspect ratio.
+        # Setting xRange/yRange explicitly is over-constrained under a locked
+        # aspect — pyqtgraph resolves the conflict by blowing one axis's
+        # range up far past the mask, which is what produced the huge zoom.
+        self.plot_item.vb.autoRange(padding=0.02)
+        self._view_ready = True
 
     # ------------------------------------------------------------------
     # Undo / redo (snapshot-based)
@@ -432,12 +439,9 @@ class MaskViewerWindow(QDialog):
         self.image_view.setImage(base.astype(np.float32), autoRange=False,
                                  autoLevels=False, levels=(0, 1))
         self.mask_overlay.setRect(QRectF(0, 0, base.shape[0], base.shape[1]))
-        if not self._view_ready:
-            self.plot_item.vb.setRange(
-                xRange=(0, base.shape[0]), yRange=(0, base.shape[1]),
-                padding=0.02)
-            if self.isVisible():
-                self._view_ready = True
+        if not self._view_ready and self.isVisible():
+            self.plot_item.vb.autoRange(padding=0.02)
+            self._view_ready = True
         self._refresh_overlay()
 
     def _refresh_overlay(self, update_info=True):
