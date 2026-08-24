@@ -70,14 +70,18 @@ def setup():
 
 
 @cli.command('ioc')
-@click.option('--prefix', default='pvapy', metavar='PREFIX',
-              help='IOC PV prefix (e.g. xidb); a trailing ":" is added if missing. Defaults to pvapy.')
+@click.option('--prefix', default=None, hidden=True)
 @click.option('--gui/--no-gui', default=True,
               help='Show the IOC control GUI (default). Use --no-gui to run the IOC headless.')
 def ioc(prefix, gui):
     """Launch the RSM-parameter IOC simulator (GUI + headless CaIoc)."""
+    if prefix is not None:
+        raise click.UsageError(
+            '--prefix is no longer an override; set root IOC_PREFIX in the '
+            'active Workflow profile'
+        )
     click.echo('Running RSM-parameter IOC simulator' + ('' if gui else ' (headless)'))
-    cmd = [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter', '--prefix', prefix.strip()]
+    cmd = [sys.executable, '-m', 'dashpva.consumers.ioc_rsm_parameter']
     if not gui:
         cmd.append('--ioc-mode')
     exit_code = subprocess.run(cmd).returncode

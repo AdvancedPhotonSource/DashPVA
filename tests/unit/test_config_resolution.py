@@ -83,17 +83,27 @@ def test_canonical_profile_generates_managed_hkl_without_mutating_raw():
     assert "SAMPLE_CIRCLE_AXIS_2" not in effective["HKL"]
     assert effective["HKL"]["CUSTOM_EXTENSION"] == {"ENABLED": True}
     assert effective["HKL"]["SPEC"]["ENERGY_VALUE"] == "6idb:spec:Energy:Value"
+    assert "INPLANE_REFERENCE_DIRECTION" in effective["HKL"]
+    assert "INPLANE_REFERENCE_DIRECITON" not in effective["HKL"]
+    assert "SAMPLE_SURFACE_NORMAL_DIRECTION" in effective["HKL"]
+    assert "SAMPLE_SURFACE_NORMAL_DIRECITON" not in effective["HKL"]
 
 
 def test_empty_canonical_axis_lists_remove_all_legacy_managed_axes():
     raw = _canonical_profile()
+    raw["HKL"]["MU"] = {"POSITION": "legacy:mu"}
+    raw["HKL"]["NU"] = {"POSITION": "legacy:nu"}
     raw["IOC_RSM_PARAMETER"]["SAMPLE_AXES"] = []
     raw["IOC_RSM_PARAMETER"]["DETECTOR_AXES"] = []
 
     effective = resolve_profile_config(raw)
 
     assert not any("_CIRCLE_AXIS_" in name for name in effective["HKL"])
+    assert "MU" not in effective["HKL"]
+    assert "NU" not in effective["HKL"]
     assert "SAMPLE_CIRCLE_AXIS_1" in raw["HKL"]
+    assert "MU" in raw["HKL"]
+    assert "NU" in raw["HKL"]
 
 
 def test_record_names_must_be_unique_across_sample_and_detector_roles():
@@ -117,6 +127,15 @@ def test_record_name_rejects_whitespace_that_would_create_an_invalid_pv():
     raw["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]["RECORD_NAME"] = "Mu Position"
 
     with pytest.raises(ValueError, match="record stem"):
+        resolve_profile_config(raw)
+
+
+@pytest.mark.parametrize("version", [True, 1.0, 2])
+def test_unsupported_canonical_schema_version_fails_before_hkl_generation(version):
+    raw = _canonical_profile()
+    raw["IOC_RSM_PARAMETER"]["SCHEMA_VERSION"] = version
+
+    with pytest.raises(ValueError, match="SCHEMA_VERSION"):
         resolve_profile_config(raw)
 
 

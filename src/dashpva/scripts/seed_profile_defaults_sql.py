@@ -55,6 +55,58 @@ DB_PATH = str(_DB_FILE)
 DEFAULT_PROFILE_DATA: Dict[str, Any] = {
     "DETECTOR_PREFIX": "xlambda",
     "IOC_PREFIX": "xidb",
+    "IOC_RSM_PARAMETER": {
+        "SCHEMA_VERSION": 1,
+        "SAMPLE_AXES": [
+            {
+                "LABEL": "Mu", "RECORD_NAME": "Mu",
+                "SOURCE_PV": "6idb1:m28.RBV", "DIRECTION": "x+",
+                "ANGLE_UNITS": "deg",
+            },
+            {
+                "LABEL": "Eta", "RECORD_NAME": "Eta",
+                "SOURCE_PV": "6idb1:m17.RBV", "DIRECTION": "z-",
+                "ANGLE_UNITS": "deg",
+            },
+            {
+                "LABEL": "Chi", "RECORD_NAME": "Chi",
+                "SOURCE_PV": "6idb1:m19.RBV", "DIRECTION": "y+",
+                "ANGLE_UNITS": "deg",
+            },
+            {
+                "LABEL": "Phi", "RECORD_NAME": "Phi",
+                "SOURCE_PV": "6idb1:m20.RBV", "DIRECTION": "z-",
+                "ANGLE_UNITS": "deg",
+            },
+        ],
+        "DETECTOR_AXES": [
+            {
+                "LABEL": "Nu", "RECORD_NAME": "Nu",
+                "SOURCE_PV": "6idb1:m29.RBV", "DIRECTION": "x+",
+                "ANGLE_UNITS": "deg",
+            },
+            {
+                "LABEL": "Delta", "RECORD_NAME": "Delta",
+                "SOURCE_PV": "6idb1:m18.RBV", "DIRECTION": "z-",
+                "ANGLE_UNITS": "deg",
+            },
+        ],
+        "ENERGY_SOURCE_PV": "6idb:spec:Energy",
+        "ENERGY_UNITS": "keV",
+        "SAMPLE_ORIENTATION": "det",
+        "UB_MATRIX": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        "PRIMARY_BEAM_DIRECTION": [0.0, 1.0, 0.0],
+        "INPLANE_REFERENCE_DIRECTION": [0.0, 1.0, 0.0],
+        "SAMPLE_SURFACE_NORMAL_DIRECTION": [0.0, 0.0, 1.0],
+        "DETECTOR_SETUP": {
+            "PIXEL_DIRECTION_1": "z-",
+            "PIXEL_DIRECTION_2": "x-",
+            "CENTER_CHANNEL_PIXEL": [300.0, 300.0],
+            "SIZE": [28.38, 28.38],
+            "DISTANCE": 400.644,
+            "UNITS": "mm",
+        },
+    },
     "OUTPUT_FILE_LOCATION": "OUTPUT.h5",
     "CONSUMER_MODE": "continuous",
     "CACHE_OPTIONS": {
@@ -139,65 +191,7 @@ DEFAULT_PROFILE_DATA: Dict[str, Any] = {
             "MEAN": "xlambda:Stats5:MeanValue_RBV",
         },
     },
-    "HKL": {
-        "SAMPLE_CIRCLE_AXIS_1": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_2": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_3": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "SAMPLE_CIRCLE_AXIS_4": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "DETECTOR_CIRCLE_AXIS_1": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "DETECTOR_CIRCLE_AXIS_2": {
-            "AXIS_NUMBER": "ioc:motor:AxisNumber",
-            "DIRECTION_AXIS": "ioc:motor:DirectionAxis",
-            "POSITION": "ioc:motor:Position",
-        },
-        "SPEC": {
-            "ENERGY_VALUE": "ioc:spec:Energy:Value",
-            "UB_MATRIX_VALUE": "ioc:spec:UB_matrix:Value",
-        },
-        "PRIMARY_BEAM_DIRECTION": {
-            "AXIS_NUMBER_1": "PrimaryBeamDirection:AxisNumber1",
-            "AXIS_NUMBER_2": "PrimaryBeamDirection:AxisNumber2",
-            "AXIS_NUMBER_3": "PrimaryBeamDirection:AxisNumber3",
-        },
-        "INPLANE_REFERENCE_DIRECITON": {
-            "AXIS_NUMBER_1": "InplaneReferenceDirection:AxisNumber1",
-            "AXIS_NUMBER_2": "InplaneReferenceDirection:AxisNumber2",
-            "AXIS_NUMBER_3": "InplaneReferenceDirection:AxisNumber3",
-        },
-        "SAMPLE_SURFACE_NORMAL_DIRECITON": {
-            "AXIS_NUMBER_1": "SampleSurfaceNormalDirection:AxisNumber1",
-            "AXIS_NUMBER_2": "SampleSurfaceNormalDirection:AxisNumber2",
-            "AXIS_NUMBER_3": "SampleSurfaceNormalDirection:AxisNumber3",
-        },
-        "DETECTOR_SETUP": {
-            "CENTER_CHANNEL_PIXEL": "DetectorSetup:CenterChannelPixel",
-            "DISTANCE": "DetectorSetup:Distance",
-            "PIXEL_DIRECTION_1": "DetectorSetup:PixelDirection1",
-            "PIXEL_DIRECTION_2": "DetectorSetup:PixelDirection2",
-            "SIZE": "DetectorSetup:Size",
-            "UNITS": "DetectorSetup:Units",
-        },
-    },
+    "HKL": {},
 }
 
 

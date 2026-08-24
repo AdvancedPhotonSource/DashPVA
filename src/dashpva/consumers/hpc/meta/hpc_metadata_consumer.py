@@ -14,6 +14,7 @@ from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -143,12 +144,7 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
             self.config = toml.load(config_file)
 
         self.hkl_config = self.config.get('HKL') or {}
-        self.hkl_pv_channels = set()
-        for section in self.hkl_config.values():
-            if isinstance(section, dict):
-                for channel in section.values():
-                    if channel:
-                        self.hkl_pv_channels.add(channel)
+        self.hkl_pv_channels = set(semantic_hkl_channels(self.hkl_config))
         
         # Log configuration via central logger instead of writing to a file
         try:

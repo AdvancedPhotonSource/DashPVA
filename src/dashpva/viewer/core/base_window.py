@@ -25,6 +25,8 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
+import dashpva.settings as app_settings
+from dashpva.gui.change_review_dialog import ChangeReviewDialog
 from dashpva.utils.log_manager import LogManager, get_default_manager
 
 #from dashpva.database import DatabaseInterface
@@ -504,12 +506,124 @@ class BaseWindow(QMainWindow):
             self.viewer_name = title.split(' - ')[0].strip() or self.__class__.__name__
         self.resize(width, height)
 
+    #: Set once a close has been approved, so a subclass closeEvent that ends in
+    #: super().closeEvent(event) does not prompt a second time.
+    _close_confirmed = False
+
+    #: Enable/disable the unsaved-changes gate for this window. None follows
+    #: app_settings.CONFIRM_UNSAVED_CHANGES_ON_CLOSE; True or False overrides it
+    #: on the class or on a single instance, and takes effect immediately.
+    confirm_unsaved_changes = None
+
+    def has_unsaved_changes(self) -> bool:
+        """Whether this window holds edits that are not yet persisted.
+
+        The default never reports dirty, so windows that cannot be edited go on
+        closing straight away. Override together with :meth:`save_changes`.
+        """
+        return False
+
+    def save_changes(self) -> bool:
+        """Persist pending edits; return True only if the save fully succeeded.
+
+        Every failure path -- validation, a revision conflict, a declined
+        confirmation, a failed restart -- must return False rather than raise,
+        because :meth:`confirm_close` keeps the window open on False so edits
+        are never lost to a save that did not land.
+        """
+        return True
+
+
+    def unsaved_changes_text(self) -> str:
+        """Body text for the prompt shown when closing with unsaved changes."""
+        return "This window has unsaved changes."
+
+    def unsaved_changes_rows(self) -> list:
+        """Pending changes as ``(kind, key, old, new)``, kind ``change``/``add``/``remove``.
+
+        Drives the Show Details review table. Returning an empty list omits the
+        button, so a window can adopt :meth:`confirm_close` without one.
+        """
+        return []
+
+    def is_change_editable(self, key: str) -> bool:
+        """Whether a reviewed change's new value can be edited or dropped.
+
+        Override to return False for keys :meth:`apply_change_decisions` cannot
+        write back, so the table shows them read-only rather than silently
+        discarding an edit.
+        """
+        return True
+
+    def apply_change_decisions(self, kept: list, dropped: list) -> None:
+        """Write reviewed changes back into this window's widgets.
+
+        *kept* carries any value the operator edited in the table; *dropped*
+        must be reverted to its old value. Both are ``(kind, key, old, new)``.
+        """
+
+    def review_changes(self, rows: list) -> None:
+        """Show the editable review table for *rows* and apply the decisions."""
+        result = ChangeReviewDialog.review(self, rows, is_editable=self.is_change_editable)
+        if result is not None:
+            self.apply_change_decisions(*result)
+
+    def confirm_close(self, event) -> bool:
+        """Save / Discard / Cancel gate for closing a dirty editor.
+
+        Call at the top of a subclass ``closeEvent``, before any teardown, and
+        return immediately when the result is False -- the event has already
+        been ignored and the window stays open.
+
+        Example:
+            def closeEvent(self, event):
+                if not self.confirm_close(event):
+                    return
+                self.worker.stop()
+                event.accept()
+        """
+        enabled = (
+            app_settings.CONFIRM_UNSAVED_CHANGES_ON_CLOSE
+            if self.confirm_unsaved_changes is None
+            else self.confirm_unsaved_changes
+        )
+        while enabled and not self._close_confirmed:
+            if not self.has_unsaved_changes():
+                break
+            rows = self.unsaved_changes_rows()
+            box = QMessageBox(self)
+            box.setWindowTitle("Unsaved Changes")
+            text = self.unsaved_changes_text()
+            if rows:
+                text = f"{text}\n\n{len(rows)} pending change(s)."
+            box.setText(text)
+            box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            box.setDefaultButton(QMessageBox.Save)
+            details = box.addButton("Show Details...", QMessageBox.ActionRole) if rows else None
+            box.exec_()
+            clicked = box.clickedButton()
+            if details is not None and clicked is details:
+                # Reviewing can drop every change, which leaves the editor clean.
+                self.review_changes(rows)
+                continue
+            answer = box.standardButton(clicked)
+            if answer == QMessageBox.Discard or (
+                answer == QMessageBox.Save and self.save_changes()
+            ):
+                break
+            event.ignore()
+            return False
+        self._close_confirmed = True
+        return True
+
     def closeEvent(self, event):
+        """Close only once any unsaved edits have been saved or discarded.
+
+        Override in subclasses to add teardown, calling :meth:`confirm_close`
+        first so the gate runs before anything is torn down.
         """
-        Handle window close event.
-        Override in subclasses to add custom close behavior.
-        """
-        # Base implementation - just accept the close event
+        if not self.confirm_close(event):
+            return
         event.accept()
 
     def set_viewer_name(self, name: str) -> None:

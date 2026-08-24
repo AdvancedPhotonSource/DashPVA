@@ -37,8 +37,15 @@ def _matrix3(value: Sequence[Sequence[float]], label: str) -> tuple[tuple[float,
     return tuple(tuple(float(component) for component in row) for row in matrix)
 
 
-def _direction_vector(direction: str) -> np.ndarray:
-    return np.asarray(xu.math.getVector(direction), dtype=float)
+def direction_vector(direction: str) -> np.ndarray:
+    """Return xrayutilities' physical vector for a rotation direction."""
+    try:
+        vector = np.asarray(xu.math.getVector(str(direction).strip().lower()), dtype=float)
+    except Exception as exc:
+        raise ValueError(f"Invalid xrayutilities rotation direction {direction!r}.") from exc
+    if vector.shape != (3,) or not np.isfinite(vector).all() or np.linalg.norm(vector) == 0:
+        raise ValueError(f"Rotation direction {direction!r} did not produce a valid vector.")
+    return vector
 
 
 def _parallel(left: Sequence[float], right: Sequence[float]) -> bool:
@@ -249,10 +256,10 @@ def validate_sample_orientation(
     if orientation == "det":
         if not detector_axes:
             raise ValueError("SAMPLE_ORIENTATION='det' requires a detector rotation axis.")
-        innermost = _direction_vector(detector_axes[-1].direction)
+        innermost = direction_vector(detector_axes[-1].direction)
         if _parallel(innermost, primary):
             if len(detector_axes) < 2 or _parallel(
-                _direction_vector(detector_axes[-2].direction), primary
+                direction_vector(detector_axes[-2].direction), primary
             ):
                 raise ValueError(
                     "SAMPLE_ORIENTATION='det' requires an innermost detector rotation "
@@ -263,7 +270,7 @@ def validate_sample_orientation(
     if orientation == "sam":
         if not sample_axes:
             raise ValueError("SAMPLE_ORIENTATION='sam' requires a sample rotation axis.")
-        if _parallel(_direction_vector(sample_axes[-1].direction), primary):
+        if _parallel(direction_vector(sample_axes[-1].direction), primary):
             raise ValueError(
                 "SAMPLE_ORIENTATION='sam' requires the innermost sample axis not to be "
                 "parallel to the primary beam."
@@ -281,7 +288,7 @@ def validate_sample_orientation(
         raise ValueError(
             "SAMPLE_ORIENTATION must be 'det', 'sam', or explicit [xyz][+-] syntax."
         )
-    if _parallel(_direction_vector(orientation), primary):
+    if _parallel(direction_vector(orientation), primary):
         raise ValueError(
             f"Explicit SAMPLE_ORIENTATION={orientation!r} is parallel to the primary "
             "beam; xrayutilities would silently substitute a different axis."

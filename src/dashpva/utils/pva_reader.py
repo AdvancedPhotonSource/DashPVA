@@ -12,6 +12,7 @@ from epics import caget, camonitor, camonitor_clear
 from PyQt5.QtCore import QObject, pyqtSignal
 
 import dashpva.settings as app_settings
+from dashpva.utils.config.hkl import semantic_hkl_channels
 
 
 class PVAReader(QObject):
@@ -745,19 +746,16 @@ class PVAReader(QObject):
         if not self.HKL_IN_CONFIG:
             return
         hkl_config = self.config.get('HKL', {})
-        for pv_dict in hkl_config.values():
-            if not isinstance(pv_dict, dict):
+        for pv_name in semantic_hkl_channels(hkl_config):
+            if pv_name in self.hkl_values:
                 continue
-            for pv_name in pv_dict.values():
-                if not pv_name or pv_name in self.hkl_values:
-                    continue
-                try:
-                    pv_value = caget(pv_name, timeout=0.15)
-                    if pv_value is not None:
-                        self.hkl_values[pv_name] = pv_value
-                    camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
-                except Exception:
-                    pass
+            try:
+                pv_value = caget(pv_name, timeout=0.15)
+                if pv_value is not None:
+                    self.hkl_values[pv_name] = pv_value
+                camonitor(pvname=pv_name, callback=self.hkl_ca_callback)
+            except Exception:
+                pass
 
     def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
         """Store the latest value for an HKL PV; merged into each frame."""
@@ -888,5 +886,4 @@ class PVAReader(QObject):
 
     def get_shape(self) -> tuple[int]:
         return self.shape
-
 

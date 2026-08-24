@@ -32,9 +32,12 @@ Usage:
       settings.ensure_path() -> a TOML path containing the effective configuration
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+_logger = logging.getLogger(__name__)
 
 try:
     from dashpva.utils.config.resolver import resolve_profile_config
@@ -79,11 +82,7 @@ HDF5_STRUCTURE = {
                         "target": "HKL/SPEC/UB_MATRIX_VALUE"
                     },
                     "geometry": {
-                        "NX_class": "NXtransformations",
-                        "sample_phi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_4", "type": "rotation"},
-                        "sample_chi": {"target": "HKL/SAMPLE_CIRCLE_AXIS_3", "type": "rotation"},
-                        "sample_eta": {"target": "HKL/SAMPLE_CIRCLE_AXIS_2", "type": "rotation"},
-                        "sample_mu":  {"target": "HKL/SAMPLE_CIRCLE_AXIS_1", "type": "rotation"}
+                        "NX_class": "NXtransformations"
                     }
                 },
 
@@ -174,6 +173,12 @@ _FLAG_PV_SUFFIX = "ScanOn:Value"
 _FILE_PATH_SUFFIX = "FilePath:Value"
 _FILE_NAME_SUFFIX = "FileName:Value"
 
+# Whether closing a window that has unsaved edits prompts Save / Discard /
+# Cancel instead of closing silently (static — not config-driven). This is the
+# global default; an individual window overrides it by setting
+# BaseWindow.confirm_unsaved_changes on its class or instance.
+CONFIRM_UNSAVED_CHANGES_ON_CLOSE: bool = True
+
 # Bounded pvapy monitor queue depth for the PVA reader (static — not
 # config-driven). The network thread enqueues frames here and a consumer thread
 # drains them; when the consumer falls behind the queue fills and pvapy drops
@@ -205,6 +210,8 @@ RSM_GRID_ENERGY_RELATIVE_TOLERANCE: float = 1e-4
 RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
+RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
+RSM_IOC_SNAPSHOT_EVERY: int = 5
 
 # Combined byte budget for mask-editor undo and redo data.
 MASK_UNDO_MAX_BYTES: int = 32 * 1024 * 1024
@@ -235,6 +242,12 @@ METADATA_PVA: Dict[str, Any] = {}
 ROI: Dict[str, Any] = {}
 STATS: Dict[str, Any] = {}
 HKL: Dict[str, Any] = {}
+# Ordered, role-split views of HKL's circle groups, derived on reload. A thin
+# convenience over the same discovery rsm_geometry uses -- call sites that only
+# need "the sample circles, in order" should not have to know the group-naming
+# or numeric-sort rules. Each entry is (group_name, field_map).
+HKL_SAMPLE_CIRCLES: "list[tuple[str, Dict[str, Any]]]" = []
+HKL_DETECTOR_CIRCLES: "list[tuple[str, Dict[str, Any]]]" = []
 ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
@@ -248,6 +261,10 @@ RAW_CONFIG: Dict[str, Any] = {}
 CONFIG: Dict[str, Any] = {}
 SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
+# Set when resolve_profile_config() rejects the active profile (e.g. a
+# corrupted IOC_RSM_PARAMETER section); CONFIG then falls back to the raw,
+# unresolved config so the package stays importable. Cleared on a clean load.
+CONFIG_ERROR: Optional[str] = None
 
 # Active TOML config path — set by the Settings dialog or resolved from the locator.
 # Resolved TOML path for components that need a direct file path.
@@ -289,15 +306,36 @@ def ensure_path() -> Optional[str]:
     return src.ensure_path(effective if effective != raw else None)
 
 
+def _circles_by_role(hkl: Dict[str, Any], role: str) -> "list":
+    """Ordered (group_name, fields) pairs for one circle role.
+
+    Uses the same resolution rsm_geometry does -- numbered groups sorted by
+    integer suffix, legacy named groups as a per-role fallback -- so this view
+    can never disagree with the geometry the Q conversion actually builds.
+    """
+    try:
+        from dashpva.utils.hkl_axes import resolved_axis_groups
+    except Exception:
+        return []
+    try:
+        return [
+            (name, hkl.get(name, {}) or {})
+            for name in resolved_axis_groups((hkl or {}).keys(), role)
+        ]
+    except Exception:
+        return []
+
+
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
-    global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
+    global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE, CONFIG_ERROR
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
     global BIN_COUNT, BIN_SIZE
     global METADATA_CA, METADATA_PVA, ROI, STATS, HKL, ANALYSIS
+    global HKL_SAMPLE_CIRCLES, HKL_DETECTOR_CIRCLES
     global LOG_PATH, OUTPUT_PATH, CONFIG_PATH, CONSUMERS_PATH
 
     eff = _get_effective_locator()
@@ -305,7 +343,13 @@ def reload() -> None:
 
     src = ConfigSource(eff) if ConfigSource else None
     raw_cfg = src.load() if src else {}
-    cfg = resolve_profile_config(raw_cfg)
+    try:
+        cfg = resolve_profile_config(raw_cfg)
+        CONFIG_ERROR = None
+    except Exception as exc:
+        _logger.error("resolve_profile_config failed, using raw config as-is: %s", exc)
+        CONFIG_ERROR = str(exc)
+        cfg = dict(raw_cfg or {})
     RAW_CONFIG = raw_cfg
     CONFIG = cfg
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
@@ -382,6 +426,8 @@ def reload() -> None:
     ROI = cfg.get('ROI', {}) or {}
     STATS = cfg.get('STATS', {}) or {}
     HKL = cfg.get('HKL', {}) or {}
+    HKL_SAMPLE_CIRCLES = _circles_by_role(HKL, 'sample')
+    HKL_DETECTOR_CIRCLES = _circles_by_role(HKL, 'detector')
     ANALYSIS = cfg.get('ANALYSIS', {}) or {}
 
     # AppSettings: paths (expand ~ if provided). Defaults to ./logs and ./outputs when absent.
@@ -540,6 +586,7 @@ class Settings:
         self._source: Optional[Any] = None  # only set for custom source objects
         self.RAW_CONFIG: Dict[str, Any] = {}
         self.CONFIG: Dict[str, Any] = {}
+        self.CONFIG_ERROR: Optional[str] = None
         self.PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
         # Public attributes mirroring module-level constants
@@ -651,7 +698,13 @@ class Settings:
             raw_cfg = src.load() if src else {}
         except Exception:
             raw_cfg = {}
-        cfg = resolve_profile_config(raw_cfg)
+        try:
+            cfg = resolve_profile_config(raw_cfg)
+            self.CONFIG_ERROR = None
+        except Exception as exc:
+            _logger.error("resolve_profile_config failed, using raw config as-is: %s", exc)
+            self.CONFIG_ERROR = str(exc)
+            cfg = dict(raw_cfg or {})
         self.RAW_CONFIG = raw_cfg
         self.CONFIG = cfg
 

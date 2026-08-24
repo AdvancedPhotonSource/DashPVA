@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 
 import dashpva.settings as app_settings
+from dashpva.utils.hkl_axes import resolved_axis_groups
 from dashpva.utils.rsm_geometry import (
     BuiltRSMGeometry,
     DetectorModel,
@@ -117,23 +118,38 @@ class RSMConverter:
     def get_physics_params(self, h5_file: h5py.File):
         """Extract beam directions, UB matrix, and energy from HKL metadata."""
         meta = h5_file["entry/data/metadata/HKL"]
+        primary_group = self._hkl_group(meta, "PRIMARY_BEAM_DIRECTION")
+        inplane_group = self._hkl_group(
+            meta, "INPLANE_REFERENCE_DIRECTION", "INPLANE_REFERENCE_DIRECITON"
+        )
+        surface_group = self._hkl_group(
+            meta,
+            "SAMPLE_SURFACE_NORMAL_DIRECTION",
+            "SAMPLE_SURFACE_NORMAL_DIRECITON",
+        )
         primary = [float(self._static_numeric(
-            meta[f"PRIMARY_BEAM_DIRECTION/AXIS_NUMBER_{i}"], 1,
+            primary_group[f"AXIS_NUMBER_{i}"], 1,
             f"primary beam direction axis {i}",
         )[0]) for i in range(1, 4)]
         inplane = [float(self._static_numeric(
-            meta[f"INPLANE_REFERENCE_DIRECITON/AXIS_NUMBER_{i}"], 1,
+            inplane_group[f"AXIS_NUMBER_{i}"], 1,
             f"in-plane reference direction axis {i}",
         )[0]) for i in range(1, 4)]
         surface = [float(self._static_numeric(
-            meta[f"SAMPLE_SURFACE_NORMAL_DIRECITON/AXIS_NUMBER_{i}"], 1,
+            surface_group[f"AXIS_NUMBER_{i}"], 1,
             f"sample surface normal direction axis {i}",
         )[0]) for i in range(1, 4)]
         ub = self.get_ub_matrix_from_file(h5_file)
-        energy = float(self._static_numeric(
+        energy_value = float(self._static_numeric(
             meta["SPEC/ENERGY_VALUE"], 1, "photon energy",
             rtol=app_settings.RSM_GRID_ENERGY_RELATIVE_TOLERANCE,
-        )[0]) * 1000.0
+        )[0])
+        units = (
+            self._static_str(meta["SPEC/ENERGY_UNITS"], "photon energy units")
+            if "ENERGY_UNITS" in meta["SPEC"]
+            else "keV"
+        )
+        energy = energy_value * self._energy_factor_to_ev(units)
         vectors = np.asarray([primary, inplane, surface], dtype=float)
         if not np.isfinite(vectors).all():
             raise ValueError("Beam and sample reference directions must be finite.")
@@ -146,6 +162,28 @@ class RSMConverter:
         if not np.isfinite(ub).all() or np.linalg.matrix_rank(ub) < 3:
             raise ValueError("UB matrix must be finite and full rank.")
         return primary, inplane, surface, ub, energy
+
+    @staticmethod
+    def _hkl_group(meta: h5py.Group, canonical: str, *legacy: str) -> h5py.Group:
+        for name in (canonical, *legacy):
+            group = meta.get(name)
+            if isinstance(group, h5py.Group):
+                return group
+            if group is not None:
+                raise ValueError(f"HKL/{name} must be a group.")
+        aliases = ", ".join((canonical, *legacy))
+        raise KeyError(f"Missing HKL metadata group; expected one of: {aliases}.")
+
+    @staticmethod
+    def _energy_factor_to_ev(units: str) -> float:
+        normalized = str(units).strip().lower()
+        factors = {"ev": 1.0, "kev": 1_000.0, "mev": 1_000_000.0}
+        try:
+            return factors[normalized]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported photon energy units {units!r}; expected eV, keV, or MeV."
+            ) from exc
 
     def get_intensity(self, filename: str) -> np.ndarray:
         """Return detector intensities as a flattened array."""
@@ -216,53 +254,19 @@ class RSMConverter:
 
     def _resolve_circle_paths(self, h5_file: h5py.File) -> Tuple[List[str], List[str]]:
         """Return (sample_paths, detector_paths): the resolved HKL group paths
-        for sample/detector circles, in circle order. Prefers the numbered
-        SAMPLE_CIRCLE_AXIS_1..4 / DETECTOR_CIRCLE_AXIS_1..2 groups, falling
-        back to the legacy MU/ETA/CHI/PHI / NU/DELTA named groups — same
-        precedence get_sample_and_detector_circles has always used.
+        for sample/detector circles, in circle order. Numbered groups are
+        sorted by their integer suffix, with legacy named groups retained as
+        a fallback when a role has no numbered groups.
         """
         hkl_base = "entry/data/metadata/HKL"
-        sample_priority = ["MU", "ETA", "CHI", "PHI"]
-        detector_priority = ["NU", "DELTA"]
-
         hkl = h5_file[hkl_base]
-        unsupported = [
-            name for name in hkl
-            if (
-                name.startswith("SAMPLE_CIRCLE_AXIS_")
-                and self._axis_number(name) > 4
-            ) or (
-                name.startswith("DETECTOR_CIRCLE_AXIS_")
-                and self._axis_number(name) > 2
-            )
-        ]
-        if unsupported:
-            raise ValueError(
-                "Unsupported circle metadata: " + ", ".join(sorted(unsupported))
-                + ". This converter currently supports up to four sample and "
-                "two detector circles; geometry-agnostic support is tracked in #132."
-            )
-
-        sample_paths = [f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}" for i in range(1, 5)
-                         if f"{hkl_base}/SAMPLE_CIRCLE_AXIS_{i}" in h5_file]
-        if not sample_paths:
-            sample_paths = [f"{hkl_base}/{axis}" for axis in sample_priority
-                             if f"{hkl_base}/{axis}" in h5_file]
-
-        detector_paths = [f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}" for i in range(1, 3)
-                           if f"{hkl_base}/DETECTOR_CIRCLE_AXIS_{i}" in h5_file]
-        if not detector_paths:
-            detector_paths = [f"{hkl_base}/{axis}" for axis in detector_priority
-                               if f"{hkl_base}/{axis}" in h5_file]
-
-        return sample_paths, detector_paths
-
-    @staticmethod
-    def _axis_number(name: str) -> int:
-        try:
-            return int(name.rsplit("_", 1)[-1])
-        except ValueError:
-            return 10**9
+        return (
+            [f"{hkl_base}/{name}" for name in resolved_axis_groups(hkl.keys(), "sample")],
+            [
+                f"{hkl_base}/{name}"
+                for name in resolved_axis_groups(hkl.keys(), "detector")
+            ],
+        )
 
     def get_circle_directions(self, h5_file: h5py.File) -> Tuple[List[str], List[str]]:
         """Return (sc_dir, dc_dir): the frame-invariant circle axis-direction

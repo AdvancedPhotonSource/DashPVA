@@ -167,7 +167,7 @@ class TestInputGuards:
 
         assert result.per_file_info[0].energy_eV == pytest.approx(10000.0)
 
-    def test_extra_numbered_circle_is_rejected(self, tmp_path):
+    def test_extra_numbered_circle_is_supported(self, tmp_path):
         path = str(tmp_path / "scan.h5")
         make_synthetic_scan_h5(path, n_frames=2, shape=(3, 5))
         with h5py.File(path, "r+") as h5_file:
@@ -176,8 +176,9 @@ class TestInputGuards:
             )
             group.create_dataset("DIRECTION_AXIS", data=np.bytes_("x+"))
             group.create_dataset("POSITION", data=np.zeros(2))
-        with pytest.raises(RSMMergeError, match="#132"):
-            build_volume([path], nx=4, ny=5, nz=6, use_mask=False)
+        result = build_volume([path], nx=4, ny=5, nz=6, use_mask=False)
+
+        assert result.volume.shape == (4, 5, 6)
 
 
 class TestMemoryGuard:

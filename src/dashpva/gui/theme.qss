@@ -13,6 +13,11 @@
 /* -- macOS dark mode text fix ---------------------------------------- */
 QMessageBox QLabel { color: palette(text); }
 
+/* -- Profile-backed editor notices ---------------------------------- */
+QLabel[messageLevel="info"] { color: palette(text); }
+QLabel[messageLevel="warning"] { color: $WARNING; font-weight: bold; }
+QLabel[messageLevel="error"] { color: $ERROR; font-weight: bold; }
+
 /* -- Dock widget borders + title bar --------------------------------- */
 QDockWidget::pane {
     border: 1px solid palette(mid);

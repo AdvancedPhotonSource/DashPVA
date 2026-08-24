@@ -110,12 +110,10 @@ Scripted and HPC callers can bypass the guard with
 
 ## Supported geometry
 
-Up to **four sample circles** and **two detector circles**, resolved from the numbered
-`SAMPLE_CIRCLE_AXIS_1..4` / `DETECTOR_CIRCLE_AXIS_1..2` groups, falling back to the
-legacy `MU`/`ETA`/`CHI`/`PHI` and `NU`/`DELTA` names. Files carrying circles beyond
-that are rejected explicitly rather than silently truncated —
-geometry-agnostic support is tracked in
-[#132](https://github.com/AdvancedPhotonSource/DashPVA/issues/132).
+Any number of sample and detector circles is resolved from numerically ordered
+`SAMPLE_CIRCLE_AXIS_N` / `DETECTOR_CIRCLE_AXIS_N` groups. When a role has no
+numbered groups, the legacy `MU`/`ETA`/`CHI`/`PHI` and `NU`/`DELTA` names remain
+supported.
 
 Metadata that the conversion treats as static (photon energy, detector center, size,
 distance, beam and sample reference directions) is validated for consistency across
