@@ -14,9 +14,19 @@ import toml
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.hdf5_loader import discover_hkl_axis_labels
 from dashpva.utils.hdf5_writer import HDF5Writer
-from dashpva.utils.metadata_converter import _convert_single_file, convert_files_or_dir
+from dashpva.utils.metadata_converter import (
+    _convert_single_file,
+    _materialize_canonical_profile,
+    convert_files_or_dir,
+)
 from dashpva.utils.rsm_converter import RSMConverter
-from dashpva.utils.rsm_geometry import direction_vector
+from dashpva.utils.rsm_geometry import (
+    FRAME_AXIS_DIRECT,
+    FRAME_AXIS_SWAPPED,
+    detector_model_from_setup,
+    detector_setup_from_channels,
+    direction_vector,
+)
 
 from ._synthetic_hdf5 import make_synthetic_scan_h5
 
@@ -525,3 +535,85 @@ def test_canonical_converter_fails_when_energy_source_is_missing(tmp_path):
             tmp_path,
             False,
         )
+
+
+@pytest.mark.parametrize(
+    ("frame_axis_order", "acquired_frame"),
+    ((FRAME_AXIS_DIRECT, (2, 4)), (FRAME_AXIS_SWAPPED, (4, 2))),
+)
+def test_converted_detector_setup_keeps_only_profile_calibration(
+    tmp_path, frame_axis_order, acquired_frame
+):
+    """PIXEL_SIZE-only metadata round-trips to the same live/offline model."""
+    h5_path = tmp_path / "detector_setup.h5"
+    mapping = {
+        "IOC_PREFIX": "test:",
+        "IOC_RSM_PARAMETER": {
+            "SAMPLE_AXES": [],
+            "DETECTOR_AXES": [],
+            "ENERGY_SOURCE_PV": "10.0",
+            "ENERGY_UNITS": "keV",
+            "SAMPLE_ORIENTATION": "x+",
+            "UB_MATRIX": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            "PRIMARY_BEAM_DIRECTION": [0.0, 1.0, 0.0],
+            "INPLANE_REFERENCE_DIRECTION": [1.0, 0.0, 0.0],
+            "SAMPLE_SURFACE_NORMAL_DIRECTION": [0.0, 0.0, 1.0],
+            "DETECTOR_SETUP": {
+                "PIXEL_DIRECTION_1": "x+",
+                "PIXEL_DIRECTION_2": "z+",
+                "CENTER_CHANNEL_PIXEL": [1.0, 1.0],
+                "DISTANCE": 500.0,
+                "UNITS": "mm",
+                "PIXEL_SIZE": [0.055, 0.055],
+                "DETECTOR_SHAPE": [8, 12],
+                "BINNING": [2, 2],
+                "ROI": [0, 4, 0, 8],
+                "DETROT": 1.25,
+                "TILT": 0.5,
+                "TILTAZIMUTH": 30.0,
+                "FRAME_AXIS_ORDER": frame_axis_order,
+            },
+        },
+    }
+    raw_setup = mapping["IOC_RSM_PARAMETER"]["DETECTOR_SETUP"]
+    assert "SIZE" not in raw_setup
+
+    with h5py.File(h5_path, "w") as h5_file:
+        h5_file.create_group("entry/data/metadata")
+        assert _materialize_canonical_profile(
+            h5_file, mapping, "entry/data/metadata", True
+        )
+        setup = h5_file["entry/data/metadata/HKL/DETECTOR_SETUP"]
+        assert setup["PIXEL_SIZE"][()].tolist() == [0.055, 0.055]
+        assert setup["ROI"][()].tolist() == [0, 4, 0, 8]
+        assert setup["TILT"][()] == 0.5
+        assert "SIZE" not in setup
+        offline_setup = RSMConverter()._detector_setup_mapping(h5_file)
+
+    section = {
+        field: f"test:DetectorSetup:{field}"
+        for field in (
+            "PIXEL_DIRECTION_1",
+            "PIXEL_DIRECTION_2",
+            "CENTER_CHANNEL_PIXEL",
+            "DISTANCE",
+            "SIZE",
+            "UNITS",
+        )
+    }
+    live_values = {
+        section[field]: offline_setup[field]
+        for field in (
+            "PIXEL_DIRECTION_1",
+            "PIXEL_DIRECTION_2",
+            "CENTER_CHANNEL_PIXEL",
+            "DISTANCE",
+            "UNITS",
+        )
+    }
+    live_setup = detector_setup_from_channels(section, live_values, raw_setup)
+
+    assert detector_model_from_setup(live_setup, acquired_frame) == detector_model_from_setup(
+        offline_setup, acquired_frame
+    )
+    assert "SIZE" not in raw_setup

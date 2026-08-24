@@ -50,13 +50,15 @@ from dashpva.utils.config.hkl import (
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.roi_ops import _extract_roi_subarray
 from dashpva.utils.rsm_geometry import (
-    DetectorModel,
     RotationAxis,
     RSMGeometry,
     build_hxrd,
     calculate_q,
+    detector_model_from_setup,
+    detector_setup_from_channels,
     validate_sample_orientation,
 )
+from dashpva.utils.units import to_eV
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     BeamFitDock,
@@ -1993,12 +1995,19 @@ class DiffractionImageWindow(BaseWindow):
                     raise ValueError("Invalid UB Matrix data")
                 self.ub_matrix = np.reshape(self.ub_matrix,(3,3))
 
-                # Energy
+                # Energy — units come from the profile rather than a blind
+                # x1000, defaulting to keV so profiles that predate
+                # ENERGY_UNITS keep the scale they had.
                 energy_pv = spec['ENERGY_VALUE']
-                self.energy = self.hkl_data.get(energy_pv)
-                if self.energy is None:
+                energy_value = self.hkl_data.get(energy_pv)
+                if energy_value is None:
                     raise ValueError("Missing energy PV data")
-                self.energy *= 1000
+                units_pv = spec.get('ENERGY_UNITS')
+                energy_units = self.hkl_data.get(units_pv) if units_pv else None
+                if not energy_units:
+                    canonical = self.reader.config.get('IOC_RSM_PARAMETER', {}) or {}
+                    energy_units = canonical.get('ENERGY_UNITS', 'keV')
+                self.energy = to_eV(energy_value, energy_units, 'photon energy')
 
                 sample_axes = tuple(
                     RotationAxis('sample', direction)
@@ -2030,20 +2039,12 @@ class DiffractionImageWindow(BaseWindow):
         if self.reader is None or len(self.reader.shape) < 2:
             raise ValueError("Detector frame shape is unavailable.")
         ds_cfg = get_hkl_section(self.hkl_config, 'DETECTOR_SETUP', required=True)
-        cch1, cch2 = self.hkl_data[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
-        distance = self.hkl_data[ds_cfg['DISTANCE']]
-        pixel_dir1 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_1']]
-        pixel_dir2 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_2']]
-        nch1, nch2 = self.reader.shape[:2]
-        size_xy = self.hkl_data[ds_cfg['SIZE']]
-        detector = DetectorModel(
-            pixel_direction_1=pixel_dir1,
-            pixel_direction_2=pixel_dir2,
-            center_channel=(cch1, cch2),
-            shape=(nch1, nch2),
-            pixel_width=(size_xy[0] / nch1, size_xy[1] / nch2),
-            distance=distance,
-            roi=(0, nch1, 0, nch2),
+        canonical = self.reader.config.get('IOC_RSM_PARAMETER', {}) or {}
+        detector = detector_model_from_setup(
+            detector_setup_from_channels(
+                ds_cfg, self.hkl_data, canonical.get('DETECTOR_SETUP')
+            ),
+            self.reader.shape[:2],
         )
         model = RSMGeometry(
             sample_axes=tuple(

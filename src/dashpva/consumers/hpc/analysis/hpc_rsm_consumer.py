@@ -22,12 +22,14 @@ from dashpva.utils.config.hkl import (
 )
 from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.rsm_geometry import (
-    DetectorModel,
     RotationAxis,
     RSMGeometry,
     build_hxrd,
     calculate_q,
+    detector_model_from_setup,
+    detector_setup_from_channels,
 )
+from dashpva.utils.units import to_eV
 
 
 class HpcRsmProcessor(AdImageProcessor, LogMixin):
@@ -247,6 +249,20 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         return hkl_attr[energy_key]
 
+    def get_energy_units(self, hkl_attr: dict) -> str:
+        """Units the energy channel publishes in.
+
+        Defaults to keV, which is what the blind ``* 1000`` this replaced
+        assumed, so a profile that does not declare ENERGY_UNITS keeps its
+        current behavior instead of silently changing scale.
+        """
+        spec = get_hkl_section(self.hkl_config, 'SPEC', required=True)
+        channel = spec.get('ENERGY_UNITS')
+        if channel and hkl_attr.get(channel):
+            return str(hkl_attr[channel])
+        canonical = self.config.get('IOC_RSM_PARAMETER', {}) or {}
+        return str(canonical.get('ENERGY_UNITS', 'keV'))
+
     def create_rsm(self, hkl_attr: dict, shape: tuple):
         """Calculate reciprocal space mapping"""
         try:
@@ -257,31 +273,19 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             # get UB matrix and energy
             ub_matrix = self.get_ub_matrix(hkl_attr)
             ub_matrix = np.reshape(ub_matrix, (3,3))
-            energy = self.get_energy(hkl_attr) * 1000
+            energy = to_eV(self.get_energy(hkl_attr), self.get_energy_units(hkl_attr),
+                           'photon energy')
 
-            # Set up detector parameters — look up by the PV name in the active
-            # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
+            # Resolve detector calibration through the active HKL channel map so
+            # any prefix works, then convert declared units to mm/deg once.
             ds_cfg = get_hkl_section(self.hkl_config, 'DETECTOR_SETUP', required=True)
-            roi = [0, shape[0], 0, shape[1]]
-            pixel_dir1   = hkl_attr[ds_cfg['PIXEL_DIRECTION_1']]
-            pixel_dir2   = hkl_attr[ds_cfg['PIXEL_DIRECTION_2']]
-            cch1, cch2   = hkl_attr[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
-            nch1, nch2   = shape[0], shape[1]
-            size_xy      = hkl_attr[ds_cfg['SIZE']]
-            pixel_width1 = size_xy[0] / nch1
-            pixel_width2 = size_xy[1] / nch2
-            distance     = hkl_attr[ds_cfg['DISTANCE']]
-
-            detector = DetectorModel(
-                pixel_direction_1=pixel_dir1,
-                pixel_direction_2=pixel_dir2,
-                center_channel=(cch1, cch2),
-                shape=(nch1, nch2),
-                pixel_width=(pixel_width1, pixel_width2),
-                distance=distance,
-                roi=tuple(roi),
-            )
             canonical = self.config.get('IOC_RSM_PARAMETER', {}) or {}
+            detector = detector_model_from_setup(
+                detector_setup_from_channels(
+                    ds_cfg, hkl_attr, canonical.get('DETECTOR_SETUP')
+                ),
+                shape,
+            )
             model = RSMGeometry(
                 sample_axes=tuple(
                     RotationAxis('sample', direction)
