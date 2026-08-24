@@ -8,7 +8,6 @@ import time
 
 import numpy as np
 import pyqtgraph as pg
-import xrayutilities as xu
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
 from PyQt5.QtCore import (
@@ -44,6 +43,14 @@ from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.roi_ops import _extract_roi_subarray
+from dashpva.utils.rsm_geometry import (
+    DetectorModel,
+    RotationAxis,
+    RSMGeometry,
+    build_hxrd,
+    calculate_q,
+    validate_sample_orientation,
+)
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     BeamFitDock,
@@ -252,7 +259,7 @@ class DiffractionImageWindow(BaseWindow):
         self.hkl_config = None
         self.hkl_pvs = {}
         self.hkl_data = {}
-        self.q_conv = None
+        self.rsm_geometry_ready = False
         self.qx = None
         self.qy = None
         self.qz = None
@@ -1893,7 +1900,7 @@ class DiffractionImageWindow(BaseWindow):
         if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
             try:
                 self.hkl_setup()
-                if self.q_conv is not None:
+                if self.rsm_geometry_ready:
                     self.update_rsm()
             except Exception as e:
                 print(f'[DashPVA] HKL update failed (will retry next frame): {e}')
@@ -1978,18 +1985,69 @@ class DiffractionImageWindow(BaseWindow):
                     raise ValueError("Missing energy PV data")
                 self.energy *= 1000
 
-                # Make sure all values are setup correctly before instantiating QConversion
-                if all([self.sample_circle_directions, self.det_circle_directions, self.primary_beam_directions]):
-                    self.q_conv = xu.experiment.QConversion(self.sample_circle_directions, 
-                                                            self.det_circle_directions, 
-                                                            self.primary_beam_directions)
-                else:
-                    self.q_conv = None
-                    raise ValueError("QConversion initialization failed due to missing PV data.")
+                sample_axes = tuple(
+                    RotationAxis('sample', direction)
+                    for direction in self.sample_circle_directions
+                )
+                detector_axes = tuple(
+                    RotationAxis('detector', direction)
+                    for direction in self.det_circle_directions
+                )
+                validate_sample_orientation(
+                    sample_axes,
+                    detector_axes,
+                    self.primary_beam_directions,
+                    self._sample_orientation(),
+                    warn_for_sample_axis=False,
+                )
+                self.rsm_geometry_ready = True
 
             except Exception as e:
                 print(f'[Diffraction Image Viewer] Error Setting up HKL: {e}')
-                self.q_conv = None # Reset to None on failure to prevent invalid calculations
+                self.rsm_geometry_ready = False
+
+    def _sample_orientation(self) -> str:
+        canonical = self.reader.config.get('IOC_RSM_PARAMETER', {}) or {}
+        return canonical.get('SAMPLE_ORIENTATION', 'det')
+
+    def _build_live_rsm_geometry(self):
+        """Build the shared geometry model from the current monitored values."""
+        if self.reader is None or len(self.reader.shape) < 2:
+            raise ValueError("Detector frame shape is unavailable.")
+        ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
+        cch1, cch2 = self.hkl_data[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
+        distance = self.hkl_data[ds_cfg['DISTANCE']]
+        pixel_dir1 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_1']]
+        pixel_dir2 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_2']]
+        nch1, nch2 = self.reader.shape[:2]
+        size_xy = self.hkl_data[ds_cfg['SIZE']]
+        detector = DetectorModel(
+            pixel_direction_1=pixel_dir1,
+            pixel_direction_2=pixel_dir2,
+            center_channel=(cch1, cch2),
+            shape=(nch1, nch2),
+            pixel_width=(size_xy[0] / nch1, size_xy[1] / nch2),
+            distance=distance,
+            roi=(0, nch1, 0, nch2),
+        )
+        model = RSMGeometry(
+            sample_axes=tuple(
+                RotationAxis('sample', direction)
+                for direction in self.sample_circle_directions
+            ),
+            detector_axes=tuple(
+                RotationAxis('detector', direction)
+                for direction in self.det_circle_directions
+            ),
+            primary_beam_direction=self.primary_beam_directions,
+            inplane_reference_direction=self.inplane_reference_directions,
+            sample_surface_normal_direction=self.sample_surface_normal_directions,
+            energy_eV=self.energy,
+            ub_matrix=self.ub_matrix,
+            detector=detector,
+            sample_orientation=self._sample_orientation(),
+        )
+        return build_hxrd(model)
                 
     def create_rsm(self) -> np.ndarray:
         """
@@ -2012,39 +2070,17 @@ class DiffractionImageWindow(BaseWindow):
         """
         if self.reader is not None and self.hkl_data and (not self.stop_hkl.isChecked()):
             try:
-                if (self.q_conv is None or
+                if (not self.rsm_geometry_ready or
                     not self.inplane_reference_directions or
                     not self.sample_surface_normal_directions or
                     self.energy is None):
                     return None
-
-                hxrd = xu.HXRD(self.inplane_reference_directions,
-                            self.sample_surface_normal_directions,
-                            en=self.energy,
-                            qconv=self.q_conv)
-
-                roi = [0, self.reader.shape[0], 0, self.reader.shape[1]]
-                # Look up by the PV name in the active HKL config so any prefix
-                # scheme (xidb:, 6idb1:, none) works without code edits — same
-                # pattern HpcRsmProcessor uses.
-                ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
-                cch1, cch2 = self.hkl_data[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
-                distance = self.hkl_data[ds_cfg['DISTANCE']]
-                pixel_dir1 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_1']]
-                pixel_dir2 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_2']]
-                nch1 = self.reader.shape[0] # Number of detector pixels along direction 1
-                nch2 = self.reader.shape[1] # Number of detector pixels along direction 2
-                size_xy = self.hkl_data[ds_cfg['SIZE']]
-                pixel_width1 = size_xy[0] / nch1
-                pixel_width2 = size_xy[1] / nch2
-
-                hxrd.Ang2Q.init_area(pixel_dir1, pixel_dir2, cch1=cch1, cch2=cch2,
-                                    Nch1=nch1, Nch2=nch2, pwidth1=pixel_width1, 
-                                    pwidth2=pixel_width2, distance=distance, roi=roi)
-                
-                angles = [*self.sample_circle_positions, *self.det_circle_positions]
-                
-                return hxrd.Ang2Q.area(*angles, UB=self.ub_matrix)
+                geometry = self._build_live_rsm_geometry()
+                return calculate_q(
+                    geometry,
+                    self.sample_circle_positions,
+                    self.det_circle_positions,
+                )
             except Exception as e:
                 print(f'[Diffration Image Viewer] Error Creating RSM: {e}')
                 return
@@ -2053,6 +2089,7 @@ class DiffractionImageWindow(BaseWindow):
         
     def reset_rsm_vars(self) -> None:
         self.hkl_data = {}
+        self.rsm_geometry_ready = False
         self.rois.clear()
         self._roi_overlays.clear()
         self.qx = None

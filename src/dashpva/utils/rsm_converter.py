@@ -1,13 +1,20 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import h5py
 import numpy as np
-import xrayutilities as xu
 
 import dashpva.settings as app_settings
+from dashpva.utils.rsm_geometry import (
+    BuiltRSMGeometry,
+    DetectorModel,
+    RotationAxis,
+    RSMGeometry,
+    build_hxrd,
+    calculate_q,
+)
 
 """Utilities for converting detector frames into reciprocal space (RSM).
 This module provides a concise RSMConverter focused on the essential
@@ -26,10 +33,20 @@ class FileGeometry:
     frame the way create_rsm() does (kept as-is there for backward
     compatibility with existing single-frame callers).
     """
-    hxrd: "xu.HXRD"
-    ub: np.ndarray
-    energy_eV: float
+    built: BuiltRSMGeometry
     shape: Tuple[int, ...]
+
+    @property
+    def hxrd(self):
+        return self.built.hxrd
+
+    @property
+    def ub(self) -> np.ndarray:
+        return self.built.ub
+
+    @property
+    def energy_eV(self) -> float:
+        return self.built.energy_eV
 
 
 class Data:
@@ -77,26 +94,13 @@ class RSMConverter:
 
     def create_rsm(self, filename: str, frame: int):
         """Create reciprocal space mapping for a single frame using xrayutilities."""
-        try:
-            with h5py.File(filename, "r") as f:
-                shape = f["entry/data/data"].shape
-                sc_dir, sc_pos, dc_dir, dc_pos = self.get_sample_and_detector_circles(f, frame)
-                primary, inplane, surface, ub, energy = self.get_physics_params(f)
-                qconv = xu.experiment.QConversion(sc_dir, dc_dir, primary)
-                hxrd = xu.HXRD(inplane, surface, en=energy, qconv=qconv)
-                p_dir1, p_dir2, cch1, cch2, nch1, nch2, pw1, pw2, dist, roi = self.get_detector_setup(f, shape)
-                hxrd.Ang2Q.init_area(
-                    p_dir1, p_dir2,
-                    cch1=cch1, cch2=cch2,
-                    Nch1=nch1, Nch2=nch2,
-                    pwidth1=pw1, pwidth2=pw2,
-                    distance=dist,
-                    roi=roi,
-                )
-                angles = [*sc_pos, *dc_pos]
-                return hxrd.Ang2Q.area(*angles, UB=ub)
-        except Exception:
-            raise
+        with h5py.File(filename, "r") as h5_file:
+            shape = h5_file["entry/data/data"].shape
+            sc_dir, sc_pos, dc_dir, dc_pos = self.get_sample_and_detector_circles(
+                h5_file, frame
+            )
+            model = self._build_geometry_model(h5_file, shape, sc_dir, dc_dir)
+            return calculate_q(build_hxrd(model), sc_pos, dc_pos)
 
     def get_q_points(self, filename: str) -> np.ndarray:
         """Compute Q points for all frames and return flattened (N, 3) array."""
@@ -309,19 +313,49 @@ class RSMConverter:
         FileGeometry across every frame/batch of this file via q_for_frames."""
         shape = h5_file["entry/data/data"].shape
         sc_dir, dc_dir = self.get_circle_directions(h5_file)
+        model = self._build_geometry_model(h5_file, shape, sc_dir, dc_dir)
+        return FileGeometry(built=build_hxrd(model), shape=shape)
+
+    def _build_geometry_model(
+        self,
+        h5_file: h5py.File,
+        shape: tuple,
+        sample_directions: Sequence[str],
+        detector_directions: Sequence[str],
+    ) -> RSMGeometry:
+        """Translate legacy file metadata into the canonical shared model."""
         primary, inplane, surface, ub, energy = self.get_physics_params(h5_file)
-        qconv = xu.experiment.QConversion(sc_dir, dc_dir, primary)
-        hxrd = xu.HXRD(inplane, surface, en=energy, qconv=qconv)
         p_dir1, p_dir2, cch1, cch2, nch1, nch2, pw1, pw2, dist, roi = self.get_detector_setup(h5_file, shape)
-        hxrd.Ang2Q.init_area(
-            p_dir1, p_dir2,
-            cch1=cch1, cch2=cch2,
-            Nch1=nch1, Nch2=nch2,
-            pwidth1=pw1, pwidth2=pw2,
+        detector = DetectorModel(
+            pixel_direction_1=p_dir1,
+            pixel_direction_2=p_dir2,
+            center_channel=(cch1, cch2),
+            shape=(nch1, nch2),
+            pixel_width=(pw1, pw2),
             distance=dist,
-            roi=roi,
+            roi=tuple(roi),
         )
-        return FileGeometry(hxrd=hxrd, ub=ub, energy_eV=energy, shape=shape)
+        orientation_path = "entry/data/metadata/HKL/SAMPLE_ORIENTATION"
+        sample_orientation = (
+            self._static_str(h5_file[orientation_path], "sample orientation")
+            if orientation_path in h5_file
+            else "det"
+        )
+        return RSMGeometry(
+            sample_axes=tuple(
+                RotationAxis("sample", direction) for direction in sample_directions
+            ),
+            detector_axes=tuple(
+                RotationAxis("detector", direction) for direction in detector_directions
+            ),
+            primary_beam_direction=primary,
+            inplane_reference_direction=inplane,
+            sample_surface_normal_direction=surface,
+            energy_eV=energy,
+            ub_matrix=ub,
+            detector=detector,
+            sample_orientation=sample_orientation,
+        )
 
     def q_for_frames(self, geom: FileGeometry, h5_file: h5py.File, start: int, stop: int):
         """Angles -> Q for frames [start, stop) via a single batched
@@ -330,8 +364,7 @@ class RSMConverter:
         masked pixels before raveling.
         """
         sc_pos, dc_pos = self.get_circle_positions_batch(h5_file, start, stop)
-        angles = [*sc_pos, *dc_pos]
-        qx, qy, qz = geom.hxrd.Ang2Q.area(*angles, UB=geom.ub)
+        qx, qy, qz = calculate_q(geom.built, sc_pos, dc_pos)
         n = stop - start
         if n == 1 and qx.ndim == 2:
             # xrayutilities' Ang2Q.area drops the leading batch axis when

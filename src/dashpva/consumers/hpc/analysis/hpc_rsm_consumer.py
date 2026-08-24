@@ -9,13 +9,46 @@ import blosc2
 import lz4.block
 import numpy as np
 import pvaccess as pva
-import xrayutilities as xu
 from pvaccess import PvObject
 from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.rsm_geometry import (
+    DetectorModel,
+    RotationAxis,
+    RSMGeometry,
+    build_hxrd,
+    calculate_q,
+)
+
+_RSM_SECTION_FIELDS = {
+    'PRIMARY_BEAM_DIRECTION': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
+    'INPLANE_REFERENCE_DIRECITON': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
+    'SAMPLE_SURFACE_NORMAL_DIRECITON': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
+    'SPEC': ('ENERGY_VALUE', 'UB_MATRIX_VALUE'),
+    'DETECTOR_SETUP': (
+        'CENTER_CHANNEL_PIXEL',
+        'DISTANCE',
+        'PIXEL_DIRECTION_1',
+        'PIXEL_DIRECTION_2',
+        'SIZE',
+    ),
+}
+
+
+def _required_rsm_channels(hkl_config):
+    channels = set()
+    for section_name, section in hkl_config.items():
+        if not isinstance(section, dict):
+            continue
+        if section_name.startswith(('SAMPLE_CIRCLE', 'DETECTOR_CIRCLE')):
+            fields = ('DIRECTION_AXIS', 'POSITION')
+        else:
+            fields = _RSM_SECTION_FIELDS.get(section_name, ())
+        channels.update(section[field] for field in fields if section.get(field))
+    return channels
 
 
 class HpcRsmProcessor(AdImageProcessor, LogMixin):
@@ -123,7 +156,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         self.hkl_pv_channels = set()
         self.hkl_attributes = {}
         self.old_attrbutes : dict = None
-        self.q_conv = None
         self.qx = None
         self.qy = None
         self.qz = None
@@ -141,9 +173,9 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         """Configure processor settings and initialize HKL parameters from DB config."""
         self.logger.debug(f'Configuration update: {configDict}')
 
-        from dashpva.utils.config.source import ConfigSource
+        from dashpva.utils.config import ConfigSource, resolve_profile_config
         locator = configDict.get('profile_id') or configDict.get('path') or None
-        config = ConfigSource(locator).load()
+        config = resolve_profile_config(ConfigSource(locator).load())
 
         if not config:
             raise RuntimeError(
@@ -153,12 +185,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         self.config = config
         self.hkl_config = self.config.get('HKL') or {}
-        self.hkl_pv_channels = set()
-        for section in self.hkl_config.values():
-            if isinstance(section, dict):
-                for channel in section.values():
-                    if channel:
-                        self.hkl_pv_channels.add(channel)
+        self.hkl_pv_channels = _required_rsm_channels(self.hkl_config)
 
     def parse_hkl_ndattributes(self, pva_object):
         """
@@ -193,17 +220,11 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             # loop sorting pv channels
             for section, pv_dict in self.hkl_config.items():
                 if section.startswith('SAMPLE_CIRCLE'):
-                    for pv_name in pv_dict.values():
-                        if pv_name.endswith('DirectionAxis'):
-                            sample_circle_directions.append(hkl_attr[pv_name])
-                        elif pv_name.endswith('Position'):
-                            sample_circle_positions.append(hkl_attr[pv_name])
+                    sample_circle_directions.append(hkl_attr[pv_dict['DIRECTION_AXIS']])
+                    sample_circle_positions.append(hkl_attr[pv_dict['POSITION']])
                 elif section.startswith('DETECTOR_CIRCLE'):
-                    for pv_name in pv_dict.values():
-                        if pv_name.endswith('DirectionAxis'):
-                            det_circle_directions.append(hkl_attr[pv_name])
-                        elif pv_name.endswith('Position'):
-                            det_circle_positions.append(hkl_attr[pv_name])
+                    det_circle_directions.append(hkl_attr[pv_dict['DIRECTION_AXIS']])
+                    det_circle_positions.append(hkl_attr[pv_dict['POSITION']])
 
         return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
 
@@ -249,18 +270,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             ub_matrix = np.reshape(ub_matrix, (3,3))
             energy = self.get_energy(hkl_attr) * 1000
 
-            # Initialize QConversion
-            q_conv = xu.experiment.QConversion(
-                sample_circle_directions,
-                det_circle_directions,
-                primary_beam_directions
-            )
-            # Initialize HXRD
-            hxrd = xu.HXRD(inplane_beam_direction,
-                        sample_surface_normal_direction,
-                        en=energy,
-                        qconv=q_conv)
-
             # Set up detector parameters — look up by the PV name in the active
             # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
             ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
@@ -274,18 +283,38 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             pixel_width2 = size_xy[1] / nch2
             distance     = hkl_attr[ds_cfg['DISTANCE']]
 
-            hxrd.Ang2Q.init_area(
-                pixel_dir1, pixel_dir2,
-                cch1=cch1, cch2=cch2,
-                Nch1=nch1, Nch2=nch2,
-                pwidth1=pixel_width1,
-                pwidth2=pixel_width2,
+            detector = DetectorModel(
+                pixel_direction_1=pixel_dir1,
+                pixel_direction_2=pixel_dir2,
+                center_channel=(cch1, cch2),
+                shape=(nch1, nch2),
+                pixel_width=(pixel_width1, pixel_width2),
                 distance=distance,
-                roi=roi
+                roi=tuple(roi),
             )
-
-            angles = [*sample_circle_positions, *det_circle_positions]
-            return hxrd.Ang2Q.area(*angles, UB=ub_matrix)
+            canonical = self.config.get('IOC_RSM_PARAMETER', {}) or {}
+            model = RSMGeometry(
+                sample_axes=tuple(
+                    RotationAxis('sample', direction)
+                    for direction in sample_circle_directions
+                ),
+                detector_axes=tuple(
+                    RotationAxis('detector', direction)
+                    for direction in det_circle_directions
+                ),
+                primary_beam_direction=primary_beam_directions,
+                inplane_reference_direction=inplane_beam_direction,
+                sample_surface_normal_direction=sample_surface_normal_direction,
+                energy_eV=energy,
+                ub_matrix=ub_matrix,
+                detector=detector,
+                sample_orientation=canonical.get('SAMPLE_ORIENTATION', 'det'),
+            )
+            return calculate_q(
+                build_hxrd(model),
+                sample_circle_positions,
+                det_circle_positions,
+            )
         except Exception as e:
             try:
                 if hasattr(self, 'logger'):

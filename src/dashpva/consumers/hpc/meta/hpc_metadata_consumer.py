@@ -132,11 +132,11 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
             self.path = configDict["path"]
         else:
             import dashpva.settings as _settings
-            self.path = _settings.TOML_FILE
+            self.path = _settings.ensure_path()
             if self.path is None:
                 raise RuntimeError(
                     "HpcAdMetadataProcessor: no 'path' in configDict and "
-                    "settings.TOML_FILE is not set — configure a TOML config first."
+                    "no effective config path is available — configure a profile first."
                 )
 
         with open(self.path, "r") as config_file:

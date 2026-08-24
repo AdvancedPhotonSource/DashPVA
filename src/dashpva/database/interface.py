@@ -127,6 +127,21 @@ class DatabaseInterface:
 
     # Import / Export TOML
 
+    def load_profile_toml_strict(self, profile_id: int) -> Dict[str, Any]:
+        return self._mgr.load_profile_toml_strict(profile_id)
+
+    def replace_profile_toml_if_revision(
+        self,
+        profile_id: int,
+        toml_data: Dict[str, Any],
+        expected_revision: str,
+    ) -> str:
+        return self._mgr.replace_profile_toml_if_revision(
+            profile_id,
+            toml_data,
+            expected_revision,
+        )
+
     def import_toml_to_profile(self, profile_id: int, toml_data: Dict[str, Any]) -> bool:
         return self._mgr.import_toml_to_profile(profile_id, toml_data)
 

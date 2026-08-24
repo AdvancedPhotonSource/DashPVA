@@ -9,6 +9,12 @@ _LAZY_IMPORTS = {
     "rotation_cycle": "dashpva.utils.generators",
     "DashAnalysis": "dashpva.utils.dash_analysis",
     "RSMConverter": "dashpva.utils.rsm_converter",
+    "RotationAxis": "dashpva.utils.rsm_geometry",
+    "DetectorModel": "dashpva.utils.rsm_geometry",
+    "RSMGeometry": "dashpva.utils.rsm_geometry",
+    "BuiltRSMGeometry": "dashpva.utils.rsm_geometry",
+    "build_hxrd": "dashpva.utils.rsm_geometry",
+    "calculate_q": "dashpva.utils.rsm_geometry",
     "MaskManager": "dashpva.utils.mask_manager",
 }
 

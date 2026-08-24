@@ -23,11 +23,121 @@ Usage (settings.py only ever imports ConfigSource):
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import os
+import stat
 import tempfile
+import threading
+import time
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import toml
+
+from dashpva.utils.config.revision import mapping_revision
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None
+
+_LOCAL_LOCK = threading.RLock()
+
+
+class ConfigSourceError(RuntimeError):
+    """A strict configuration read or write could not be completed."""
+
+
+class ConfigSaveStatus(str, Enum):
+    """Outcome of a strict compare-and-swap save."""
+
+    SAVED = "saved"
+    CONFLICT = "conflict"
+    ERROR = "error"
+
+
+@dataclass(frozen=True)
+class ConfigSaveResult:
+    """Result returned by :meth:`ConfigSource.replace_if_revision`."""
+
+    status: ConfigSaveStatus
+    revision: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def saved(self) -> bool:
+        return self.status is ConfigSaveStatus.SAVED
+
+
+def _bytes_revision(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+@contextlib.contextmanager
+def _config_lock(path: Path, *, exclusive: bool):
+    lock_path = path.with_name(f".{path.name}.lock")
+    with _LOCAL_LOCK:
+        with lock_path.open("a+b") as lock_file:
+            if fcntl is not None:
+                mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+                fcntl.flock(lock_file.fileno(), mode)
+            elif msvcrt is not None:  # pragma: no cover - Windows
+                lock_file.seek(0, os.SEEK_END)
+                if lock_file.tell() == 0:
+                    lock_file.write(b"\0")
+                    lock_file.flush()
+                mode = msvcrt.LK_LOCK if exclusive else msvcrt.LK_RLCK
+                while True:
+                    try:
+                        lock_file.seek(0)
+                        msvcrt.locking(lock_file.fileno(), mode, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                elif msvcrt is not None:  # pragma: no cover - Windows
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def _read_toml_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return b""
+
+
+def _parse_toml(payload: bytes, path: Path) -> Dict[str, Any]:
+    try:
+        return toml.loads(payload.decode("utf-8")) if payload else {}
+    except Exception as exc:
+        raise ConfigSourceError(f"could not parse configuration {path}: {exc}") from exc
+
+
+def _write_temp_config(config: Dict[str, Any]) -> str:
+    fd, tmp = tempfile.mkstemp(suffix=".toml", prefix="dashpva_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            toml.dump(config, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    return tmp
 
 # ---------------------------------------------------------------------------
 # Concrete source backends
@@ -43,19 +153,91 @@ class TomlConfigSource:
 
     def load(self) -> Dict[str, Any]:
         try:
-            return toml.load(self.path)
+            config, _ = self.load_snapshot()
+            return config
         except Exception:
             return {}
 
-    def save(self, update: Dict[str, Any]) -> bool:
+    def load_snapshot(self) -> tuple[Dict[str, Any], str]:
+        path = Path(self.path)
         try:
-            existing = self.load()
+            payload = _read_toml_bytes(path)
+            return _parse_toml(payload, path), _bytes_revision(payload)
+        except ConfigSourceError:
+            raise
+        except Exception as exc:
+            raise ConfigSourceError(f"could not read configuration {path}: {exc}") from exc
+
+    def replace_if_revision(
+        self,
+        full_config: Dict[str, Any],
+        revision: str,
+    ) -> ConfigSaveResult:
+        path = Path(self.path)
+        if not isinstance(full_config, dict):
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error="configuration must be a dict")
+        try:
+            replacement = toml.dumps(full_config).encode("utf-8")
+        except Exception as exc:
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error=f"could not encode TOML: {exc}")
+
+        tmp_path: Optional[Path] = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with _config_lock(path, exclusive=True):
+                current = _read_toml_bytes(path)
+                if _bytes_revision(current) != revision:
+                    return ConfigSaveResult(ConfigSaveStatus.CONFLICT)
+
+                fd, tmp_name = tempfile.mkstemp(
+                    dir=str(path.parent),
+                    prefix=f".{path.name}.",
+                    suffix=".tmp",
+                )
+                tmp_path = Path(tmp_name)
+                if path.exists():
+                    try:
+                        os.fchmod(fd, stat.S_IMODE(path.stat().st_mode))
+                    except (AttributeError, OSError):
+                        pass
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(replacement)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(tmp_path, path)
+                tmp_path = None
+                try:
+                    directory_fd = os.open(path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
+                except OSError:
+                    pass
+            return ConfigSaveResult(
+                ConfigSaveStatus.SAVED,
+                revision=_bytes_revision(replacement),
+            )
+        except Exception as exc:
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error=str(exc))
+        finally:
+            if tmp_path is not None:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink()
+
+    def save(self, update: Dict[str, Any]) -> bool:
+        for _ in range(3):
+            try:
+                existing, revision = self.load_snapshot()
+            except ConfigSourceError:
+                return False
             existing.update(update or {})
-            with open(self.path, "w") as f:
-                toml.dump(existing, f)
-            return True
-        except Exception:
-            return False
+            result = self.replace_if_revision(existing, revision)
+            if result.status is ConfigSaveStatus.SAVED:
+                return True
+            if result.status is ConfigSaveStatus.ERROR:
+                return False
+        return False
 
 
 class DbProfileConfigSource:
@@ -97,16 +279,64 @@ class DbProfileConfigSource:
         except Exception:
             return {}
 
-    def save(self, update: Dict[str, Any]) -> bool:
+    def load_snapshot(self) -> tuple[Dict[str, Any], str]:
         profile_id = self._resolve_profile_id()
         if profile_id is None or self.db is None:
-            return False
+            raise ConfigSourceError("database profile could not be resolved")
         try:
-            existing = self.db.export_profile_to_toml(profile_id) or {}
+            if hasattr(self.db, "load_profile_toml_strict"):
+                config = self.db.load_profile_toml_strict(profile_id)
+            else:
+                profile = self.db.get_profile_by_id(profile_id)
+                if profile is None:
+                    raise ConfigSourceError(f"database profile {profile_id} does not exist")
+                config = self.db.export_profile_to_toml(profile_id) or {}
+            return config, mapping_revision(config)
+        except ConfigSourceError:
+            raise
+        except Exception as exc:
+            raise ConfigSourceError(f"could not read database profile {profile_id}: {exc}") from exc
+
+    def replace_if_revision(
+        self,
+        full_config: Dict[str, Any],
+        revision: str,
+    ) -> ConfigSaveResult:
+        profile_id = self._resolve_profile_id()
+        if profile_id is None or self.db is None:
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error="database profile could not be resolved")
+        if not isinstance(full_config, dict):
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error="configuration must be a dict")
+        try:
+            status = self.db.replace_profile_toml_if_revision(
+                profile_id,
+                full_config,
+                revision,
+            )
+        except Exception as exc:
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error=str(exc))
+        if status == ConfigSaveStatus.SAVED.value:
+            return ConfigSaveResult(
+                ConfigSaveStatus.SAVED,
+                revision=mapping_revision(full_config),
+            )
+        if status == ConfigSaveStatus.CONFLICT.value:
+            return ConfigSaveResult(ConfigSaveStatus.CONFLICT)
+        return ConfigSaveResult(ConfigSaveStatus.ERROR, error="database replacement failed")
+
+    def save(self, update: Dict[str, Any]) -> bool:
+        for _ in range(3):
+            try:
+                existing, revision = self.load_snapshot()
+            except ConfigSourceError:
+                return False
             existing.update(update or {})
-            return self.db.import_toml_to_profile(profile_id, existing)
-        except Exception:
-            return False
+            result = self.replace_if_revision(existing, revision)
+            if result.status is ConfigSaveStatus.SAVED:
+                return True
+            if result.status is ConfigSaveStatus.ERROR:
+                return False
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -193,29 +423,45 @@ class ConfigSource:
             return self._backend.load()
         return {}
 
+    def load_snapshot(self) -> tuple[Dict[str, Any], str]:
+        """Return raw configuration and an opaque compare-and-swap revision."""
+        if self._backend is None:
+            raise ConfigSourceError("no configuration source is available")
+        return self._backend.load_snapshot()
+
+    def replace_if_revision(
+        self,
+        full_config: Dict[str, Any],
+        revision: str,
+    ) -> ConfigSaveResult:
+        """Replace the raw profile only when *revision* is still current."""
+        if self._backend is None:
+            return ConfigSaveResult(ConfigSaveStatus.ERROR, error="no configuration source is available")
+        return self._backend.replace_if_revision(full_config, revision)
+
     def save(self, update: Dict[str, Any]) -> bool:
         """Persist an updated configuration dict back to the current source."""
         if self._backend is not None:
             return self._backend.save(update)
         return False
 
-    def ensure_path(self) -> Optional[str]:
+    def ensure_path(self, config: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Return a file path to a TOML representation of the config.
 
         - TOML source: returns the original file path (already on disk).
         - DB source: exports the config to a temporary TOML file and returns that path.
         - None source: returns None.
         """
+        if config is not None:
+            try:
+                return _write_temp_config(config)
+            except Exception:
+                return None
         if self.source_type == "toml":
             return self._backend.path
         if self.source_type == "db":
             try:
-                data = self.load()
-                fd, tmp = tempfile.mkstemp(suffix=".toml", prefix="dashpva_")
-                os.close(fd)
-                with open(tmp, "w") as f:
-                    toml.dump(data, f)
-                return tmp
+                return _write_temp_config(self.load())
             except Exception:
                 return None
         return None

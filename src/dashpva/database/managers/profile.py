@@ -4,10 +4,12 @@ import json
 from typing import Any, Dict, List, Optional
 
 import toml
+from sqlalchemy import text
 
 from dashpva.database.db import get_session
 from dashpva.database.managers.base import BaseManager
 from dashpva.database.models.profile import Profile, ProfileConfig
+from dashpva.utils.config.revision import mapping_revision
 
 
 class ProfileManager(BaseManager):
@@ -309,6 +311,64 @@ class ProfileManager(BaseManager):
     # ------------------------------------------------------------------ #
     # Import / Export TOML
     # ------------------------------------------------------------------ #
+
+    def load_profile_toml_strict(self, profile_id: int) -> Dict[str, Any]:
+        """Load one profile without converting database errors to an empty dict."""
+        session = get_session()
+        try:
+            if session.query(Profile.id).filter_by(id=profile_id).first() is None:
+                raise LookupError(f"profile {profile_id} does not exist")
+            blob = session.query(ProfileConfig).filter_by(
+                profile_id=profile_id,
+                config_type='__toml__',
+                config_key='__data__',
+            ).first()
+            return self.clean(json.loads(blob.config_value)) if blob else {}
+        finally:
+            session.close()
+
+    def replace_profile_toml_if_revision(
+        self,
+        profile_id: int,
+        toml_data: Dict[str, Any],
+        expected_revision: str,
+    ) -> str:
+        """Atomically replace a profile blob when its revision still matches."""
+        session = get_session()
+        try:
+            session.execute(text("BEGIN IMMEDIATE"))
+            if session.query(Profile.id).filter_by(id=profile_id).first() is None:
+                session.rollback()
+                return "error"
+
+            blob = session.query(ProfileConfig).filter_by(
+                profile_id=profile_id,
+                config_type='__toml__',
+                config_key='__data__',
+            ).first()
+            current = self.clean(json.loads(blob.config_value)) if blob else {}
+            if mapping_revision(current) != expected_revision:
+                session.rollback()
+                return "conflict"
+
+            encoded = json.dumps(toml_data)
+            if blob is None:
+                session.add(ProfileConfig(
+                    profile_id=profile_id,
+                    config_type='__toml__',
+                    config_section=None,
+                    config_key='__data__',
+                    config_value=encoded,
+                ))
+            else:
+                blob.config_value = encoded
+            session.commit()
+            return "saved"
+        except Exception:
+            session.rollback()
+            return "error"
+        finally:
+            session.close()
 
     def import_toml_to_profile(self, profile_id: int, toml_data: Dict[str, Any]) -> bool:
         """Store the full TOML dict as a JSON blob for reliable round-trip export."""

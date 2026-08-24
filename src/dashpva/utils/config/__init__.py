@@ -1,12 +1,14 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
-"""
-Configuration repository and sources for DashPVA settings.
+"""Configuration loading, resolution, and persistence for DashPVA."""
 
-This package provides a consistent abstraction for loading/saving configuration
-data from different backends (TOML files and database profiles).
-"""
+from .resolver import resolve_profile_config
+from .source import ConfigSaveResult, ConfigSaveStatus, ConfigSource, ConfigSourceError
 
-from .source import ConfigSource
-
-__all__ = ["ConfigSource"]
+__all__ = [
+    "ConfigSaveResult",
+    "ConfigSaveStatus",
+    "ConfigSource",
+    "ConfigSourceError",
+    "resolve_profile_config",
+]
