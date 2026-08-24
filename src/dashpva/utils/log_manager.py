@@ -1,16 +1,37 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
+from __future__ import annotations
+
 import logging
 import os
 import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import List, Pattern
-
-from PyQt5.QtWidgets import QApplication
+from typing import TYPE_CHECKING, List, Pattern
 
 import dashpva.settings as settings
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from PyQt5.QtWidgets import QApplication
+
+# PyQt5 is deliberately NOT imported at module scope. LogMixin is used by
+# HDF5Writer and other pure-write code that must be importable inside a
+# pvaccess consumer process, where mixing in PyQt5 core-dumps (see the
+# two-process note in consumers/ioc_rsm_parameter). Qt is only touched when a
+# GUI process actually asks for the running QApplication.
+
+
+def _running_qapplication():
+    """The live QApplication, or None outside a GUI process."""
+    try:
+        from PyQt5.QtWidgets import QApplication as _QApplication
+    except Exception:
+        return None
+    try:
+        return _QApplication.instance()
+    except Exception:
+        return None
 
 
 class UINoiseFilter(logging.Filter):
@@ -178,10 +199,7 @@ def get_default_manager(app: QApplication = None) -> LogManager:
     global _default_manager
     if _default_manager is None:
         if app is None:
-            try:
-                app = QApplication.instance()
-            except Exception:
-                app = None
+            app = _running_qapplication()
         _default_manager = LogManager(app=app)
     return _default_manager
 

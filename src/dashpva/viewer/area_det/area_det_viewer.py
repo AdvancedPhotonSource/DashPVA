@@ -40,12 +40,12 @@ from pyqtgraph.colormap import get as get_colormap
 # Custom imported classes
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
-from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
+from dashpva.utils import HDF5Handler, PVAReader, rotation_cycle
 from dashpva.utils.config.hkl import (
     axis_field_channels,
     get_hkl_section,
+    iter_semantic_hkl_channels,
     section_field_channels,
-    semantic_hkl_channels,
 )
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.roi_ops import _extract_roi_subarray
@@ -267,7 +267,14 @@ class DiffractionImageWindow(BaseWindow):
         self.hkl_config = None
         self.hkl_pvs = {}
         self.hkl_data = {}
+        self._hkl_dynamic_channels = set()
         self.rsm_geometry_ready = False
+        self._hkl_update_timer = QTimer(self)
+        self._hkl_update_timer.setSingleShot(True)
+        self._hkl_update_timer.setInterval(100)
+        self._hkl_update_timer.timeout.connect(self.handle_hkl_data_update)
+        self._rsm_geometry_cache = None
+        self._rsm_geometry_cache_key = None
         self.qx = None
         self.qy = None
         self.qz = None
@@ -434,7 +441,7 @@ class DiffractionImageWindow(BaseWindow):
         self.chk_threshold.stateChanged.connect(self.threshold_checked)
         self.image_view.getView().scene().sigMouseMoved.connect(self.update_mouse_pos)
         self.image_view.getView().mouseDoubleClickEvent = self.on_double_click
-        self.hkl_data_updated.connect(self.handle_hkl_data_update)
+        self.hkl_data_updated.connect(self._schedule_hkl_update)
         # Status messages from the ROI/Stats connection thread → main-thread label
         self.pv_pollers_status.connect(self._on_pv_pollers_status)
         # Background sweep finished populating reader.rois → build rectangles on GUI thread
@@ -520,7 +527,6 @@ class DiffractionImageWindow(BaseWindow):
         self.mouse_h      = self.mouse_pos_dock.mouse_h
         self.mouse_k      = self.mouse_pos_dock.mouse_k
         self.mouse_l      = self.mouse_pos_dock.mouse_l
-
         # Image dock widgets
         self.plot_call_id       = self.image_dock.plot_call_id
         self.plotting_frequency = self.image_dock.plotting_frequency
@@ -534,6 +540,9 @@ class DiffractionImageWindow(BaseWindow):
         self.rbtn_F             = self.image_dock.rbtn_F
         self.rotate90degCCW     = self.image_dock.rotate90degCCW
         self.stop_hkl           = self.image_dock.stop_hkl
+        self.stop_hkl.toggled.connect(
+            lambda stopped: self._on_hkl_enabled_toggled(not stopped)
+        )
 
         # ROI dock widgets
         for i in range(1, 5):
@@ -1036,7 +1045,7 @@ class DiffractionImageWindow(BaseWindow):
                 self.beam_fit_dock.on_channel_changed()
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel)
-                self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
+                self.file_writer = HDF5Handler(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
                 if self.reader.channel.isMonitorActive():
@@ -1867,11 +1876,14 @@ class DiffractionImageWindow(BaseWindow):
                 # would double-prefix the ones that already include it.
                 self.hkl_config = self.reader.config["HKL"]
                 if not self.hkl_pvs:
-                    for pv_name in semantic_hkl_channels(self.hkl_config):
-                        self.hkl_pvs[pv_name] = PV(
-                            pvname=pv_name,
-                            connection_timeout=0.15,
-                        )
+                    for binding in iter_semantic_hkl_channels(self.hkl_config):
+                        if binding.channel not in self.hkl_pvs:
+                            self.hkl_pvs[binding.channel] = PV(
+                                pvname=binding.channel,
+                                connection_timeout=0.15,
+                            )
+                        if binding.field == 'POSITION':
+                            self._hkl_dynamic_channels.add(binding.channel)
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
@@ -1897,11 +1909,34 @@ class DiffractionImageWindow(BaseWindow):
             **kwargs: Additional keyword arguments sent by the monitor.
         """
         self.hkl_data[pvname] = value
+        if pvname not in self._hkl_dynamic_channels:
+            self._rsm_geometry_cache = None
+            self._rsm_geometry_cache_key = None
+            self.qx = None
+            self.qy = None
+            self.qz = None
         # Always re-emit so handle_hkl_data_update re-runs hkl_setup(); the prior
         # qx/qy/qz guard created a deadlock — those only get set by update_rsm(),
         # so a failed bootstrap meant no future callback could ever recover.
         self.hkl_data_updated.emit(True)
 
+    def _schedule_hkl_update(self, _value=True) -> None:
+        """Coalesce bursts of hkl_data_updated emits (one per HKL axis PV
+        tick) into a single handle_hkl_data_update() call at ~10 fps."""
+        if not self._hkl_update_timer.isActive():
+            self._hkl_update_timer.start()
+
+    def _on_hkl_enabled_toggled(self, enabled: bool) -> None:
+        if not enabled:
+            self.rsm_geometry_ready = False
+            self._rsm_geometry_cache = None
+            self._rsm_geometry_cache_key = None
+            self.qx = None
+            self.qy = None
+            self.qz = None
+            return
+        if self.reader is not None and self.hkl_data:
+            self.handle_hkl_data_update()
     def handle_hkl_data_update(self):
         if self.reader is not None and not self.stop_hkl.isChecked() and self.hkl_data:
             try:
@@ -2029,6 +2064,11 @@ class DiffractionImageWindow(BaseWindow):
             except Exception as e:
                 print(f'[Diffraction Image Viewer] Error Setting up HKL: {e}')
                 self.rsm_geometry_ready = False
+                self._rsm_geometry_cache = None
+                self._rsm_geometry_cache_key = None
+                self.qx = None
+                self.qy = None
+                self.qz = None
 
     def _sample_orientation(self) -> str:
         canonical = self.reader.config.get('IOC_RSM_PARAMETER', {}) or {}
@@ -2346,6 +2386,11 @@ class DiffractionImageWindow(BaseWindow):
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
             if self.hkl_data:
                 qxyz = self.create_rsm()
+                if qxyz is None or qxyz[0] is None:
+                    self.qx = None
+                    self.qy = None
+                    self.qz = None
+                    return
                 self.qx = qxyz[0].T if self.image_is_transposed else qxyz[0]
                 self.qy = qxyz[1].T if self.image_is_transposed else qxyz[1]
                 self.qz = qxyz[2].T if self.image_is_transposed else qxyz[2]

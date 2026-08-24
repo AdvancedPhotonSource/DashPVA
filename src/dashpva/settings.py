@@ -208,6 +208,11 @@ RSM_GRID_MAX_MEMORY_FRACTION: float = 0.70
 RSM_GRID_WORKING_BYTES_PER_PIXEL: int = 96
 RSM_GRID_ENERGY_RELATIVE_TOLERANCE: float = 1e-4
 RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
+RSM_GRID_PREVIEW_BUDGET_BYTES: int = 4 * 1024 * 1024
+RSM_GRID_PREVIEW_INTERVAL_SECONDS: float = 1.0
+RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
+RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
+RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
@@ -554,6 +559,62 @@ def save_input_channel_hkl3d(channel: str) -> bool:
         return src.save({'INPUT_CHANNEL_HKL3D': channel})
     except Exception:
         return False
+
+
+def get_analysis_transport_channels(database=None) -> tuple[str, str]:
+    """Return the one live analysis consumer's control and status channels.
+
+    Workflow persists these names under ``APP_DATA/workflow/analysis/last``.
+    Profile ``[ANALYSIS]`` values are accepted for legacy/TOML-only setups.
+    The live grid is stateful and deliberately supports one consumer only.
+    """
+    profile_analysis = ANALYSIS if isinstance(ANALYSIS, dict) else {}
+    config = {
+        "control_channel": profile_analysis.get("CONTROL_CHANNEL", ""),
+        "status_channel": profile_analysis.get("STATUS_CHANNEL", ""),
+        "n_consumers": profile_analysis.get("N_CONSUMERS", 1),
+        "consumer_id": profile_analysis.get("CONSUMER_ID", 1),
+    }
+    try:
+        if database is None:
+            from dashpva.database import DatabaseInterface
+
+            database = DatabaseInterface()
+        setting = database.get_setting_by_path(
+            ["APP_DATA", "workflow", "analysis"]
+        )
+        saved = database.get_setting_value(setting.id, "last") if setting else None
+        if isinstance(saved, dict):
+            config.update(saved)
+    except Exception as exc:
+        _logger.debug("Could not read analysis workflow channels: %s", exc)
+
+    try:
+        n_consumers = int(config.get("n_consumers", 1))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Analysis n_consumers must be an integer.") from exc
+    if n_consumers != 1:
+        raise RuntimeError(
+            "Live RSM gridding requires exactly one stateful analysis consumer; "
+            f"workflow is configured for {n_consumers}."
+        )
+
+    try:
+        consumer_id = int(config.get("consumer_id", 1))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Analysis consumer_id must be an integer.") from exc
+    control = str(config.get("control_channel", "")).strip().replace(
+        "*", str(consumer_id)
+    )
+    status = str(config.get("status_channel", "")).strip().replace(
+        "*", str(consumer_id)
+    )
+    if not control or not status:
+        raise RuntimeError(
+            "Analysis control/status channels are not configured. Open Workflow, "
+            "set both Analysis Consumer channels, and save the configuration."
+        )
+    return control, status
 
 
 # Initialize on import

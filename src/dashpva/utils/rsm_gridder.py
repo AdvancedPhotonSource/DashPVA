@@ -33,7 +33,9 @@ import psutil
 import xrayutilities as xu
 
 import dashpva.settings as app_settings
+from dashpva.utils.gridder_access import gridder_coverage, gridder_numerator
 from dashpva.utils.rsm_converter import RSMConverter
+from dashpva.utils.volume_io import finite_intensity_range, mean_with_nan_empty
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,7 @@ class FileValidationInfo:
 
 @dataclass
 class VolumeResult:
-    volume: np.ndarray            # Gridder3D.data, shape (nx, ny, nz)
+    volume: np.ndarray            # per-voxel mean, shape (nx, ny, nz)
     xaxis: np.ndarray             # bin centers
     yaxis: np.ndarray
     zaxis: np.ndarray
@@ -93,6 +95,12 @@ class VolumeResult:
     mask_transposed: bool
     batch_bytes: int
     memory_estimate: "GridMemoryEstimate"
+    # Per-voxel contribution count (Gridder3D's _gnorm). Lets a reader tell an
+    # unmeasured voxel from a measured zero, and see where repeated passes
+    # overlapped. Not sufficient to reconstruct a flux-weighted mean: from
+    # sum(I/m) and N you cannot recover sum(I) and sum(m) separately unless the
+    # monitor was constant across that voxel's contributions.
+    coverage: Optional[np.ndarray] = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +405,7 @@ def build_volume(
     memory_limit_fraction: Optional[float] = app_settings.RSM_GRID_MAX_MEMORY_FRACTION,
     progress_cb: Optional[Callable[[int, int], None]] = None,
     warn: Optional[Callable[[str], None]] = None,
+    fixed_bounds: Optional[GridBounds] = None,
 ) -> VolumeResult:
     """Merge scan file(s) into one gridded HKL volume.
 
@@ -451,9 +460,15 @@ def build_volume(
 
     validate_consistency(per_file_info, energy_rtol=energy_rtol, ub_atol=ub_atol, warn=warn)
 
-    global_bounds = per_file_bounds[0]
-    for b in per_file_bounds[1:]:
-        global_bounds = global_bounds.union(b)
+    if fixed_bounds is not None:
+        # Caller-supplied bounds: used to reproduce a live accumulation offline
+        # at exactly the same grid. Points outside are dropped by the gridder,
+        # the same way the live path drops them.
+        global_bounds = fixed_bounds
+    else:
+        global_bounds = per_file_bounds[0]
+        for b in per_file_bounds[1:]:
+            global_bounds = global_bounds.union(b)
 
     # Pass 2: fixed-range accumulation.
     gridder = xu.Gridder3D(nx, ny, nz)
@@ -503,8 +518,14 @@ def build_volume(
         if warn is not None:
             warn(message)
 
+    # Read the accumulators directly rather than via Gridder3D.data: .data
+    # copies the whole numerator array and divides on every access, and it
+    # leaves un-hit voxels at zero. mean_with_nan_empty applies the same
+    # division but marks empty voxels NaN, and coverage is kept alongside.
+    coverage = np.array(gridder_coverage(gridder), copy=True)
     return VolumeResult(
-        volume=gridder.data,
+        volume=mean_with_nan_empty(gridder_numerator(gridder), coverage),
+        coverage=coverage,
         xaxis=gridder.xaxis,
         yaxis=gridder.yaxis,
         zaxis=gridder.zaxis,
@@ -557,7 +578,10 @@ def volume_result_to_metadata(result: VolumeResult, extra: Optional[dict] = None
         "array_order": "F",
         "grid_dimensions_cells": list(volume.shape),
         "axes_labels": ["H", "K", "L"],
-        "intensity_range": [float(volume.min()), float(volume.max())] if volume.size else [0.0, 0.0],
+        # Finite-only: empty voxels are NaN, and volume.min() would propagate
+        # that, leaving intensity_range as [nan, nan] and breaking every
+        # downstream colour scale that trusts it.
+        "intensity_range": finite_intensity_range(volume),
         "source_files": [info.filename for info in result.per_file_info],
         "source_energies_eV": [info.energy_eV for info in result.per_file_info],
         "source_ub_matrices": ub_matrices.ravel().tolist(),

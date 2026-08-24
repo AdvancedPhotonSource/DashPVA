@@ -45,7 +45,7 @@ class TestHotPixelRoundtrip:
         result = build_volume([scan_path], nx=5, ny=6, nz=7, use_mask=False)
         assert result.volume.shape == (5, 6, 7)
 
-        peak_idx = np.unravel_index(np.argmax(result.volume), result.volume.shape)
+        peak_idx = np.unravel_index(np.nanargmax(result.volume), result.volume.shape)
         nearest_idx = tuple(
             int(np.argmin(np.abs(axis - q)))
             for axis, q in zip((result.xaxis, result.yaxis, result.zaxis), expected_q)
@@ -61,7 +61,7 @@ class TestHotPixelRoundtrip:
 
         assert loaded_volume.shape == (5, 6, 7)
         np.testing.assert_allclose(loaded_volume, result.volume.astype(np.float32))
-        assert np.unravel_index(np.argmax(loaded_volume), loaded_volume.shape) == peak_idx
+        assert np.unravel_index(np.nanargmax(loaded_volume), loaded_volume.shape) == peak_idx
 
         assert loader.file_metadata["array_order"] == "F"
         # Output is HKL because rsm_converter always applies the UB matrix.
@@ -128,7 +128,7 @@ class TestMaskHandling:
 
         assert raw.num_points_binned == transposed.num_points_binned
         # Untransposed drops the hot pixel; transposed masks (3,0) and keeps it.
-        assert raw.volume.max() < transposed.volume.max()
+        assert np.nanmax(raw.volume) < np.nanmax(transposed.volume)
 
     def test_mask_shape_mismatch_raises_loudly(self, tmp_path):
         scan_path = str(tmp_path / "scan.h5")
@@ -155,9 +155,9 @@ class TestMonitorNormalization:
         with_norm = build_volume([norm], nx=5, ny=6, nz=7, use_mask=False,
                                   monitor_dataset="I0")
 
-        assert without.volume.max() == pytest.approx(100.0)
+        assert np.nanmax(without.volume) == pytest.approx(100.0)
         # Frame 0 -> 100/1, frame 1 -> 100/2; bins hold one or the other.
-        assert with_norm.volume.max() == pytest.approx(100.0)
+        assert np.nanmax(with_norm.volume) == pytest.approx(100.0)
         assert with_norm.volume[with_norm.volume > 0].min() == pytest.approx(50.0)
 
     def test_missing_monitor_dataset_raises(self, tmp_path):
@@ -189,3 +189,66 @@ class TestGridderAssumptions:
 
         assert gridder.xaxis.min() >= 0.0 and gridder.xaxis.max() <= 1.0
         assert gridder.data.max() == 10.0
+
+
+class TestCoverageAndEmptyVoxels:
+    """Coverage volume and NaN-vs-zero for voxels nothing scattered into."""
+
+    def test_empty_voxels_are_nan_and_coverage_counts_contributions(self, tmp_path):
+        scan_path = str(tmp_path / "coverage.h5")
+        make_synthetic_scan_h5(scan_path, n_frames=3, shape=(3, 5))
+
+        # A grid far finer than the sampling guarantees unfilled voxels.
+        result = build_volume([scan_path], nx=12, ny=13, nz=14, use_mask=False)
+
+        assert result.coverage is not None
+        assert result.coverage.shape == result.volume.shape
+
+        empty = result.coverage == 0
+        filled = ~empty
+        assert empty.any(), "expected some voxels to receive no contribution"
+        assert filled.any(), "expected some voxels to be filled"
+
+        # The distinction this exists for: unmeasured is NaN, not a confident 0.
+        assert np.all(np.isnan(result.volume[empty]))
+        assert not np.any(np.isnan(result.volume[filled]))
+
+        # Coverage counts pixels, so it must total the number actually binned.
+        assert int(result.coverage.sum()) == result.num_points_binned
+
+    def test_intensity_range_ignores_nan_empty_voxels(self, tmp_path):
+        scan_path = str(tmp_path / "range.h5")
+        make_synthetic_scan_h5(scan_path, n_frames=2, shape=(3, 5))
+
+        result = build_volume([scan_path], nx=11, ny=12, nz=13, use_mask=False)
+        metadata = volume_result_to_metadata(result)
+
+        low, high = metadata["intensity_range"]
+        assert np.isfinite(low) and np.isfinite(high)
+        assert low == pytest.approx(float(np.nanmin(result.volume)))
+        assert high == pytest.approx(float(np.nanmax(result.volume)))
+
+    def test_coverage_survives_save_and_reopens_as_a_plain_volume(self, tmp_path):
+        scan_path = str(tmp_path / "scan.h5")
+        out_path = str(tmp_path / "volume.h5")
+        make_synthetic_scan_h5(scan_path, n_frames=2, shape=(3, 5))
+
+        result = build_volume([scan_path], nx=5, ny=6, nz=7, use_mask=False)
+        assert HDF5Loader().save_vol_to_h5(
+            out_path,
+            result.volume,
+            metadata=volume_result_to_metadata(result),
+            coverage=result.coverage,
+        )
+
+        with h5py.File(out_path, "r") as handle:
+            assert "entry/data/coverage" in handle
+            stored_coverage = handle["entry/data/coverage"][()]
+        np.testing.assert_array_equal(stored_coverage, result.coverage.astype(np.uint32))
+
+        # Workbench addresses /entry/data/data by name; the sibling must be inert.
+        loaded, shape = HDF5Loader().load_h5_volume_3d(out_path)
+        assert shape == result.volume.shape
+        np.testing.assert_allclose(
+            loaded, result.volume.astype(np.float32), rtol=0, atol=0, equal_nan=True
+        )
