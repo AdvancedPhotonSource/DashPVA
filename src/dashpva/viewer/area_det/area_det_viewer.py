@@ -738,7 +738,8 @@ class DiffractionImageWindow(BaseWindow):
         from edit_mask_clicked that hasn't been saved/adopted yet.
         """
         if self.mask_viewer is not None:
-            self.mask_viewer.close()
+            if not self.mask_viewer.close():
+                return
         self.mask_viewer = MaskViewerWindow(
             mask=self.mask_manager.mask if mask is None else mask,
             mask_path=self.mask_manager.mask_path,
@@ -875,7 +876,6 @@ class DiffractionImageWindow(BaseWindow):
 
     def _on_mask_edited(self, mask):
         self.mask_manager.mask = mask.copy()
-        self.mask_manager.save_active_mask()
         self._update_mask_labels()
 
     def _update_mask_labels(self):
@@ -2511,6 +2511,9 @@ class DiffractionImageWindow(BaseWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        if self.mask_viewer is not None and not self.mask_viewer.close():
+            event.ignore()
+            return
         try:
             s = _settings()
             s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
@@ -2523,8 +2526,6 @@ class DiffractionImageWindow(BaseWindow):
         if self.roi_stats_panel is not None:
             self.roi_stats_panel.close()
         self.stop_manual_broadcast()
-        if self.mask_viewer is not None:
-            self.mask_viewer.close()
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread

@@ -21,39 +21,34 @@ def _import_mask_viewer():
 
 
 def _fake(shape, is_transposed=False, rot_num=0):
-    return SimpleNamespace(
+    fake = SimpleNamespace(
         mask=np.zeros(shape, dtype=bool),
         _is_transposed=is_transposed,
         _rot_num=rot_num,
     )
+    MaskViewerWindow = _import_mask_viewer()
+    fake._paint_disk = lambda *args: MaskViewerWindow._paint_disk(fake, *args)
+    fake._stamp_along = lambda *args: MaskViewerWindow._stamp_along(fake, *args)
+    return fake
 
 
 class TestSizeConsistency:
     """Brush/Rectangle/Line at the same "Size" should paint the same pixel width."""
 
-    def test_thickness_to_radius_matches_paint_line_width(self):
+    @pytest.mark.parametrize("size", range(1, 7))
+    def test_tools_use_exact_native_pixel_width(self, size):
         MaskViewerWindow = _import_mask_viewer()
-        fake = _fake((20, 20))
-        radius = MaskViewerWindow._thickness_to_radius(3)
-        MaskViewerWindow._paint_disk(fake, 10, 10, radius, True)
-        rows = np.where(fake.mask[:, 10])[0]
-        assert rows.max() - rows.min() + 1 == 3
-
-    def test_brush_size_matches_rectangle_side(self):
-        MaskViewerWindow = _import_mask_viewer()
-        brush = _fake((20, 20))
-        rect = _fake((20, 20))
-        radius = MaskViewerWindow._thickness_to_radius(3)
-        MaskViewerWindow._paint_disk(brush, 10, 10, radius, True)
-        MaskViewerWindow._paint_square(rect, 10, 10, 3, True)
-        brush_rows = np.where(brush.mask[:, 10])[0]
-        rect_rows = np.where(rect.mask[:, 10])[0]
-        assert brush_rows.max() - brush_rows.min() + 1 == 3
-        assert rect_rows.max() - rect_rows.min() + 1 == 3
-
-    def test_thickness_to_radius_never_below_one(self):
-        MaskViewerWindow = _import_mask_viewer()
-        assert MaskViewerWindow._thickness_to_radius(1) >= 1
+        for paint in (
+            lambda fake: MaskViewerWindow._paint_disk(fake, 15, 15, size, True),
+            lambda fake: MaskViewerWindow._paint_square(fake, 15, 15, size, True),
+            lambda fake: MaskViewerWindow._paint_line(
+                fake, (10, 15), (20, 15), size, True
+            ),
+        ):
+            fake = _fake((31, 31))
+            paint(fake)
+            cols = np.where(fake.mask[15])[0]
+            assert cols.max() - cols.min() + 1 == size
 
 
 class TestPaintHelpers:
@@ -122,3 +117,70 @@ class TestDisplayToNativeClosedForm:
                 if rot_num:
                     display = np.rot90(display, k=rot_num)
                 assert MaskViewerWindow._display_shape(fake) == display.shape
+
+    @pytest.mark.parametrize("canvas_shape", [(8, 12), (2, 3)])
+    @pytest.mark.parametrize("is_transposed", [False, True])
+    @pytest.mark.parametrize("rot_num", [0, 1, 2, 3])
+    def test_canvas_scaling_happens_before_inverse_transform(
+        self, canvas_shape, is_transposed, rot_num
+    ):
+        MaskViewerWindow = _import_mask_viewer()
+        fake = _fake((4, 6), is_transposed=is_transposed, rot_num=rot_num)
+        display_shape = MaskViewerWindow._display_shape(fake)
+        for canvas_i, canvas_j in (
+            (0, 0),
+            (canvas_shape[0] - 1, canvas_shape[1] - 1),
+            (canvas_shape[0] // 2, canvas_shape[1] // 2),
+        ):
+            display_i = MaskViewerWindow._scale_canvas_index(
+                canvas_i, canvas_shape[0], display_shape[0]
+            )
+            display_j = MaskViewerWindow._scale_canvas_index(
+                canvas_j, canvas_shape[1], display_shape[1]
+            )
+            actual = MaskViewerWindow._display_to_native(fake, display_i, display_j)
+            assert 0 <= actual[0] < fake.mask.shape[0]
+            assert 0 <= actual[1] < fake.mask.shape[1]
+
+
+class TestBoundedHistory:
+    def test_small_stroke_history_is_region_sized(self):
+        MaskViewerWindow = _import_mask_viewer()
+        fake = _fake((4096, 4096))
+        fake._stroke_bounds = None
+        fake._stroke_before = None
+        MaskViewerWindow._capture_stroke_region(fake, (100, 106, 200, 206))
+        entry = {
+            "kind": "region",
+            "bounds": fake._stroke_bounds,
+            "before": fake._stroke_before,
+            "after": fake._stroke_before.copy(),
+        }
+        assert MaskViewerWindow._history_size(entry) == 200
+        assert MaskViewerWindow._history_size(entry) < fake.mask.nbytes // 1000
+
+    @pytest.mark.parametrize("canvas_shape", [(8, 12), (2, 3)])
+    @pytest.mark.parametrize("is_transposed", [False, True])
+    @pytest.mark.parametrize("rot_num", [0, 1, 2, 3])
+    def test_dirty_region_matches_full_redraw(
+        self, canvas_shape, is_transposed, rot_num
+    ):
+        MaskViewerWindow = _import_mask_viewer()
+        fake = _fake((4, 6), is_transposed=is_transposed, rot_num=rot_num)
+        fake._canvas_shape = canvas_shape
+        fake.mask_overlay = SimpleNamespace(
+            image=np.zeros(canvas_shape, dtype=np.float32), update=lambda: None
+        )
+        fake.lbl_info = SimpleNamespace(setText=lambda *_: None)
+        fake._info_text = lambda: ""
+        fake._display_shape = lambda: MaskViewerWindow._display_shape(fake)
+        fake._refresh_overlay = lambda **kwargs: None
+        fake.mask[1:3, 2:5] = True
+
+        MaskViewerWindow._refresh_native_region(fake, (1, 3, 2, 5), False)
+
+        display = fake.mask.T if is_transposed else fake.mask
+        if rot_num:
+            display = np.rot90(display, rot_num)
+        expected = MaskViewerWindow._nearest_resize(display, canvas_shape)
+        np.testing.assert_array_equal(fake.mask_overlay.image, expected)

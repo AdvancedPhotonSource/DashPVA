@@ -49,19 +49,21 @@ class MaskViewerWindow(QDialog):
         self.mask = mask.copy().astype(bool)
         self._original_mask = self.mask.copy()  # snapshot at open, for the close-time save/discard prompt
         self.mask_path = mask_path
+        self._original_path = mask_path
         self._editing = False
         self._show_image = False
         self._alpha = 0.5
         self._undo_stack = []
         self._redo_stack = []
+        self._history_bytes = 0
         # Line tool: first click/drag start stores the start point until the
         # second interaction completes the segment.
         self._line_start = None
         # Active-stroke state (set at press, cleared at release).
         self._edit_press_pt = None   # native (row, col) at mouse press
         self._edit_dragging = False  # True once the mouse has moved
-        self._edit_snapshot = None   # mask copy taken at press, used for undo
-        self._stroke_snapshot = None # mask copy for rect/line live preview restore
+        self._stroke_bounds = None
+        self._stroke_before = None
         self._last_brush = None      # last-stamped native pt (gap-free brush)
         self._view_ready = False     # True after first setRange so zoom is preserved
         self._resume_plotting = False  # timer_plot was active before an edit-mode pause
@@ -241,9 +243,10 @@ class MaskViewerWindow(QDialog):
                 return
             if reply == QMessageBox.Discard:
                 self.mask = self._original_mask.copy()
-                self.mask_updated.emit(self.mask)
             elif reply == QMessageBox.Save:
-                self._save_mask()
+                if not self._save_mask():
+                    event.ignore()
+                    return
         self._pause_live_plotting(False)
         event.accept()
 
@@ -270,35 +273,65 @@ class MaskViewerWindow(QDialog):
         self._view_ready = True
 
     # ------------------------------------------------------------------
-    # Undo / redo (snapshot-based)
+    # Undo / redo
     # ------------------------------------------------------------------
 
-    def _push_undo(self):
-        """Record the current mask before a mutating edit; clears the redo stack."""
-        self._undo_stack.append(self.mask.copy())
-        if len(self._undo_stack) > settings.MASK_UNDO_MAX:
-            self._undo_stack.pop(0)
+    @staticmethod
+    def _history_size(entry):
+        return 128 + sum(
+            value.nbytes for value in entry.values()
+            if isinstance(value, np.ndarray)
+        )
+
+    def _push_history(self, entry):
+        self._history_bytes -= sum(self._history_size(item) for item in self._redo_stack)
         self._redo_stack.clear()
+        size = self._history_size(entry)
+        if size > settings.MASK_UNDO_MAX_BYTES:
+            self._update_undo_buttons()
+            return
+        self._undo_stack.append(entry)
+        self._history_bytes += size
+        while self._history_bytes > settings.MASK_UNDO_MAX_BYTES and self._undo_stack:
+            self._history_bytes -= self._history_size(self._undo_stack.pop(0))
         self._update_undo_buttons()
+
+    def _apply_history(self, entry, undo):
+        kind = entry["kind"]
+        if kind == "region":
+            r0, r1, c0, c1 = entry["bounds"]
+            self.mask[r0:r1, c0:c1] = entry["before" if undo else "after"]
+        elif kind == "transpose":
+            self.mask = self.mask.T.copy()
+        elif kind == "rotate":
+            self.mask = np.rot90(self.mask, -1 if undo else 1).copy()
+        elif kind == "invert":
+            self.mask = ~self.mask
+        elif kind == "clear":
+            if undo:
+                restored = np.unpackbits(entry["before"], count=self.mask.size)
+                self.mask = restored.reshape(entry["shape"]).astype(bool)
+            else:
+                self.mask[:] = False
 
     def undo(self):
         if not self._undo_stack:
             return
-        self._redo_stack.append(self.mask.copy())
         prev_shape = self.mask.shape
-        self.mask = self._undo_stack.pop()
+        entry = self._undo_stack.pop()
+        self._apply_history(entry, True)
+        self._redo_stack.append(entry)
         self._refresh_shape_change(prev_shape)
-        self.mask_updated.emit(self.mask)
         self._update_undo_buttons()
 
     def redo(self):
         if not self._redo_stack:
             return
-        self._undo_stack.append(self.mask.copy())
         prev_shape = self.mask.shape
-        self.mask = self._redo_stack.pop()
+        entry = self._redo_stack.pop()
+        self._apply_history(entry, False)
+        self._undo_stack.append(entry)
         self._refresh_shape_change(prev_shape)
-        self.mask_updated.emit(self.mask)
         self._update_undo_buttons()
 
     def _refresh_shape_change(self, prev_shape):
@@ -311,10 +344,14 @@ class MaskViewerWindow(QDialog):
             self._refresh_overlay()
 
     def _clear_drawing(self):
-        self._push_undo()
+        entry = {
+            "kind": "clear",
+            "shape": self.mask.shape,
+            "before": np.packbits(self.mask.reshape(-1)),
+        }
         self.mask[:] = False
+        self._push_history(entry)
         self._refresh_overlay()
-        self.mask_updated.emit(self.mask)
 
     def _update_undo_buttons(self):
         self.btn_undo.setEnabled(bool(self._undo_stack))
@@ -377,6 +414,10 @@ class MaskViewerWindow(QDialog):
             ti, tj = m - 1 - disp_j, disp_i
         return (tj, ti) if self._is_transposed else (ti, tj)
 
+    @staticmethod
+    def _scale_canvas_index(index, canvas_size, mask_size):
+        return min(mask_size - 1, max(0, int(index) * mask_size // canvas_size))
+
     def _get_current_image(self):
         """Get current diffraction image from parent viewer if available."""
         if self.parent_viewer is not None and hasattr(self.parent_viewer, 'reader'):
@@ -392,18 +433,16 @@ class MaskViewerWindow(QDialog):
     # ------------------------------------------------------------------
 
     def _toggle_transpose(self):
-        self._push_undo()
+        self._push_history({"kind": "transpose"})
         self.mask = self.mask.T.copy()
         self._view_ready = False
         self._refresh_display()
-        self.mask_updated.emit(self.mask)
 
     def _rotate(self):
-        self._push_undo()
+        self._push_history({"kind": "rotate"})
         self.mask = np.rot90(self.mask, k=1).copy()
         self._view_ready = False
         self._refresh_display()
-        self.mask_updated.emit(self.mask)
 
     # ------------------------------------------------------------------
     # Display rendering
@@ -511,6 +550,49 @@ class MaskViewerWindow(QDialog):
         if update_info:
             self.lbl_info.setText(self._info_text())
 
+    def _refresh_native_region(self, bounds, update_info=True):
+        r0, r1, c0, c1 = bounds
+        image = self.mask_overlay.image
+        if image is None or image.shape != self._canvas_shape:
+            self._refresh_overlay(update_info=update_info)
+            return
+        patch = self.mask[r0:r1, c0:c1]
+        display_h, display_w = self._display_shape()
+        pre_h, pre_w = (
+            (self.mask.shape[1], self.mask.shape[0])
+            if self._is_transposed
+            else self.mask.shape
+        )
+        if self._is_transposed:
+            patch = patch.T
+            dr0, dr1, dc0, dc1 = c0, c1, r0, r1
+        else:
+            dr0, dr1, dc0, dc1 = r0, r1, c0, c1
+        rotation = self._rot_num % 4
+        if rotation == 1:
+            patch = np.rot90(patch, 1)
+            dr0, dr1, dc0, dc1 = pre_w - dc1, pre_w - dc0, dr0, dr1
+        elif rotation == 2:
+            patch = np.rot90(patch, 2)
+            dr0, dr1, dc0, dc1 = (
+                pre_h - dr1, pre_h - dr0, pre_w - dc1, pre_w - dc0
+            )
+        elif rotation == 3:
+            patch = np.rot90(patch, 3)
+            dr0, dr1, dc0, dc1 = dc0, dc1, pre_h - dr1, pre_h - dr0
+
+        canvas_h, canvas_w = self._canvas_shape
+        cr0 = (dr0 * canvas_h + display_h - 1) // display_h
+        cr1 = (dr1 * canvas_h + display_h - 1) // display_h
+        cc0 = (dc0 * canvas_w + display_w - 1) // display_w
+        cc1 = (dc1 * canvas_w + display_w - 1) // display_w
+        row_idx = np.arange(cr0, cr1) * display_h // canvas_h - dr0
+        col_idx = np.arange(cc0, cc1) * display_w // canvas_w - dc0
+        image[cr0:cr1, cc0:cc1] = patch[row_idx][:, col_idx]
+        self.mask_overlay.update()
+        if update_info:
+            self.lbl_info.setText(self._info_text())
+
     def _toggle_image_overlay(self, state):
         self._show_image = (state == Qt.Checked)
         self._refresh_display()
@@ -533,22 +615,28 @@ class MaskViewerWindow(QDialog):
                 self.mask_path = os.path.join(mm.masks_dir, mm.DEFAULT_MASK_FILENAME)
             else:
                 self.lbl_info.setText("Error: No save path available")
-                return
+                return False
 
-        # self.mask is always detector-native — safe to save directly
-        np.save(self.mask_path, self.mask)
+        try:
+            np.save(self.mask_path, self.mask)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, 'Save failed', str(exc))
+            return False
         self._original_mask = self.mask.copy()
+        self._original_path = self.mask_path
+        if self.parent_viewer and hasattr(self.parent_viewer, 'mask_manager'):
+            self.parent_viewer.mask_manager.mask_path = self.mask_path
         self.mask_updated.emit(self.mask)
         num_masked = int(np.sum(self.mask))
         h, w = self.mask.shape
         self.setWindowTitle(f"Mask -- {self.mask_path} ({w}x{h}, {num_masked} masked)")
         self.lbl_info.setText(f"Saved! {self._info_text()}")
+        return True
 
     def _invert_mask(self):
-        self._push_undo()
+        self._push_history({"kind": "invert"})
         self.mask = ~self.mask
         self._refresh_display()
-        self.mask_updated.emit(self.mask)
 
     def _export_json(self):
         default_dir = ''
@@ -593,7 +681,8 @@ class MaskViewerWindow(QDialog):
         self._line_start = None
         self._edit_press_pt = None
         self._edit_dragging = False
-        self._stroke_snapshot = None
+        self._stroke_bounds = None
+        self._stroke_before = None
         self._last_brush = None
 
     def _pause_live_plotting(self, pause):
@@ -622,6 +711,57 @@ class MaskViewerWindow(QDialog):
         self._line_start = None
         self.lbl_info.setText(self._info_text())
 
+    def _brush_bounds(self, points, width):
+        rows = [point[0] for point in points]
+        cols = [point[1] for point in points]
+        offset = (max(1, int(width)) - 1) // 2
+        extent = max(1, int(width)) - offset
+        return (
+            max(0, min(rows) - offset),
+            min(self.mask.shape[0], max(rows) + extent),
+            max(0, min(cols) - offset),
+            min(self.mask.shape[1], max(cols) + extent),
+        )
+
+    def _capture_stroke_region(self, bounds):
+        if self._stroke_bounds is None:
+            self._stroke_bounds = bounds
+            r0, r1, c0, c1 = bounds
+            self._stroke_before = self.mask[r0:r1, c0:c1].copy()
+            return
+        old = self._stroke_bounds
+        merged = (
+            min(old[0], bounds[0]), max(old[1], bounds[1]),
+            min(old[2], bounds[2]), max(old[3], bounds[3]),
+        )
+        if merged == old:
+            return
+        r0, r1, c0, c1 = merged
+        before = self.mask[r0:r1, c0:c1].copy()
+        or0, or1, oc0, oc1 = old
+        before[or0-r0:or1-r0, oc0-c0:oc1-c0] = self._stroke_before
+        self._stroke_bounds = merged
+        self._stroke_before = before
+
+    def _restore_stroke_region(self):
+        if self._stroke_bounds is None:
+            return
+        r0, r1, c0, c1 = self._stroke_bounds
+        self.mask[r0:r1, c0:c1] = self._stroke_before
+
+    def _finish_stroke(self):
+        if self._stroke_bounds is None:
+            return
+        r0, r1, c0, c1 = self._stroke_bounds
+        after = self.mask[r0:r1, c0:c1].copy()
+        if not np.array_equal(self._stroke_before, after):
+            self._push_history({
+                "kind": "region",
+                "bounds": self._stroke_bounds,
+                "before": self._stroke_before,
+                "after": after,
+            })
+
     def _event_native(self, scene_pos, clamp=False):
         """Map a scene position to a detector-native (row, col). Returns None if
         the point is outside the mask, unless ``clamp`` is set, in which case the
@@ -632,11 +772,14 @@ class MaskViewerWindow(QDialog):
         vx = int(np.floor(mouse_point.x()))
         vy = int(np.floor(mouse_point.y()))
         disp_shape = self._display_shape()
+        canvas_shape = self._canvas_shape or disp_shape
         if clamp:
-            vx = min(max(vx, 0), disp_shape[0] - 1)
-            vy = min(max(vy, 0), disp_shape[1] - 1)
-        elif not (0 <= vx < disp_shape[0] and 0 <= vy < disp_shape[1]):
+            vx = min(max(vx, 0), canvas_shape[0] - 1)
+            vy = min(max(vy, 0), canvas_shape[1] - 1)
+        elif not (0 <= vx < canvas_shape[0] and 0 <= vy < canvas_shape[1]):
             return None
+        vx = self._scale_canvas_index(vx, canvas_shape[0], disp_shape[0])
+        vy = self._scale_canvas_index(vy, canvas_shape[1], disp_shape[1])
         row, col = self._display_to_native(vx, vy)
         if clamp:
             row = min(max(row, 0), self.mask.shape[0] - 1)
@@ -648,131 +791,131 @@ class MaskViewerWindow(QDialog):
     def eventFilter(self, obj, event):
         if not self._editing:
             return super().eventFilter(obj, event)
-        t = event.type()
-        if t not in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick,
-                     QEvent.MouseMove, QEvent.MouseButtonRelease):
+        event_type = event.type()
+        if event_type not in (
+            QEvent.MouseButtonPress,
+            QEvent.MouseButtonDblClick,
+            QEvent.MouseMove,
+            QEvent.MouseButtonRelease,
+        ):
             return super().eventFilter(obj, event)
 
-        gv = self.image_view.ui.graphicsView
+        graphics_view = self.image_view.ui.graphicsView
         tool = self.cmb_tool.currentText()
         value = not self.chk_erase.isChecked()
+        width = self.spn_thickness.value()
 
-        if t in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick) \
-                and event.button() == Qt.LeftButton:
-            pt = self._event_native(gv.mapToScene(event.pos()))
-            if pt is None:
-                return False  # outside mask — let ViewBox pan/zoom
-
-            self._edit_press_pt = pt
+        if event_type in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
+            if event.button() != Qt.LeftButton:
+                return super().eventFilter(obj, event)
+            point = self._event_native(graphics_view.mapToScene(event.pos()))
+            if point is None:
+                return False
+            self._edit_press_pt = point
             self._edit_dragging = False
-            self._edit_snapshot = self.mask.copy()
-            self._stroke_snapshot = self.mask.copy()
-            self._last_brush = pt
-
+            self._stroke_bounds = None
+            self._stroke_before = None
+            self._last_brush = point
             if tool == 'Brush':
-                self._push_undo()
-                self._paint_disk(pt[0], pt[1], self._thickness_to_radius(self.spn_thickness.value()), value)
-                self._refresh_overlay()
-            # Rectangle / Line: don't modify mask yet — wait to distinguish click from drag
+                self._capture_stroke_region(self._brush_bounds((point,), width))
+                self._paint_disk(point[0], point[1], width, value)
+                self._refresh_native_region(self._stroke_bounds, update_info=False)
             return True
 
-        elif t == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
+        if event_type == QEvent.MouseMove and event.buttons() & Qt.LeftButton:
             if self._edit_press_pt is None:
                 return False
-            pt = self._event_native(gv.mapToScene(event.pos()), clamp=True)
-
+            point = self._event_native(graphics_view.mapToScene(event.pos()), clamp=True)
             self._edit_dragging = True
-
             if tool == 'Brush':
-                self._stamp_along(self._last_brush or pt, pt,
-                                  self._thickness_to_radius(self.spn_thickness.value()), value)
-                self._last_brush = pt
-            elif tool == 'Rectangle':
-                self.mask[:] = self._stroke_snapshot
-                self._paint_rect(self._edit_press_pt, pt, value)
-            elif tool == 'Line':
-                self.mask[:] = self._stroke_snapshot
-                start = self._line_start if self._line_start is not None else self._edit_press_pt
-                self._paint_line(start, pt, self.spn_thickness.value(), value)
-            self._refresh_overlay(update_info=False)
+                start = self._last_brush or point
+                self._capture_stroke_region(self._brush_bounds((start, point), width))
+                self._stamp_along(start, point, width, value)
+                self._last_brush = point
+            else:
+                start = (
+                    self._line_start
+                    if tool == 'Line' and self._line_start is not None
+                    else self._edit_press_pt
+                )
+                bounds = self._brush_bounds(
+                    (start, point), width if tool == 'Line' else 1
+                )
+                self._capture_stroke_region(bounds)
+                self._restore_stroke_region()
+                if tool == 'Rectangle':
+                    self._paint_rect(start, point, value)
+                else:
+                    self._paint_line(start, point, width, value)
+            self._refresh_native_region(self._stroke_bounds, update_info=False)
             return True
 
-        elif t == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+        if event_type == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
             if self._edit_press_pt is None:
                 return False
-
-            pt = self._event_native(gv.mapToScene(event.pos()), clamp=True) or self._edit_press_pt
-            press_pt = self._edit_press_pt
-
-            if not self._edit_dragging:
-                # Pure click
-                if tool == 'Brush':
-                    self.mask_updated.emit(self.mask)
-                elif tool == 'Rectangle':
-                    self._push_undo()
-                    self._paint_square(pt[0], pt[1], self.spn_thickness.value(), value)
-                    self._refresh_overlay()
-                    self.mask_updated.emit(self.mask)
-                elif tool == 'Line':
-                    if self._line_start is None:
-                        self._line_start = pt
-                        self.lbl_info.setText('Line: click the end point… (or drag)')
-                    else:
-                        self._push_undo()
-                        self._paint_line(self._line_start, pt,
-                                         self.spn_thickness.value(), value)
-                        self._line_start = None
-                        self._refresh_overlay()
-                        self.mask_updated.emit(self.mask)
-            else:
-                # End of drag — finalise
-                if tool == 'Brush':
-                    self.mask_updated.emit(self.mask)
+            point = (
+                self._event_native(graphics_view.mapToScene(event.pos()), clamp=True)
+                or self._edit_press_pt
+            )
+            if not self._edit_dragging and tool == 'Rectangle':
+                self._capture_stroke_region(self._brush_bounds((point,), width))
+                self._paint_square(point[0], point[1], width, value)
+            elif not self._edit_dragging and tool == 'Line':
+                if self._line_start is None:
+                    self._line_start = point
+                    self.lbl_info.setText('Line: click the end point… (or drag)')
+                    self._reset_stroke()
+                    return True
+                self._capture_stroke_region(
+                    self._brush_bounds((self._line_start, point), width)
+                )
+                self._paint_line(self._line_start, point, width, value)
+                self._line_start = None
+            elif self._edit_dragging and tool != 'Brush':
+                self._restore_stroke_region()
+                start = (
+                    self._line_start
+                    if tool == 'Line' and self._line_start is not None
+                    else self._edit_press_pt
+                )
+                if tool == 'Rectangle':
+                    self._paint_rect(start, point, value)
                 else:
-                    # Restore to pre-drag state, push undo, then apply the final shape
-                    self.mask[:] = self._edit_snapshot
-                    self._push_undo()
-                    if tool == 'Rectangle':
-                        self._paint_rect(press_pt, pt, value)
-                    else:  # Line
-                        start = self._line_start if self._line_start is not None else press_pt
-                        self._paint_line(start, pt, self.spn_thickness.value(), value)
-                        self._line_start = None
-                    self._refresh_overlay()
-                    self.mask_updated.emit(self.mask)
-
-            self._edit_press_pt = None
-            self._edit_dragging = False
-            self._stroke_snapshot = None
-            self._last_brush = None
+                    self._paint_line(start, point, width, value)
+                    self._line_start = None
+            self._finish_stroke()
+            if self._stroke_bounds is not None:
+                self._refresh_native_region(self._stroke_bounds)
+            self._reset_stroke()
             return True
 
         return super().eventFilter(obj, event)
+
+    def _reset_stroke(self):
+        self._edit_press_pt = None
+        self._edit_dragging = False
+        self._stroke_bounds = None
+        self._stroke_before = None
+        self._last_brush = None
 
     # ------------------------------------------------------------------
     # Paint helpers (always operate in detector-native coordinates)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _thickness_to_radius(thickness):
-        """Convert a "Size" spinbox value (pixel width) to a _paint_disk radius.
-
-        _paint_disk(radius=R) paints a ~(2R-1)px-wide dot, so R=(T+1)/2 makes
-        the brush's Size mean the same pixel width as Rectangle's side and
-        Line's thickness.
-        """
-        return max(1, int(round((thickness + 1) / 2)))
-
-    def _paint_disk(self, row, col, radius, value):
-        """Set a circular region of pixels (native coords) to ``value``."""
-        radius = max(1, int(radius))
+    def _paint_disk(self, row, col, width, value):
+        """Set a circular brush footprint with an exact native-pixel width."""
+        width = max(1, int(width))
         h, w = self.mask.shape
-        r0, r1 = max(0, row - radius + 1), min(h, row + radius)
-        c0, c1 = max(0, col - radius + 1), min(w, col + radius)
+        offset = (width - 1) // 2
+        r0, r1 = max(0, row - offset), min(h, row - offset + width)
+        c0, c1 = max(0, col - offset), min(w, col - offset + width)
         if r0 >= r1 or c0 >= c1:
             return
         rr, cc = np.ogrid[r0:r1, c0:c1]
-        disk = (rr - row) ** 2 + (cc - col) ** 2 < radius * radius
+        center_row = row + (0.5 if width % 2 == 0 else 0.0)
+        center_col = col + (0.5 if width % 2 == 0 else 0.0)
+        disk = ((rr - center_row) ** 2 + (cc - center_col) ** 2
+                <= (width / 2.0) ** 2)
         self.mask[r0:r1, c0:c1][disk] = value
 
     def _paint_square(self, row, col, side, value):
@@ -792,15 +935,15 @@ class MaskViewerWindow(QDialog):
         clo, chi = sorted((int(c0), int(c1)))
         self.mask[rlo:rhi + 1, clo:chi + 1] = value
 
-    def _stamp_along(self, start, end, radius, value):
-        """Stamp disks of ``radius`` along the segment start→end (native coords)."""
+    def _stamp_along(self, start, end, width, value):
+        """Stamp exact-width brush footprints along a native-coordinate segment."""
         (r0, c0), (r1, c1) = start, end
         steps = int(max(abs(r1 - r0), abs(c1 - c0))) + 1
         rows = np.linspace(r0, r1, steps).round().astype(int)
         cols = np.linspace(c0, c1, steps).round().astype(int)
         for r, c in zip(rows, cols):
-            self._paint_disk(int(r), int(c), radius, value)
+            self._paint_disk(int(r), int(c), width, value)
 
     def _paint_line(self, start, end, thickness, value):
         """Set a thick line between two native-coord points to ``value``."""
-        self._stamp_along(start, end, self._thickness_to_radius(thickness), value)
+        self._stamp_along(start, end, thickness, value)

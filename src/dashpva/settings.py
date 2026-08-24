@@ -201,11 +201,8 @@ RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 
-# Max number of mask-editor undo/redo snapshots kept (static — not config-driven).
-# Bounds snapshot count, not bytes: each entry is a full boolean mask copy, so
-# both stacks full is up to MASK_UNDO_MAX * 2 * mask.nbytes (~360 MB for a 16M-pixel
-# Eiger detector).
-MASK_UNDO_MAX: int = 20
+# Combined byte budget for mask-editor undo and redo data.
+MASK_UNDO_MAX_BYTES: int = 32 * 1024 * 1024
 
 # Mask editor only pauses the parent viewer's live-plot timer while drawing on
 # detectors at or above this many pixels (static — not config-driven). Below
