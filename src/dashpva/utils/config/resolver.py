@@ -8,7 +8,10 @@ import copy
 import re
 from typing import Any, Mapping
 
-_AXIS_SECTION = re.compile(r"^(?:SAMPLE|DETECTOR)_CIRCLE_AXIS_\d+$")
+_AXIS_SECTION = re.compile(
+    r"^(?:SAMPLE|DETECTOR)_CIRCLE_AXIS_[1-9][0-9]*$"
+)
+_LEGACY_AXIS_SECTIONS = {"MU", "ETA", "CHI", "PHI", "NU", "DELTA"}
 _RECORD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 _AXIS_MANAGED_FIELDS = {
     "ANGLE_UNITS",
@@ -40,7 +43,7 @@ def _managed_section(
     aliases: tuple[str, ...] = (),
 ) -> None:
     section: dict[str, Any] = {}
-    for candidate in (name, *aliases):
+    for candidate in (*aliases, name):
         existing = hkl.pop(candidate, None)
         if isinstance(existing, dict):
             section.update(existing)
@@ -86,6 +89,11 @@ def resolve_profile_config(raw: Mapping[str, Any] | None) -> dict[str, Any]:
         return effective
     if not isinstance(parameters, Mapping):
         raise ValueError("IOC_RSM_PARAMETER must be a table")
+    schema_version = parameters.get("SCHEMA_VERSION", 1)
+    if type(schema_version) is not int or schema_version != 1:
+        raise ValueError(
+            f"unsupported IOC_RSM_PARAMETER SCHEMA_VERSION {schema_version!r}; expected 1"
+        )
 
     prefix = _normalized_prefix(raw)
     effective["IOC_PREFIX"] = prefix
@@ -99,7 +107,7 @@ def resolve_profile_config(raw: Mapping[str, Any] | None) -> dict[str, Any]:
         if _AXIS_SECTION.fullmatch(name) and isinstance(value, dict)
     }
     for name in tuple(hkl):
-        if _AXIS_SECTION.fullmatch(name):
+        if _AXIS_SECTION.fullmatch(name) or name in _LEGACY_AXIS_SECTIONS:
             hkl.pop(name)
 
     seen_records: set[str] = set()
@@ -138,14 +146,14 @@ def resolve_profile_config(raw: Mapping[str, Any] | None) -> dict[str, Any]:
     for name, record, aliases in (
         ("PRIMARY_BEAM_DIRECTION", "PrimaryBeamDirection", ()),
         (
-            "INPLANE_REFERENCE_DIRECITON",
+            "INPLANE_REFERENCE_DIRECTION",
             "InplaneReferenceDirection",
-            ("INPLANE_REFERENCE_DIRECTION",),
+            ("INPLANE_REFERENCE_DIRECITON",),
         ),
         (
-            "SAMPLE_SURFACE_NORMAL_DIRECITON",
+            "SAMPLE_SURFACE_NORMAL_DIRECTION",
             "SampleSurfaceNormalDirection",
-            ("SAMPLE_SURFACE_NORMAL_DIRECTION",),
+            ("SAMPLE_SURFACE_NORMAL_DIRECITON",),
         ),
     ):
         _managed_section(

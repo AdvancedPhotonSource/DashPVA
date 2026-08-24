@@ -83,7 +83,7 @@ class TestDefaultProfileDataLiteral:
         expected = {
             "DETECTOR_PREFIX", "OUTPUT_FILE_LOCATION", "CONSUMER_MODE",
             "IOC_PREFIX", "CACHE_OPTIONS", "METADATA", "ANALYSIS", "HKL",
-            "ROI", "STATS",
+            "IOC_RSM_PARAMETER", "ROI", "STATS",
         }
         assert set(DEFAULT_PROFILE_DATA.keys()) == expected
 
@@ -244,4 +244,4 @@ class TestSeedProfileDefaultsWrite:
         assert read_back == DEFAULT_PROFILE_DATA
         # Sanity: nested structure preserved (not flattened or stringified)
         assert isinstance(read_back["CACHE_OPTIONS"]["ALIGNMENT"], dict)
-        assert isinstance(read_back["HKL"]["SAMPLE_CIRCLE_AXIS_1"], dict)
+        assert isinstance(read_back["IOC_RSM_PARAMETER"]["SAMPLE_AXES"], list)

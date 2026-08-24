@@ -1,5 +1,6 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
+import ast
 import json
 import os
 import pathlib
@@ -42,7 +43,33 @@ from dashpva.gui.theme_colors import (
     WARNING,
     status_style,
 )
+from dashpva.utils.config.hkl import semantic_hkl_channels
+from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.log_manager import LogMixin
+
+# Item-data roles used by the config tree to round-trip values it cannot
+# display. A QTreeWidget shows text; the profile holds typed values, including
+# tables and lists of tables. These carry the real value alongside the display
+# string so saving the tree returns the profile unchanged.
+_TREE_IS_TABLE_ROLE = Qt.UserRole        # column 0: this node is a dict
+_TREE_ORIGINAL_ROLE = Qt.UserRole        # column 1: the untouched typed value
+_TREE_RENDERED_ROLE = Qt.UserRole + 1    # column 1: the text we rendered
+
+
+class _OpaqueValue:
+    """Carries a Python value through Qt item data untouched.
+
+    Handing PyQt a bare ``list``/``dict`` converts it to ``QVariantList`` /
+    ``QVariantMap`` and back, and ``QVariantMap`` is key-sorted -- so a list of
+    axis tables would return with its fields reordered and every save would
+    rewrite the profile cosmetically. Wrapping keeps the original object
+    identical.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
 
 
 class Worker(QObject):
@@ -779,12 +806,11 @@ class Workflow(QDialog, LogMixin):
         self._populate_tree_node(data, parent=None)
         self._store_snapshot()
         self.treeWidgetConfig.blockSignals(False)
-        # Update settings module so the rest of the app uses this profile
-        try:
-            app_settings.set_locator(profile_id)
-            app_settings.reload()
-        except Exception:
-            pass
+        # Viewing a profile must not activate it. The active profile is whatever
+        # is marked selected in the database (checkBoxSelectedProfile); setting
+        # the locator here made merely browsing the combo box retarget the rest
+        # of the app -- HKL Setup then opened the profile being looked at
+        # instead of the selected one.
 
     def _on_default_toggled(self, checked: bool):
         idx = self.comboBoxProfile.currentIndex()
@@ -1078,13 +1104,36 @@ class Workflow(QDialog, LogMixin):
                 else:
                     item = QTreeWidgetItem(parent, [key, ''])
                 item.setFlags(item.flags() | Qt.ItemIsEditable)
+                # Mark this as a table. An *empty* table has no children, so
+                # without the marker _extract_tree_to_dict cannot tell it from
+                # a leaf and reads its blank display text back as ''. That
+                # silently turned `[HKL]` -- empty by design once
+                # IOC_RSM_PARAMETER generates it -- into a string, which
+                # resolve_profile_config then rejected.
+                item.setData(0, _TREE_IS_TABLE_ROLE, True)
                 self._populate_tree_node(value, item)
             else:
                 if parent is None:
                     item = QTreeWidgetItem(self.treeWidgetConfig, [key, str(value)])
                 else:
                     item = QTreeWidgetItem(parent, [key, str(value)])
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
+                # Keep the original typed value so _extract_tree_to_dict can
+                # hand it back unchanged if the display text isn't edited --
+                # str(value) below is for display only, it is not what gets
+                # saved. Lists/tuples (e.g. IOC_RSM_PARAMETER.SAMPLE_AXES)
+                # can't be safely re-serialized from arbitrary edited text,
+                # so they're shown read-only; edit them via HKL Setup instead.
+                item.setData(1, _TREE_ORIGINAL_ROLE, _OpaqueValue(value))
+                # Remember the text we rendered, so an edit is detected by
+                # comparison rather than by re-serializing the value.
+                item.setData(1, _TREE_RENDERED_ROLE, item.text(1))
+                if isinstance(value, (list, tuple)):
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setToolTip(
+                        1, "Edit axis/geometry lists via HKL Setup, not here."
+                    )
+                else:
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
 
     # ------------------------------------------------------------------ #
     # Tree editing — add / delete keys, right-click context menu
@@ -1761,6 +1810,13 @@ class Workflow(QDialog, LogMixin):
             return False
         data = self._extract_tree_to_dict()
         try:
+            resolve_profile_config(data)
+        except Exception as e:
+            QMessageBox.critical(
+                self, 'Save Error', f'Refusing to save an unloadable profile:\n{e}'
+            )
+            return False
+        try:
             with open(path, 'w') as f:
                 toml.dump(data, f)
         except Exception as e:
@@ -1821,11 +1877,17 @@ class Workflow(QDialog, LogMixin):
                         else self._extract_tree_to_dict()
                     )
                     merged = self._deep_merge(defaults, current, added)
+                    # Save the correctly-typed merged dict directly -- routing
+                    # it through the tree first (str() to display, then
+                    # re-parsed back) is exactly the round-trip that turns
+                    # list-valued keys like IOC_RSM_PARAMETER.SAMPLE_AXES into
+                    # unloadable strings.
+                    if _pid is not None and not self._persist_profile_dict(_pid, merged):
+                        return
                     self.treeWidgetConfig.blockSignals(True)
                     self.treeWidgetConfig.clear()
                     self._populate_tree_node(merged, parent=None)
                     self.treeWidgetConfig.blockSignals(False)
-                    self._save_tree_to_active_profile()
                 except Exception as e:
                     QMessageBox.critical(self, 'Reseed', f'Profile reseed failed:\n{e}')
                     return
@@ -1947,19 +2009,35 @@ class Workflow(QDialog, LogMixin):
         if idx < 0:
             return
         profile_id = self.comboBoxProfile.itemData(idx)
+        self._persist_profile_dict(profile_id, self._extract_tree_to_dict())
+
+    def _persist_profile_dict(self, profile_id, data: dict) -> bool:
+        """Validate then persist *data* as the given profile's config.
+
+        Shared by _save_tree_to_active_profile (tree-extracted data) and
+        _on_reseed (the correctly-merged dict, saved directly rather than
+        laundered through the tree's str()-then-reparse round-trip).
+        """
         try:
-            data = self._extract_tree_to_dict()
+            resolve_profile_config(data)
+        except Exception as e:
+            QMessageBox.critical(
+                self, 'Save Error', f'Refusing to save an unloadable profile:\n{e}'
+            )
+            return False
+        try:
             self._db.clear_profile_configs(profile_id)
             self._db.import_toml_to_profile(profile_id, data)
         except Exception as e:
             QMessageBox.critical(self, 'Save Error', f'Failed to save to profile:\n{e}')
-            return
+            return False
         try:
             app_settings.set_locator(profile_id)
             app_settings.reload()
             self._sync_associator_metadata()
         except Exception:
             pass
+        return True
 
     def _extract_tree_to_dict(self, parent=None) -> dict:
         result = {}
@@ -1972,8 +2050,23 @@ class Workflow(QDialog, LogMixin):
             key = child.text(0)
             if child.childCount() > 0:
                 result[key] = self._extract_tree_to_dict(child)
+            elif child.data(0, _TREE_IS_TABLE_ROLE):
+                # A table that happens to be empty, not a leaf. Reading its
+                # blank text back as '' is what broke `[HKL]`.
+                result[key] = {}
             else:
-                result[key] = self._coerce_value(child.text(1))
+                # If the displayed text still matches what _populate_tree_node
+                # rendered, hand back the original typed object untouched
+                # (this is what actually preserves lists/dicts -- str(value)
+                # is display-only and was never meant to be re-parsed). Only
+                # fall through to _coerce_value for text the user really
+                # edited.
+                rendered = child.data(1, _TREE_RENDERED_ROLE)
+                original = child.data(1, _TREE_ORIGINAL_ROLE)
+                if isinstance(original, _OpaqueValue) and child.text(1) == rendered:
+                    result[key] = original.value
+                else:
+                    result[key] = self._coerce_value(child.text(1))
         return result
 
     @staticmethod
@@ -1991,6 +2084,16 @@ class Workflow(QDialog, LogMixin):
             return float(text)
         except ValueError:
             pass
+        # An edit that produces list/dict-shaped text (e.g. someone typing a
+        # corrected axis table by hand) should recover structurally rather
+        # than silently becoming a string.
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                parsed = parser(text)
+            except Exception:
+                continue
+            if isinstance(parsed, (list, dict)):
+                return parsed
         return text
 
     # ------------------------------------------------------------------ #
@@ -2005,11 +2108,8 @@ class Workflow(QDialog, LogMixin):
                 ca_pvs += f'ca://{pv},'
         ca_pvs += ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
         pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
-        for pvs_dict in app_settings.HKL.values():
-            if isinstance(pvs_dict, dict):
-                for pv_channel in pvs_dict.values():
-                    if pv_channel:
-                        ca_pvs += f'ca://{pv_channel},'
+        for pv_channel in semantic_hkl_channels(app_settings.HKL):
+            ca_pvs += f'ca://{pv_channel},'
         all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
         return all_pvs
 

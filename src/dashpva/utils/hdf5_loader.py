@@ -8,6 +8,7 @@ import h5py
 import hdf5plugin  # Must be imported before h5py to register compression filters
 import numpy as np
 
+from dashpva.utils.config.hkl import numbered_axis_group_names
 from dashpva.utils.log_manager import LogMixin
 
 
@@ -1487,7 +1488,7 @@ def discover_hkl_axis_labels(file_path: str) -> dict:
     Discover friendly HKL axis/motor labels from /entry/data/metadata/HKL only.
     
     New format:
-      - Read NAME datasets under SAMPLE_CIRCLE_AXIS_1..4 and DETECTOR_CIRCLE_AXIS_1..2
+      - Read NAME datasets under every numbered SAMPLE/DETECTOR_CIRCLE_AXIS group
     Legacy format:
       - If NAME is not present but MU/ETA/CHI/PHI/NU/DELTA subgroups exist, use those identifiers
     
@@ -1536,12 +1537,12 @@ def discover_hkl_axis_labels(file_path: str) -> dict:
                 return str(val)
 
             # New format axes discovery
-            for i in range(1, 5):
-                nm = _read_name_from(grp.get(f'SAMPLE_CIRCLE_AXIS_{i}'))
+            for group_name in numbered_axis_group_names(grp.keys(), 'sample'):
+                nm = _read_name_from(grp.get(group_name))
                 if nm:
                     labels['sample_axes'].append(nm)
-            for i in range(1, 3):
-                nm = _read_name_from(grp.get(f'DETECTOR_CIRCLE_AXIS_{i}'))
+            for group_name in numbered_axis_group_names(grp.keys(), 'detector'):
+                nm = _read_name_from(grp.get(group_name))
                 if nm:
                     labels['detector_axes'].append(nm)
 

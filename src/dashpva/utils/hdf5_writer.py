@@ -11,7 +11,19 @@ import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 import dashpva.settings as settings
+from dashpva.utils.config.hkl import (
+    AXIS_CHANNEL_FIELDS,
+    SECTION_CHANNEL_FIELDS,
+    VECTOR_FIELDS,
+    get_hkl_section,
+)
+from dashpva.utils.hkl_axes import (
+    canonical_axis_metadata,
+    has_canonical_axis_parameters,
+    resolved_axis_groups,
+)
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.rsm_geometry import RotationAxis, direction_vector
 
 
 class HDF5Writer(QObject, LogMixin):
@@ -156,7 +168,16 @@ class HDF5Writer(QObject, LogMixin):
         hkl_cfg = getattr(self.pva_reader, 'config', {}).get('HKL', {})
         HKL_IN_CONFIG = data.get('HKL_IN_CONFIG', False) or bool(hkl_cfg)
         merged_metadata = data['metadata']
+        full_config = getattr(self.pva_reader, 'config', {}) or {}
         ds_kwargs = hdf5plugin.Blosc(cname='lz4', clevel=5, shuffle=True) if compress else {}
+
+        if HKL_IN_CONFIG:
+            self._preflight_axis_metadata(
+                hkl_cfg,
+                merged_metadata,
+                int(data['len_images']),
+                full_config,
+            )
 
         with h5py.File(file_path, 'w') as h5f:
             entry = h5f.create_group('entry')
@@ -192,19 +213,65 @@ class HDF5Writer(QObject, LogMixin):
             if HKL_IN_CONFIG:
                 hkl_root = metadata_grp.create_group('HKL')
 
-                for section_name in ['PRIMARY_BEAM_DIRECTION', 'INPLANE_REFERENCE_DIRECITON', 'SAMPLE_SURFACE_NORMAL_DIRECITON']:
-                    sec = hkl_cfg.get(section_name, {})
+                for section_name in (
+                    'PRIMARY_BEAM_DIRECTION',
+                    'INPLANE_REFERENCE_DIRECTION',
+                    'SAMPLE_SURFACE_NORMAL_DIRECTION',
+                ):
+                    sec = get_hkl_section(hkl_cfg, section_name)
                     if sec:
                         sec_grp = hkl_root.create_group(section_name)
-                        for k, pv in sec.items():
-                            self._write_scan_pv_dataset(sec_grp, k, pv, merged_metadata)
+                        for key in VECTOR_FIELDS:
+                            self._write_scan_pv_dataset(
+                                sec_grp, key, sec.get(key), merged_metadata
+                            )
 
-                for base in ['SAMPLE_CIRCLE_AXIS_1', 'SAMPLE_CIRCLE_AXIS_2', 'SAMPLE_CIRCLE_AXIS_3', 'SAMPLE_CIRCLE_AXIS_4', 'DETECTOR_CIRCLE_AXIS_1', 'DETECTOR_CIRCLE_AXIS_2']:
-                    sec = hkl_cfg.get(base, {})
-                    if sec:
-                        grp = hkl_root.create_group(base)
-                        for k, pv in sec.items():
-                            self._write_scan_pv_dataset(grp, k, pv, merged_metadata)
+                for role in ('sample', 'detector'):
+                    axis_groups = resolved_axis_groups(hkl_cfg.keys(), role)
+                    for axis_number, group_name in enumerate(axis_groups, start=1):
+                        sec = hkl_cfg.get(group_name, {})
+                        if not isinstance(sec, dict):
+                            continue
+                        grp = hkl_root.create_group(group_name)
+                        for key in AXIS_CHANNEL_FIELDS:
+                            if key == 'AXIS_NUMBER':
+                                continue
+                            self._write_scan_pv_dataset(
+                                grp, key, sec.get(key), merged_metadata
+                            )
+                        identity = canonical_axis_metadata(full_config, group_name)
+                        if has_canonical_axis_parameters(full_config):
+                            grp.create_dataset('AXIS_NUMBER', data=axis_number)
+                        else:
+                            grp.create_dataset(
+                                'AXIS_NUMBER',
+                                data=self._legacy_axis_number(
+                                    sec,
+                                    merged_metadata,
+                                    int(data['len_images']),
+                                    group_name,
+                                ),
+                            )
+                        for key in (
+                            'LABEL',
+                            'SPEC_MOTOR_NAME',
+                            'RECORD_NAME',
+                            'ANGLE_UNITS',
+                        ):
+                            value = identity.get(key)
+                            if value is None:
+                                continue
+                            if key not in grp:
+                                self._write_literal_dataset(grp, key, value)
+                        if (
+                            'SPEC_MOTOR_NAME' not in grp
+                            and identity.get('LABEL')
+                        ):
+                            self._write_literal_dataset(
+                                grp, 'SPEC_MOTOR_NAME', identity['LABEL']
+                            )
+                        if identity.get('LABEL') and 'NAME' not in grp:
+                            self._write_literal_dataset(grp, 'NAME', identity['LABEL'])
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
@@ -220,12 +287,39 @@ class HDF5Writer(QObject, LogMixin):
                         if vals is not None:
                             arr = np.asarray(vals).ravel()
                             spec_grp.create_dataset('UB_MATRIX_VALUE', data=arr[:9] if arr.size >= 9 else arr)
+                    units_key = spec.get('ENERGY_UNITS')
+                    if units_key:
+                        self._write_scan_pv_dataset(
+                            spec_grp, 'ENERGY_UNITS', units_key, merged_metadata
+                        )
+                    parameters = full_config.get('IOC_RSM_PARAMETER', {})
+                    if (
+                        'ENERGY_UNITS' not in spec_grp
+                        and isinstance(parameters, dict)
+                        and parameters.get('ENERGY_UNITS')
+                    ):
+                        self._write_literal_dataset(
+                            spec_grp, 'ENERGY_UNITS', parameters['ENERGY_UNITS']
+                        )
+
+                parameters = full_config.get('IOC_RSM_PARAMETER', {})
+                if (
+                    isinstance(parameters, dict)
+                    and parameters.get('SAMPLE_ORIENTATION')
+                ):
+                    self._write_literal_dataset(
+                        hkl_root,
+                        'SAMPLE_ORIENTATION',
+                        parameters['SAMPLE_ORIENTATION'],
+                    )
 
                 detector = hkl_cfg.get('DETECTOR_SETUP', {})
                 if detector:
                     det_grp = hkl_root.create_group('DETECTOR_SETUP')
-                    for k, pv in detector.items():
-                        self._write_scan_pv_dataset(det_grp, k, pv, merged_metadata)
+                    for key in SECTION_CHANNEL_FIELDS['DETECTOR_SETUP']:
+                        self._write_scan_pv_dataset(
+                            det_grp, key, detector.get(key), merged_metadata
+                        )
 
             rsm = data.get('rsm')
             if HKL_IN_CONFIG and rsm:
@@ -239,6 +333,107 @@ class HDF5Writer(QObject, LogMixin):
                     pass
 
             self._apply_nx_structure(h5f, entry)
+
+    @staticmethod
+    def _preflight_axis_metadata(
+        hkl_config: dict,
+        merged_metadata: dict,
+        frame_count: int,
+        full_config: dict | None = None,
+    ) -> None:
+        """Validate every configured circle before the destination is opened."""
+        for role in ('sample', 'detector'):
+            for group_name in resolved_axis_groups(hkl_config.keys(), role):
+                section = hkl_config.get(group_name)
+                if not isinstance(section, dict):
+                    raise ValueError(f"HKL.{group_name} must be a table.")
+                if not has_canonical_axis_parameters(full_config or {}):
+                    HDF5Writer._legacy_axis_number(
+                        section, merged_metadata, frame_count, group_name
+                    )
+                for field in ('DIRECTION_AXIS', 'POSITION'):
+                    channel = section.get(field)
+                    if not isinstance(channel, str) or not channel.strip():
+                        raise ValueError(
+                            f"HKL.{group_name}.{field} must map to an EPICS channel."
+                        )
+                    if channel not in merged_metadata:
+                        raise ValueError(
+                            f"Missing {field} metadata for {group_name} ({channel})."
+                        )
+                    values = np.asarray(merged_metadata[channel]).ravel()
+                    if values.size not in (1, frame_count):
+                        raise ValueError(
+                            f"{group_name}.{field} has {values.size} values for "
+                            f"{frame_count} frames."
+                        )
+                    if field == 'POSITION':
+                        try:
+                            numeric = values.astype(float)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError(
+                                f"{group_name}.POSITION must be numeric."
+                            ) from exc
+                        if not np.isfinite(numeric).all():
+                            raise ValueError(
+                                f"{group_name}.POSITION contains non-finite values."
+                            )
+                        continue
+
+                    directions = []
+                    for value in values:
+                        if isinstance(value, (bytes, np.bytes_)):
+                            value = value.decode('utf-8')
+                        direction = str(value).strip().lower()
+                        if not direction:
+                            raise ValueError(
+                                f"{group_name}.DIRECTION_AXIS contains an empty value."
+                            )
+                        directions.append(direction)
+                    if any(value != directions[0] for value in directions[1:]):
+                        raise ValueError(
+                            f"{group_name}.DIRECTION_AXIS changes within the scan."
+                        )
+                    RotationAxis(role, directions[0])
+                    direction_vector(directions[0])
+
+    @staticmethod
+    def _legacy_axis_number(
+        section: dict,
+        merged_metadata: dict,
+        frame_count: int,
+        group_name: str,
+    ) -> int | float:
+        channel = section.get('AXIS_NUMBER')
+        if not isinstance(channel, str) or not channel.strip():
+            raise ValueError(
+                f"HKL.{group_name}.AXIS_NUMBER must map to an EPICS channel."
+            )
+        if channel not in merged_metadata:
+            raise ValueError(
+                f"Missing AXIS_NUMBER metadata for {group_name} ({channel})."
+            )
+        values = np.asarray(merged_metadata[channel]).ravel()
+        if values.size not in (1, frame_count):
+            raise ValueError(
+                f"{group_name}.AXIS_NUMBER has {values.size} values for "
+                f"{frame_count} frames."
+            )
+        try:
+            numeric = values.astype(float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{group_name}.AXIS_NUMBER must be numeric.") from exc
+        if not np.isfinite(numeric).all():
+            raise ValueError(f"{group_name}.AXIS_NUMBER contains non-finite values.")
+        if not np.allclose(
+            numeric,
+            numeric[0],
+            rtol=settings.RSM_STATIC_METADATA_RELATIVE_TOLERANCE,
+            atol=settings.RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE,
+        ):
+            raise ValueError(f"{group_name}.AXIS_NUMBER changes within the scan.")
+        value = float(numeric[0])
+        return int(value) if value.is_integer() else value
 
     def _apply_nx_structure(self, h5f: h5py.File, entry: h5py.Group, base_group: str = "entry/data/metadata"):
         """Apply NeXus NX_class attributes and create instrument/sample structural groups."""
@@ -275,12 +470,109 @@ class HDF5Writer(QObject, LogMixin):
             ub_grp['value'] = h5py.SoftLink(f'/{ub_src}')
         geo_grp = sample_grp.require_group('geometry')
         geo_grp.attrs['NX_class'] = sample_cfg['geometry']['NX_class']
-        for field, axis_cfg in sample_cfg['geometry'].items():
-            if field == 'NX_class' or not isinstance(axis_cfg, dict):
+        detector_geometry = det_grp.require_group('transformations')
+        detector_geometry.attrs['NX_class'] = 'NXtransformations'
+
+        hkl_path = f"{base_group}/HKL"
+        if hkl_path in h5f:
+            hkl = h5f[hkl_path]
+            self._apply_axis_chain(
+                h5f,
+                hkl_path,
+                resolved_axis_groups(hkl.keys(), 'sample'),
+                geo_grp,
+                sample_grp,
+            )
+            self._apply_axis_chain(
+                h5f,
+                hkl_path,
+                resolved_axis_groups(hkl.keys(), 'detector'),
+                detector_geometry,
+                det_grp,
+            )
+
+    def _apply_axis_chain(
+        self,
+        h5f: h5py.File,
+        hkl_path: str,
+        group_names: list[str],
+        transformations: h5py.Group,
+        owner: h5py.Group,
+    ) -> None:
+        """Link one ordered rotation chain into an NXtransformations group."""
+        previous = '.'
+        used_names: set[str] = set()
+        for group_name in group_names:
+            axis_path = f"{hkl_path}/{group_name}"
+            position_path = f"{axis_path}/POSITION"
+            if position_path not in h5f or not isinstance(
+                h5f[position_path], h5py.Dataset
+            ):
+                raise ValueError(f"Missing axis POSITION dataset at {position_path}.")
+
+            axis_group = h5f[axis_path]
+            record_name = self._first_static_text(axis_group, ('RECORD_NAME',))
+            link_name = self._safe_nexus_name(record_name or group_name.lower())
+            if link_name in used_names:
+                link_name = f"{link_name}_{group_name.lower()}"
+            used_names.add(link_name)
+
+            link_path = f"/{transformations.name.strip('/')}/{link_name}"
+            if link_name in transformations:
+                del transformations[link_name]
+            transformations[link_name] = h5py.SoftLink(f"/{position_path}")
+
+            position = h5f[position_path]
+            position.attrs['transformation_type'] = 'rotation'
+            position.attrs['depends_on'] = previous
+            direction = self._first_static_text(axis_group, ('DIRECTION_AXIS',))
+            if direction is None:
+                raise ValueError(f"Missing static DIRECTION_AXIS at {axis_path}.")
+            position.attrs['axis'] = direction
+            position.attrs['vector'] = direction_vector(direction)
+            units = self._first_static_text(axis_group, ('ANGLE_UNITS',)) or 'deg'
+            position.attrs['units'] = units
+            label = self._first_static_text(
+                axis_group, ('LABEL', 'NAME', 'SPEC_MOTOR_NAME', 'RECORD_NAME')
+            )
+            if label:
+                position.attrs['long_name'] = label
+            previous = link_path
+
+        if 'depends_on' in owner:
+            del owner['depends_on']
+        owner.create_dataset(
+            'depends_on', data=previous, dtype=h5py.string_dtype(encoding='utf-8')
+        )
+
+    @staticmethod
+    def _first_static_text(group: h5py.Group, fields: tuple[str, ...]) -> str | None:
+        for field in fields:
+            node = group.get(field)
+            if not isinstance(node, h5py.Dataset):
                 continue
-            target_path = f"{base_group}/HKL/{axis_cfg.get('target', '')}"
-            if target_path in h5f and field not in geo_grp:
-                geo_grp[field] = h5py.SoftLink(f'/{target_path}')
+            try:
+                values = node.asstr()[...]
+            except Exception:
+                values = node[...]
+            decoded = []
+            for value in np.asarray(values).ravel():
+                if isinstance(value, (bytes, np.bytes_)):
+                    value = value.decode('utf-8')
+                text = str(value).strip()
+                if text:
+                    decoded.append(text)
+            if decoded and all(value == decoded[0] for value in decoded):
+                return decoded[0]
+        return None
+
+    @staticmethod
+    def _safe_nexus_name(value: str) -> str:
+        name = ''.join(
+            character if character.isalnum() or character in '._-' else '_'
+            for character in str(value).strip()
+        )
+        return name or 'axis'
 
     def merge_metadata(self, attributes):
         all_keys = set()
@@ -355,6 +647,12 @@ class HDF5Writer(QObject, LogMixin):
         else:
             dt = h5py.string_dtype(encoding='utf-8')
             group.create_dataset(name, data=str(vals), dtype=dt)
+
+    @staticmethod
+    def _write_literal_dataset(group: h5py.Group, name: str, value: str) -> None:
+        group.create_dataset(
+            name, data=str(value), dtype=h5py.string_dtype(encoding='utf-8')
+        )
 
     def save_scan_to_h5(self, file_path: str, compress: bool = True, clear_caches: bool = True) -> None:
         """Write caches in NeXus scan format (NXdetector + NXsample + motor positions).
@@ -463,5 +761,3 @@ class HDF5Writer(QObject, LogMixin):
         self.hdf5_writer_finished.emit(
             f"Saved to: {file_path}\nFormat: {formatter['name']}"
         )
-
-

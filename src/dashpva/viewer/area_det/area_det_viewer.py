@@ -41,6 +41,12 @@ from pyqtgraph.colormap import get as get_colormap
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Writer, PVAReader, rotation_cycle
+from dashpva.utils.config.hkl import (
+    axis_field_channels,
+    get_hkl_section,
+    section_field_channels,
+    semantic_hkl_channels,
+)
 from dashpva.utils.mask_manager import MaskManager
 from dashpva.utils.roi_ops import _extract_roi_subarray
 from dashpva.utils.rsm_geometry import (
@@ -1859,13 +1865,11 @@ class DiffractionImageWindow(BaseWindow):
                 # would double-prefix the ones that already include it.
                 self.hkl_config = self.reader.config["HKL"]
                 if not self.hkl_pvs:
-                    for section, pv_dict in self.hkl_config.items():
-                        for section_key, pv_name in pv_dict.items():
-                            if pv_name not in self.hkl_pvs:
-                                self.hkl_pvs[pv_name] = PV(
-                                    pvname=pv_name,
-                                    connection_timeout=0.15,
-                                )
+                    for pv_name in semantic_hkl_channels(self.hkl_config):
+                        self.hkl_pvs[pv_name] = PV(
+                            pvname=pv_name,
+                            connection_timeout=0.15,
+                        )
                 for pv_name, pv_obj in self.hkl_pvs.items():
                     self.hkl_data[pv_name] = pv_obj.get(timeout=0.15)
                     pv_obj.add_callback(callback=self.hkl_ca_callback)
@@ -1909,77 +1913,88 @@ class DiffractionImageWindow(BaseWindow):
     def hkl_setup(self) -> None:
         if (self.hkl_config is not None) and (not self.stop_hkl.isChecked()):
             try:
-                # Get everything for the sample circles
-                sample_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('SAMPLE_CIRCLE') for pv_name in pv_dict.values()]
-                self.sample_circle_directions = []
-                self.sample_circle_names = []
-                self.sample_circle_positions = []
-                for pv_key in sample_circle_keys:
-                    if pv_key.endswith('DirectionAxis'):
-                        direction = self.hkl_data.get(pv_key)
-                        if direction is None:
-                            raise ValueError(f"Missing sample circle direction PV data: {pv_key}")
-                        self.sample_circle_directions.append(direction)
-                    elif pv_key.endswith('SpecMotorName'):
-                        name = self.hkl_data.get(pv_key)
-                        if name is None:
-                            raise ValueError(f"Missing sample circle motor name PV data: {pv_key}")
-                        self.sample_circle_names.append(name)
-                    elif pv_key.endswith('Position'):
-                        position = self.hkl_data.get(pv_key)
-                        if position is None:
-                            raise ValueError(f"Missing sample circle position PV data: {pv_key}")
-                        self.sample_circle_positions.append(position)
-                
-                # Get everything for the detector circles
-                det_circle_keys = [pv_name for section, pv_dict in self.hkl_config.items() if section.startswith('DETECTOR_CIRCLE') for pv_name in pv_dict.values()]
-                self.det_circle_directions = []
-                self.det_circle_names = []
-                self.det_circle_positions = []
-                for pv_key in det_circle_keys:
-                    if pv_key.endswith('DirectionAxis'):
-                        direction = self.hkl_data.get(pv_key)
-                        if direction is None:
-                            raise ValueError(f"Missing detector circle direction PV data: {pv_key}")
-                        self.det_circle_directions.append(direction)
-                    elif pv_key.endswith('SpecMotorName'):
-                        name = self.hkl_data.get(pv_key)
-                        if name is None:
-                            raise ValueError(f"Missing detector circle motor name PV data: {pv_key}")
-                        self.det_circle_names.append(name)
-                    elif pv_key.endswith('Position'):
-                        position = self.hkl_data.get(pv_key)
-                        if position is None:
-                            raise ValueError(f"Missing detector circle position PV data: {pv_key}")
-                        self.det_circle_positions.append(position)
-                
-                # Primary Beam Direction
-                primary_beam_pvs = self.hkl_config.get('PRIMARY_BEAM_DIRECTION', {}).values()
-                self.primary_beam_directions = [self.hkl_data.get(axis_number) for axis_number in primary_beam_pvs]
-                if any(val is None for val in self.primary_beam_directions):
-                    raise ValueError("Missing primary beam direction PV data")
-                
-                # Inplane Reference Direction
-                inplane_ref_pvs = self.hkl_config.get('INPLANE_REFERENCE_DIRECITON', {}).values()
-                self.inplane_reference_directions = [self.hkl_data.get(axis_number) for axis_number in inplane_ref_pvs]
-                if any(val is None for val in self.inplane_reference_directions):
-                    raise ValueError("Missing inplane reference direction PV data")
+                def _values(channels, description):
+                    values = [self.hkl_data.get(channel) for channel in channels]
+                    missing = [
+                        channel
+                        for channel, value in zip(channels, values)
+                        if value is None
+                    ]
+                    if missing:
+                        raise ValueError(f"Missing {description} PV data: {missing}")
+                    return values
 
-                # Sample Surface Normal Direction
-                surface_normal_pvs = self.hkl_config.get('SAMPLE_SURFACE_NORMAL_DIRECITON', {}).values()
-                self.sample_surface_normal_directions = [self.hkl_data.get(axis_number) for axis_number in surface_normal_pvs]
-                if any(val is None for val in self.sample_surface_normal_directions):
-                    raise ValueError("Missing sample surface normal direction PV data")
+                self.sample_circle_directions = _values(
+                    axis_field_channels(self.hkl_config, 'sample', 'DIRECTION_AXIS'),
+                    'sample circle direction',
+                )
+                self.sample_circle_positions = _values(
+                    axis_field_channels(self.hkl_config, 'sample', 'POSITION'),
+                    'sample circle position',
+                )
+                self.sample_circle_names = _values(
+                    axis_field_channels(
+                        self.hkl_config,
+                        'sample',
+                        'SPEC_MOTOR_NAME',
+                        required=False,
+                    ),
+                    'sample circle motor name',
+                )
+                self.det_circle_directions = _values(
+                    axis_field_channels(self.hkl_config, 'detector', 'DIRECTION_AXIS'),
+                    'detector circle direction',
+                )
+                self.det_circle_positions = _values(
+                    axis_field_channels(self.hkl_config, 'detector', 'POSITION'),
+                    'detector circle position',
+                )
+                self.det_circle_names = _values(
+                    axis_field_channels(
+                        self.hkl_config,
+                        'detector',
+                        'SPEC_MOTOR_NAME',
+                        required=False,
+                    ),
+                    'detector circle motor name',
+                )
+
+                vector_fields = ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3')
+                self.primary_beam_directions = _values(
+                    section_field_channels(
+                        self.hkl_config,
+                        'PRIMARY_BEAM_DIRECTION',
+                        vector_fields,
+                    ),
+                    'primary beam direction',
+                )
+                self.inplane_reference_directions = _values(
+                    section_field_channels(
+                        self.hkl_config,
+                        'INPLANE_REFERENCE_DIRECTION',
+                        vector_fields,
+                    ),
+                    'in-plane reference direction',
+                )
+                self.sample_surface_normal_directions = _values(
+                    section_field_channels(
+                        self.hkl_config,
+                        'SAMPLE_SURFACE_NORMAL_DIRECTION',
+                        vector_fields,
+                    ),
+                    'sample surface-normal direction',
+                )
 
                 # UB Matrix
-                ub_matrix_pv = self.hkl_config['SPEC']['UB_MATRIX_VALUE']
+                spec = get_hkl_section(self.hkl_config, 'SPEC', required=True)
+                ub_matrix_pv = spec['UB_MATRIX_VALUE']
                 self.ub_matrix = self.hkl_data.get(ub_matrix_pv)
                 if self.ub_matrix is None or not isinstance(self.ub_matrix, np.ndarray) or self.ub_matrix.size != 9:
                     raise ValueError("Invalid UB Matrix data")
                 self.ub_matrix = np.reshape(self.ub_matrix,(3,3))
 
                 # Energy
-                energy_pv = self.hkl_config['SPEC']['ENERGY_VALUE']
+                energy_pv = spec['ENERGY_VALUE']
                 self.energy = self.hkl_data.get(energy_pv)
                 if self.energy is None:
                     raise ValueError("Missing energy PV data")
@@ -2014,7 +2029,7 @@ class DiffractionImageWindow(BaseWindow):
         """Build the shared geometry model from the current monitored values."""
         if self.reader is None or len(self.reader.shape) < 2:
             raise ValueError("Detector frame shape is unavailable.")
-        ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
+        ds_cfg = get_hkl_section(self.hkl_config, 'DETECTOR_SETUP', required=True)
         cch1, cch2 = self.hkl_data[ds_cfg['CENTER_CHANNEL_PIXEL']][:2]
         distance = self.hkl_data[ds_cfg['DISTANCE']]
         pixel_dir1 = self.hkl_data[ds_cfg['PIXEL_DIRECTION_1']]

@@ -9,7 +9,20 @@ import numpy as np
 import toml
 
 import dashpva.settings as settings
+from dashpva.utils.config.hkl import (
+    AXIS_CHANNEL_FIELDS,
+    SECTION_CHANNEL_FIELDS,
+    VECTOR_FIELDS,
+    get_hkl_section,
+)
+from dashpva.utils.config.resolver import resolve_profile_config
+from dashpva.utils.hkl_axes import (
+    canonical_axis_metadata,
+    hkl_group_sort_key,
+    resolved_axis_groups,
+)
 from dashpva.utils.log_manager import get_default_manager
+from dashpva.utils.rsm_parameter_config import validate_parameter_profile
 
 # Use central LogManager rather than local handler configuration
 logger = get_default_manager().get_logger(__name__)
@@ -56,6 +69,28 @@ def _find_dataset_path_by_name(h5_file: h5py.File, base_group_path: str, dataset
     return found_path
 
 
+def _find_dataset_path_by_pv_name(
+    h5_file: h5py.File, base_group_path: str, pv_name: str
+):
+    if base_group_path not in h5_file:
+        return None
+
+    found_path = None
+
+    def visitor(name, obj):
+        nonlocal found_path
+        if found_path is not None or not isinstance(obj, h5py.Dataset):
+            return
+        value = obj.attrs.get("pv_name")
+        if isinstance(value, (bytes, np.bytes_)):
+            value = value.decode("utf-8")
+        if value == pv_name:
+            found_path = f"{base_group_path}/{name}"
+
+    h5_file[base_group_path].visititems(visitor)
+    return found_path
+
+
 def resolve_pv_dataset(h5_file: h5py.File, pv: str, base_group: str = "entry/data/metadata"):
     """
     Resolve a PV string to an existing dataset path inside the saved HDF5 file using known locations.
@@ -77,6 +112,10 @@ def resolve_pv_dataset(h5_file: h5py.File, pv: str, base_group: str = "entry/dat
             return cand, h5_file[cand]
 
     found = _find_dataset_path_by_name(h5_file, base_group, pv)
+    if found and found in h5_file and isinstance(h5_file[found], h5py.Dataset):
+        return found, h5_file[found]
+
+    found = _find_dataset_path_by_pv_name(h5_file, base_group, pv)
     if found and found in h5_file and isinstance(h5_file[found], h5py.Dataset):
         return found, h5_file[found]
 
@@ -209,6 +248,285 @@ def _process_structure(h5_file: h5py.File, current_path: str, mapping_dict: dict
             logger.exception(f"Error processing key '{key}' at path '{new_path}' with value '{value}'")
 
 
+def _semantic_hkl_mapping(hkl: dict) -> dict:
+    """Return only recognized HKL fields, with canonical section names."""
+    semantic = {}
+    for section_name in (
+        "PRIMARY_BEAM_DIRECTION",
+        "INPLANE_REFERENCE_DIRECTION",
+        "SAMPLE_SURFACE_NORMAL_DIRECTION",
+    ):
+        section = get_hkl_section(hkl, section_name)
+        if section:
+            semantic[section_name] = {
+                field: section[field] for field in VECTOR_FIELDS if field in section
+            }
+    for role in ("sample", "detector"):
+        for group_name in resolved_axis_groups(hkl.keys(), role):
+            section = hkl.get(group_name)
+            if isinstance(section, dict):
+                semantic[group_name] = {
+                    field: section[field]
+                    for field in AXIS_CHANNEL_FIELDS
+                    if field in section
+                }
+    for section_name in ("SPEC", "DETECTOR_SETUP"):
+        section = get_hkl_section(hkl, section_name)
+        if section:
+            semantic[section_name] = {
+                field: section[field]
+                for field in SECTION_CHANNEL_FIELDS[section_name]
+                if field in section
+            }
+    return semantic
+
+
+def _replace_dataset(group: h5py.Group, name: str, value) -> h5py.Dataset:
+    if name in group:
+        del group[name]
+    if isinstance(value, str):
+        return group.create_dataset(
+            name, data=value, dtype=h5py.string_dtype(encoding="utf-8")
+        )
+    return group.create_dataset(name, data=np.asarray(value))
+
+
+def _source_dataset(
+    h5_file: h5py.File, source: object, base_group: str, label: str
+) -> tuple[float | None, h5py.Dataset | None]:
+    if isinstance(source, (int, float, np.number)) and not isinstance(source, bool):
+        value = float(source)
+        if not np.isfinite(value):
+            raise ValueError(f"{label} static value must be finite.")
+        return value, None
+    if isinstance(source, str):
+        try:
+            value = float(source)
+        except ValueError:
+            _, dataset = resolve_pv_dataset(h5_file, source, base_group)
+            if dataset is None:
+                raise ValueError(f"Missing required {label} source data for {source!r}.")
+            _validate_numeric_dataset(dataset, label)
+            return None, dataset
+        if not np.isfinite(value):
+            raise ValueError(f"{label} static value must be finite.")
+        return value, None
+    raise ValueError(f"{label} must be a source PV or finite static number.")
+
+
+def _validate_numeric_dataset(dataset: h5py.Dataset, label: str) -> None:
+    try:
+        values = np.asarray(dataset[...], dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} source data must be numeric.") from exc
+    if values.size == 0 or not np.isfinite(values).all():
+        raise ValueError(f"{label} source data must be finite and non-empty.")
+
+
+def _preflight_source(
+    h5_file: h5py.File,
+    source: object,
+    base_group: str,
+    label: str,
+    existing_paths: tuple[str, ...],
+) -> None:
+    if isinstance(source, (int, float, np.number)) and not isinstance(source, bool):
+        if not np.isfinite(float(source)):
+            raise ValueError(f"{label} static value must be finite.")
+        return
+    if isinstance(source, str):
+        try:
+            value = float(source)
+        except ValueError:
+            _, dataset = resolve_pv_dataset(h5_file, source, base_group)
+            if dataset is not None:
+                _validate_numeric_dataset(dataset, label)
+                return
+            for path in existing_paths:
+                existing = h5_file.get(path)
+                if isinstance(existing, h5py.Dataset):
+                    _validate_numeric_dataset(existing, label)
+                    return
+            raise ValueError(f"Missing required {label} source data for {source!r}.")
+        if not np.isfinite(value):
+            raise ValueError(f"{label} static value must be finite.")
+        return
+    raise ValueError(f"{label} must be a source PV or finite static number.")
+
+
+def _preflight_canonical_profile(
+    h5_file: h5py.File, mapping: dict, base_group: str, include: bool
+):
+    parameters = mapping.get("IOC_RSM_PARAMETER")
+    if not isinstance(parameters, dict):
+        return None
+    profile = validate_parameter_profile(mapping.get("IOC_PREFIX", ""), parameters)
+    if not include:
+        return profile
+
+    for role, axes in (
+        ("SAMPLE", profile.sample_axes),
+        ("DETECTOR", profile.detector_axes),
+    ):
+        for number, axis in enumerate(axes, start=1):
+            group_name = f"{role}_CIRCLE_AXIS_{number}"
+            _preflight_source(
+                h5_file,
+                axis.source_pv,
+                base_group,
+                f"{group_name}.POSITION",
+                (
+                    f"{base_group}/HKL/{group_name}/POSITION",
+                    f"{base_group}/motor_positions/{axis.label}",
+                    f"{base_group}/motor_positions/{axis.label.upper()}",
+                ),
+            )
+    _preflight_source(
+        h5_file,
+        profile.energy_source_pv,
+        base_group,
+        "photon energy",
+        (f"{base_group}/HKL/SPEC/ENERGY_VALUE",),
+    )
+    return profile
+
+
+def _materialize_canonical_profile(
+    h5_file: h5py.File,
+    mapping: dict,
+    base_group: str,
+    include: bool,
+) -> bool:
+    """Write canonical profile identity and static geometry into the HKL tree."""
+    parameters = mapping.get("IOC_RSM_PARAMETER")
+    if not isinstance(parameters, dict):
+        return False
+
+    hkl = h5_file.require_group(f"{base_group}/HKL")
+    for role, key in (("sample", "SAMPLE_AXES"), ("detector", "DETECTOR_AXES")):
+        axes = parameters.get(key, [])
+        if not isinstance(axes, list):
+            raise ValueError(f"IOC_RSM_PARAMETER.{key} must be a list.")
+        prefix = "SAMPLE" if role == "sample" else "DETECTOR"
+        for number, axis in enumerate(axes, start=1):
+            if not isinstance(axis, dict):
+                raise ValueError(f"IOC_RSM_PARAMETER.{key}[{number - 1}] must be a table.")
+            group_name = f"{prefix}_CIRCLE_AXIS_{number}"
+            group = hkl.require_group(group_name)
+            identity = canonical_axis_metadata(mapping, group_name)
+            label = identity.get("LABEL")
+            for field in (
+                "LABEL",
+                "SPEC_MOTOR_NAME",
+                "RECORD_NAME",
+                "ANGLE_UNITS",
+            ):
+                if identity.get(field):
+                    _replace_dataset(group, field, identity[field])
+            if label:
+                _replace_dataset(group, "NAME", label)
+                if not identity.get("SPEC_MOTOR_NAME"):
+                    _replace_dataset(group, "SPEC_MOTOR_NAME", label)
+            if not include:
+                continue
+            direction = identity.get("DIRECTION")
+            if not direction:
+                raise ValueError(f"IOC_RSM_PARAMETER.{key}[{number - 1}] needs DIRECTION.")
+            _replace_dataset(group, "AXIS_NUMBER", number)
+            _replace_dataset(group, "DIRECTION_AXIS", direction)
+
+            source = identity.get("SOURCE_PV")
+            try:
+                static_position = float(source)
+            except (TypeError, ValueError):
+                if not isinstance(group.get("POSITION"), h5py.Dataset):
+                    _source_dataset(
+                        h5_file, source, base_group, f"{group_name}.POSITION"
+                    )
+            else:
+                _replace_dataset(group, "POSITION", static_position)
+
+    if not include:
+        return True
+
+    vector_sections = {
+        "PRIMARY_BEAM_DIRECTION": parameters.get("PRIMARY_BEAM_DIRECTION"),
+        "INPLANE_REFERENCE_DIRECTION": parameters.get("INPLANE_REFERENCE_DIRECTION"),
+        "SAMPLE_SURFACE_NORMAL_DIRECTION": parameters.get(
+            "SAMPLE_SURFACE_NORMAL_DIRECTION"
+        ),
+    }
+    for section_name, values in vector_sections.items():
+        try:
+            vector = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"IOC_RSM_PARAMETER.{section_name} must be numeric.") from exc
+        if vector.shape != (3,) or not np.isfinite(vector).all():
+            raise ValueError(
+                f"IOC_RSM_PARAMETER.{section_name} must contain three finite values."
+            )
+        group = hkl.require_group(section_name)
+        for number, value in enumerate(vector, start=1):
+            _replace_dataset(group, f"AXIS_NUMBER_{number}", value)
+
+    ub = np.asarray(parameters.get("UB_MATRIX"), dtype=float)
+    if ub.shape != (9,) or not np.isfinite(ub).all():
+        raise ValueError("IOC_RSM_PARAMETER.UB_MATRIX must contain nine finite values.")
+    spec = hkl.require_group("SPEC")
+    _replace_dataset(spec, "UB_MATRIX_VALUE", ub)
+
+    energy_source = parameters.get("ENERGY_SOURCE_PV")
+    try:
+        static_energy = float(energy_source)
+    except (TypeError, ValueError):
+        _, energy_dataset = resolve_pv_dataset(h5_file, energy_source, base_group)
+        if energy_dataset is None and not isinstance(
+            spec.get("ENERGY_VALUE"), h5py.Dataset
+        ):
+            raise ValueError(
+                f"Missing required photon energy source data for {energy_source!r}."
+            )
+    else:
+        _replace_dataset(spec, "ENERGY_VALUE", static_energy)
+        energy_dataset = None
+    if energy_dataset is not None:
+        if not copy_dataset_like(h5_file, energy_dataset, f"{spec.name}/ENERGY_VALUE"):
+            raise ValueError("Failed to copy required photon energy source data.")
+    energy_units = parameters.get("ENERGY_UNITS")
+    if not isinstance(energy_units, str) or not energy_units.strip():
+        raise ValueError("IOC_RSM_PARAMETER.ENERGY_UNITS is required.")
+    _replace_dataset(spec, "ENERGY_UNITS", energy_units.strip())
+
+    detector = parameters.get("DETECTOR_SETUP")
+    if not isinstance(detector, dict):
+        raise ValueError("IOC_RSM_PARAMETER.DETECTOR_SETUP must be a table.")
+    detector_group = hkl.require_group("DETECTOR_SETUP")
+    for field in SECTION_CHANNEL_FIELDS["DETECTOR_SETUP"]:
+        if field not in detector:
+            raise ValueError(f"IOC_RSM_PARAMETER.DETECTOR_SETUP.{field} is required.")
+        _replace_dataset(detector_group, field, detector[field])
+
+    orientation = parameters.get("SAMPLE_ORIENTATION")
+    if not isinstance(orientation, str) or not orientation.strip():
+        raise ValueError("IOC_RSM_PARAMETER.SAMPLE_ORIENTATION is required.")
+    _replace_dataset(hkl, "SAMPLE_ORIENTATION", orientation.strip())
+    return True
+
+
+def _validate_canonical_positions(
+    h5_file: h5py.File, mapping: dict, base_group: str
+) -> None:
+    hkl_config = mapping.get("HKL", {})
+    for role in ("sample", "detector"):
+        for group_name in resolved_axis_groups(hkl_config.keys(), role):
+            path = f"{base_group}/HKL/{group_name}/POSITION"
+            if path not in h5_file or not isinstance(h5_file[path], h5py.Dataset):
+                source = canonical_axis_metadata(mapping, group_name).get("SOURCE_PV")
+                raise ValueError(
+                    f"Missing required {group_name}.POSITION source data for {source!r}."
+                )
+
+
 def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base_group: str, axis_lookup: dict = None, force: bool = False):
     """
     Rename PV-named datasets under motor_positions to axis labels and link HKL POSITION to them.
@@ -254,6 +572,10 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
     def _read_name_from_mapping(group_key: str) -> str | None:
         try:
             if isinstance(mapping, dict):
+                identity = canonical_axis_metadata(mapping, group_key)
+                label = identity.get("LABEL")
+                if label:
+                    return label.upper()
                 hk = mapping.get("HKL", {})
                 grp = hk.get(group_key, {}) if isinstance(hk, dict) else {}
                 nm = grp.get("NAME")
@@ -269,14 +591,16 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
         if isinstance(mapping, dict):
             hk = mapping.get("HKL", {})
             if isinstance(hk, dict):
-                group_keys.update(list(hk.keys()))
+                for role in ("sample", "detector"):
+                    group_keys.update(resolved_axis_groups(hk.keys(), role))
     except Exception:
         pass
     try:
         hkl_root = f"{base_group}/HKL"
         if hkl_root in h5_file and isinstance(h5_file[hkl_root], h5py.Group):
-            for k in h5_file[hkl_root].keys():
-                group_keys.add(k)
+            hkl_keys = h5_file[hkl_root].keys()
+            for role in ("sample", "detector"):
+                group_keys.update(resolved_axis_groups(hkl_keys, role))
     except Exception:
         pass
     if not group_keys:
@@ -289,7 +613,7 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
     #   2. NAME key in TOML mapping
     #   3. Derive from POSITION PV string via motor-ID lookup (handles commented-out NAME fields)
     axis_map = {}
-    for group_key in sorted(group_keys):
+    for group_key in sorted(group_keys, key=hkl_group_sort_key):
         label = _read_name_from_file(group_key) or _read_name_from_mapping(group_key)
         if not label and isinstance(axis_lookup, dict) and axis_lookup:
             try:
@@ -333,11 +657,27 @@ def _rename_motor_positions_and_link_hkl(h5_file: h5py.File, mapping: dict, base
             continue
 
         print(f"  POSITION PV from TOML: {pv}")
-        try:
-            resolved_path, source_node = resolve_pv_dataset(h5_file, pv, base_group)
-        except Exception:
-            logger.exception(f"Error resolving PV '{pv}' for HKL group '{group_key}'.")
-            resolved_path, source_node = (None, None)
+        resolved_path, source_node = (None, None)
+        source_pv = canonical_axis_metadata(mapping, group_key).get("SOURCE_PV")
+        if source_pv:
+            try:
+                resolved_path, source_node = resolve_pv_dataset(
+                    h5_file, source_pv, base_group
+                )
+            except Exception:
+                logger.exception(
+                    f"Error resolving SOURCE_PV '{source_pv}' for "
+                    f"HKL group '{group_key}'."
+                )
+
+        if source_node is None:
+            try:
+                resolved_path, source_node = resolve_pv_dataset(h5_file, pv, base_group)
+            except Exception:
+                logger.exception(
+                    f"Error resolving PV '{pv}' for HKL group '{group_key}'."
+                )
+                resolved_path, source_node = (None, None)
         print(f"  resolve_pv_dataset -> path={resolved_path}  found={source_node is not None}")
 
         if source_node is None:
@@ -479,7 +819,7 @@ def _print_structure(h5_file: h5py.File, base_group: str, label: str):
 
 
 def _convert_single_file(src_file: Path, toml_path: Path, base_group: str, include: bool, in_place: bool, output_dir: Path, dry_run: bool, force: bool = False) -> str:
-    mapping = toml.load(str(toml_path))
+    mapping = resolve_profile_config(toml.load(str(toml_path)))
     axis_lookup = _build_axis_lookup(mapping)
 
     print(f"\n[metadata_converter] axis_lookup built from METADATA.CA: {axis_lookup}")
@@ -501,16 +841,31 @@ def _convert_single_file(src_file: Path, toml_path: Path, base_group: str, inclu
     stats = {"created": 0, "constants": 0, "warnings": 0}
 
     with h5py.File(str(dst), 'r+') as h5_file:
+        canonical_profile = _preflight_canonical_profile(
+            h5_file, mapping, base_group, include
+        )
         _print_structure(h5_file, base_group, f"BEFORE conversion: {dst.name}")
 
         # Ensure base group exists
         h5_file.require_group(base_group)
-        _process_structure(h5_file, base_group + "/HKL", mapping.get('HKL', mapping), axis_lookup, stats, base_group, include)
+        hkl_mapping = mapping.get('HKL', mapping)
+        _process_structure(
+            h5_file,
+            base_group + "/HKL",
+            _semantic_hkl_mapping(hkl_mapping),
+            axis_lookup,
+            stats,
+            base_group,
+            include,
+        )
+        _materialize_canonical_profile(h5_file, mapping, base_group, include)
         # Post processing: rename motor position datasets and link HKL/POSITION to axis datasets
         try:
             _rename_motor_positions_and_link_hkl(h5_file, mapping, base_group, axis_lookup=axis_lookup, force=force)
         except Exception:
             logger.exception("Failed post-processing to rename motor positions and link HKL POSITION.")
+        if canonical_profile is not None and include:
+            _validate_canonical_positions(h5_file, mapping, base_group)
 
         _print_structure(h5_file, base_group, f"AFTER conversion: {dst.name}")
 

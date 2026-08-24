@@ -14,6 +14,12 @@ from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.utils.config.hkl import (
+    axis_field_channels,
+    get_hkl_section,
+    required_rsm_channels,
+    section_field_channels,
+)
 from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.rsm_geometry import (
     DetectorModel,
@@ -22,33 +28,6 @@ from dashpva.utils.rsm_geometry import (
     build_hxrd,
     calculate_q,
 )
-
-_RSM_SECTION_FIELDS = {
-    'PRIMARY_BEAM_DIRECTION': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
-    'INPLANE_REFERENCE_DIRECITON': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
-    'SAMPLE_SURFACE_NORMAL_DIRECITON': ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3'),
-    'SPEC': ('ENERGY_VALUE', 'UB_MATRIX_VALUE'),
-    'DETECTOR_SETUP': (
-        'CENTER_CHANNEL_PIXEL',
-        'DISTANCE',
-        'PIXEL_DIRECTION_1',
-        'PIXEL_DIRECTION_2',
-        'SIZE',
-    ),
-}
-
-
-def _required_rsm_channels(hkl_config):
-    channels = set()
-    for section_name, section in hkl_config.items():
-        if not isinstance(section, dict):
-            continue
-        if section_name.startswith(('SAMPLE_CIRCLE', 'DETECTOR_CIRCLE')):
-            fields = ('DIRECTION_AXIS', 'POSITION')
-        else:
-            fields = _RSM_SECTION_FIELDS.get(section_name, ())
-        channels.update(section[field] for field in fields if section.get(field))
-    return channels
 
 
 class HpcRsmProcessor(AdImageProcessor, LogMixin):
@@ -185,7 +164,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         self.config = config
         self.hkl_config = self.config.get('HKL') or {}
-        self.hkl_pv_channels = _required_rsm_channels(self.hkl_config)
+        self.hkl_pv_channels = required_rsm_channels(self.hkl_config)
 
     def parse_hkl_ndattributes(self, pva_object):
         """
@@ -209,24 +188,22 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         return hkl_attributes
 
     def get_sample_and_detector_circles(self, hkl_attr: dict):
-        # lists for sample circle parameters
-        sample_circle_directions = []
-        sample_circle_positions = []
-        # lists for detector circles
-        det_circle_directions = []
-        det_circle_positions = []
+        missing = self.hkl_pv_channels.difference(hkl_attr)
+        if missing:
+            raise ValueError(f"missing required RSM attributes: {sorted(missing)}")
 
-        if len(hkl_attr) == len(self.hkl_pv_channels):
-            # loop sorting pv channels
-            for section, pv_dict in self.hkl_config.items():
-                if section.startswith('SAMPLE_CIRCLE'):
-                    sample_circle_directions.append(hkl_attr[pv_dict['DIRECTION_AXIS']])
-                    sample_circle_positions.append(hkl_attr[pv_dict['POSITION']])
-                elif section.startswith('DETECTOR_CIRCLE'):
-                    det_circle_directions.append(hkl_attr[pv_dict['DIRECTION_AXIS']])
-                    det_circle_positions.append(hkl_attr[pv_dict['POSITION']])
+        def _values(role, field):
+            return [
+                hkl_attr[channel]
+                for channel in axis_field_channels(self.hkl_config, role, field)
+            ]
 
-        return sample_circle_directions, sample_circle_positions, det_circle_directions, det_circle_positions
+        return (
+            _values('sample', 'DIRECTION_AXIS'),
+            _values('sample', 'POSITION'),
+            _values('detector', 'DIRECTION_AXIS'),
+            _values('detector', 'POSITION'),
+        )
 
     def get_axis_directions(self, hkl_attr: dict):
         """Get beam / reference / surface-normal direction triplets from hkl_attr.
@@ -235,26 +212,38 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
         IOC publishes under), not hardcoded — so this works for `xidb:`,
         `6idb:`, or unprefixed schemas without code changes.
         """
-        if len(hkl_attr) != len(self.hkl_pv_channels):
-            return None, None, None
+        fields = ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3')
 
         def _triplet(section_name):
-            section = self.hkl_config.get(section_name, {}) or {}
-            return [hkl_attr.get(section.get(f'AXIS_NUMBER_{i}', ''), None) for i in range(1, 4)]
+            return [
+                hkl_attr[channel]
+                for channel in section_field_channels(
+                    self.hkl_config,
+                    section_name,
+                    fields,
+                )
+            ]
 
-        primary_beam_directions          = _triplet('PRIMARY_BEAM_DIRECTION')
-        # Section names match the (typo'd) keys used elsewhere in the config schema.
-        inplane_beam_direction           = _triplet('INPLANE_REFERENCE_DIRECITON')
-        sample_surface_normal_direction  = _triplet('SAMPLE_SURFACE_NORMAL_DIRECITON')
+        primary_beam_directions = _triplet('PRIMARY_BEAM_DIRECTION')
+        inplane_beam_direction = _triplet('INPLANE_REFERENCE_DIRECTION')
+        sample_surface_normal_direction = _triplet('SAMPLE_SURFACE_NORMAL_DIRECTION')
         return primary_beam_directions, inplane_beam_direction, sample_surface_normal_direction
 
     def get_ub_matrix(self, hkl_attr: dict):
-        ub_matrix_key = self.hkl_config['SPEC'].get('UB_MATRIX_VALUE', '')
+        ub_matrix_key = get_hkl_section(
+            self.hkl_config,
+            'SPEC',
+            required=True,
+        )['UB_MATRIX_VALUE']
 
         return hkl_attr[ub_matrix_key]
 
     def get_energy(self, hkl_attr: dict):
-        energy_key = self.hkl_config['SPEC'].get('ENERGY_VALUE', '')
+        energy_key = get_hkl_section(
+            self.hkl_config,
+            'SPEC',
+            required=True,
+        )['ENERGY_VALUE']
 
         return hkl_attr[energy_key]
 
@@ -272,7 +261,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
             # Set up detector parameters — look up by the PV name in the active
             # HKL config so any prefix (xidb:, 6idb:, none) works without edits.
-            ds_cfg = self.hkl_config.get('DETECTOR_SETUP', {}) or {}
+            ds_cfg = get_hkl_section(self.hkl_config, 'DETECTOR_SETUP', required=True)
             roi = [0, shape[0], 0, shape[1]]
             pixel_dir1   = hkl_attr[ds_cfg['PIXEL_DIRECTION_1']]
             pixel_dir2   = hkl_attr[ds_cfg['PIXEL_DIRECTION_2']]
