@@ -27,8 +27,9 @@ Usage:
   - Diagnostics:
       settings.SOURCE_TYPE -> "toml", "db", or None
       settings.LOCATOR     -> the current locator (str path, "profile:<name>", or int id)
-      settings.CONFIG      -> full configuration dictionary
-      settings.ensure_path() -> a TOML path (original path or temp file when using DB)
+      settings.RAW_CONFIG  -> exact persisted configuration dictionary
+      settings.CONFIG      -> effective runtime configuration dictionary
+      settings.ensure_path() -> a TOML path containing the effective configuration
 """
 
 import os
@@ -36,9 +37,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 try:
+    from dashpva.utils.config.resolver import resolve_profile_config
     from dashpva.utils.config.source import ConfigSource
 except Exception:
     ConfigSource = None  # type: ignore[assignment]
+
+    def resolve_profile_config(raw):
+        return dict(raw or {})
 
 
 # NeXus / HDF5 structure definition (static — not config-driven)
@@ -239,6 +244,7 @@ CONFIG_PATH: Optional[str] = str(PROJECT_ROOT / "pv_configs")
 CONSUMERS_PATH: Optional[str] = None
 
 # Diagnostics
+RAW_CONFIG: Dict[str, Any] = {}
 CONFIG: Dict[str, Any] = {}
 SOURCE_TYPE: Optional[str] = None
 LOCATOR: Optional[Union[int, str]] = None
@@ -273,16 +279,19 @@ def set_locator(locator: Union[int, str]) -> None:
 
 
 def ensure_path() -> Optional[str]:
-    """Return a TOML path: original path for TOML sources, temp file for DB sources."""
+    """Return a TOML path containing the effective runtime configuration."""
     eff = _get_effective_locator()
     if ConfigSource is None:
         return None
-    return ConfigSource(eff).ensure_path()
+    src = ConfigSource(eff)
+    raw = src.load()
+    effective = resolve_profile_config(raw)
+    return src.ensure_path(effective if effective != raw else None)
 
 
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
-    global CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
+    global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
@@ -295,12 +304,14 @@ def reload() -> None:
     LOCATOR = eff
 
     src = ConfigSource(eff) if ConfigSource else None
-    cfg = src.load() if src else {}
+    raw_cfg = src.load() if src else {}
+    cfg = resolve_profile_config(raw_cfg)
+    RAW_CONFIG = raw_cfg
     CONFIG = cfg
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
 
     try:
-        TOML_FILE = ensure_path()
+        TOML_FILE = src.ensure_path() if src else None
     except Exception:
         TOML_FILE = None
 
@@ -527,6 +538,7 @@ class Settings:
         self.source_type: Optional[str] = None
         self.locator: Optional[Union[int, str]] = None
         self._source: Optional[Any] = None  # only set for custom source objects
+        self.RAW_CONFIG: Dict[str, Any] = {}
         self.CONFIG: Dict[str, Any] = {}
         self.PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
@@ -620,6 +632,13 @@ class Settings:
         if src is None:
             return None
         if hasattr(src, 'ensure_path'):
+            raw = src.load()
+            effective = resolve_profile_config(raw)
+            if effective != raw:
+                try:
+                    return src.ensure_path(effective)
+                except TypeError:
+                    pass
             return src.ensure_path()
         return None
 
@@ -629,9 +648,11 @@ class Settings:
         self.source_type = getattr(src, 'source_type', None) if src else None
         cfg: Dict[str, Any] = {}
         try:
-            cfg = src.load() if src else {}
+            raw_cfg = src.load() if src else {}
         except Exception:
-            cfg = {}
+            raw_cfg = {}
+        cfg = resolve_profile_config(raw_cfg)
+        self.RAW_CONFIG = raw_cfg
         self.CONFIG = cfg
 
         # Core

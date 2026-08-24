@@ -2667,7 +2667,7 @@ class Workflow(QDialog, LogMixin):
             '-dc'
         ]
 
-        config_path = app_settings.TOML_FILE
+        config_path = app_settings.ensure_path()
         if config_path:
             cmd.extend(['--processor-args', '{"path": "%s"}' % config_path])
 
