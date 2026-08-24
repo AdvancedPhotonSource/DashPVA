@@ -480,7 +480,7 @@ class DiffractionImageWindow(BaseWindow):
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
         self.lbl_mask_pixel_count = self.mask_dock.lbl_mask_pixel_count
         self.btn_load_mask        = self.mask_dock.btn_load_mask
-        self.btn_show_mask        = self.mask_dock.btn_show_mask
+        self.btn_edit_mask        = self.mask_dock.btn_edit_mask
         self.btn_detect_dead      = self.mask_dock.btn_detect_dead
         self.btn_clear_mask       = self.mask_dock.btn_clear_mask
         self.btn_export_json      = self.mask_dock.btn_export_json
@@ -540,7 +540,7 @@ class DiffractionImageWindow(BaseWindow):
 
         # Wire mask button signals (other docks are wired in __init__'s connection block)
         self.btn_load_mask.clicked.connect(self.load_mask_clicked)
-        self.btn_show_mask.clicked.connect(self.show_mask_clicked)
+        self.btn_edit_mask.clicked.connect(self.edit_mask_clicked)
         self.btn_detect_dead.clicked.connect(self.detect_dead_pixels_clicked)
         self.btn_clear_mask.clicked.connect(self.clear_mask_clicked)
         self.btn_export_json.clicked.connect(self.export_json_clicked)
@@ -715,17 +715,40 @@ class DiffractionImageWindow(BaseWindow):
         self.mask_manager.save_active_mask()
         self._update_mask_labels()
 
-    def show_mask_clicked(self):
-        if self.mask_manager.mask is None:
-            QMessageBox.information(self, 'No Mask', 'No mask is loaded.')
-            return
+    def edit_mask_clicked(self):
+        mask = self.mask_manager.mask
+        if mask is None:
+            det_shape = None
+            if self.reader is not None and len(getattr(self.reader, 'shape', ())) >= 2:
+                det_shape = tuple(int(v) for v in self.reader.shape[:2])
+            if not det_shape or det_shape[0] <= 0 or det_shape[1] <= 0:
+                QMessageBox.warning(self, 'No Frame',
+                                    'Start live view first so the detector size is known.')
+                return
+            # Not written to mask_manager/disk here — just handed to the editor.
+            # It only becomes the real mask once the user makes an actual edit
+            # (_on_mask_edited), so opening-then-closing without editing is a no-op.
+            mask = np.zeros(det_shape, dtype=bool)
+        self._open_mask_viewer(show_image=True, mask=mask)
+
+    def _open_mask_viewer(self, edit: bool = False, show_image: bool = False, mask=None):
+        """(Re)open the mask editor window for the current mask.
+
+        ``mask`` overrides mask_manager.mask, e.g. for a fresh blank mask
+        from edit_mask_clicked that hasn't been saved/adopted yet.
+        """
         if self.mask_viewer is not None:
-            self.mask_viewer.close()
+            if not self.mask_viewer.close():
+                return
         self.mask_viewer = MaskViewerWindow(
-            mask=self.mask_manager.mask,
+            mask=self.mask_manager.mask if mask is None else mask,
             mask_path=self.mask_manager.mask_path,
             parent=self)
         self.mask_viewer.mask_updated.connect(self._on_mask_edited)
+        if show_image:
+            self.mask_viewer.chk_show_image.setChecked(True)
+        if edit:
+            self.mask_viewer.chk_edit.setChecked(True)
         self.mask_viewer.show()
 
     def detect_dead_pixels_clicked(self):
@@ -853,7 +876,6 @@ class DiffractionImageWindow(BaseWindow):
 
     def _on_mask_edited(self, mask):
         self.mask_manager.mask = mask.copy()
-        self.mask_manager.save_active_mask()
         self._update_mask_labels()
 
     def _update_mask_labels(self):
@@ -2489,6 +2511,9 @@ class DiffractionImageWindow(BaseWindow):
         Args:
             event (QCloseEvent): The close event triggered when the main window is closed.
         """
+        if self.mask_viewer is not None and not self.mask_viewer.close():
+            event.ignore()
+            return
         try:
             s = _settings()
             s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
@@ -2501,8 +2526,6 @@ class DiffractionImageWindow(BaseWindow):
         if self.roi_stats_panel is not None:
             self.roi_stats_panel.close()
         self.stop_manual_broadcast()
-        if self.mask_viewer is not None:
-            self.mask_viewer.close()
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread
