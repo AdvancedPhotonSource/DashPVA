@@ -7,6 +7,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
+import pytest
+
+pytest.importorskip("pyvista")
+pytest.importorskip("pyvistaqt")
+
 import dashpva.viewer.hkl3d.hkl_3d_viewer as hkl_viewer
 from dashpva.viewer.area_det.area_det_viewer import DiffractionImageWindow
 from dashpva.viewer.hkl3d.docks.grid_control import GridControlDock
