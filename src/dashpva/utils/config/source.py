@@ -256,6 +256,10 @@ class TomlConfigSource:
                 return False
         return False
 
+    def resolved_identity(self) -> Optional[str]:
+        """Which configuration this source actually reads: its file path."""
+        return self.path
+
 
 class DbProfileConfigSource:
     """Load/save configuration from a database profile (by id or 'profile:<name>')."""
@@ -354,6 +358,16 @@ class DbProfileConfigSource:
             if result.status is ConfigSaveStatus.ERROR:
                 return False
         return False
+
+    def resolved_identity(self) -> Optional[int]:
+        """Which profile this source actually reads: its resolved database id.
+
+        Not the same as ``self.locator`` -- a locator of None (or a
+        'profile:<name>' locator) still resolves to one concrete profile id,
+        and it's that resolved id callers need to detect "the active profile
+        changed" even when the locator itself never changes.
+        """
+        return self._resolve_profile_id()
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +475,20 @@ class ConfigSource:
         if self._backend is not None:
             return self._backend.save(update)
         return False
+
+    def resolved_identity(self) -> Any:
+        """Which configuration source is actually active right now.
+
+        Unlike ``self.locator`` (which is often None under DB auto-detect),
+        this is resolved fresh from the backend built at construction time --
+        a TOML path, a DB profile id, or None if no source is available.
+        Constructing a new ConfigSource on every check (rather than caching
+        one) is what makes this reflect a DB selection change made elsewhere,
+        even when the locator passed in stays the same (e.g. always None).
+        """
+        if self._backend is None:
+            return None
+        return self._backend.resolved_identity()
 
     def ensure_path(self, config: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Return a file path to a TOML representation of the config.

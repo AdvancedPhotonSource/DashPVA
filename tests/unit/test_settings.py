@@ -19,6 +19,8 @@
 
 """Tests for dashpva.settings — configuration loading, defaults, and priority."""
 
+import pytest
+
 
 class TestSettingsDefaults:
 
@@ -167,6 +169,84 @@ class TestGetEffectiveLocator:
         settings.set_locator("/test/path.toml")
         assert state_file.read_text() == "/test/path.toml"
         monkeypatch.setattr(settings, "_locator_internal", None)
+
+
+class TestSetLocatorNone:
+    """set_locator(None) must clear state, not write the literal string 'None'."""
+
+    def test_clears_env_var(self, monkeypatch, tmp_path):
+        import os
+
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "_STATE_FILE", tmp_path / ".dashpva_locator")
+        monkeypatch.setenv("DASPVA_CONFIG_LOCATOR", "42")
+
+        settings.set_locator(None)
+
+        assert "DASPVA_CONFIG_LOCATOR" not in os.environ
+
+    def test_removes_state_file(self, monkeypatch, tmp_path):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        state_file.write_text("42")
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+
+        settings.set_locator(None)
+
+        assert not state_file.exists()
+
+    def test_missing_state_file_does_not_raise(self, monkeypatch, tmp_path):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "_STATE_FILE", tmp_path / "does-not-exist")
+
+        settings.set_locator(None)  # must not raise
+
+    def test_effective_locator_treats_stale_literal_none_env_as_unset(
+        self, monkeypatch, tmp_path
+    ):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        monkeypatch.setattr(settings, "_STATE_FILE", tmp_path / ".dashpva_locator")
+        monkeypatch.setenv("DASPVA_CONFIG_LOCATOR", "None")
+
+        assert settings._get_effective_locator() is None
+
+    def test_effective_locator_treats_stale_literal_none_state_file_as_unset(
+        self, monkeypatch, tmp_path
+    ):
+        import dashpva.settings as settings
+
+        state_file = tmp_path / ".dashpva_locator"
+        state_file.write_text("None")
+        monkeypatch.setattr(settings, "_locator_internal", None)
+        monkeypatch.delenv("DASPVA_CONFIG_LOCATOR", raising=False)
+        monkeypatch.setattr(settings, "_STATE_FILE", state_file)
+
+        assert settings._get_effective_locator() is None
+
+
+class TestParseLocator:
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (None, None),
+            ("", None),
+            ("   ", None),
+            ("None", None),
+            ("42", 42),
+            ("/abs/path.toml", "/abs/path.toml"),
+            ("profile:my_profile", "profile:my_profile"),
+        ],
+    )
+    def test_parse_locator(self, raw, expected):
+        import dashpva.settings as settings
+
+        assert settings._parse_locator(raw) == expected
 
 
 class TestInputChannel:

@@ -383,3 +383,18 @@ QTextEdit#dataset_info_text, QTextEdit#file_info_text {
 
 /* -- IOC parameter window (IocParamWindow) ----------------------------------- */
 QLabel#labelHeaderAxis, QLabel#labelHeaderSource { font-weight: bold; }
+
+/* UB matrix / detector distance: PV-or-value fields. sourceMode is toggled in
+   ioc_rsm_parameter.py whenever the field holds a source PV instead of a
+   literal, so the two are visually distinguishable at a glance. */
+QLineEdit#lineEditUbMatrix[sourceMode="true"],
+QLineEdit#lineEditDetectorDistance[sourceMode="true"] {
+    color: $INFO;
+    font-style: italic;
+}
+
+/* Detector setup: compact two-column grid, uniform right-aligned inputs. */
+QGroupBox#groupBoxDetectorSetup QLineEdit {
+    max-width: 160px;
+    qproperty-alignment: AlignRight;
+}

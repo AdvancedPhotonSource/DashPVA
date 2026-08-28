@@ -185,6 +185,7 @@ class RSMParameterProfile:
     energy_units: str
     sample_orientation: str
     ub_matrix: tuple[float, ...]
+    ub_matrix_source_pv: str
     primary_beam_direction: tuple[float, float, float]
     inplane_reference_direction: tuple[float, float, float]
     sample_surface_normal_direction: tuple[float, float, float]
@@ -203,6 +204,7 @@ class RSMParameterProfile:
             "ENERGY_UNITS": self.energy_units,
             "SAMPLE_ORIENTATION": self.sample_orientation,
             "UB_MATRIX": list(self.ub_matrix),
+            "UB_MATRIX_SOURCE_PV": self.ub_matrix_source_pv,
             "PRIMARY_BEAM_DIRECTION": list(self.primary_beam_direction),
             "INPLANE_REFERENCE_DIRECTION": list(self.inplane_reference_direction),
             "SAMPLE_SURFACE_NORMAL_DIRECTION": list(
@@ -222,6 +224,7 @@ def default_parameter_mapping() -> dict[str, Any]:
         "ENERGY_UNITS": DEFAULT_ENERGY_UNITS,
         "SAMPLE_ORIENTATION": DEFAULT_SAMPLE_ORIENTATION,
         "UB_MATRIX": list(DEFAULT_UB),
+        "UB_MATRIX_SOURCE_PV": "",
         "PRIMARY_BEAM_DIRECTION": list(DEFAULT_PRIMARY_BEAM),
         "INPLANE_REFERENCE_DIRECTION": list(DEFAULT_INPLANE_REFERENCE),
         "SAMPLE_SURFACE_NORMAL_DIRECTION": list(DEFAULT_SAMPLE_NORMAL),
@@ -291,6 +294,21 @@ def _validate_source(value: str, label: str) -> None:
         raise ValueError(f"{label} static value must be finite")
 
 
+def _reject_numeric_source_pv(value: str, label: str) -> None:
+    """UB_MATRIX_SOURCE_PV/DISTANCE_SOURCE_PV are PV-name-only, unlike
+    axis/energy SOURCE_PV -- each already has its own dedicated literal-
+    fallback key (UB_MATRIX / DETECTOR_SETUP.DISTANCE), so a numeric string
+    here would pass validation but can never connect to anything at runtime:
+    the IOC's fallback helpers always treat a configured source as a PV name
+    to connect to, with no source_value-style float() literal shortcut.
+    """
+    try:
+        float(value)
+    except ValueError:
+        return
+    raise ValueError(f"{label} must be a PV name, not a static number")
+
+
 def _finite_vector(values: object, label: str, length: int) -> tuple[float, ...]:
     try:
         vector = tuple(float(value) for value in values)  # type: ignore[union-attr]
@@ -301,6 +319,26 @@ def _finite_vector(values: object, label: str, length: int) -> tuple[float, ...]
     return vector
 
 
+def validate_ub_matrix(value: object, label: str = "UB_MATRIX") -> tuple[float, ...]:
+    """Validate a flat, row-major 9-number UB matrix: finite and full rank.
+
+    Shared by the runtime validator and the GUI's combined PV-or-literal field,
+    so a JSON-shaped-but-invalid entry is rejected the same way in both places.
+    """
+    ub = _finite_vector(value, label, 9)
+    if np.linalg.matrix_rank(np.asarray(ub).reshape(3, 3)) < 3:
+        raise ValueError(f"{label} must be full rank")
+    return ub
+
+
+def validate_distance(value: object, label: str = "DETECTOR_SETUP.DISTANCE") -> float:
+    """Validate a sample-to-detector distance: finite and strictly positive."""
+    distance = float(value)
+    if not math.isfinite(distance) or distance <= 0:
+        raise ValueError(f"{label} must be finite and positive")
+    return distance
+
+
 def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
     tuple[float, ...],
     tuple[float, float, float],
@@ -308,9 +346,7 @@ def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
     tuple[float, float, float],
     dict[str, Any],
 ]:
-    ub = _finite_vector(parameters.get("UB_MATRIX", DEFAULT_UB), "UB_MATRIX", 9)
-    if np.linalg.matrix_rank(np.asarray(ub).reshape(3, 3)) < 3:
-        raise ValueError("UB_MATRIX must be full rank")
+    ub = validate_ub_matrix(parameters.get("UB_MATRIX", DEFAULT_UB), "UB_MATRIX")
 
     primary = _finite_vector(
         parameters.get("PRIMARY_BEAM_DIRECTION", DEFAULT_PRIMARY_BEAM),
@@ -364,8 +400,9 @@ def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
                 2,
             )
         ),
-        "DISTANCE": float(
-            detector_value.get("DISTANCE", DEFAULT_DETECTOR["distance"])
+        "DISTANCE": validate_distance(
+            detector_value.get("DISTANCE", DEFAULT_DETECTOR["distance"]),
+            "DETECTOR_SETUP.DISTANCE",
         ),
         "UNITS": str(detector_value.get("UNITS", DEFAULT_DETECTOR["units"])).strip(),
     }
@@ -374,10 +411,16 @@ def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
             raise ValueError(f"DETECTOR_SETUP.{key} must match [xyz][+-]")
     if any(value <= 0 for value in detector["SIZE"]):
         raise ValueError("DETECTOR_SETUP.SIZE values must be positive")
-    if not math.isfinite(detector["DISTANCE"]) or detector["DISTANCE"] <= 0:
-        raise ValueError("DETECTOR_SETUP.DISTANCE must be finite and positive")
     if not detector["UNITS"]:
         raise ValueError("DETECTOR_SETUP.UNITS is required")
+    if "DISTANCE_SOURCE_PV" in detector_value:
+        distance_source_pv = str(detector_value["DISTANCE_SOURCE_PV"]).strip()
+        if not distance_source_pv:
+            raise ValueError(
+                "DETECTOR_SETUP.DISTANCE_SOURCE_PV must not be blank if present"
+            )
+        _reject_numeric_source_pv(distance_source_pv, "DETECTOR_SETUP.DISTANCE_SOURCE_PV")
+        detector["DISTANCE_SOURCE_PV"] = distance_source_pv
 
     # --- PR 3 calibration ------------------------------------------------
     # All optional: a profile that omits every one of these behaves exactly as
@@ -516,6 +559,13 @@ def validate_parameter_profile(
 
     ub, primary, inplane, surface, detector = _static_geometry(parameters)
 
+    raw_ub_matrix_source_pv = parameters.get("UB_MATRIX_SOURCE_PV", "")
+    ub_matrix_source_pv = str(raw_ub_matrix_source_pv).strip()
+    if raw_ub_matrix_source_pv and not ub_matrix_source_pv:
+        raise ValueError("UB_MATRIX_SOURCE_PV must not be blank if present")
+    if ub_matrix_source_pv:
+        _reject_numeric_source_pv(ub_matrix_source_pv, "UB_MATRIX_SOURCE_PV")
+
     rotation_sample = tuple(
         RotationAxis("sample", axis.direction) for axis in sample_axes
     )
@@ -539,6 +589,7 @@ def validate_parameter_profile(
         energy_units="keV",
         sample_orientation=sample_orientation,
         ub_matrix=ub,
+        ub_matrix_source_pv=ub_matrix_source_pv,
         primary_beam_direction=primary,
         inplane_reference_direction=inplane,
         sample_surface_normal_direction=surface,
@@ -823,7 +874,13 @@ def _adoptable_records(
                 "SPEC_MOTOR_NAME",
             )
     records[f"{prefix}spec:Energy:Units"] = ("ENERGY_UNITS",)
-    records[f"{prefix}spec:UB_matrix:Value"] = ("UB_MATRIX",)
+    # A source-owned record is driven by its PV every poll -- a live caput to it
+    # would just be overwritten on the next cycle, and adopting it into the form
+    # would silently discard the configured source. Only participate in adoption
+    # when no source PV is configured, matching the per-axis SOURCE_PV records
+    # above (which were never adoptable in the first place).
+    if not profile.ub_matrix_source_pv:
+        records[f"{prefix}spec:UB_matrix:Value"] = ("UB_MATRIX",)
     for group, key in (
         ("PrimaryBeamDirection", "PRIMARY_BEAM_DIRECTION"),
         ("InplaneReferenceDirection", "INPLANE_REFERENCE_DIRECTION"),
@@ -836,10 +893,11 @@ def _adoptable_records(
         ("PixelDirection2", "PIXEL_DIRECTION_2"),
         ("CenterChannelPixel", "CENTER_CHANNEL_PIXEL"),
         ("Size", "SIZE"),
-        ("Distance", "DISTANCE"),
         ("Units", "UNITS"),
     ):
         records[f"{prefix}DetectorSetup:{suffix}"] = ("DETECTOR_SETUP", key)
+    if not profile.detector_setup.get("DISTANCE_SOURCE_PV"):
+        records[f"{prefix}DetectorSetup:Distance"] = ("DETECTOR_SETUP", "DISTANCE")
     return records
 
 
@@ -969,6 +1027,16 @@ def adoption_diff(
                 f"  {key}: {json.dumps(before, sort_keys=True)} -> "
                 f"{json.dumps(after, sort_keys=True)}"
             )
+    # UB_MATRIX_SOURCE_PV is optional (default ""), so it's intentionally not in
+    # _STATIC_PARAMETER_KEYS -- adding it there would make every pre-existing
+    # profile look "not fully canonical" the first time this field shipped.
+    # Still worth surfacing in the diff on its own.
+    before_ub_source = existing.get("UB_MATRIX_SOURCE_PV", "")
+    after_ub_source = candidate.get("UB_MATRIX_SOURCE_PV", "")
+    if before_ub_source != after_ub_source:
+        lines.append(
+            f"  UB_MATRIX_SOURCE_PV: {before_ub_source!r} -> {after_ub_source!r}"
+        )
     return "\n".join(lines)
 
 

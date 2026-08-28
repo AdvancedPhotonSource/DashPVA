@@ -158,3 +158,44 @@ def test_database_concurrent_writers_have_exactly_one_winner(tmp_db):
     assert results.count(ConfigSaveStatus.SAVED) == 1
     assert results.count(ConfigSaveStatus.CONFLICT) == 1
     assert tmp_db.export_profile_to_toml(profile.id)["owner"] in {"left", "right"}
+
+
+def test_toml_resolved_identity_is_its_path(tmp_path):
+    path = tmp_path / "profile.toml"
+    path.write_text(toml.dumps({"owner": "initial"}))
+
+    assert ConfigSource(str(path)).resolved_identity() == str(path)
+
+
+def test_db_resolved_identity_is_the_resolved_profile_id(tmp_db):
+    profile = tmp_db.create_profile("resolved_identity_profile")
+
+    source = DbProfileConfigSource(tmp_db, profile.id)
+    assert source.resolved_identity() == profile.id
+
+    # A 'profile:<name>' locator resolves to the same id, not the name itself.
+    by_name = DbProfileConfigSource(tmp_db, f"profile:{profile.name}")
+    assert by_name.resolved_identity() == profile.id
+
+
+def test_config_source_resolved_identity_is_none_without_a_backend(monkeypatch):
+    import dashpva.utils.config.source as source_module
+
+    monkeypatch.setattr(source_module.ConfigSource, "_get_db", lambda self: None)
+
+    assert ConfigSource(None).resolved_identity() is None
+
+
+def test_config_source_resolved_identity_reflects_live_db_selection_change(tmp_db):
+    first = tmp_db.create_profile("selection_a")
+    second = tmp_db.create_profile("selection_b")
+    tmp_db.set_selected_profile(first.id)
+
+    # A fresh ConfigSource(None) re-resolves the current DB selection each
+    # time, even though the locator passed in (None) never changes -- this is
+    # what lets callers detect "the active profile changed" without ever
+    # storing a stale ConfigSource instance.
+    assert ConfigSource(None).resolved_identity() == first.id
+
+    tmp_db.set_selected_profile(second.id)
+    assert ConfigSource(None).resolved_identity() == second.id

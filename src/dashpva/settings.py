@@ -303,13 +303,23 @@ _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
 
 
-def set_locator(locator: Union[int, str]) -> None:
+def set_locator(locator: Optional[Union[int, str]]) -> None:
     """Set the configuration locator (TOML path, "profile:<name>", or int profile_id).
 
     Persists to a state file so sibling subprocesses can find the active config.
+    Passing None clears the locator instead of writing the literal string
+    'None' -- writing that string used to make the next read treat it as a
+    real, unresolvable locator instead of "unset".
     """
     global _locator_internal
     _locator_internal = locator
+    if locator is None:
+        os.environ.pop('DASPVA_CONFIG_LOCATOR', None)
+        try:
+            _STATE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
     os.environ['DASPVA_CONFIG_LOCATOR'] = str(locator)
     try:
         _STATE_FILE.write_text(str(locator))
@@ -467,6 +477,24 @@ def reload() -> None:
     CONSUMERS_PATH = cfg.get('CONSUMERS_PATH')
 
 
+def _parse_locator(value: Optional[str]) -> Union[int, str, None]:
+    """Parse a raw locator string from the env var or state file.
+
+    A blank string, or the literal 'None', is treated as unset rather than as
+    a real locator -- set_locator(None) used to write that exact string to
+    both, poisoning the next read into treating "unset" as a bogus locator.
+    This also lets an already-poisoned state file recover on the next call.
+    """
+    if value is None:
+        return None
+    loc = value.strip()
+    if not loc or loc == 'None':
+        return None
+    if loc.isdigit():
+        return int(loc)
+    return loc
+
+
 def _get_effective_locator() -> Union[int, str, None]:
     """Determine the effective locator: set_locator → env var → state file → None.
 
@@ -478,20 +506,15 @@ def _get_effective_locator() -> Union[int, str, None]:
         return _locator_internal
 
     # 2) Optional override via environment variable
-    env_locator = os.getenv('DASPVA_CONFIG_LOCATOR')
-    if env_locator and env_locator.strip():
-        loc = env_locator.strip()
-        if loc.isdigit():
-            return int(loc)
-        return loc
+    parsed = _parse_locator(os.getenv('DASPVA_CONFIG_LOCATOR'))
+    if parsed is not None:
+        return parsed
 
     # 3) State file written by set_locator in another process
     try:
-        loc = _STATE_FILE.read_text().strip()
-        if loc:
-            if loc.isdigit():
-                return int(loc)
-            return loc
+        parsed = _parse_locator(_STATE_FILE.read_text())
+        if parsed is not None:
+            return parsed
     except Exception:
         pass
 
