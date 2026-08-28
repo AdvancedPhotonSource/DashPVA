@@ -1,8 +1,8 @@
 [project]
 name = "DashPVA"
-version = "1.0.5"
+version = "1.0.6"
 description = "Distributed Analysis and Streaming Hub with Process Variable Access"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 # Base = shared core used by the area detector viewer and everything else.
 # Heavy/optional stacks (pyvista/VTK, Jupyter, torch/CUDA) live in extras below.
 dependencies = [
