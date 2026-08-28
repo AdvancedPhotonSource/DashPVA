@@ -30,7 +30,7 @@ from datetime import datetime
 
 import toml
 from PyQt5 import QtGui, QtWidgets, uic
-from PyQt5.QtCore import QObject, Qt, pyqtSignal
+from PyQt5.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -60,7 +60,7 @@ from dashpva.gui.theme_colors import (
     WARNING,
     status_style,
 )
-from dashpva.utils.config.hkl import semantic_hkl_channels
+from dashpva.utils.config.hkl import required_rsm_channels, semantic_hkl_channels
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.log_manager import LogMixin
 
@@ -495,6 +495,14 @@ class Workflow(QDialog, LogMixin):
         self._load_meta_assoc_last()
         self._load_collector_last()
         self._load_analysis_last()
+
+        # HKL Setup edits IOC_RSM_PARAMETER from a separate OS process, so it
+        # never runs through this window's own save paths (which already call
+        # _sync_associator_metadata()). Poll instead, so a running associator
+        # still gets flagged stale when the config changes from over there.
+        self._associator_staleness_timer = QTimer(self)
+        self._associator_staleness_timer.timeout.connect(self._on_associator_staleness_timer)
+        self._associator_staleness_timer.start(10_000)
 
     # ------------------------------------------------------------------ #
     # DB availability check
@@ -2117,18 +2125,76 @@ class Workflow(QDialog, LogMixin):
     # Config parsing helpers
     # ------------------------------------------------------------------ #
 
-    def _build_metadata_channels(self) -> str:
-        """Build --metadata-channels string from app_settings."""
-        ca_pvs = ''
+    def _build_metadata_channel_list(self):
+        """Ordered, deduped scheme://name URIs, plus the bare channel-name set.
+
+        Returned as a (list, set) pair -- rather than making callers re-split
+        the joined ','-delimited string built from it -- because a channel
+        name (SCAN_*_PV, a METADATA_CA/METADATA_PVA value, anything free-text
+        and user-editable via the Settings tree) can itself legitimately
+        contain a comma or '://'-like substring, which makes re-parsing the
+        joined string ambiguous and, for a literal comma, an IndexError.
+
+        Deduplicates across ALL sources (SCAN_*_PV, METADATA_CA, the HKL-derived
+        channels, METADATA_PVA) by full scheme://name URI -- previously only
+        semantic_hkl_channels() deduped within itself, so the same PV named in
+        both METADATA_CA and IOC_RSM_PARAMETER would be attached twice.
+        METADATA.CA itself is only read here, never written -- it stays
+        reserved for user-defined channels.
+        """
+        seen_urls: set = set()
+        ordered: list = []
+        bare_names: set = set()
+
+        def add(scheme: str, name: str) -> None:
+            url = f'{scheme}://{name}'
+            if url not in seen_urls:
+                seen_urls.add(url)
+                ordered.append(url)
+                bare_names.add(name)
+
         for pv in (app_settings.SCAN_FLAG_PV, app_settings.FILE_PATH_PV, app_settings.FILE_NAME_PV):
             if pv:
-                ca_pvs += f'ca://{pv},'
-        ca_pvs += ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
-        pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
+                add('ca', pv)
+        for v in app_settings.METADATA_CA.values():
+            if v:
+                add('ca', v)
         for pv_channel in semantic_hkl_channels(app_settings.HKL):
-            ca_pvs += f'ca://{pv_channel},'
-        all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
-        return all_pvs
+            add('ca', pv_channel)
+        for v in app_settings.METADATA_PVA.values():
+            if v:
+                add('pva', v)
+        return ordered, bare_names
+
+    def _build_metadata_channels(self) -> str:
+        """Build --metadata-channels string from app_settings, in order, once each."""
+        ordered, _bare_names = self._build_metadata_channel_list()
+        return ','.join(ordered)
+
+    def _resolved_profile_identity(self):
+        """Best-effort 'which profile is actually active right now' check.
+
+        Tolerant of ConfigSource not (yet) exposing resolved_identity() --
+        falls back to None, which only weakens the staleness check below to
+        channel-set drift alone rather than breaking it.
+
+        KNOWN LIMITATION: a transient failure here (e.g. brief DB contention,
+        plausible given HKL Setup/other Workflow DB calls can run
+        concurrently) is indistinguishable from "genuinely no active
+        profile" -- both return None. _sync_associator_metadata's baseline
+        always advances to the latest observed value, so a spurious None
+        causes an extra, harmless notice (not a missed one) when the DB
+        hiccup clears and the real identity reappears -- an acceptable
+        trade-off given the alternative (permanently missing a later, real
+        profile switch) is worse. Logged rather than silently swallowed so a
+        recurring DB problem is at least visible.
+        """
+        try:
+            from dashpva.utils.config.source import ConfigSource
+            return ConfigSource(app_settings.LOCATOR).resolved_identity()
+        except Exception as exc:
+            self.logger.debug(f'Could not resolve active profile identity: {exc}')
+            return None
 
     def _build_roi_channels(self) -> str:
         """Build --metadata-channels string from app_settings ROI section."""
@@ -2538,6 +2604,40 @@ class Workflow(QDialog, LogMixin):
             self.logger.warning('Start Metadata Associator ignored — already running')
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
+
+        # Reload before building anything below, so a profile switched (or
+        # edited via the separate HKL Setup process) since the last reload is
+        # actually reflected in app_settings.HKL / METADATA_CA / METADATA_PVA.
+        try:
+            app_settings.reload()
+        except Exception:
+            pass
+
+        metadata_pv_list, built_channels = self._build_metadata_channel_list()
+        metadata_pvs = ','.join(metadata_pv_list)
+
+        try:
+            required_channels = required_rsm_channels(app_settings.HKL)
+        except Exception as exc:
+            self.logger.warning(
+                f'Start Metadata Associator refused — could not resolve required RSM channels: {exc}')
+            QtWidgets.QMessageBox.critical(
+                self, 'Cannot start Metadata Associator',
+                'The active profile could not be resolved into the RSM channels '
+                f'required to compute Q:\n\n{exc}',
+            )
+            return
+
+        missing = sorted(required_channels - built_channels)
+        if missing:
+            self.logger.warning(
+                f'Start Metadata Associator refused — missing required channel(s): {missing}')
+            QtWidgets.QMessageBox.critical(
+                self, 'Cannot start Metadata Associator',
+                'The active profile is missing required RSM channel(s):\n\n' + '\n'.join(missing),
+            )
+            return
+
         self._save_meta_assoc_last()
 
         cmd = [
@@ -2555,7 +2655,6 @@ class Workflow(QDialog, LogMixin):
             '-dc'
         ]
 
-        metadata_pvs = self._build_metadata_channels()
         if metadata_pvs:
             cmd.extend(['--metadata-channels', metadata_pvs])
         else:
@@ -2563,6 +2662,7 @@ class Workflow(QDialog, LogMixin):
                 'Start Metadata Associator: no metadata channels built — '
                 'associator will have nothing to attach')
         self._associator_metadata_channels = metadata_pvs
+        self._associator_profile_identity = self._resolved_profile_identity()
 
         try:
             process = subprocess.Popen(
@@ -2598,19 +2698,71 @@ class Workflow(QDialog, LogMixin):
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
             print(f"Associator Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
+            # A non-modal staleness notice from the run that just stopped would
+            # otherwise linger on screen telling the user to "stop and restart"
+            # something they already stopped.
+            box = getattr(self, '_associator_stale_notice_box', None)
+            if box is not None:
+                box.close()
+                self._associator_stale_notice_box = None
+
+    def _on_associator_staleness_timer(self) -> None:
+        """Periodic drift check, driven by the timer started in __init__.
+
+        HKL Setup edits IOC_RSM_PARAMETER from a separate OS process and never
+        calls _sync_associator_metadata() itself, so this timer is the only
+        path that notices a config change made over there while an associator
+        is already running.
+        """
+        if 'associator_consumers' not in self.processes:
+            return
+        try:
+            app_settings.reload()
+        except Exception:
+            pass
+        self._sync_associator_metadata()
 
     def _sync_associator_metadata(self) -> None:
-        """Restart the associator if it is running and metadata channels changed."""
+        """Warn -- never auto-restart -- when a running associator has gone stale.
+
+        Restarting here would interrupt whatever the associator is doing
+        mid-acquisition; that decision belongs to the user. Compares against
+        the *last observed* state, not the state at run start, and always
+        advances that baseline to what was just observed -- so a persisting
+        drift is only reported once (the next tick already matches the new
+        baseline), but a later, DIFFERENT drift (a second profile switch, or a
+        transient blip clearing) is still correctly detected and reported.
+        A one-shot-per-run flag would instead permanently swallow every
+        notice after the first, including a genuinely new one.
+        """
         if 'associator_consumers' not in self.processes:
             return
         new_channels = self._build_metadata_channels()
-        if new_channels == getattr(self, '_associator_metadata_channels', None):
+        new_identity = self._resolved_profile_identity()
+        channels_changed = new_channels != getattr(self, '_associator_metadata_channels', None)
+        identity_changed = new_identity != getattr(self, '_associator_profile_identity', None)
+        if not channels_changed and not identity_changed:
             return
+        self._associator_metadata_channels = new_channels
+        self._associator_profile_identity = new_identity
         self.textEditAssociatorConsumersOutput.appendPlainText(
-            '[Config] Metadata channels changed — restarting associator...'
+            '[Config] WARNING: metadata configuration changed — the running '
+            'associator is stale; stop and restart it to apply the change.'
         )
-        self.stop_associator_consumers()
-        self.run_associator_consumers()
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle('Metadata configuration changed')
+        box.setText(
+            'Metadata configuration changed — restart required.\n\n'
+            'The running Metadata Associator is still using its previous '
+            'channel set. Live acquisition is unaffected, but new metadata '
+            'will not reflect this change until you stop and restart the '
+            'associator.'
+        )
+        box.setModal(False)
+        box.show()
+        # Keep a reference so Qt doesn't garbage-collect a shown, non-modal box.
+        self._associator_stale_notice_box = box
 
     def _format_and_append_output(self, text: str, target_widget: QTextEdit):
         timestamp = datetime.now().strftime('%H:%M:%S')
