@@ -1,6 +1,6 @@
 [project]
 name = "DashPVA"
-version = "1.0.6"
+version = "1.0.7"
 description = "Distributed Analysis and Streaming Hub with Process Variable Access"
 requires-python = ">=3.11,<3.13"
 # Base = shared core used by the area detector viewer and everything else.
@@ -67,6 +67,11 @@ standalone = [
 # classes (and reuses area-det's pyepics as the CA backend). Heavy: pulls torch.
 bayesian = [
     "DashPVA[area-det]",
+    # torch dropped Intel-Mac builds after 2.2.2. Cap there, and floor everywhere
+    # else, so the universal lock forks instead of capping every platform.
+    "torch<=2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "torch>=2.9.1; sys_platform != 'darwin'",
+    "torch>=2.9.1; sys_platform == 'darwin' and platform_machine != 'x86_64'",
     "blop[ax]>=1.0.0b1",
     "ophyd>=1.9.0",
 ]
