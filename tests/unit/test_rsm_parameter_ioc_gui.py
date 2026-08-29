@@ -33,7 +33,8 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QLabel, QMessageBox
 
 import dashpva.consumers.ioc_rsm_parameter as iocmod
 from dashpva.consumers.ioc_rsm_parameter import (
@@ -98,12 +99,16 @@ def test_ub_matrix_has_explicit_label_and_dedicated_widget(window):
     # Must have been pulled out of the generic calibration loop, not just
     # relabeled in place -- otherwise "Ub Matrix" would still be generated.
     assert "UB_MATRIX" not in window.calibration_values
+    labels = {label.text().rstrip(":") for label in window.findChildren(QLabel)}
+    assert "UB Matrix (PV or value)" in labels
 
 
 def test_distance_has_explicit_label_and_dedicated_widget(window):
     target = window._change_target("Distance (PV or value)")
     assert target is window.detector_distance_edit
     assert "DISTANCE" not in window.detector_setup_values
+    labels = {label.text().rstrip(":") for label in window.findChildren(QLabel)}
+    assert "Distance (PV or value)" in labels
 
 
 # --- UB matrix / distance: literal vs PV rendering, tooltip -----------------
@@ -113,7 +118,8 @@ def test_ub_matrix_widget_shows_literal_by_default(window):
     assert window.ub_matrix_edit.text() == json.dumps(
         list(window.profile.ub_matrix), sort_keys=True
     )
-    assert window.ub_matrix_edit.toolTip() == ""
+    assert "flat row-major JSON array" in window.ub_matrix_edit.toolTip()
+    assert window.ub_matrix_edit.alignment() & Qt.AlignRight
 
 
 def test_ub_matrix_widget_shows_pv_and_fallback_tooltip_when_configured(qapp):
@@ -131,7 +137,8 @@ def test_distance_widget_shows_literal_by_default(window):
     assert window.detector_distance_edit.text() == json.dumps(
         window.profile.detector_setup["DISTANCE"]
     )
-    assert window.detector_distance_edit.toolTip() == ""
+    assert "single finite positive scalar in mm" in window.detector_distance_edit.toolTip()
+    assert window.detector_distance_edit.alignment() & Qt.AlignRight
 
 
 def test_distance_widget_shows_pv_and_fallback_tooltip_when_configured(qapp):
@@ -155,6 +162,8 @@ def test_detector_setup_group_has_one_row_per_declared_field(window):
         "DISTANCE"
     }
     assert len(window.detector_setup_values) == len(DETECTOR_SETUP_FIELDS) - 1
+    labels = {label.text().rstrip(":") for label in window.findChildren(QLabel)}
+    assert {"ROI", "Detector rotation", "Tilt azimuth", "Frame axis order"} <= labels
 
 
 def test_required_detector_fields_render_prefilled(window):
@@ -173,6 +182,25 @@ def test_optional_detector_fields_render_blank_when_absent(window):
 def test_optional_detector_fields_have_placeholder_hints(window):
     assert window.detector_setup_values["ROI"].placeholderText()
     assert window.detector_setup_values["BINNING"].placeholderText()
+
+
+def test_detector_tooltips_use_direction_order_not_array_row_column(window):
+    center = window.detector_setup_values["CENTER_CHANNEL_PIXEL"].toolTip()
+    roi = window.detector_setup_values["ROI"].toolTip()
+    axis_order = window.detector_setup_values["FRAME_AXIS_ORDER"].toolTip()
+
+    assert "direction 1, direction 2" in center
+    assert "[start1, stop1, start2, stop2)" in roi
+    assert "array rows/columns" in axis_order
+
+
+def test_detector_inputs_are_uniformly_right_aligned(window):
+    assert all(
+        edit.alignment() & Qt.AlignRight
+        for edit in window.detector_setup_values.values()
+    )
+    assert window.prefix_edit.alignment() & Qt.AlignRight
+    assert window.energy_edit.alignment() & Qt.AlignRight
 
 
 def test_switching_distance_from_pv_to_literal_clears_the_source_key():
@@ -316,6 +344,20 @@ def test_apply_change_decisions_keep_writes_both_distance_subkeys(window):
     assert parameters["DETECTOR_SETUP"]["DISTANCE"] == pytest.approx(
         window.profile.detector_setup["DISTANCE"]
     )
+
+
+def test_detector_field_review_row_is_editable_and_can_be_dropped(window):
+    original = window.detector_setup_values["SIZE"].text()
+    window.detector_setup_values["SIZE"].setText("30.0, 31.0")
+    row = next(
+        item for item in window.unsaved_changes_rows() if item[1] == "DETECTOR_SETUP.SIZE"
+    )
+
+    assert window.is_change_editable(row[1])
+    window.apply_change_decisions(kept=[], dropped=[row])
+
+    assert window.detector_setup_values["SIZE"].text() == original
+    assert window._parameters()["DETECTOR_SETUP"]["SIZE"] == [28.38, 28.38]
 
 
 # --- Resolved-profile-identity 3-way activation-mismatch routing -----------

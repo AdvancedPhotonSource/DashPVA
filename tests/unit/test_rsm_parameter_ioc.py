@@ -42,6 +42,8 @@ from dashpva.consumers.ioc_rsm_parameter import (
     _reorder_loaded_axis_rows,
     _restore_axis_row,
     _review_pending_change,
+    _source_owned_ioc_values,
+    _SourceMonitorCache,
     all_pv_names,
     build_ioc_database,
     static_ioc_values,
@@ -424,10 +426,12 @@ def test_distance_source_pv_is_optional_and_round_trips():
     parameters = default_parameter_mapping()
     profile = validate_parameter_profile("sim", parameters)
     assert "DISTANCE_SOURCE_PV" not in profile.detector_setup
+    assert profile.detector_distance_source_pv == ""
 
     parameters["DETECTOR_SETUP"]["DISTANCE_SOURCE_PV"] = "6idb1:distance.RBV"
     profile = validate_parameter_profile("sim", parameters)
 
+    assert profile.detector_distance_source_pv == "6idb1:distance.RBV"
     assert profile.detector_setup["DISTANCE_SOURCE_PV"] == "6idb1:distance.RBV"
     # The static fallback stays intact alongside the source.
     assert profile.detector_setup["DISTANCE"] == pytest.approx(
@@ -497,6 +501,8 @@ def test_parse_ub_or_pv_rejects_malformed_json_instead_of_treating_it_as_a_pv_na
         _parse_ub_or_pv("[1,0,0,0,1,0,0,0,0]", fallback)
     with pytest.raises(ValueError):
         _parse_ub_or_pv("[NaN,0,0,0,1,0,0,0,1]", fallback)
+    with pytest.raises(ValueError, match="malformed JSON"):
+        _parse_ub_or_pv("[1,0,0", fallback)
 
 
 def test_parse_ub_or_pv_rejects_blank():
@@ -531,6 +537,129 @@ def test_parse_distance_or_pv_rejects_non_positive_and_non_finite_numbers():
 def test_parse_distance_or_pv_rejects_blank():
     with pytest.raises(ValueError, match="blank"):
         _parse_distance_or_pv("", 1.0)
+
+
+@pytest.mark.parametrize("text", ["1.2.3", "not a pv", "[400"])
+def test_parse_distance_or_pv_rejects_malformed_non_pv_text(text):
+    with pytest.raises(ValueError):
+        _parse_distance_or_pv(text, 400.644)
+
+
+class _FakeMonitor:
+    def __init__(self, value=None, connected=True):
+        self.value = value
+        self.connected = connected
+
+
+def _source_cache(monitors, messages, calls=None):
+    calls = calls if calls is not None else []
+
+    def factory(name, *, auto_monitor):
+        calls.append((name, auto_monitor))
+        return monitors[name]
+
+    return _SourceMonitorCache(factory, messages.append)
+
+
+def test_source_free_static_records_are_not_reasserted_each_poll():
+    profile = validate_parameter_profile("sim", default_parameter_mapping())
+    calls = []
+    sources = _source_cache({}, [], calls)
+
+    assert _source_owned_ioc_values(profile, sources) == {}
+    assert calls == []
+
+
+def test_source_owned_ub_and_distance_publish_live_values_through_cached_monitors():
+    parameters = default_parameter_mapping()
+    parameters["UB_MATRIX_SOURCE_PV"] = "live:ub"
+    parameters["DETECTOR_SETUP"]["DISTANCE_SOURCE_PV"] = "live:distance"
+    profile = validate_parameter_profile("sim", parameters)
+    monitors = {
+        "live:ub": _FakeMonitor([2, 0, 0, 0, 2, 0, 0, 0, 2]),
+        "live:distance": _FakeMonitor(725.5),
+    }
+    calls = []
+    sources = _source_cache(monitors, [], calls)
+
+    first = _source_owned_ioc_values(profile, sources)
+    second = _source_owned_ioc_values(profile, sources)
+
+    assert first["sim:spec:UB_matrix:Value"] == [
+        2.0, 0.0, 0.0,
+        0.0, 2.0, 0.0,
+        0.0, 0.0, 2.0,
+    ]
+    assert first["sim:DetectorSetup:Distance"] == pytest.approx(725.5)
+    assert second == first
+    assert calls == [("live:ub", True), ("live:distance", True)]
+
+
+def test_invalid_ub_source_falls_back_and_logs_only_failure_recovery_transitions():
+    fallback = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    monitor = _FakeMonitor(connected=False)
+    messages = []
+    sources = _source_cache({"live:ub": monitor}, messages)
+
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == fallback
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == fallback
+    assert len(messages) == 1
+    assert "using static fallback" in messages[0]
+
+    monitor.connected = True
+    monitor.value = [3, 0, 0, 0, 3, 0, 0, 0, 3]
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == (3.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 3.0)
+    assert len(messages) == 2
+    assert "recovered" in messages[1]
+
+    sources.vector_or_fallback("live:ub", 9, fallback, full_rank_3x3=True)
+    assert len(messages) == 2
+
+
+def test_monitor_construction_failure_is_transition_logged_and_uses_fallback():
+    fallback = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    messages = []
+
+    def fail_factory(_name, *, auto_monitor):
+        assert auto_monitor is True
+        raise RuntimeError("CA context unavailable")
+
+    sources = _SourceMonitorCache(fail_factory, messages.append)
+
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == fallback
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == fallback
+    assert len(messages) == 1
+
+
+@pytest.mark.parametrize("bad_value", [[1, 2], [1, 0, 0, 0, 1, 0, 0, 0, 0]])
+def test_invalid_ub_waveform_shape_or_rank_uses_static_fallback(bad_value):
+    fallback = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0)
+    sources = _source_cache({"live:ub": _FakeMonitor(bad_value)}, [])
+
+    assert sources.vector_or_fallback(
+        "live:ub", 9, fallback, full_rank_3x3=True
+    ) == fallback
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, float("nan"), [1, 2]])
+def test_invalid_distance_source_uses_positive_static_fallback(bad_value):
+    messages = []
+    sources = _source_cache({"live:distance": _FakeMonitor(bad_value)}, messages)
+
+    assert sources.positive_scalar_or_fallback("live:distance", 400.644) == pytest.approx(
+        400.644
+    )
+    assert len(messages) == 1
 
 
 def test_format_distance_or_pv_shows_pv_when_configured_else_literal():

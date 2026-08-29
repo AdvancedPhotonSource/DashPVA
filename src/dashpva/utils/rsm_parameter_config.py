@@ -195,6 +195,11 @@ class RSMParameterProfile:
     def axes(self) -> tuple[AxisParameter, ...]:
         return self.sample_axes + self.detector_axes
 
+    @property
+    def detector_distance_source_pv(self) -> str:
+        """Optional live distance source, separate from the numeric fallback."""
+        return str(self.detector_setup.get("DISTANCE_SOURCE_PV", ""))
+
     def parameter_mapping(self) -> dict[str, Any]:
         return {
             "SCHEMA_VERSION": self.schema_version,
@@ -295,18 +300,29 @@ def _validate_source(value: str, label: str) -> None:
 
 
 def _reject_numeric_source_pv(value: str, label: str) -> None:
-    """UB_MATRIX_SOURCE_PV/DISTANCE_SOURCE_PV are PV-name-only, unlike
-    axis/energy SOURCE_PV -- each already has its own dedicated literal-
-    fallback key (UB_MATRIX / DETECTOR_SETUP.DISTANCE), so a numeric string
-    here would pass validation but can never connect to anything at runtime:
-    the IOC's fallback helpers always treat a configured source as a PV name
-    to connect to, with no source_value-style float() literal shortcut.
-    """
+    """Reject text that cannot unambiguously name one CA source PV."""
     try:
         float(value)
     except ValueError:
+        if any(character.isspace() for character in value):
+            raise ValueError(f"{label} must be one CA PV name without whitespace")
+        if value.startswith(("[", "{")):
+            raise ValueError(f"{label} must be a CA PV name, not malformed JSON")
+        if not any(character.isalpha() or character in "_:" for character in value):
+            raise ValueError(f"{label} must be a valid CA PV name")
         return
     raise ValueError(f"{label} must be a PV name, not a static number")
+
+
+def validate_source_pv(value: object, label: str) -> str:
+    """Return one nonempty, nonnumeric CA source name."""
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a CA PV name")
+    source = value.strip()
+    if not source:
+        raise ValueError(f"{label} must not be blank")
+    _reject_numeric_source_pv(source, label)
+    return source
 
 
 def _finite_vector(values: object, label: str, length: int) -> tuple[float, ...]:
@@ -414,12 +430,10 @@ def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
     if not detector["UNITS"]:
         raise ValueError("DETECTOR_SETUP.UNITS is required")
     if "DISTANCE_SOURCE_PV" in detector_value:
-        distance_source_pv = str(detector_value["DISTANCE_SOURCE_PV"]).strip()
-        if not distance_source_pv:
-            raise ValueError(
-                "DETECTOR_SETUP.DISTANCE_SOURCE_PV must not be blank if present"
-            )
-        _reject_numeric_source_pv(distance_source_pv, "DETECTOR_SETUP.DISTANCE_SOURCE_PV")
+        distance_source_pv = validate_source_pv(
+            detector_value["DISTANCE_SOURCE_PV"],
+            "DETECTOR_SETUP.DISTANCE_SOURCE_PV",
+        )
         detector["DISTANCE_SOURCE_PV"] = distance_source_pv
 
     # --- PR 3 calibration ------------------------------------------------
@@ -564,7 +578,9 @@ def validate_parameter_profile(
     if raw_ub_matrix_source_pv and not ub_matrix_source_pv:
         raise ValueError("UB_MATRIX_SOURCE_PV must not be blank if present")
     if ub_matrix_source_pv:
-        _reject_numeric_source_pv(ub_matrix_source_pv, "UB_MATRIX_SOURCE_PV")
+        ub_matrix_source_pv = validate_source_pv(
+            raw_ub_matrix_source_pv, "UB_MATRIX_SOURCE_PV"
+        )
 
     rotation_sample = tuple(
         RotationAxis("sample", axis.direction) for axis in sample_axes
@@ -896,7 +912,7 @@ def _adoptable_records(
         ("Units", "UNITS"),
     ):
         records[f"{prefix}DetectorSetup:{suffix}"] = ("DETECTOR_SETUP", key)
-    if not profile.detector_setup.get("DISTANCE_SOURCE_PV"):
+    if not profile.detector_distance_source_pv:
         records[f"{prefix}DetectorSetup:Distance"] = ("DETECTOR_SETUP", "DISTANCE")
     return records
 

@@ -31,6 +31,7 @@ TOML reserved for import/export.
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
 import copy
 import json
@@ -42,6 +43,8 @@ import tempfile
 import threading
 import time
 from typing import Any, Mapping
+
+import numpy as np
 
 import dashpva.settings as app_settings
 from dashpva.utils.rsm_geometry import DETECTOR_SETUP_FIELDS, FRAME_AXIS_ORDERS
@@ -57,6 +60,7 @@ from dashpva.utils.rsm_parameter_config import (
     update_raw_profile,
     validate_distance,
     validate_parameter_profile,
+    validate_source_pv,
     validate_ub_matrix,
 )
 
@@ -348,8 +352,10 @@ def _parse_ub_or_pv(
         )
     try:
         parsed = json.loads(stripped)
-    except json.JSONDecodeError:
-        return tuple(current_fallback), stripped
+    except json.JSONDecodeError as exc:
+        if stripped.startswith(("[", "{")):
+            raise ValueError(f"UB Matrix contains malformed JSON: {exc.msg}") from exc
+        return tuple(current_fallback), validate_source_pv(stripped, "UB Matrix source")
     return validate_ub_matrix(parsed, "UB Matrix"), ""
 
 
@@ -371,7 +377,9 @@ def _parse_distance_or_pv(text: str, current_fallback: float) -> "tuple[float, s
     try:
         literal = float(stripped)
     except ValueError:
-        return float(current_fallback), stripped
+        return float(current_fallback), validate_source_pv(
+            stripped, "Distance source"
+        )
     return validate_distance(literal, "Distance"), ""
 
 
@@ -402,6 +410,62 @@ _DETECTOR_FIELD_HINTS: dict[str, str] = {
     "ANGLE_UNITS": "deg",
     "FRAME_AXIS_ORDER": f"one of {', '.join(FRAME_AXIS_ORDERS)}",
 }
+
+_DETECTOR_FIELD_LABELS: dict[str, str] = {
+    "PIXEL_DIRECTION_1": "Pixel direction 1",
+    "PIXEL_DIRECTION_2": "Pixel direction 2",
+    "CENTER_CHANNEL_PIXEL": "Center channel pixel",
+    "DISTANCE": "Distance (PV or value)",
+    "SIZE": "Size",
+    "PIXEL_SIZE": "Pixel size",
+    "DETECTOR_SHAPE": "Detector shape",
+    "BINNING": "Binning",
+    "ROI": "ROI",
+    "DETROT": "Detector rotation",
+    "TILT": "Tilt",
+    "TILTAZIMUTH": "Tilt azimuth",
+    "UNITS": "Units",
+    "DISTANCE_UNITS": "Distance units",
+    "SIZE_UNITS": "Size units",
+    "PIXEL_SIZE_UNITS": "Pixel size units",
+    "ANGLE_UNITS": "Angle units",
+    "FRAME_AXIS_ORDER": "Frame axis order",
+}
+
+_DETECTOR_FIELD_DESCRIPTIONS: dict[str, str] = {
+    "PIXEL_DIRECTION_1": "Beamline [xyz][+-] direction of detector direction 1.",
+    "PIXEL_DIRECTION_2": "Beamline [xyz][+-] direction of detector direction 2.",
+    "CENTER_CHANNEL_PIXEL": (
+        "Direct-beam center ordered as detector direction 1, direction 2 "
+        "in full-frame, unbinned pixels."
+    ),
+    "SIZE": "Full detector-face size along detector directions 1 and 2.",
+    "PIXEL_SIZE": "One unbinned pixel size along detector directions 1 and 2.",
+    "DETECTOR_SHAPE": (
+        "Full unbinned pixel count along detector directions 1 and 2, not array rows/columns."
+    ),
+    "BINNING": "Acquisition binning along detector directions 1 and 2.",
+    "ROI": (
+        "Half-open, unbinned bounds [start1, stop1, start2, stop2) along "
+        "detector directions 1 and 2."
+    ),
+    "DETROT": "Detector rotation about the primary-beam direction.",
+    "TILT": "Detector-plane tilt away from perpendicular to the beam.",
+    "TILTAZIMUTH": "Azimuth of the detector tilt.",
+    "UNITS": "Default length unit for distance and detector size.",
+    "DISTANCE_UNITS": "Length unit for distance; overrides UNITS.",
+    "SIZE_UNITS": "Length unit for detector size; overrides UNITS.",
+    "PIXEL_SIZE_UNITS": "Length unit for pixel size; overrides UNITS.",
+    "ANGLE_UNITS": "Angle unit for detector rotation, tilt, and tilt azimuth.",
+    "FRAME_AXIS_ORDER": (
+        "The only field that maps detector directions 1/2 onto acquired-array rows/columns."
+    ),
+}
+
+_UB_INPUT_TOOLTIP = (
+    "Enter a flat row-major JSON array of exactly 9 finite, full-rank numbers, "
+    "or one CA PV whose waveform publishes that format."
+)
 
 
 def _format_detector_value(value: object) -> str:
@@ -437,9 +501,18 @@ def _parse_detector_value(text: str) -> Any:
         except ValueError:
             return token
 
-    if "," in text:
-        return [one(part) for part in text.split(",")]
-    return one(text)
+    stripped = text.strip()
+    if stripped.startswith(("[", "(")):
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError(f"invalid detector list: {text}") from exc
+        if not isinstance(parsed, (list, tuple)):
+            raise ValueError(f"invalid detector list: {text}")
+        return [one(str(part)) for part in parsed]
+    if "," in stripped:
+        return [one(part) for part in stripped.split(",")]
+    return one(stripped)
 
 
 def _ai(name: str) -> str:
@@ -597,11 +670,155 @@ def all_pv_names(profile: RSMParameterProfile) -> list[tuple[str, str]]:
     return records
 
 
+class _SourceMonitorCache:
+    """Cached CA monitors with expectation-specific transition logging."""
+
+    def __init__(self, pv_factory, emit) -> None:
+        self._pv_factory = pv_factory
+        self._emit = emit
+        self._monitors: dict[str, Any] = {}
+        self._lock = threading.Lock()
+        self._unavailable: set[tuple[str, str]] = set()
+
+    def _read(self, source: str) -> Any:
+        with self._lock:
+            monitor = self._monitors.get(source)
+            if monitor is None:
+                monitor = self._pv_factory(source, auto_monitor=True)
+                self._monitors[source] = monitor
+            if not monitor.connected:
+                raise ValueError("no connection or value")
+            value = monitor.value
+        if value is None:
+            raise ValueError("no connection or value")
+        return value
+
+    def _failed(
+        self,
+        source: str,
+        expectation: str,
+        error: Exception,
+        *,
+        fallback: bool,
+    ) -> None:
+        key = (source, expectation)
+        if key in self._unavailable:
+            return
+        self._unavailable.add(key)
+        suffix = "; using static fallback" if fallback else ""
+        self._emit(f"[IOC] source unavailable: {source!r} ({error}){suffix}")
+
+    def _recovered(self, source: str, expectation: str) -> None:
+        key = (source, expectation)
+        if key not in self._unavailable:
+            return
+        self._unavailable.remove(key)
+        self._emit(f"[IOC] source recovered: {source!r}")
+
+    def scalar(self, source: str) -> float:
+        """Resolve an axis/energy scalar, returning NaN while unavailable."""
+        source = source.strip()
+        try:
+            result = float(source)
+        except ValueError:
+            try:
+                raw = self._read(source)
+                array = np.asarray(raw, dtype=float)
+                if array.size != 1:
+                    raise ValueError(f"expected one scalar, got {raw!r}")
+                result = float(array.reshape(-1)[0])
+                if not np.isfinite(result):
+                    raise ValueError("non-finite value")
+            except Exception as exc:
+                self._failed(source, "scalar", exc, fallback=False)
+                return float("nan")
+            self._recovered(source, "scalar")
+        if not np.isfinite(result):
+            return float("nan")
+        return result
+
+    def vector_or_fallback(
+        self,
+        source: str,
+        length: int,
+        fallback: tuple[float, ...],
+        *,
+        full_rank_3x3: bool = False,
+    ) -> tuple[float, ...]:
+        """Resolve one flat finite waveform, retaining a validated fallback."""
+        source = source.strip()
+        if not source:
+            return fallback
+        expectation = f"vector-{length}{'-full-rank' if full_rank_3x3 else ''}"
+        try:
+            raw = self._read(source)
+            array = np.asarray(raw, dtype=float)
+            if array.ndim != 1 or array.size != length or not np.all(np.isfinite(array)):
+                raise ValueError(f"expected {length} finite row-major values, got {raw!r}")
+            if full_rank_3x3 and np.linalg.matrix_rank(array.reshape(3, 3)) < 3:
+                raise ValueError("matrix is not full rank")
+            result = tuple(float(item) for item in array)
+        except Exception as exc:
+            self._failed(source, expectation, exc, fallback=True)
+            return fallback
+        self._recovered(source, expectation)
+        return result
+
+    def positive_scalar_or_fallback(self, source: str, fallback: float) -> float:
+        """Resolve one finite positive scalar, retaining a validated fallback."""
+        source = source.strip()
+        if not source:
+            return fallback
+        expectation = "positive-scalar"
+        try:
+            raw = self._read(source)
+            array = np.asarray(raw, dtype=float)
+            if array.size != 1:
+                raise ValueError(f"expected one positive scalar, got {raw!r}")
+            result = float(array.reshape(-1)[0])
+            if not np.isfinite(result) or result <= 0:
+                raise ValueError("non-finite or non-positive value")
+        except Exception as exc:
+            self._failed(source, expectation, exc, fallback=True)
+            return fallback
+        self._recovered(source, expectation)
+        return result
+
+
+def _source_owned_ioc_values(
+    profile: RSMParameterProfile,
+    sources: _SourceMonitorCache,
+) -> dict[str, Any]:
+    """Values that must be refreshed because a configured source owns them.
+
+    Source-less UB/distance records are deliberately absent: their static
+    fallback is written once at startup, after which a terminal caput must stay
+    in place long enough for the editor's live-adoption path to observe it.
+    """
+    values: dict[str, Any] = {}
+    if profile.ub_matrix_source_pv:
+        values[f"{profile.prefix}spec:UB_matrix:Value"] = list(
+            sources.vector_or_fallback(
+                profile.ub_matrix_source_pv,
+                9,
+                profile.ub_matrix,
+                full_rank_3x3=True,
+            )
+        )
+    if profile.detector_distance_source_pv:
+        values[f"{profile.prefix}DetectorSetup:Distance"] = (
+            sources.positive_scalar_or_fallback(
+                profile.detector_distance_source_pv,
+                profile.detector_setup["DISTANCE"],
+            )
+        )
+    return values
+
+
 def _run_ioc(raw_config: Mapping[str, Any]) -> None:
     """Run the GUI-free pvAccess IOC in its dedicated process."""
     import ctypes.util
 
-    import numpy as np
     import pvaccess as pva
     from epics import PV as EpicsPV
 
@@ -658,108 +875,11 @@ def _run_ioc(raw_config: Mapping[str, Any]) -> None:
         ioc_put(ca_ioc, record, value)
 
     stop_event = threading.Event()
-    pv_monitors: dict[str, Any] = {}
-    pv_monitor_lock = threading.Lock()
-    unavailable_sources: set[str] = set()
+    sources = _SourceMonitorCache(
+        EpicsPV,
+        lambda message: print(message, flush=True),
+    )
     signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
-
-    def source_value(source: str) -> float:
-        source = source.strip()
-        try:
-            return float(source)
-        except ValueError:
-            pass
-        with pv_monitor_lock:
-            monitor = pv_monitors.get(source)
-            if monitor is None:
-                monitor = EpicsPV(source, auto_monitor=True)
-                pv_monitors[source] = monitor
-            value = monitor.value if monitor.connected else None
-        try:
-            if value is None:
-                raise ValueError("no connection or value")
-            result = float(value)
-            if not np.isfinite(result):
-                raise ValueError("non-finite value")
-        except (TypeError, ValueError) as exc:
-            if source not in unavailable_sources:
-                unavailable_sources.add(source)
-                print(f"[IOC] source unavailable: {source!r} ({exc})", flush=True)
-            return float("nan")
-        if source in unavailable_sources:
-            unavailable_sources.remove(source)
-            print(f"[IOC] source recovered: {source!r}", flush=True)
-        return result
-
-    def source_vector_or_fallback(
-        source: str, length: int, fallback: tuple[float, ...]
-    ) -> tuple[float, ...]:
-        """Like source_value, but for a fixed-length array (currently only
-        UB_MATRIX) that falls back to the stored profile value -- not NaN --
-        on disconnect or invalid data. A bad UB matrix silently corrupts
-        every downstream HKL index, unlike a stale axis position, so serving
-        the last validated static value is safer than publishing NaN.
-        """
-        source = source.strip()
-        if not source:
-            return fallback
-        with pv_monitor_lock:
-            monitor = pv_monitors.get(source)
-            if monitor is None:
-                monitor = EpicsPV(source, auto_monitor=True)
-                pv_monitors[source] = monitor
-            value = monitor.value if monitor.connected else None
-        try:
-            if value is None:
-                raise ValueError("no connection or value")
-            vector = tuple(float(item) for item in value)
-            if len(vector) != length or not all(np.isfinite(v) for v in vector):
-                raise ValueError(f"expected {length} finite values, got {value!r}")
-            if length == 9 and np.linalg.matrix_rank(np.asarray(vector).reshape(3, 3)) < 3:
-                raise ValueError("matrix is not full rank")
-        except (TypeError, ValueError) as exc:
-            if source not in unavailable_sources:
-                unavailable_sources.add(source)
-                print(
-                    f"[IOC] source unavailable: {source!r} ({exc}); using static fallback",
-                    flush=True,
-                )
-            return fallback
-        if source in unavailable_sources:
-            unavailable_sources.remove(source)
-            print(f"[IOC] source recovered: {source!r}", flush=True)
-        return vector
-
-    def source_scalar_or_fallback(source: str, fallback: float) -> float:
-        """Like source_vector_or_fallback, but for one positive scalar
-        (currently only DETECTOR_SETUP.DISTANCE)."""
-        source = source.strip()
-        if not source:
-            return fallback
-        with pv_monitor_lock:
-            monitor = pv_monitors.get(source)
-            if monitor is None:
-                monitor = EpicsPV(source, auto_monitor=True)
-                pv_monitors[source] = monitor
-            value = monitor.value if monitor.connected else None
-        try:
-            if value is None:
-                raise ValueError("no connection or value")
-            result = float(value)
-            if not np.isfinite(result) or result <= 0:
-                raise ValueError("non-finite or non-positive value")
-        except (TypeError, ValueError) as exc:
-            if source not in unavailable_sources:
-                unavailable_sources.add(source)
-                print(
-                    f"[IOC] source unavailable: {source!r} ({exc}); using static fallback",
-                    flush=True,
-                )
-            return fallback
-        if source in unavailable_sources:
-            unavailable_sources.remove(source)
-            print(f"[IOC] source recovered: {source!r}", flush=True)
-        return result
 
     print(
         f"IOC ready (prefix={profile.prefix!r}, axes={len(profile.axes)})",
@@ -774,30 +894,15 @@ def _run_ioc(raw_config: Mapping[str, Any]) -> None:
                 ioc_put(
                     ca_ioc,
                     f"{profile.prefix}{axis.record_name}:Position",
-                    source_value(axis.source_pv),
+                    sources.scalar(axis.source_pv),
                 )
             ioc_put(
                 ca_ioc,
                 f"{profile.prefix}spec:Energy:Value",
-                source_value(profile.energy_source_pv),
+                sources.scalar(profile.energy_source_pv),
             )
-            ioc_put(
-                ca_ioc,
-                f"{profile.prefix}spec:UB_matrix:Value",
-                list(
-                    source_vector_or_fallback(
-                        profile.ub_matrix_source_pv, 9, profile.ub_matrix
-                    )
-                ),
-            )
-            ioc_put(
-                ca_ioc,
-                f"{profile.prefix}DetectorSetup:Distance",
-                source_scalar_or_fallback(
-                    profile.detector_setup.get("DISTANCE_SOURCE_PV", ""),
-                    profile.detector_setup["DISTANCE"],
-                ),
-            )
+            for record, value in _source_owned_ioc_values(profile, sources).items():
+                ioc_put(ca_ioc, record, value)
             loop_count += 1
             if loop_count % app_settings.RSM_IOC_SNAPSHOT_EVERY == 0:
                 for record in static_values:
@@ -1112,12 +1217,15 @@ def _build_gui_classes() -> tuple[type, type, type]:
             general = QGroupBox("Profile-backed IOC settings")
             form = QFormLayout(general)
             self.prefix_edit = QLineEdit()
+            self.prefix_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.addRow("IOC prefix", self.prefix_edit)
             self.energy_edit = QLineEdit()
+            self.energy_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.addRow("Energy source PV / static", self.energy_edit)
             self.energy_units = QComboBox()
             self.energy_units.setEditable(True)
             self.energy_units.addItem("keV")
+            self.energy_units.lineEdit().setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.energy_units.setToolTip("RSM energy is configured in keV.")
             form.addRow("Energy units", self.energy_units)
             root.addWidget(general)
@@ -1161,6 +1269,8 @@ def _build_gui_classes() -> tuple[type, type, type]:
             form = QFormLayout(group)
             self.ub_matrix_edit = QLineEdit()
             self.ub_matrix_edit.setObjectName("lineEditUbMatrix")
+            self.ub_matrix_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.ub_matrix_edit.setToolTip(_UB_INPUT_TOOLTIP)
             self.ub_matrix_edit.textChanged.connect(self._on_ub_matrix_text_changed)
             form.addRow("UB Matrix (PV or value)", self.ub_matrix_edit)
             self.calibration_values: dict[str, QLineEdit] = {}
@@ -1170,6 +1280,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 "SAMPLE_SURFACE_NORMAL_DIRECTION",
             ):
                 edit = QLineEdit()
+                edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.calibration_values[key] = edit
                 form.addRow(key.replace("_", " ").title(), edit)
             return group
@@ -1186,18 +1297,20 @@ def _build_gui_classes() -> tuple[type, type, type]:
             binning are all in detector directions 1/2, not x/y -- only
             FRAME_AXIS_ORDER maps them onto array rows/columns.
             """
-            group = QGroupBox(
-                "Detector setup — leave a field blank to omit it from the profile"
-            )
+            group = QGroupBox("Detector setup")
             group.setObjectName("groupBoxDetectorSetup")
             grid = QGridLayout(group)
+            hint = QLabel("Leave optional fields blank to omit them from the profile.")
+            hint.setProperty("messageLevel", "info")
+            grid.addWidget(hint, 0, 0, 1, 4)
             self.detector_setup_values: dict[str, QLineEdit] = {}
             self._detector_setup_extras: dict[str, Any] = {}
             for index, key in enumerate(DETECTOR_SETUP_FIELDS):
-                row, column_pair = divmod(index, 2)
+                field_row, column_pair = divmod(index, 2)
+                row = field_row + 1
                 label_col, edit_col = column_pair * 2, column_pair * 2 + 1
                 if key == "DISTANCE":
-                    label = QLabel("Distance (PV or value):")
+                    label = QLabel(f"{_DETECTOR_FIELD_LABELS[key]}:")
                     self.detector_distance_edit = QLineEdit()
                     self.detector_distance_edit.setObjectName("lineEditDetectorDistance")
                     self.detector_distance_edit.textChanged.connect(
@@ -1205,13 +1318,21 @@ def _build_gui_classes() -> tuple[type, type, type]:
                     )
                     edit = self.detector_distance_edit
                 else:
-                    label = QLabel(f"{key.replace('_', ' ').title()}:")
+                    label = QLabel(f"{_DETECTOR_FIELD_LABELS[key]}:")
                     edit = QLineEdit()
                     edit.setPlaceholderText(_DETECTOR_FIELD_HINTS.get(key, ""))
                     self.detector_setup_values[key] = edit
+                edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                tooltip = _DETECTOR_FIELD_DESCRIPTIONS.get(key, "")
+                label.setToolTip(tooltip)
+                edit.setToolTip(tooltip)
                 label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 grid.addWidget(label, row, label_col)
                 grid.addWidget(edit, row, edit_col)
+            for key in ("DISTANCE_UNITS", "UNITS"):
+                self.detector_setup_values[key].textChanged.connect(
+                    lambda _text: self._refresh_distance_tooltip()
+                )
             return group
 
         def _build_advanced_group(self) -> QGroupBox:
@@ -1221,6 +1342,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self.sample_orientation.setEditable(True)
             self.sample_orientation.addItems(
                 ("det", "sam", "x+", "x-", "y+", "y-", "z+", "z-")
+            )
+            self.sample_orientation.lineEdit().setAlignment(
+                Qt.AlignRight | Qt.AlignVCenter
             )
             form.addRow("Sample orientation", self.sample_orientation)
             return group
@@ -1267,12 +1391,37 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self.detector_distance_edit.setText(
                 _format_distance_or_pv(distance, distance_source)
             )
-            self.detector_distance_edit.setToolTip(
-                f"Fallback if the source PV is unavailable: {distance}"
-                if distance_source
-                else ""
-            )
+            self._refresh_distance_tooltip()
             self._set_source_mode(self.detector_distance_edit, bool(distance_source))
+
+        def _refresh_distance_tooltip(self) -> None:
+            fallback = getattr(
+                self,
+                "_distance_literal_fallback",
+                self.profile.detector_setup.get("DISTANCE", 0.0),
+            )
+            units = (
+                self.detector_setup_values["DISTANCE_UNITS"].text().strip()
+                or self.detector_setup_values["UNITS"].text().strip()
+                or "the configured distance units"
+            )
+            tooltip = (
+                "Enter one finite positive value, or one CA PV that publishes a "
+                f"single finite positive scalar in {units}."
+            )
+            try:
+                _distance, source = _parse_distance_or_pv(
+                    self.detector_distance_edit.text(),
+                    fallback,
+                )
+            except ValueError:
+                source = ""
+            if source:
+                tooltip += (
+                    "\nFallback if the source PV is unavailable: "
+                    f"{fallback} {units}."
+                )
+            self.detector_distance_edit.setToolTip(tooltip)
 
         def _on_distance_text_changed(self, text: str) -> None:
             """Keep _distance_literal_fallback current as the user types.
@@ -1287,6 +1436,14 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 self._distance_literal_fallback = validate_distance(text.strip())
             except (TypeError, ValueError):
                 pass  # blank, a PV name, or not yet a valid literal -- keep the last known-good one
+            try:
+                _distance, source = _parse_distance_or_pv(
+                    text, self._distance_literal_fallback
+                )
+            except ValueError:
+                source = ""
+            self._set_source_mode(self.detector_distance_edit, bool(source))
+            self._refresh_distance_tooltip()
 
         def _detector_setup_edits(self) -> dict[str, Any]:
             setup: dict[str, Any] = copy.deepcopy(self._detector_setup_extras)
@@ -1352,12 +1509,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self.ub_matrix_edit.setText(
                 _format_ub_or_pv(profile.ub_matrix, profile.ub_matrix_source_pv)
             )
-            self.ub_matrix_edit.setToolTip(
-                f"Fallback if the source PV is unavailable: "
-                f"{json.dumps(list(profile.ub_matrix))}"
-                if profile.ub_matrix_source_pv
-                else ""
-            )
+            self._refresh_ub_tooltip()
             self._set_source_mode(self.ub_matrix_edit, bool(profile.ub_matrix_source_pv))
             self._load_detector_setup(mapping.get("DETECTOR_SETUP") or {})
             if app_settings.CONFIG_ERROR:
@@ -1393,6 +1545,29 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 )
             except (json.JSONDecodeError, ValueError):
                 pass  # blank, a PV name, or not yet a valid literal -- keep the last known-good one
+            try:
+                _matrix, source = _parse_ub_or_pv(
+                    text, self._ub_matrix_literal_fallback
+                )
+            except ValueError:
+                source = ""
+            self._set_source_mode(self.ub_matrix_edit, bool(source))
+            self._refresh_ub_tooltip()
+
+        def _refresh_ub_tooltip(self) -> None:
+            tooltip = _UB_INPUT_TOOLTIP
+            try:
+                _matrix, source = _parse_ub_or_pv(
+                    self.ub_matrix_edit.text(), self._ub_matrix_literal_fallback
+                )
+            except ValueError:
+                source = ""
+            if source:
+                tooltip += (
+                    "\nFallback if the source PV is unavailable: "
+                    f"{json.dumps(list(self._ub_matrix_literal_fallback))}."
+                )
+            self.ub_matrix_edit.setToolTip(tooltip)
 
         def _parameters(self) -> dict[str, Any]:
             current = self.profile.parameter_mapping()
@@ -1746,6 +1921,8 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 return simple[key]
             if key in self.calibration_values:
                 return self.calibration_values[key]
+            if key.startswith("DETECTOR_SETUP."):
+                return self.detector_setup_values.get(key.split(".", 1)[1])
             return None
 
         def _axis_target(self, key: str):
@@ -1831,6 +2008,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
             baseline_parameters = copy.deepcopy(self._normalized_baseline)
             current_parameters = copy.deepcopy(pending["parameters"])
             form_parameters = copy.deepcopy(pending["form_parameters"])
+            baseline_parameters.setdefault("DETECTOR_SETUP", {}).update(
+                copy.deepcopy(self._detector_setup_extras)
+            )
             for axis_key in ("SAMPLE_AXES", "DETECTOR_AXES"):
                 baseline_parameters.pop(axis_key, None)
                 current_parameters.pop(axis_key, None)
@@ -2008,6 +2188,8 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 return
             if isinstance(target, QComboBox):
                 target.setCurrentText(value)
+            elif key.startswith("DETECTOR_SETUP."):
+                target.setText(_format_detector_value(_parse_detector_value(value)))
             else:
                 target.setText(value)
 
