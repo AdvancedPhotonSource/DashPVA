@@ -32,7 +32,14 @@ from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
 from dashpva.utils.config.hkl import semantic_hkl_channels
+from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.log_manager import LogMixin
+
+
+def _load_resolved_config(path):
+    """Load TOML and derive canonical HKL records before metadata selection."""
+    with open(path, "r") as config_file:
+        return resolve_profile_config(toml.load(config_file))
 
 
 # Example AD Metadata Processor for the streaming framework
@@ -157,8 +164,7 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
                     "no effective config path is available — configure a profile first."
                 )
 
-        with open(self.path, "r") as config_file:
-            self.config = toml.load(config_file)
+        self.config = _load_resolved_config(self.path)
 
         self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set(semantic_hkl_channels(self.hkl_config))

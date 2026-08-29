@@ -81,6 +81,7 @@ class _AssociatorHarness:
         self.buttonStopAssociatorConsumers = MagicMock()
         self.labelStatusAssociatorConsumers = MagicMock()
         self.textEditAssociatorConsumersOutput = MagicMock()
+        self._associator_staleness_timer = MagicMock()
         self._save_meta_assoc_last = MagicMock()
         self._format_associator_output = MagicMock()
 
@@ -95,6 +96,7 @@ def _empty_app_settings(monkeypatch):
     monkeypatch.setattr(app_settings, "METADATA_PVA", {}, raising=False)
     monkeypatch.setattr(app_settings, "HKL", {}, raising=False)
     monkeypatch.setattr(app_settings, "LOCATOR", None, raising=False)
+    monkeypatch.setattr(app_settings, "CONFIG_ERROR", None, raising=False)
 
 
 @pytest.fixture
@@ -177,6 +179,28 @@ class TestRunAssociatorConsumersValidation:
 
         mock_reload.assert_called_once()
 
+    def test_resolution_error_blocks_popen(self, harness, monkeypatch):
+        monkeypatch.setattr(app_settings, "reload", MagicMock())
+        monkeypatch.setattr(app_settings, "CONFIG_ERROR", "singular UB matrix")
+        monkeypatch.setattr(workflow_module.QtWidgets, "QMessageBox", MagicMock())
+        mock_popen = MagicMock()
+        monkeypatch.setattr(workflow_module.subprocess, "Popen", mock_popen)
+
+        harness.run_associator_consumers()
+
+        mock_popen.assert_not_called()
+        assert "associator_consumers" not in harness.processes
+
+    def test_reload_exception_blocks_popen(self, harness, monkeypatch):
+        monkeypatch.setattr(app_settings, "reload", MagicMock(side_effect=RuntimeError("DB down")))
+        monkeypatch.setattr(workflow_module.QtWidgets, "QMessageBox", MagicMock())
+        mock_popen = MagicMock()
+        monkeypatch.setattr(workflow_module.subprocess, "Popen", mock_popen)
+
+        harness.run_associator_consumers()
+
+        mock_popen.assert_not_called()
+
 
 class TestRunAssociatorConsumersSuccess:
     """The success path was previously untested -- only the two refusal
@@ -215,6 +239,36 @@ class TestRunAssociatorConsumersSuccess:
         assert "associator_consumers" in harness.workers
         assert "ca://6idb1:Mu:Position" in harness._associator_metadata_channels
         assert harness._associator_profile_identity == harness._resolved_profile_identity()
+        harness._associator_staleness_timer.start.assert_called_once()
+
+    def test_refresh_drops_old_prefix_before_launch(self, harness, monkeypatch):
+        monkeypatch.setattr(app_settings, "HKL", {"prefix": "old"})
+
+        def reload_settings():
+            app_settings.HKL = {"prefix": "new"}
+
+        monkeypatch.setattr(app_settings, "reload", reload_settings)
+        monkeypatch.setattr(
+            workflow_module,
+            "semantic_hkl_channels",
+            lambda hkl: (f"{hkl['prefix']}:Mu:Position",),
+        )
+        monkeypatch.setattr(
+            workflow_module,
+            "required_rsm_channels",
+            lambda hkl: frozenset({f"{hkl['prefix']}:Mu:Position"}),
+        )
+        monkeypatch.setattr(workflow_module.QtWidgets, "QMessageBox", MagicMock())
+        process = self._fake_process()
+        mock_popen = MagicMock(return_value=process)
+        monkeypatch.setattr(workflow_module.subprocess, "Popen", mock_popen)
+
+        harness.run_associator_consumers()
+
+        command = mock_popen.call_args.args[0]
+        metadata = command[command.index("--metadata-channels") + 1]
+        assert "ca://new:Mu:Position" in metadata
+        assert "old:Mu:Position" not in metadata
 
     def test_does_not_start_when_a_required_channel_is_missing(self, harness, monkeypatch):
         monkeypatch.setattr(
@@ -235,6 +289,9 @@ class TestRunAssociatorConsumersSuccess:
 
 
 class TestAssociatorStalenessWarning:
+    def test_poll_interval_is_two_seconds(self):
+        assert app_settings.METADATA_ASSOCIATOR_STALENESS_CHECK_MS == 2_000
+
     def _mark_running_and_drifted(self, harness, monkeypatch):
         harness.processes["associator_consumers"] = object()
         harness._associator_metadata_channels = "ca://old:channel"
@@ -265,12 +322,7 @@ class TestAssociatorStalenessWarning:
 
         assert mock_msgbox.call_count == 1
 
-    def test_a_later_different_drift_still_warns_after_an_earlier_one(self, harness, monkeypatch):
-        # Regression: a one-shot-per-run flag would permanently suppress every
-        # notice after the first, including a genuinely new, unrelated drift
-        # later in the same run (e.g. a second profile switch, or the first
-        # drift being a transient blip that then changes again). The baseline
-        # must advance to what was just observed, not stay pinned to run start.
+    def test_later_drift_does_not_repeat_warning_before_restart(self, harness, monkeypatch):
         self._mark_running_and_drifted(harness, monkeypatch)
         mock_msgbox = MagicMock()
         monkeypatch.setattr(workflow_module.QtWidgets, "QMessageBox", mock_msgbox)
@@ -283,7 +335,8 @@ class TestAssociatorStalenessWarning:
         )
         harness._sync_associator_metadata()
 
-        assert mock_msgbox.call_count == 2
+        assert mock_msgbox.call_count == 1
+        assert harness._associator_metadata_channels == "ca://old:channel"
 
     def test_identity_only_drift_warns_even_when_channels_are_unchanged(self, harness, monkeypatch):
         # Isolates the identity_changed half of the guard: a profile switched
@@ -338,6 +391,8 @@ class TestStopAssociatorConsumers:
 
         box.close.assert_called_once()
         assert harness._associator_stale_notice_box is None
+        assert harness._associator_stale is False
+        harness._associator_staleness_timer.stop.assert_called_once()
 
     def test_stopping_without_a_notice_box_does_not_raise(self, harness):
         harness.processes["associator_consumers"] = MagicMock()

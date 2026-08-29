@@ -19,7 +19,10 @@
 
 """Semantic HKL channel discovery contracts."""
 
+from unittest.mock import MagicMock
+
 import pytest
+import toml
 
 from dashpva.utils.config.hkl import (
     axis_field_channels,
@@ -154,6 +157,36 @@ def test_missing_semantic_field_fails_loudly():
 
     with pytest.raises(ValueError, match="POSITION"):
         required_rsm_channels(hkl)
+
+
+def test_metadata_processor_resolves_canonical_toml_before_reading_hkl(tmp_path):
+    from dashpva.consumers.hpc.meta.hpc_metadata_consumer import (
+        HpcAdMetadataProcessor,
+    )
+    from dashpva.utils.rsm_parameter_config import default_parameter_mapping
+
+    raw = {
+        "IOC_PREFIX": "sim:",
+        "IOC_RSM_PARAMETER": default_parameter_mapping(),
+        "HKL": {},
+        "METADATA": {"CA": {}},
+    }
+    path = tmp_path / "canonical.toml"
+    path.write_text(toml.dumps(raw))
+
+    processor = object.__new__(HpcAdMetadataProcessor)
+    processor.logger = MagicMock()
+    processor.timestampTolerance = 0.001
+    processor.metadataTimestampOffset = 0.001
+    processor.configure({"path": str(path)})
+    resolved = processor.config
+
+    assert required_rsm_channels(resolved["HKL"]) <= set(
+        semantic_hkl_channels(resolved["HKL"])
+    )
+    assert "sim:spec:UB_matrix:Value" in semantic_hkl_channels(resolved["HKL"])
+    assert resolved["METADATA"]["CA"] == {}
+    assert processor.hkl_config == resolved["HKL"]
 
 
 class TestDerivedCircleAccessors:

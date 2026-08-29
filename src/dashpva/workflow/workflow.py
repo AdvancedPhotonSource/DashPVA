@@ -502,7 +502,9 @@ class Workflow(QDialog, LogMixin):
         # still gets flagged stale when the config changes from over there.
         self._associator_staleness_timer = QTimer(self)
         self._associator_staleness_timer.timeout.connect(self._on_associator_staleness_timer)
-        self._associator_staleness_timer.start(10_000)
+        self._associator_staleness_timer.setInterval(
+            app_settings.METADATA_ASSOCIATOR_STALENESS_CHECK_MS
+        )
 
     # ------------------------------------------------------------------ #
     # DB availability check
@@ -2610,13 +2612,29 @@ class Workflow(QDialog, LogMixin):
         # actually reflected in app_settings.HKL / METADATA_CA / METADATA_PVA.
         try:
             app_settings.reload()
-        except Exception:
-            pass
-
-        metadata_pv_list, built_channels = self._build_metadata_channel_list()
-        metadata_pvs = ','.join(metadata_pv_list)
+        except Exception as exc:
+            self.logger.exception('Could not reload the active metadata profile')
+            QtWidgets.QMessageBox.critical(
+                self,
+                'Cannot start Metadata Associator',
+                f'The active profile could not be reloaded:\n\n{exc}',
+            )
+            return
+        if app_settings.CONFIG_ERROR:
+            self.logger.warning(
+                'Start Metadata Associator refused — active profile resolution failed: '
+                f'{app_settings.CONFIG_ERROR}'
+            )
+            QtWidgets.QMessageBox.critical(
+                self,
+                'Cannot start Metadata Associator',
+                'The active profile could not be resolved into a valid runtime '
+                f'configuration:\n\n{app_settings.CONFIG_ERROR}',
+            )
+            return
 
         try:
+            metadata_pv_list, _built_channels = self._build_metadata_channel_list()
             required_channels = required_rsm_channels(app_settings.HKL)
         except Exception as exc:
             self.logger.warning(
@@ -2628,15 +2646,34 @@ class Workflow(QDialog, LogMixin):
             )
             return
 
-        missing = sorted(required_channels - built_channels)
-        if missing:
+        missing = sorted(
+            channel
+            for channel in required_channels
+            if metadata_pv_list.count(f'ca://{channel}') == 0
+        )
+        duplicated = sorted(
+            channel
+            for channel in required_channels
+            if metadata_pv_list.count(f'ca://{channel}') > 1
+        )
+        if missing or duplicated:
+            details = []
+            if missing:
+                details.append('Missing:\n' + '\n'.join(missing))
+            if duplicated:
+                details.append('Duplicated:\n' + '\n'.join(duplicated))
             self.logger.warning(
-                f'Start Metadata Associator refused — missing required channel(s): {missing}')
+                'Start Metadata Associator refused — required channel validation '
+                f'failed (missing={missing}, duplicated={duplicated})'
+            )
             QtWidgets.QMessageBox.critical(
                 self, 'Cannot start Metadata Associator',
-                'The active profile is missing required RSM channel(s):\n\n' + '\n'.join(missing),
+                'Every required RSM channel must be monitored exactly once:\n\n'
+                + '\n\n'.join(details),
             )
             return
+
+        metadata_pvs = ','.join(metadata_pv_list)
 
         self._save_meta_assoc_last()
 
@@ -2661,9 +2698,6 @@ class Workflow(QDialog, LogMixin):
             self.logger.warning(
                 'Start Metadata Associator: no metadata channels built — '
                 'associator will have nothing to attach')
-        self._associator_metadata_channels = metadata_pvs
-        self._associator_profile_identity = self._resolved_profile_identity()
-
         try:
             process = subprocess.Popen(
                 cmd,
@@ -2673,6 +2707,13 @@ class Workflow(QDialog, LogMixin):
                 universal_newlines=True
             )
             self.processes['associator_consumers'] = process
+            self._associator_metadata_channels = metadata_pvs
+            self._associator_profile_identity = self._resolved_profile_identity()
+            self._associator_stale = False
+            stale_box = getattr(self, '_associator_stale_notice_box', None)
+            if stale_box is not None:
+                stale_box.close()
+                self._associator_stale_notice_box = None
             worker = Worker(process)
             worker.output_signal.connect(self._format_associator_output)
             thread = threading.Thread(target=worker.run)
@@ -2682,6 +2723,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonRunAssociatorConsumers.setEnabled(False)
             self.buttonStopAssociatorConsumers.setEnabled(True)
             self.labelStatusAssociatorConsumers.setText(f'Process ID: {process.pid}')
+            self._associator_staleness_timer.start()
             self.logger.info(f'Metadata Associator started (PID {process.pid})')
         except Exception as e:
             self.logger.exception('Failed to start Metadata Associator')
@@ -2698,6 +2740,8 @@ class Workflow(QDialog, LogMixin):
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
             print(f"Associator Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
+            self._associator_staleness_timer.stop()
+            self._associator_stale = False
             # A non-modal staleness notice from the run that just stopped would
             # otherwise linger on screen telling the user to "stop and restart"
             # something they already stopped.
@@ -2726,14 +2770,9 @@ class Workflow(QDialog, LogMixin):
         """Warn -- never auto-restart -- when a running associator has gone stale.
 
         Restarting here would interrupt whatever the associator is doing
-        mid-acquisition; that decision belongs to the user. Compares against
-        the *last observed* state, not the state at run start, and always
-        advances that baseline to what was just observed -- so a persisting
-        drift is only reported once (the next tick already matches the new
-        baseline), but a later, DIFFERENT drift (a second profile switch, or a
-        transient blip clearing) is still correctly detected and reported.
-        A one-shot-per-run flag would instead permanently swallow every
-        notice after the first, including a genuinely new one.
+        mid-acquisition; that decision belongs to the user. The launch-time
+        channel/profile fingerprint remains pinned until an explicit Stop/Start
+        cycle, and a one-shot flag prevents a warning storm while it is stale.
         """
         if 'associator_consumers' not in self.processes:
             return
@@ -2743,15 +2782,16 @@ class Workflow(QDialog, LogMixin):
         identity_changed = new_identity != getattr(self, '_associator_profile_identity', None)
         if not channels_changed and not identity_changed:
             return
-        self._associator_metadata_channels = new_channels
-        self._associator_profile_identity = new_identity
+        if getattr(self, '_associator_stale', False):
+            return
+        self._associator_stale = True
         self.textEditAssociatorConsumersOutput.appendPlainText(
             '[Config] WARNING: metadata configuration changed — the running '
             'associator is stale; stop and restart it to apply the change.'
         )
         box = QtWidgets.QMessageBox(self)
         box.setIcon(QtWidgets.QMessageBox.Warning)
-        box.setWindowTitle('Metadata configuration changed')
+        box.setWindowTitle('Metadata configuration changed — restart required')
         box.setText(
             'Metadata configuration changed — restart required.\n\n'
             'The running Metadata Associator is still using its previous '

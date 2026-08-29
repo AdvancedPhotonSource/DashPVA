@@ -23,10 +23,16 @@ import threading
 
 import toml
 
+from dashpva.utils.config.hkl import required_rsm_channels, semantic_hkl_channels
+from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.config.source import (
     ConfigSaveStatus,
     ConfigSource,
     DbProfileConfigSource,
+)
+from dashpva.utils.rsm_parameter_config import (
+    RSMParameterEditSession,
+    default_parameter_mapping,
 )
 
 
@@ -158,6 +164,34 @@ def test_database_concurrent_writers_have_exactly_one_winner(tmp_db):
     assert results.count(ConfigSaveStatus.SAVED) == 1
     assert results.count(ConfigSaveStatus.CONFLICT) == 1
     assert tmp_db.export_profile_to_toml(profile.id)["owner"] in {"left", "right"}
+
+
+def test_db_cas_save_resolves_complete_hkl_without_mutating_raw_metadata(tmp_db):
+    raw = {
+        "IOC_PREFIX": "old:",
+        "IOC_RSM_PARAMETER": default_parameter_mapping(),
+        "HKL": {},
+        "METADATA": {"CA": {"user_channel": "beam:current"}},
+    }
+    profile = tmp_db.create_profile("rsm_save_to_runtime")
+    assert tmp_db.import_toml_to_profile(profile.id, raw)
+    session = RSMParameterEditSession(DbProfileConfigSource(tmp_db, profile.id))
+
+    result, snapshot = session.apply("new:", session.profile.parameter_mapping())
+
+    assert result.status is ConfigSaveStatus.SAVED
+    assert snapshot is not None
+    saved = tmp_db.export_profile_to_toml(profile.id)
+    assert saved["METADATA"]["CA"] == raw["METADATA"]["CA"]
+    assert saved["HKL"] == {}
+
+    resolved = resolve_profile_config(saved)
+    semantic = semantic_hkl_channels(resolved["HKL"])
+    required = required_rsm_channels(resolved["HKL"])
+    assert required <= set(semantic)
+    assert all(semantic.count(channel) == 1 for channel in required)
+    assert all(not channel.startswith("old:") for channel in semantic)
+    assert "new:spec:UB_matrix:Value" in semantic
 
 
 def test_toml_resolved_identity_is_its_path(tmp_path):
