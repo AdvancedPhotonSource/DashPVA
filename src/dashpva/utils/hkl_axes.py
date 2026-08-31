@@ -83,7 +83,6 @@ def canonical_axis_metadata(
         field: str(axis[field]).strip()
         for field in (
             "LABEL",
-            "SPEC_MOTOR_NAME",
             "RECORD_NAME",
             "SOURCE_PV",
             "DIRECTION",

@@ -108,7 +108,8 @@ def test_ioc_database_supports_arbitrary_circle_counts(
         name.startswith("sim:SampleAxis") or name.startswith("sim:DetectorAxis")
         for name, _ in records
     )
-    assert axis_record_count == 4 * (sample_count + detector_count)
+    # AxisNumber, DirectionAxis, Position -- SpecMotorName was removed.
+    assert axis_record_count == 3 * (sample_count + detector_count)
     assert sum(name.endswith(":Position") for name, _ in records) == (
         sample_count + detector_count
     )
@@ -126,23 +127,7 @@ def test_label_can_change_without_changing_stable_record_identity():
     renamed = validate_parameter_profile("sim", parameters)
 
     assert first.sample_axes[0].record_name == renamed.sample_axes[0].record_name
-    values = static_ioc_values(renamed)
-    assert values["sim:SampleAxis1:SpecMotorName"] == "human readable rename"
 
-
-def test_optional_spec_motor_name_is_distinct_from_display_label():
-    parameters = default_parameter_mapping()
-    parameters["SAMPLE_AXES"] = [_axis("Sample", 1)]
-    parameters["DETECTOR_AXES"] = [_axis("Detector", 1)]
-    parameters["SAMPLE_AXES"][0]["LABEL"] = "friendly display label"
-    parameters["SAMPLE_AXES"][0]["SPEC_MOTOR_NAME"] = "th"
-
-    profile = validate_parameter_profile("sim", parameters)
-    values = static_ioc_values(profile)
-
-    assert profile.sample_axes[0].label == "friendly display label"
-    assert profile.sample_axes[0].spec_motor_name == "th"
-    assert values["sim:SampleAxis1:SpecMotorName"] == "th"
 
 
 def test_removed_axis_review_restore_keeps_loaded_identity_and_order():

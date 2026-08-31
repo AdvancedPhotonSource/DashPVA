@@ -35,7 +35,6 @@ _AXIS_MANAGED_FIELDS = {
     "AXIS_NUMBER",
     "DIRECTION_AXIS",
     "POSITION",
-    "SPEC_MOTOR_NAME",
 }
 
 
@@ -74,7 +73,6 @@ def _axis_mapping(prefix: str, record_name: str) -> dict[str, str]:
         "AXIS_NUMBER": f"{base}:AxisNumber",
         "DIRECTION_AXIS": f"{base}:DirectionAxis",
         "POSITION": f"{base}:Position",
-        "SPEC_MOTOR_NAME": f"{base}:SpecMotorName",
     }
 
 

@@ -92,7 +92,6 @@ def test_canonical_profile_generates_managed_hkl_without_mutating_raw():
         "AXIS_NUMBER": "6idb:Mu:AxisNumber",
         "DIRECTION_AXIS": "6idb:Mu:DirectionAxis",
         "POSITION": "6idb:Mu:Position",
-        "SPEC_MOTOR_NAME": "6idb:Mu:SpecMotorName",
     }
     assert effective["HKL"]["DETECTOR_CIRCLE_AXIS_1"]["POSITION"] == (
         "6idb:Delta:Position"

@@ -86,7 +86,6 @@ def _writer_data(config: dict) -> dict:
             metadata[section["AXIS_NUMBER"]] = [number]
             metadata[section["DIRECTION_AXIS"]] = ["x+" if number % 2 else "z-"]
             metadata[section["POSITION"]] = [float(number)]
-            metadata[section["SPEC_MOTOR_NAME"]] = [f"{role.title()} {number}"]
             number += 1
     return {
         "images": [np.arange(4, dtype=np.uint16)],
@@ -275,44 +274,6 @@ def test_varying_legacy_axis_number_fails_before_destination_is_opened(tmp_path)
         assert h5_file["sentinel"][()] == 42
 
 
-def test_canonical_spec_motor_name_is_not_replaced_by_label(tmp_path):
-    path = tmp_path / "spec_motor_name.h5"
-    config = _config(sample_count=1, detector_count=1)
-    axis = config["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
-    axis["LABEL"] = "friendly label"
-    axis["SPEC_MOTOR_NAME"] = "th"
-    data = _writer_data(config)
-    spec_channel = config["HKL"]["SAMPLE_CIRCLE_AXIS_1"]["SPEC_MOTOR_NAME"]
-    del data["metadata"][spec_channel]
-
-    HDF5Writer(str(path), _Reader(config)).h5_save(
-        str(path), data, compress=False
-    )
-
-    with h5py.File(path, "r") as h5_file:
-        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
-        assert axis_group["LABEL"].asstr()[()] == "friendly label"
-        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == "th"
-
-
-def test_absent_canonical_spec_motor_name_uses_label_compatibility_value(tmp_path):
-    path = tmp_path / "spec_motor_name_fallback.h5"
-    config = _config(sample_count=1, detector_count=1)
-    axis = config["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
-    axis["LABEL"] = "historical motor label"
-    data = _writer_data(config)
-    spec_channel = config["HKL"]["SAMPLE_CIRCLE_AXIS_1"]["SPEC_MOTOR_NAME"]
-    del data["metadata"][spec_channel]
-
-    HDF5Writer(str(path), _Reader(config)).h5_save(
-        str(path), data, compress=False
-    )
-
-    with h5py.File(path, "r") as h5_file:
-        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
-        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == (
-            "historical motor label"
-        )
 
 
 def test_kappa_direction_has_a_nexus_vector(tmp_path):

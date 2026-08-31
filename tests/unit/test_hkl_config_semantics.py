@@ -71,7 +71,6 @@ def _axis(index, stem):
         "AXIS_NUMBER": f"{stem}.axis.RBV",
         "DIRECTION_AXIS": f"{stem}.direction.RBV",
         "POSITION": f"{stem}.position.RBV",
-        "SPEC_MOTOR_NAME": f"{stem}.name.RBV",
         "VENDOR_EXTENSION": f"{stem}.ignore.RBV",
     }
 

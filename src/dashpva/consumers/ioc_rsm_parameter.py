@@ -553,7 +553,6 @@ def build_ioc_database(profile: RSMParameterProfile) -> str:
                 _ai(f"{base}:Position"),
                 _ai(f"{base}:AxisNumber"),
                 _stringout(f"{base}:DirectionAxis"),
-                _stringout(f"{base}:SpecMotorName"),
             )
         )
 
@@ -597,7 +596,6 @@ def static_ioc_values(profile: RSMParameterProfile) -> dict[str, Any]:
             base = f"{prefix}{axis.record_name}"
             values[f"{base}:AxisNumber"] = float(axis_number)
             values[f"{base}:DirectionAxis"] = axis.direction
-            values[f"{base}:SpecMotorName"] = axis.published_spec_motor_name
 
     values[f"{prefix}spec:Energy:Units"] = profile.energy_units
     values[f"{prefix}spec:UB_matrix:Value"] = list(profile.ub_matrix)
@@ -635,7 +633,6 @@ def all_pv_names(profile: RSMParameterProfile) -> list[tuple[str, str]]:
                 (f"{base}:Position", f"{axis.label} position"),
                 (f"{base}:AxisNumber", f"{axis.label} axis number"),
                 (f"{base}:DirectionAxis", f"{axis.label} direction"),
-                (f"{base}:SpecMotorName", f"{axis.label} label"),
             )
         )
     records.extend(
@@ -1024,7 +1021,6 @@ def _build_gui_classes() -> tuple[type, type, type]:
         )
         axis_keys = (
             "LABEL",
-            "SPEC_MOTOR_NAME",
             "RECORD_NAME",
             "SOURCE_PV",
             "DIRECTION",
@@ -1083,7 +1079,6 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self._append(
                 {
                     "LABEL": stem,
-                    "SPEC_MOTOR_NAME": "",
                     "RECORD_NAME": stem,
                     "SOURCE_PV": "0",
                     "DIRECTION": "z-",

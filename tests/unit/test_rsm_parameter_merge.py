@@ -210,43 +210,6 @@ def test_identical_concurrent_axis_edit_is_accepted_without_conflict():
     assert conflicts == []
 
 
-def test_live_spec_motor_name_adopts_distinct_field_without_touching_label():
-    raw = _raw()
-    baseline = profile_from_raw(raw)
-    form = baseline.parameter_mapping()
-
-    adopted, conflicts = merge_live_records(
-        form,
-        baseline,
-        {"sim:Mu:SpecMotorName": "th"},
-        raw["IOC_RSM_PARAMETER"],
-        baseline.parameter_mapping(),
-        axis_origins=_origins(),
-    )
-
-    assert conflicts == []
-    assert adopted
-    assert form["SAMPLE_AXES"][0]["SPEC_MOTOR_NAME"] == "th"
-    assert form["SAMPLE_AXES"][0]["LABEL"] == "Mu"
-
-
-def test_absent_spec_motor_name_label_fallback_is_not_a_live_change():
-    raw = _raw()
-    baseline = profile_from_raw(raw)
-    form = baseline.parameter_mapping()
-
-    adopted, conflicts = merge_live_records(
-        form,
-        baseline,
-        {"sim:Mu:SpecMotorName": "Mu"},
-        raw["IOC_RSM_PARAMETER"],
-        baseline.parameter_mapping(),
-        axis_origins=_origins(),
-    )
-
-    assert adopted == []
-    assert conflicts == []
-    assert "SPEC_MOTOR_NAME" not in raw["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
 
 
 def test_removed_axis_with_concurrent_live_edit_is_a_conflict():

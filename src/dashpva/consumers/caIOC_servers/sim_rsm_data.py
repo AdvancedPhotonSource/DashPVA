@@ -52,37 +52,31 @@ import pvaccess as pva  # pva module provides CaIoc and related functions
 axis_records = {
     "6idb1:m28.RBV": {
         "AxisNumber": 1,
-        "SpecMotorName": "Mu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
     "6idb1:m17.RBV": {
         "AxisNumber": 2,
-        "SpecMotorName": "Eta",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
     "6idb1:m19.RBV": {
         "AxisNumber": 3,
-        "SpecMotorName": "Chi",
         "DirectionAxis": "y+",
         "Position": 0.0
     },
     "6idb1:m20.RBV": {
         "AxisNumber": 4,
-        "SpecMotorName": "Phi",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
     "6idb1:m29.RBV": {
         "AxisNumber": 1,
-        "SpecMotorName": "Nu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
     "6idb1:m18.RBV": {
         "AxisNumber": 2,
-        "SpecMotorName": "Delta",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
@@ -315,11 +309,9 @@ def main() -> None:
                 new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
                 if isinstance(rec, dict):
-                    if rec["SpecMotorName"] == "Eta":
-                        # Only Update Eta Position
-                        update_ca_record_field(caIoc, name, 'Position', new_position)
-                    if rec["SpecMotorName"] == "Delta":
-                        # Only Update Eta Position
+                    # Eta and Delta only; keyed on the PV now that the
+                    # SpecMotorName field is gone from the record dicts.
+                    if name in ("6idb1:m17.RBV", "6idb1:m18.RBV"):
                         update_ca_record_field(caIoc, name, 'Position', new_position)
                 # elif name == '6idb:spec:Energy':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)

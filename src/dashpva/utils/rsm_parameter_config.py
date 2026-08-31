@@ -123,7 +123,6 @@ _STATIC_PARAMETER_KEYS = (
 _AXIS_KEYS = ("SAMPLE_AXES", "DETECTOR_AXES")
 _AXIS_FIELDS = (
     "LABEL",
-    "SPEC_MOTOR_NAME",
     "RECORD_NAME",
     "SOURCE_PV",
     "DIRECTION",
@@ -155,17 +154,11 @@ class AxisParameter:
     source_pv: str
     direction: str
     angle_units: str = "deg"
-    spec_motor_name: str = ""
 
-    @property
-    def published_spec_motor_name(self) -> str:
-        """Configured SPEC name, falling back to the historical label value."""
-        return self.spec_motor_name or self.label
 
     def as_mapping(self) -> dict[str, str]:
         return {
             "LABEL": self.label,
-            "SPEC_MOTOR_NAME": self.spec_motor_name,
             "RECORD_NAME": self.record_name,
             "SOURCE_PV": self.source_pv,
             "DIRECTION": self.direction,
@@ -265,7 +258,6 @@ def _normalize_axis(role: str, index: int, values: object) -> AxisParameter:
     source_pv = str(values.get("SOURCE_PV", "")).strip()
     direction = str(values.get("DIRECTION", "")).strip().lower()
     angle_units = str(values.get("ANGLE_UNITS", "deg")).strip().lower()
-    spec_motor_name = str(values.get("SPEC_MOTOR_NAME", "")).strip()
 
     if not label:
         raise ValueError(f"{role} axis {index} needs a LABEL")
@@ -286,7 +278,7 @@ def _normalize_axis(role: str, index: int, values: object) -> AxisParameter:
     angle_units = normalize_angle_units(angle_units, f"{role} axis {index} ANGLE_UNITS")
 
     return AxisParameter(
-        label, record_name, source_pv, direction, angle_units, spec_motor_name
+        label, record_name, source_pv, direction, angle_units
     )
 
 
@@ -723,7 +715,6 @@ def _patched_axes(
             new_axis = {
                 key: _stored_change(submitted.get(key), normalized[key])
                 for key in _AXIS_FIELDS
-                if key != "SPEC_MOTOR_NAME" or normalized[key]
             }
             stored.append(new_axis)
             continue
@@ -800,10 +791,6 @@ def update_raw_profile(
     if not isinstance(raw_parameters, Mapping):
         replacement["IOC_PREFIX"] = normalized.prefix
         stored_candidate = copy.deepcopy(candidate)
-        for key in _AXIS_KEYS:
-            for axis in stored_candidate[key]:
-                if not axis.get("SPEC_MOTOR_NAME"):
-                    axis.pop("SPEC_MOTOR_NAME", None)
         replacement["IOC_RSM_PARAMETER"] = stored_candidate
         return replacement
 
@@ -884,11 +871,6 @@ def _adoptable_records(
         for origin, axis in enumerate(axes):
             base = f"{prefix}{axis.record_name}"
             records[f"{base}:DirectionAxis"] = (key, origin, "DIRECTION")
-            records[f"{base}:SpecMotorName"] = (
-                key,
-                origin,
-                "SPEC_MOTOR_NAME",
-            )
     records[f"{prefix}spec:Energy:Units"] = ("ENERGY_UNITS",)
     # A source-owned record is driven by its PV every poll -- a live caput to it
     # would just be overwritten on the next cycle, and adopting it into the form
@@ -959,12 +941,6 @@ def merge_live_records(
             continue
         live_value = live[record]
         seeded_value = base_value
-        if baseline_path[-1] == "SPEC_MOTOR_NAME" and not seeded_value:
-            seeded_value = _read_path(
-                normalized_baseline,
-                (*baseline_path[:-1], "LABEL"),
-                seeded_value,
-            )
         if _values_match(live_value, seeded_value):
             continue
 

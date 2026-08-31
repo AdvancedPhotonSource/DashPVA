@@ -1990,7 +1990,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(
                         self.hkl_config,
                         'sample',
-                        'SPEC_MOTOR_NAME',
                         required=False,
                     ),
                     'sample circle motor name',
@@ -2007,7 +2006,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(
                         self.hkl_config,
                         'detector',
-                        'SPEC_MOTOR_NAME',
                         required=False,
                     ),
                     'detector circle motor name',

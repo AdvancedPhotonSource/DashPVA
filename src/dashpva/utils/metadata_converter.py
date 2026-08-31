@@ -434,7 +434,6 @@ def _materialize_canonical_profile(
             label = identity.get("LABEL")
             for field in (
                 "LABEL",
-                "SPEC_MOTOR_NAME",
                 "RECORD_NAME",
                 "ANGLE_UNITS",
             ):
@@ -442,8 +441,6 @@ def _materialize_canonical_profile(
                     _replace_dataset(group, field, identity[field])
             if label:
                 _replace_dataset(group, "NAME", label)
-                if not identity.get("SPEC_MOTOR_NAME"):
-                    _replace_dataset(group, "SPEC_MOTOR_NAME", label)
             if not include:
                 continue
             direction = identity.get("DIRECTION")
