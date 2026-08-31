@@ -394,7 +394,7 @@ QLineEdit#lineEditDetectorDistance[sourceMode="true"] {
 }
 
 /* Detector setup: compact two-column grid, uniform right-aligned inputs. */
-QGroupBox#groupBoxDetectorSetup QLineEdit {
+#groupBoxDetectorSetup QLineEdit {
     min-width: 180px;
     max-width: 240px;
     qproperty-alignment: AlignRight;

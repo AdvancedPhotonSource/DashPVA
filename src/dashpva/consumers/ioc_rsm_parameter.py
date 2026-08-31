@@ -1183,7 +1183,8 @@ def _build_gui_classes() -> tuple[type, type, type]:
             layout.addWidget(section)
         """
 
-        def __init__(self, title: str, checked: bool = False, parent=None):
+        def __init__(self, title: str, checked: bool = False, parent=None,
+                     layout_cls=None, area_name: str = ""):
             super().__init__(parent)
             self.header = QToolButton()
             self.header.setObjectName("collapsibleHeader")
@@ -1196,9 +1197,11 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self.header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
             self.area = QFrame()
-            self.area.setObjectName("collapsibleArea")
+            self.area.setObjectName(area_name or "collapsibleArea")
             self.area.setVisible(checked)
-            self.form = QFormLayout(self.area)
+            # `form` is the content layout whatever its type -- detector setup
+            # supplies a QGridLayout, the rest take the default QFormLayout.
+            self.form = (layout_cls or QFormLayout)(self.area)
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -1249,9 +1252,12 @@ def _build_gui_classes() -> tuple[type, type, type]:
             geometry = settings.value("window_geom")
             if geometry:
                 self.restoreGeometry(geometry)
-            self.restore_checkable_state(
-                settings, self.advanced_group, "advanced_expanded", False
-            )
+            for section, key, default in (
+                (self.calibration_group, "static_geometry_expanded", True),
+                (self.detector_setup_group, "detector_setup_expanded", True),
+                (self.advanced_group, "advanced_expanded", False),
+            ):
+                self.restore_checkable_state(settings, section, key, default)
 
         def _build_ui(self) -> None:
             central = QWidget()
@@ -1299,8 +1305,10 @@ def _build_gui_classes() -> tuple[type, type, type]:
             detector_layout.addWidget(self.detector_table)
             root.addWidget(detector_group)
 
-            root.addWidget(self._build_calibration_group())
-            root.addWidget(self._build_detector_setup_group())
+            self.calibration_group = self._build_calibration_group()
+            root.addWidget(self.calibration_group)
+            self.detector_setup_group = self._build_detector_setup_group()
+            root.addWidget(self.detector_setup_group)
             self.advanced_group = self._build_advanced_group()
             root.addWidget(self.advanced_group)
             root.addWidget(self._build_records_group())
@@ -1322,9 +1330,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
 
             self.resize(1000, 1000)
 
-        def _build_calibration_group(self) -> QGroupBox:
-            group = QGroupBox("Static geometry — JSON")
-            form = QFormLayout(group)
+        def _build_calibration_group(self) -> CollapsibleSection:
+            section = CollapsibleSection("Static geometry — JSON", checked=True)
+            form = section.form
             self.ub_matrix_edit = QLineEdit()
             self.ub_matrix_edit.setObjectName("lineEditUbMatrix")
             self.ub_matrix_edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -1341,9 +1349,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.calibration_values[key] = edit
                 form.addRow(key.replace("_", " ").title(), edit)
-            return group
+            return section
 
-        def _build_detector_setup_group(self) -> QGroupBox:
+        def _build_detector_setup_group(self) -> CollapsibleSection:
             """One field per detector value instead of a single JSON blob.
 
             Generated from DETECTOR_SETUP_FIELDS in a compact two-column grid
@@ -1355,9 +1363,11 @@ def _build_gui_classes() -> tuple[type, type, type]:
             binning are all in detector directions 1/2, not x/y -- only
             FRAME_AXIS_ORDER maps them onto array rows/columns.
             """
-            group = QGroupBox("Detector setup")
-            group.setObjectName("groupBoxDetectorSetup")
-            grid = QGridLayout(group)
+            section = CollapsibleSection(
+                "Detector setup", checked=True,
+                layout_cls=QGridLayout, area_name="groupBoxDetectorSetup",
+            )
+            grid = section.form
             hint = QLabel("Leave optional fields blank to omit them from the profile.")
             hint.setProperty("messageLevel", "info")
             grid.addWidget(hint, 0, 0, 1, 4)
@@ -1391,7 +1401,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 self.detector_setup_values[key].textChanged.connect(
                     lambda _text: self._refresh_distance_tooltip()
                 )
-            return group
+            return section
 
         def _build_advanced_group(self) -> CollapsibleSection:
             section = CollapsibleSection("Advanced")
@@ -2263,9 +2273,12 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self._stop_worker()
             settings = QSettings("DashPVA", "RSMParameterIOC")
             settings.setValue("window_geom", self.saveGeometry())
-            self.save_checkable_state(
-                settings, self.advanced_group, "advanced_expanded"
-            )
+            for section, key in (
+                (self.calibration_group, "static_geometry_expanded"),
+                (self.detector_setup_group, "detector_setup_expanded"),
+                (self.advanced_group, "advanced_expanded"),
+            ):
+                self.save_checkable_state(settings, section, key)
             settings.sync()
             super().closeEvent(event)
 
