@@ -1,95 +1,30 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QButtonGroup,
-    QCheckBox,
-    QFormLayout,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QRadioButton,
-    QSizePolicy,
-    QSpinBox,
-    QWidget,
-)
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
 
 
-def _value_label(default: str = "0") -> QLabel:
-    lbl = QLabel(default)
-    lbl.setFrameShape(QFrame.Box)
-    lbl.setFrameShadow(QFrame.Sunken)
-    lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-    lbl.setProperty("valueLabel", True)
-    return lbl
-
-
 class ImageDock(BaseDock):
+    """Area-detector image dock: plot rate, size readout and display toggles.
+
+        dock = ImageDock(main_window=viewer)
+        dock.plotting_frequency.setValue(10)
+        dock.log_image.setChecked(True)
+    """
 
     def __init__(self, main_window=None, show: bool = True):
         super().__init__(title="Image", main_window=main_window,
                          segment_name=_SEGMENT, dock_area=Qt.RightDockWidgetArea,
                          show=show)
-        self._build()
-
-    def _build(self):
-        container = QWidget()
-        container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        layout = QFormLayout(container)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(12)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        self.plot_call_id = _value_label("0")
-        layout.addRow(QLabel("Plot Call ID:"), self.plot_call_id)
-
-        self.plotting_frequency = QSpinBox()
-        self.plotting_frequency.setObjectName("image_plotting_frequency")
-        self.plotting_frequency.setRange(1, 999999999)
-        self.plotting_frequency.setValue(14)
-        self.plotting_frequency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addRow(QLabel("Plotting rate (Hz):"), self.plotting_frequency)
-
-        self.size_x_val = _value_label("0")
-        self.size_y_val = _value_label("0")
-        layout.addRow(QLabel("Size X [px]:"), self.size_x_val)
-        layout.addRow(QLabel("Size Y [px]:"), self.size_y_val)
-
-        self.log_image    = QCheckBox("Log Image")
-
-        self.log_image.setObjectName("image_log_image")
-        self.freeze_image = QCheckBox("Freeze Image")
-        self.freeze_image.setObjectName("image_freeze_image")
-        layout.addRow(self.log_image, self.freeze_image)
-
-        self.chk_transpose = QCheckBox("Transpose Image")
-
-        self.chk_transpose.setObjectName("image_chk_transpose")
-        self.display_rois  = QCheckBox("Show ROIs")
-        self.display_rois.setObjectName("image_display_rois")
-        self.display_rois.setChecked(True)
-        layout.addRow(self.chk_transpose, self.display_rois)
-
-        order_row = QHBoxLayout()
-        self.rbtn_C = QRadioButton("C")
-        self.rbtn_F = QRadioButton("Fortran")
-        self.rbtn_F.setChecked(True)
-        self._pixel_order_group = QButtonGroup(container)
-        self._pixel_order_group.addButton(self.rbtn_C)
-        self._pixel_order_group.addButton(self.rbtn_F)
-        order_row.addWidget(self.rbtn_C)
-        order_row.addWidget(self.rbtn_F)
-        order_row.addStretch()
-        layout.addRow(QLabel("Image Pixel Order:"), order_row)
-
-        self.rotate90degCCW = QPushButton("Rotate 90° CCW")
-        self.stop_hkl = QCheckBox("Stop HKL")
-        self.stop_hkl.setObjectName("image_stop_hkl")
-        layout.addRow(self.rotate90degCCW, self.stop_hkl)
-
-        self.setWidget(container)
+        self.load_ui("area_det", "docks", "image.ui")
+        # The persisted objectNames are prefixed to stay unambiguous against the
+        # legacy imageshow.ui widgets; callers still use the short attribute.
+        self.plotting_frequency = self.image_plotting_frequency
+        self.log_image          = self.image_log_image
+        self.freeze_image       = self.image_freeze_image
+        self.chk_transpose      = self.image_chk_transpose
+        self.display_rois       = self.image_display_rois
+        self.stop_hkl           = self.image_stop_hkl
