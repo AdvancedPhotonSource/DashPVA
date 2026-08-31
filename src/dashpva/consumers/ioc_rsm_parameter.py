@@ -943,7 +943,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
     if _gui_classes_cache is not None:
         return _gui_classes_cache
 
-    from PyQt5.QtCore import QSettings, Qt, QThread, pyqtSignal
+    from PyQt5.QtCore import Qt, QThread, pyqtSignal
     from PyQt5.QtWidgets import (
         QComboBox,
         QFormLayout,
@@ -1242,10 +1242,10 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self._build_ui()
             self._load_profile(profile)
             self._reset_record_monitor(profile)
-            settings = QSettings("DashPVA", "RSMParameterIOC")
-            geometry = settings.value("window_geom")
-            if geometry:
-                self.restoreGeometry(geometry)
+            self.legacy_settings = ("RSMParameterIOC", "window_geom", None)
+            self.restore_layout()
+            self.restore_inputs()
+            settings = self._qsettings()
             for section, key, default in (
                 (self.calibration_group, "static_geometry_expanded", True),
                 (self.detector_setup_group, "detector_setup_expanded", True),
@@ -2265,8 +2265,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
             if not self.confirm_close(event):
                 return
             self._stop_worker()
-            settings = QSettings("DashPVA", "RSMParameterIOC")
-            settings.setValue("window_geom", self.saveGeometry())
+            settings = self._qsettings()
             for section, key in (
                 (self.calibration_group, "static_geometry_expanded"),
                 (self.detector_setup_group, "detector_setup_expanded"),
@@ -2274,6 +2273,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
             ):
                 self.save_checkable_state(settings, section, key)
             settings.sync()
+            # Geometry and inputs are persisted by BaseWindow.closeEvent.
             super().closeEvent(event)
 
     _gui_classes_cache = (PollWorker, AxisTable, SimulatorWindow)
