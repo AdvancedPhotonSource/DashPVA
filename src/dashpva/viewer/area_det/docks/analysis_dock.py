@@ -1,26 +1,19 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
 class AnalysisDock(BaseDock):
+    """Area-detector analysis dock: opens the standalone analysis window.
+
+        dock = AnalysisDock(main_window=viewer)
+        dock.btn_analysis_window.clicked.connect(viewer.open_analysis_window)
+    """
 
     def __init__(self, main_window=None, show: bool = True):
         super().__init__(title="Analysis", main_window=main_window,
                          segment_name="other", dock_area=Qt.RightDockWidgetArea,
                          show=show)
-        self._build()
-
-    def _build(self):
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        self.btn_analysis_window = QPushButton("Open Analysis Window")
-        layout.addWidget(self.btn_analysis_window)
-        layout.addStretch()
-
-        self.setWidget(container)
+        self.load_ui("area_det", "docks", "analysis.ui")
