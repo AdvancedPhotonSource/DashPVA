@@ -62,6 +62,8 @@ class MaskDock(BaseDock):
         layout.addRow(self.btn_export_json)
 
         self.chk_apply_mask = QCheckBox("Apply mask to display")
+
+        self.chk_apply_mask.setObjectName("chk_apply_mask")
         self.chk_apply_mask.setChecked(True)
         layout.addRow(self.chk_apply_mask)
 

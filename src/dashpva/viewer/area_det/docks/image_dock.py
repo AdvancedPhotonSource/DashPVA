@@ -49,7 +49,7 @@ class ImageDock(BaseDock):
         layout.addRow(QLabel("Plot Call ID:"), self.plot_call_id)
 
         self.plotting_frequency = QSpinBox()
-        self.plotting_frequency.setObjectName("plotting_frequency")
+        self.plotting_frequency.setObjectName("image_plotting_frequency")
         self.plotting_frequency.setRange(1, 999999999)
         self.plotting_frequency.setValue(14)
         self.plotting_frequency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -61,11 +61,17 @@ class ImageDock(BaseDock):
         layout.addRow(QLabel("Size Y [px]:"), self.size_y_val)
 
         self.log_image    = QCheckBox("Log Image")
+
+        self.log_image.setObjectName("image_log_image")
         self.freeze_image = QCheckBox("Freeze Image")
+        self.freeze_image.setObjectName("image_freeze_image")
         layout.addRow(self.log_image, self.freeze_image)
 
         self.chk_transpose = QCheckBox("Transpose Image")
+
+        self.chk_transpose.setObjectName("image_chk_transpose")
         self.display_rois  = QCheckBox("Show ROIs")
+        self.display_rois.setObjectName("image_display_rois")
         self.display_rois.setChecked(True)
         layout.addRow(self.chk_transpose, self.display_rois)
 
@@ -83,6 +89,7 @@ class ImageDock(BaseDock):
 
         self.rotate90degCCW = QPushButton("Rotate 90° CCW")
         self.stop_hkl = QCheckBox("Stop HKL")
+        self.stop_hkl.setObjectName("image_stop_hkl")
         layout.addRow(self.rotate90degCCW, self.stop_hkl)
 
         self.setWidget(container)

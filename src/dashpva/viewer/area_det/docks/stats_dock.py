@@ -55,13 +55,13 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Image Data Type:"), self.data_type_val)
 
         self.min_setting_val = QDoubleSpinBox()
-        self.min_setting_val.setObjectName("min_setting_val")
+        self.min_setting_val.setObjectName("stats_min_setting_val")
         self.min_setting_val.setRange(-1e10, 9999999999.99)
         self.min_setting_val.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         self.min_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.max_setting_val = QDoubleSpinBox()
-        self.max_setting_val.setObjectName("max_setting_val")
+        self.max_setting_val.setObjectName("stats_max_setting_val")
         self.max_setting_val.setRange(-1e10, 9999999999.99)
         self.max_setting_val.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         self.max_setting_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -70,9 +70,13 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Set Max Intensity:"), self.max_setting_val)
 
         self.chk_autoscale = QCheckBox("Autoscale (5%-95% histogram)")
+
+        self.chk_autoscale.setObjectName("stats_chk_autoscale")
         layout.addRow(self.chk_autoscale)
 
         self.chk_threshold = QCheckBox("Auto threshold:")
+
+        self.chk_threshold.setObjectName("stats_chk_threshold")
         self.lbl_threshold_range = QLabel("0 to 0")
         layout.addRow(self.chk_threshold, self.lbl_threshold_range)
 

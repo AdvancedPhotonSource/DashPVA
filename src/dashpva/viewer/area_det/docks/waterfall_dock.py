@@ -105,10 +105,14 @@ class WaterfallDock(BaseDock):
         controls.setVerticalSpacing(6)
 
         self.roi_combo = QComboBox()
+
+        self.roi_combo.setObjectName("waterfall_roi_combo")
         self.roi_combo.currentIndexChanged.connect(self._on_source_changed)
         controls.addRow(QLabel("ROI source:"), self.roi_combo)
 
         self.direction_combo = QComboBox()
+
+        self.direction_combo.setObjectName("waterfall_direction_combo")
         self.direction_combo.addItems(["Horizontal", "Vertical"])
         self.direction_combo.setToolTip(
             "Direction to average the 2D ROI into a 1D profile")
@@ -116,6 +120,8 @@ class WaterfallDock(BaseDock):
         controls.addRow(QLabel("Average:"), self.direction_combo)
 
         self.depth_spin = QSpinBox()
+
+        self.depth_spin.setObjectName("waterfall_depth_spin")
         self.depth_spin.setRange(_MIN_DEPTH, _MAX_DEPTH)
         self.depth_spin.setValue(_DEFAULT_DEPTH)
         self.depth_spin.setToolTip("Number of stacked frames kept in the waterfall")
@@ -123,8 +129,11 @@ class WaterfallDock(BaseDock):
         controls.addRow(QLabel("Max frames:"), self.depth_spin)
 
         self.chk_log = QCheckBox("Log intensity")
+
+        self.chk_log.setObjectName("waterfall_chk_log")
         self.chk_log.setChecked(False)
         self.chk_autoscale = QCheckBox("Autoscale")
+        self.chk_autoscale.setObjectName("waterfall_chk_autoscale")
         self.chk_autoscale.setChecked(True)
         controls.addRow(self.chk_log, self.chk_autoscale)
 

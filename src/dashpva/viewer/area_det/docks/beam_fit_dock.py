@@ -132,11 +132,15 @@ class BeamFitDock(BaseDock):
         controls.setVerticalSpacing(6)
 
         self.model_combo = QComboBox()
+
+        self.model_combo.setObjectName("beamfit_model_combo")
         self.model_combo.addItems([m.capitalize() for m in MODELS])
         self.model_combo.setToolTip("Peak model fit to each 1D profile")
         controls.addRow(QLabel("Model:"), self.model_combo)
 
         self.bin_spin = QSpinBox()
+
+        self.bin_spin.setObjectName("beamfit_bin_spin")
         self.bin_spin.setRange(_MIN_BIN, _MAX_BIN)
         self.bin_spin.setValue(_DEFAULT_BIN)
         self.bin_spin.setToolTip("Number of frames summed before fitting")
@@ -144,12 +148,16 @@ class BeamFitDock(BaseDock):
         controls.addRow(QLabel("Frame bin:"), self.bin_spin)
 
         self.chk_autofit = QCheckBox("Auto-fit")
+
+        self.chk_autofit.setObjectName("beamfit_chk_autofit")
         self.chk_autofit.setChecked(True)
         self.btn_clear = QPushButton("Clear")
         self.btn_clear.clicked.connect(self._on_clear)
         controls.addRow(self.chk_autofit, self.btn_clear)
 
         self.chk_broadcast = QCheckBox("Broadcast fit as PVs")
+
+        self.chk_broadcast.setObjectName("beamfit_chk_broadcast")
         self.chk_broadcast.setToolTip(
             "Serve the fit results as a single soft PVA structure")
         self.chk_broadcast.toggled.connect(self._on_broadcast_toggled)

@@ -173,6 +173,10 @@ class DiffractionImageWindow(BaseWindow):
     # area_det_* keys are read once so existing layouts survive the switch.
     legacy_settings = ("Viewer", "area_det_window_geom", "area_det_dock_state")
 
+    #: Freeze is a momentary control -- restoring it would leave a fresh
+    #: session looking like the live view had hung.
+    persist_input_skip = {"image_freeze_image"}
+
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
     # the main (GUI) thread. Args: message, level ('info' | 'warning' | 'error').
@@ -440,6 +444,10 @@ class DiffractionImageWindow(BaseWindow):
         
         # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
+
+        # Last: __init__ hardcodes defaults above (autoscale/threshold), so the
+        # saved values have to be applied after them or they are overwritten.
+        self.restore_inputs()
 
     def _setup_docks(self):
         """Build side panels as dock widgets and alias their members onto self.
