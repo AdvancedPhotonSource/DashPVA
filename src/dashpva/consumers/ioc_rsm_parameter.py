@@ -950,6 +950,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
     from PyQt5.QtWidgets import (
         QComboBox,
         QFormLayout,
+        QFrame,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -959,8 +960,10 @@ def _build_gui_classes() -> tuple[type, type, type]:
         QMessageBox,
         QPushButton,
         QScrollArea,
+        QSizePolicy,
         QTableWidget,
         QTableWidgetItem,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )
@@ -1165,6 +1168,57 @@ def _build_gui_classes() -> tuple[type, type, type]:
             for origin, values in new_rows:
                 self._append(values, origin)
 
+    class CollapsibleSection(QWidget):
+        """A titled row that expands into a bordered content area.
+
+        The whole header is the click target and the arrow is drawn by the
+        style, so it reads as a disclosure control rather than a checkbox, and
+        a collapsed section leaves a single line instead of an empty frame.
+        ``isChecked``/``setChecked`` are kept so
+        :meth:`BaseWindow.save_checkable_state` still persists it.
+
+        Example:
+            section = CollapsibleSection("Detector setup", checked=True)
+            section.form.addRow("Distance", QLineEdit())
+            layout.addWidget(section)
+        """
+
+        def __init__(self, title: str, checked: bool = False, parent=None):
+            super().__init__(parent)
+            self.header = QToolButton()
+            self.header.setObjectName("collapsibleHeader")
+            self.header.setText(title)
+            self.header.setCheckable(True)
+            self.header.setChecked(checked)
+            self.header.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            self.header.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+            self.header.setAutoRaise(True)
+            self.header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+            self.area = QFrame()
+            self.area.setObjectName("collapsibleArea")
+            self.area.setVisible(checked)
+            self.form = QFormLayout(self.area)
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(self.header)
+            layout.addWidget(self.area)
+
+            self.header.toggled.connect(self._on_toggled)
+
+        def _on_toggled(self, checked: bool) -> None:
+            self.header.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+            self.area.setVisible(checked)
+
+        def isChecked(self) -> bool:
+            return self.header.isChecked()
+
+        def setChecked(self, checked: bool) -> None:
+            self.header.setChecked(checked)
+
+
     class SimulatorWindow(BaseWindow):
         def __init__(
             self,
@@ -1195,6 +1249,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
             geometry = settings.value("window_geom")
             if geometry:
                 self.restoreGeometry(geometry)
+            self.restore_checkable_state(
+                settings, self.advanced_group, "advanced_expanded", False
+            )
 
         def _build_ui(self) -> None:
             central = QWidget()
@@ -1244,7 +1301,8 @@ def _build_gui_classes() -> tuple[type, type, type]:
 
             root.addWidget(self._build_calibration_group())
             root.addWidget(self._build_detector_setup_group())
-            root.addWidget(self._build_advanced_group())
+            self.advanced_group = self._build_advanced_group()
+            root.addWidget(self.advanced_group)
             root.addWidget(self._build_records_group())
 
             controls = QHBoxLayout()
@@ -1335,9 +1393,9 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 )
             return group
 
-        def _build_advanced_group(self) -> QGroupBox:
-            group = QGroupBox("Advanced")
-            form = QFormLayout(group)
+        def _build_advanced_group(self) -> CollapsibleSection:
+            section = CollapsibleSection("Advanced")
+            form = section.form
             self.sample_orientation = QComboBox()
             self.sample_orientation.setEditable(True)
             self.sample_orientation.addItems(
@@ -1347,7 +1405,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
                 Qt.AlignRight | Qt.AlignVCenter
             )
             form.addRow("Sample orientation", self.sample_orientation)
-            return group
+            return section
 
         def _calibration_edits(self) -> dict[str, Any]:
             """Parse the calibration fields, raising on the first bad entry.
@@ -2205,6 +2263,10 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self._stop_worker()
             settings = QSettings("DashPVA", "RSMParameterIOC")
             settings.setValue("window_geom", self.saveGeometry())
+            self.save_checkable_state(
+                settings, self.advanced_group, "advanced_expanded"
+            )
+            settings.sync()
             super().closeEvent(event)
 
     _gui_classes_cache = (PollWorker, AxisTable, SimulatorWindow)

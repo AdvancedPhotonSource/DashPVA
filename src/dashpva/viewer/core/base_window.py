@@ -643,6 +643,14 @@ class BaseWindow(QMainWindow):
             return
         event.accept()
 
+    def save_checkable_state(self, settings, widget, key: str) -> None:
+        """Persist a checkable widget's checked state (e.g. a collapsible section)."""
+        settings.setValue(key, widget.isChecked())
+
+    def restore_checkable_state(self, settings, widget, key: str, default: bool = False) -> None:
+        """Restore a checked state previously saved with :meth:`save_checkable_state`."""
+        widget.setChecked(settings.value(key, default, type=bool))
+
     def set_viewer_name(self, name: str) -> None:
         """Set or update the viewer name used in status messages."""
         try:
