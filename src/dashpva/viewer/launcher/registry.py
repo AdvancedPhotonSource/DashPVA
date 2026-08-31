@@ -76,14 +76,6 @@ VIEWS = [
         'tooltip': 'Open Scan monitor (CLI: DashPVA monitor scan)',
         'requires': ('area-det',),
     },
-    {
-        'key': 'scan_viz',
-        'label': '2D Scan Visualization',
-        'section': 'Monitor',
-        'cmd': [sys.executable, '-m', 'dashpva.cli', 'monitor', 'scan'],
-        'tooltip': 'Live 2D scan data collection and visualization',
-        'requires': ('area-det',),
-    },
     # post analysis
     {
         'key': 'workbench',
