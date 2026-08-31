@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) UChicago Argonne, LLC -->
+<!-- See LICENSE file for details -->
+<ui version="4.0">
+ <class>AreaDetMousePosDockWidget</class>
+ <widget class="QWidget" name="AreaDetMousePosDockWidget">
+  <property name="windowTitle">
+   <string>Mouse Position</string>
+  </property>
+  <layout class="QFormLayout" name="layoutMousePos">
+   <property name="horizontalSpacing">
+    <number>6</number>
+   </property>
+   <property name="verticalSpacing">
+    <number>12</number>
+   </property>
+   <property name="leftMargin">
+    <number>10</number>
+   </property>
+   <property name="topMargin">
+    <number>10</number>
+   </property>
+   <property name="rightMargin">
+    <number>10</number>
+   </property>
+   <property name="bottomMargin">
+    <number>10</number>
+   </property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="lbl_row0">
+     <property name="text">
+      <string>X position:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLabel" name="mouse_x_val">
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="lbl_row1">
+     <property name="text">
+      <string>Y position:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLabel" name="mouse_y_val">
+     <property name="text">
+      <string>0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="lbl_row2">
+     <property name="text">
+      <string>Pixel Value:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLabel" name="mouse_px_val">
+     <property name="text">
+      <string>0.0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="lbl_row3">
+     <property name="text">
+      <string>H:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLabel" name="mouse_h">
+     <property name="text">
+      <string>0.0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="lbl_row4">
+     <property name="text">
+      <string>K:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QLabel" name="mouse_k">
+     <property name="text">
+      <string>0.0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="lbl_row5">
+     <property name="text">
+      <string>L:</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QLabel" name="mouse_l">
+     <property name="text">
+      <string>0.0</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Box</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignVCenter</set>
+     </property>
+     <property name="valueLabel" stdset="0">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
