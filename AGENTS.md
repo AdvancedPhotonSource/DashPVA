@@ -15,7 +15,6 @@ src/dashpva/
   viewer/
     area_det/             # Area detector live viewer
     scan_view.py          # Scan monitor
-    hkl_3d_slice_window.py
     phase_fitter.py
     pyFAI_analysis.py
     ...
