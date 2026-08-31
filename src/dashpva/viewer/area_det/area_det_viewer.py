@@ -191,6 +191,17 @@ class DiffractionImageWindow(BaseWindow):
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
+        # Establish the CA context on the GUI thread before any worker starts.
+        # ca.use_initial_context() in _connect_pv_pollers attaches to whichever
+        # context libca recorded first; without this the worker's own context
+        # became "initial", so channels it created were later used from another
+        # context -> "Unexpected channel ID", a None count in pyepics'
+        # __on_connect, and an exception escaping a C callback ("FATAL:
+        # exception not rethrown").
+        try:
+            ca.initialize_libca()
+        except Exception as e:
+            print(f'[Diffraction Image Viewer] CA init failed: {e}')
         self.restore_geometry()
         self.show()
         self.reader = None
