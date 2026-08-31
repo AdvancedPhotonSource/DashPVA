@@ -1,7 +1,7 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QDockWidget, QMenu
+from PyQt5.QtWidgets import QDockWidget, QMenu, QWidget
 
 
 class BaseDock(QDockWidget):
@@ -45,6 +45,40 @@ class BaseDock(QDockWidget):
         # default layout at startup.
         if self.action_window_dock is not None:
             self.action_window_dock.toggled.connect(self._raise_on_enable)
+
+    def load_ui(self, *parts) -> None:
+        """Load ``gui/<parts>`` as this dock's contents.
+
+        Every named widget in the file is also exposed as an attribute of the
+        dock, so callers use ``dock.sbox_min_intensity`` rather than reaching
+        through ``dock.widget()``. Names shadowing a QDockWidget attribute are
+        skipped so a widget called e.g. "widget" cannot break the dock.
+
+            class StatsDock(BaseDock):
+                def __init__(self, main_window=None):
+                    super().__init__(title="Stats", main_window=main_window)
+                    self.load_ui("hkl3d", "docks", "stats.ui")
+        """
+        from PyQt5 import uic
+
+        from dashpva.gui import ui_path
+        self._widget = QWidget(self)
+        try:
+            uic.loadUi(ui_path(*parts), self._widget)
+            for child in self._widget.findChildren(QWidget):
+                name = child.objectName()
+                if name and not name.startswith('qt_') and not hasattr(BaseDock, name):
+                    setattr(self, name, child)
+        except Exception as e:
+            # Keep an empty widget so a bad .ui cannot take the viewer down.
+            self._widget = QWidget(self)
+            try:
+                if hasattr(self.main_window, 'update_status'):
+                    self.main_window.update_status(
+                        f"{type(self).__name__} UI load failed: {e}", 'error')
+            except Exception:
+                pass
+        self.setWidget(self._widget)
 
     def _raise_on_enable(self, checked: bool) -> None:
         # Deferred one event-loop pass so the show()/tabify settles first.

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) UChicago Argonne, LLC -->
+<!-- See LICENSE file for details -->
+<ui version="4.0">
+ <class>HKL3DPlotModeDockWidget</class>
+ <widget class="QWidget" name="HKL3DPlotModeDockWidget">
+  <property name="windowTitle">
+   <string>Plot Mode</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPlotMode">
+   <property name="leftMargin"><number>8</number></property>
+   <property name="topMargin"><number>8</number></property>
+   <property name="rightMargin"><number>8</number></property>
+   <property name="bottomMargin"><number>8</number></property>
+   <item>
+    <widget class="QRadioButton" name="rb_post_scan">
+     <property name="text"><string>Post-scan (on complete)</string></property>
+     <property name="checked"><bool>true</bool></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QRadioButton" name="rb_realtime">
+     <property name="text"><string>Realtime (cumulative)</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QRadioButton" name="rb_per_frame">
+     <property name="text"><string>Per-frame (single frame)</string></property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="spacerPlotMode">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

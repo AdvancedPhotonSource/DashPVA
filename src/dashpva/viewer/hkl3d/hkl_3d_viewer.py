@@ -20,7 +20,6 @@ from dashpva.viewer.core.base_window import BaseWindow
 from dashpva.viewer.hkl3d.docks.image import ImageDock
 from dashpva.viewer.hkl3d.docks.plot_mode import PlotModeDock
 from dashpva.viewer.hkl3d.docks.stats import StatsDock
-from dashpva.viewer.hkl_3d_slice_window import HKL3DSliceWindow
 
 
 class ConfigDialog(QDialog, LogMixin):
@@ -117,7 +116,6 @@ class HKLImageWindow(BaseWindow):
         self.rbtn_F              = self.image_dock.rbtn_F
         self.log_image           = self.image_dock.log_image
         self.btn_reset_camera    = self.image_dock.btn_reset_camera
-        self.btn_3d_slice_window = self.image_dock.btn_3d_slice_window
         self.btn_plot_cache      = self.image_dock.btn_plot_cache
         self.btn_save_h5         = self.image_dock.btn_save_h5
 
@@ -160,7 +158,6 @@ class HKLImageWindow(BaseWindow):
         self.sbox_max_intensity.editingFinished.connect(self.update_intensity)
         self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
-        self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
 
         self.restore_geometry()
         self.restore_dock_state()
@@ -600,16 +597,6 @@ class HKLImageWindow(BaseWindow):
             self.file_writer_thread.wait()
         super().closeEvent(event)
 
-    def open_3d_slice_window(self) -> None:
-        try:
-            self.slice_window = HKL3DSliceWindow(self) 
-            self.slice_window.show()
-        except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception("Failed to open 3D slice window", exc_info=e)
-            except Exception:
-                pass
 
 
 if __name__ == '__main__':
