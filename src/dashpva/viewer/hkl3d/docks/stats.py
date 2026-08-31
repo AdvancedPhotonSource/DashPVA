@@ -46,21 +46,29 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Image Data Type:"),  self.data_type_val)
 
         self.sbox_min_intensity = QDoubleSpinBox()
+
+        self.sbox_min_intensity.setObjectName("sbox_min_intensity")
         self.sbox_min_intensity.setRange(-1e10, 1e10)
         self.sbox_min_intensity.setMinimumHeight(30)
         self.sbox_min_intensity.setMaximumWidth(150)
 
         self.sbox_max_intensity = QDoubleSpinBox()
+
+        self.sbox_max_intensity.setObjectName("sbox_max_intensity")
         self.sbox_max_intensity.setRange(-1e10, 1e10)
         self.sbox_max_intensity.setMinimumHeight(30)
         self.sbox_max_intensity.setMaximumWidth(150)
 
         self.sbox_min_opacity = QDoubleSpinBox()
+
+        self.sbox_min_opacity.setObjectName("sbox_min_opacity")
         self.sbox_min_opacity.setRange(0.0, 1.0)
         self.sbox_min_opacity.setSingleStep(0.1)
         self.sbox_min_opacity.setMaximumWidth(150)
 
         self.sbox_max_opacity = QDoubleSpinBox()
+
+        self.sbox_max_opacity.setObjectName("sbox_max_opacity")
         self.sbox_max_opacity.setRange(0.0, 1.0)
         self.sbox_max_opacity.setSingleStep(0.1)
         self.sbox_max_opacity.setValue(1.0)

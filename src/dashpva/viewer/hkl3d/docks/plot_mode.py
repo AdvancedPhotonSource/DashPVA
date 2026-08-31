@@ -24,8 +24,11 @@ class PlotModeDock(BaseDock):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
         self.rb_post_scan = QRadioButton("Post-scan (on complete)")
+        self.rb_post_scan.setObjectName("rb_post_scan")
         self.rb_realtime  = QRadioButton("Realtime (cumulative)")
+        self.rb_realtime.setObjectName("rb_realtime")
         self.rb_per_frame = QRadioButton("Per-frame (single frame)")
+        self.rb_per_frame.setObjectName("rb_per_frame")
         self.rb_post_scan.setChecked(True)
         for rb in (self.rb_post_scan, self.rb_realtime, self.rb_per_frame):
             layout.addWidget(rb)

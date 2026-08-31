@@ -33,7 +33,9 @@ class ImageDock(BaseDock):
         order_row = QHBoxLayout()
         order_row.addWidget(QLabel("Image Pixel Order:"))
         self.rbtn_C = QRadioButton("C")
+        self.rbtn_C.setObjectName("rbtn_C")
         self.rbtn_F = QRadioButton("Fortran")
+        self.rbtn_F.setObjectName("rbtn_F")
         self.rbtn_F.setChecked(True)
         self._pixel_order_group = QButtonGroup(container)
         self._pixel_order_group.addButton(self.rbtn_C)
@@ -46,6 +48,7 @@ class ImageDock(BaseDock):
         # Log image + reset camera row
         tools_row = QHBoxLayout()
         self.log_image = QCheckBox("Log Image")
+        self.log_image.setObjectName("log_image")
         self.btn_reset_camera = QPushButton("Reset Camera")
         tools_row.addWidget(self.log_image)
         tools_row.addWidget(self.btn_reset_camera)
