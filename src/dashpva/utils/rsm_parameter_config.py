@@ -16,7 +16,12 @@ import numpy as np
 import dashpva.settings as app_settings
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.config.source import ConfigSaveResult, ConfigSaveStatus
-from dashpva.utils.rsm_geometry import RotationAxis, validate_sample_orientation
+from dashpva.utils.rsm_geometry import (
+    FRAME_AXIS_ORDERS,
+    RotationAxis,
+    validate_sample_orientation,
+)
+from dashpva.utils.units import normalize_angle_units, normalize_length_units
 
 _RECORD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 _PREFIX = re.compile(r"[A-Za-z0-9_.:-]*")
@@ -250,13 +255,13 @@ def _normalize_axis(role: str, index: int, values: object) -> AxisParameter:
     if direction_pattern.fullmatch(direction) is None:
         allowed = "[xyzk][+-]" if role == "sample" else "[xyz][+-]"
         raise ValueError(f"{role} axis {index} DIRECTION must match {allowed}")
-    if angle_units not in {"deg", "degree", "degrees"}:
-        raise ValueError(
-            f"{role} axis {index} ANGLE_UNITS must be degrees until unit conversion lands"
-        )
+    # ANGLE_UNITS describes the *source PV*, not the published record. The IOC
+    # converts to degrees on publish (see _to_degrees in ioc_rsm_parameter), so
+    # every downstream consumer and the geometry model itself stay degrees-only.
+    angle_units = normalize_angle_units(angle_units, f"{role} axis {index} ANGLE_UNITS")
 
     return AxisParameter(
-        label, record_name, source_pv, direction, "deg", spec_motor_name
+        label, record_name, source_pv, direction, angle_units, spec_motor_name
     )
 
 
@@ -356,6 +361,84 @@ def _static_geometry(parameters: Mapping[str, Any]) -> tuple[
         raise ValueError("DETECTOR_SETUP.DISTANCE must be finite and positive")
     if not detector["UNITS"]:
         raise ValueError("DETECTOR_SETUP.UNITS is required")
+
+    # --- PR 3 calibration ------------------------------------------------
+    # All optional: a profile that omits every one of these behaves exactly as
+    # it did before, so existing beamline profiles keep working untouched.
+    normalize_length_units(detector["UNITS"], "DETECTOR_SETUP.UNITS")
+    for key, source_key in (
+        ("DISTANCE_UNITS", "DISTANCE"),
+        ("SIZE_UNITS", "SIZE"),
+        ("PIXEL_SIZE_UNITS", "PIXEL_SIZE"),
+    ):
+        if key in detector_value:
+            detector[key] = normalize_length_units(
+                detector_value[key], f"DETECTOR_SETUP.{key}"
+            )
+        del source_key
+
+    if "PIXEL_SIZE" in detector_value:
+        pixel_size = _finite_vector(
+            detector_value["PIXEL_SIZE"], "DETECTOR_SETUP.PIXEL_SIZE", 2
+        )
+        if any(value <= 0 for value in pixel_size):
+            raise ValueError("DETECTOR_SETUP.PIXEL_SIZE values must be positive")
+        detector["PIXEL_SIZE"] = list(pixel_size)
+
+    if "DETECTOR_SHAPE" in detector_value:
+        shape = _finite_vector(
+            detector_value["DETECTOR_SHAPE"], "DETECTOR_SETUP.DETECTOR_SHAPE", 2
+        )
+        if any(value <= 0 or value != int(value) for value in shape):
+            raise ValueError(
+                "DETECTOR_SETUP.DETECTOR_SHAPE must be two positive integers "
+                "(the full unbinned detector, not the acquired frame)"
+            )
+        detector["DETECTOR_SHAPE"] = [int(value) for value in shape]
+
+    if "BINNING" in detector_value:
+        binning = _finite_vector(detector_value["BINNING"], "DETECTOR_SETUP.BINNING", 2)
+        if any(value < 1 or value != int(value) for value in binning):
+            raise ValueError("DETECTOR_SETUP.BINNING must be two positive integers")
+        detector["BINNING"] = [int(value) for value in binning]
+
+    if "ROI" in detector_value:
+        roi = _finite_vector(detector_value["ROI"], "DETECTOR_SETUP.ROI", 4)
+        if any(value != int(value) for value in roi):
+            raise ValueError("DETECTOR_SETUP.ROI must contain four integers")
+        roi = [int(value) for value in roi]
+        if not (0 <= roi[0] < roi[1] and 0 <= roi[2] < roi[3]):
+            raise ValueError(
+                "DETECTOR_SETUP.ROI must be half-open unbinned bounds "
+                "[start1, stop1, start2, stop2) with start < stop"
+            )
+        detector["ROI"] = roi
+
+    # Units are validated here but values are NOT converted: the profile keeps
+    # whatever the beamline declared, and conversion to the canonical eV/mm/deg
+    # happens once, when the DetectorModel is built. Converting here instead
+    # would make the stored value and the stored unit disagree, so a second
+    # normalization pass would convert again -- normalization must be idempotent.
+    tilt_units = normalize_angle_units(
+        detector_value.get("ANGLE_UNITS", "deg"), "DETECTOR_SETUP.ANGLE_UNITS"
+    )
+    if "ANGLE_UNITS" in detector_value:
+        detector["ANGLE_UNITS"] = tilt_units
+    for key in ("DETROT", "TILT", "TILTAZIMUTH"):
+        if key in detector_value:
+            value = float(detector_value[key])
+            if not math.isfinite(value):
+                raise ValueError(f"DETECTOR_SETUP.{key} must be a finite angle")
+            detector[key] = value
+
+    if "FRAME_AXIS_ORDER" in detector_value:
+        order = str(detector_value["FRAME_AXIS_ORDER"]).strip().lower()
+        if order not in FRAME_AXIS_ORDERS:
+            raise ValueError(
+                f"DETECTOR_SETUP.FRAME_AXIS_ORDER must be one of {FRAME_AXIS_ORDERS}"
+            )
+        detector["FRAME_AXIS_ORDER"] = order
+
     return ub, primary, inplane, surface, detector
 
 

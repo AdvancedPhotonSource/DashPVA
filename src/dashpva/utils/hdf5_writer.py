@@ -23,7 +23,11 @@ from dashpva.utils.hkl_axes import (
     resolved_axis_groups,
 )
 from dashpva.utils.log_manager import LogMixin
-from dashpva.utils.rsm_geometry import RotationAxis, direction_vector
+from dashpva.utils.rsm_geometry import (
+    DETECTOR_SETUP_FIELDS,
+    RotationAxis,
+    direction_vector,
+)
 
 
 class HDF5Writer(QObject, LogMixin):
@@ -320,6 +324,22 @@ class HDF5Writer(QObject, LogMixin):
                         self._write_scan_pv_dataset(
                             det_grp, key, detector.get(key), merged_metadata
                         )
+                    # Calibration the beamline declares as a literal rather than
+                    # publishing as a PV (pixel size, ROI, binning, tilt, units).
+                    # Persisting it means the offline converter reads the same
+                    # calibration the live path used instead of assuming
+                    # full-frame, unbinned, untilted millimetres.
+                    canonical_detector = (
+                        parameters.get('DETECTOR_SETUP', {})
+                        if isinstance(parameters, dict)
+                        else {}
+                    )
+                    if isinstance(canonical_detector, dict):
+                        for key in DETECTOR_SETUP_FIELDS:
+                            value = canonical_detector.get(key)
+                            if value is None or key in det_grp:
+                                continue
+                            self._write_typed_literal_dataset(det_grp, key, value)
 
             rsm = data.get('rsm')
             if HKL_IN_CONFIG and rsm:
@@ -650,6 +670,38 @@ class HDF5Writer(QObject, LogMixin):
 
     @staticmethod
     def _write_literal_dataset(group: h5py.Group, name: str, value: str) -> None:
+        group.create_dataset(
+            name, data=str(value), dtype=h5py.string_dtype(encoding='utf-8')
+        )
+
+    @staticmethod
+    def _write_typed_literal_dataset(group: h5py.Group, name: str, value) -> None:
+        """Write a literal preserving numeric type.
+
+        Numbers must land as numbers: commit 687e943 fixed readers that were
+        getting reprs like '[6 6 6]' back, and stringifying PIXEL_SIZE or ROI
+        here would reintroduce exactly that. Only genuine strings (units,
+        directions, frame axis order) are stored as text.
+        """
+        if isinstance(value, str):
+            group.create_dataset(
+                name, data=value, dtype=h5py.string_dtype(encoding='utf-8')
+            )
+            return
+        if isinstance(value, (list, tuple, np.ndarray)):
+            array = np.asarray(value)
+            if array.dtype.kind in ('i', 'u', 'f', 'b'):
+                group.create_dataset(name, data=array)
+                return
+            group.create_dataset(
+                name,
+                data=np.asarray([str(item) for item in array.ravel()]),
+                dtype=h5py.string_dtype(encoding='utf-8'),
+            )
+            return
+        if isinstance(value, (bool, int, float, np.number)):
+            group.create_dataset(name, data=value)
+            return
         group.create_dataset(
             name, data=str(value), dtype=h5py.string_dtype(encoding='utf-8')
         )

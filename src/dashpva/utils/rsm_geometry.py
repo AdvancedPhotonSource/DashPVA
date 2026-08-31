@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 import warnings
 from dataclasses import dataclass
@@ -12,11 +13,23 @@ from typing import Literal, Mapping, Sequence
 import numpy as np
 import xrayutilities as xu
 
+from dashpva.utils.config.hkl import SECTION_CHANNEL_FIELDS
+from dashpva.utils.units import normalize_length_units, to_deg, to_mm
+
 AxisRole = Literal["sample", "detector"]
 
 _SAMPLE_DIRECTION = re.compile(r"[xyzk][+-]")
 _DETECTOR_DIRECTION = re.compile(r"[xyz][+-]")
 _EXPLICIT_SAMPLE_ORIENTATION = re.compile(r"[xyz][+-]")
+
+#: Array axis 0 of an acquired frame runs along ``pixel_direction_1``. This is
+#: the layout ``Ang2Q.area`` returns, so no transform is needed.
+FRAME_AXIS_DIRECT = "direction1_direction2"
+#: Array axis 0 runs along ``pixel_direction_2`` instead -- the detector is
+#: read out transposed relative to the calibration. Q is transposed to match
+#: the frame so intensity, mask and Q always share one indexing convention.
+FRAME_AXIS_SWAPPED = "direction2_direction1"
+FRAME_AXIS_ORDERS = (FRAME_AXIS_DIRECT, FRAME_AXIS_SWAPPED)
 
 
 def _vector3(value: Sequence[float], label: str) -> tuple[float, float, float]:
@@ -109,7 +122,30 @@ class RotationAxis:
 
 @dataclass(frozen=True, slots=True)
 class DetectorModel:
-    """Legacy area-detector calibration used by the shared PR 1 builder."""
+    """Area-detector calibration in unbinned, full-frame coordinates.
+
+    The central invariant: ``center_channel``, ``shape`` and ``pixel_width``
+    always describe the **whole physical detector at binning 1**, never the
+    frame that was actually acquired. Cropping and binning are handed to
+    xrayutilities as ``roi``/``Nav``, which applies them itself
+    (``QConversion._get_detparam_area`` divides the centre by Nav, multiplies
+    the pixel width by Nav, and maps an unbinned ROI into binned channels).
+
+    Pre-shifting the centre or pre-scaling the pixel width to match a cropped
+    frame therefore double-applies the correction. The legacy
+    ``SIZE / frame_shape`` pixel width did exactly that -- it silently absorbed
+    binning into the pixel size, so a 2x-binned scan produced a Q scale wrong
+    by a factor of two with no error raised. That derivation is now permitted
+    only for full-frame, unbinned data (see ``pixel_width_from_size``).
+
+    ``roi`` is half-open in unbinned channels, ``[start1, stop1, start2,
+    stop2)``, and its span must be exactly divisible by ``binning`` --
+    xrayutilities would otherwise ``ceil`` the span and hand back a frame one
+    channel larger than the detector actually produced.
+
+    Lengths are millimetres, angles degrees; convert at the boundary with
+    :mod:`dashpva.utils.units`.
+    """
 
     pixel_direction_1: str
     pixel_direction_2: str
@@ -118,6 +154,11 @@ class DetectorModel:
     pixel_width: tuple[float, float]
     distance: float
     roi: tuple[int, int, int, int] | None = None
+    binning: tuple[int, int] = (1, 1)
+    detrot: float = 0.0
+    tilt: float = 0.0
+    tiltazimuth: float = 0.0
+    frame_axis_order: str = FRAME_AXIS_DIRECT
 
     def __post_init__(self) -> None:
         for field_name in ("pixel_direction_1", "pixel_direction_2"):
@@ -157,6 +198,81 @@ class DetectorModel:
         if not (0 <= roi[0] < roi[1] <= shape[0] and 0 <= roi[2] < roi[3] <= shape[1]):
             raise ValueError(f"Detector roi {roi!r} falls outside detector shape {shape!r}.")
         object.__setattr__(self, "roi", roi)
+
+        binning = tuple(int(value) for value in self.binning)
+        if len(binning) != 2 or any(value < 1 for value in binning):
+            raise ValueError(
+                f"Detector binning must be two positive integers, got {self.binning!r}."
+            )
+        object.__setattr__(self, "binning", binning)
+
+        # xrayutilities ceils a non-divisible span, which would silently return
+        # one channel more than the detector produced. Reject it instead.
+        for index, (span, factor, axis) in enumerate(
+            ((roi[1] - roi[0], binning[0], 1), (roi[3] - roi[2], binning[1], 2))
+        ):
+            if span % factor:
+                raise ValueError(
+                    f"Detector ROI span {span} along direction {axis} is not divisible by "
+                    f"binning {factor}. xrayutilities would round the span up and report a "
+                    f"frame larger than the detector produced; adjust the ROI or binning."
+                )
+
+        for field_name in ("detrot", "tilt", "tiltazimuth"):
+            value = float(getattr(self, field_name))
+            if not np.isfinite(value):
+                raise ValueError(f"Detector {field_name} must be a finite angle in degrees.")
+            object.__setattr__(self, field_name, value)
+
+        order = str(self.frame_axis_order).strip().lower()
+        if order not in FRAME_AXIS_ORDERS:
+            raise ValueError(
+                f"Detector frame_axis_order must be one of {FRAME_AXIS_ORDERS}, got "
+                f"{self.frame_axis_order!r}."
+            )
+        object.__setattr__(self, "frame_axis_order", order)
+
+    @property
+    def acquired_shape(self) -> tuple[int, int]:
+        """Shape of one acquired frame after this ROI and binning.
+
+        Compare against the real frame shape before converting: a mismatch
+        means the calibration and the data disagree about what was read out,
+        which otherwise surfaces as a plausible but wrongly-scaled volume.
+        """
+        roi = self.roi
+        rows = (roi[1] - roi[0]) // self.binning[0]
+        cols = (roi[3] - roi[2]) // self.binning[1]
+        if self.frame_axis_order == FRAME_AXIS_SWAPPED:
+            return (cols, rows)
+        return (rows, cols)
+
+    def require_frame_shape(self, frame_shape: Sequence[int]) -> None:
+        """Raise unless ``frame_shape`` matches :attr:`acquired_shape`."""
+        actual = tuple(int(value) for value in tuple(frame_shape)[:2])
+        expected = self.acquired_shape
+        if actual != expected:
+            raise ValueError(
+                f"Acquired frame shape {actual} does not match the calibration: ROI "
+                f"{self.roi} with binning {self.binning} and frame axis order "
+                f"'{self.frame_axis_order}' implies {expected}. Check the detector ROI, "
+                f"binning, or frame axis order in the profile."
+            )
+
+    def orient_frame_array(self, array: np.ndarray) -> np.ndarray:
+        """Map a detector-ordered array onto the acquired frame layout.
+
+        ``Ang2Q.area`` always returns ``(direction1, direction2)``. When the
+        detector reads out transposed, the trailing two axes are swapped so Q,
+        intensity and mask share one indexing convention. Leading axes (a frame
+        batch) are preserved.
+        """
+        if self.frame_axis_order == FRAME_AXIS_DIRECT:
+            return array
+        data = np.asarray(array)
+        if data.ndim < 2:
+            raise ValueError("Frame-axis reordering needs at least two dimensions.")
+        return np.swapaxes(data, -1, -2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +426,8 @@ def build_hxrd(model: RSMGeometry) -> BuiltRSMGeometry:
         sampleor=model.sample_orientation,
     )
     detector = model.detector
+    # Nch/cch/pwidth are the unbinned full-frame calibration; roi and Nav are
+    # passed through so xrayutilities applies cropping and binning itself.
     hxrd.Ang2Q.init_area(
         detector.pixel_direction_1,
         detector.pixel_direction_2,
@@ -320,9 +438,221 @@ def build_hxrd(model: RSMGeometry) -> BuiltRSMGeometry:
         pwidth1=detector.pixel_width[0],
         pwidth2=detector.pixel_width[1],
         distance=detector.distance,
+        detrot=detector.detrot,
+        tilt=detector.tilt,
+        tiltazimuth=detector.tiltazimuth,
         roi=list(detector.roi),
+        Nav=list(detector.binning),
     )
     return BuiltRSMGeometry(model=model, hxrd=hxrd)
+
+
+def pixel_width_from_size(
+    size: Sequence[float],
+    frame_shape: Sequence[int],
+    detector: Mapping[str, object] | None = None,
+    *,
+    binning: Sequence[int] = (1, 1),
+    roi: Sequence[int] | None = None,
+) -> tuple[float, float]:
+    """Derive pixel width from a total detector size, for legacy data only.
+
+    ``SIZE / frame_shape`` is only the physical pixel width when the frame is
+    the whole unbinned detector. Under an ROI it divides the full width by a
+    cropped channel count; under binning it divides by too few channels. Both
+    yield a wrong Q scale that still looks reasonable, so this refuses rather
+    than guessing whenever the frame is not full-frame and unbinned.
+    """
+    del detector  # accepted for call-site symmetry; nothing here needs it
+    binning = tuple(int(value) for value in binning)
+    if any(value != 1 for value in binning):
+        raise ValueError(
+            f"Cannot derive pixel width from total detector SIZE when binning is "
+            f"{binning}: the division would absorb the binning factor. Provide an "
+            f"explicit unbinned PIXEL_SIZE in the profile."
+        )
+    shape = tuple(int(value) for value in tuple(frame_shape)[:2])
+    if roi is not None:
+        roi = tuple(int(value) for value in roi)
+        if (roi[1] - roi[0], roi[3] - roi[2]) != shape:
+            raise ValueError(
+                f"Cannot derive pixel width from total detector SIZE under ROI {roi}: "
+                f"the division would use a cropped channel count. Provide an explicit "
+                f"unbinned PIXEL_SIZE in the profile."
+            )
+    values = tuple(float(value) for value in tuple(size)[:2])
+    if len(values) != 2 or any(value <= 0 for value in values):
+        raise ValueError(f"Detector SIZE must be two positive lengths, got {size!r}.")
+    if any(value <= 0 for value in shape):
+        raise ValueError(f"Detector frame shape must be positive, got {frame_shape!r}.")
+    return (values[0] / shape[0], values[1] / shape[1])
+
+
+#: DETECTOR_SETUP fields that detector_model_from_setup understands. Live paths
+#: resolve each through the profile's channel map, so a beamline exposes only
+#: the ones it actually publishes.
+DETECTOR_SETUP_FIELDS = (
+    "PIXEL_DIRECTION_1",
+    "PIXEL_DIRECTION_2",
+    "CENTER_CHANNEL_PIXEL",
+    "DISTANCE",
+    "SIZE",
+    "PIXEL_SIZE",
+    "DETECTOR_SHAPE",
+    "BINNING",
+    "ROI",
+    "DETROT",
+    "TILT",
+    "TILTAZIMUTH",
+    "UNITS",
+    "DISTANCE_UNITS",
+    "SIZE_UNITS",
+    "PIXEL_SIZE_UNITS",
+    "ANGLE_UNITS",
+    "FRAME_AXIS_ORDER",
+)
+
+_DETECTOR_REQUIRED_FIELDS = (
+    "PIXEL_DIRECTION_1",
+    "PIXEL_DIRECTION_2",
+    "CENTER_CHANNEL_PIXEL",
+    "DISTANCE",
+)
+
+
+def detector_setup_from_channels(
+    section: Mapping[str, str],
+    values: Mapping[str, object],
+    canonical: Mapping[str, object] | None = None,
+) -> dict:
+    """Resolve a DETECTOR_SETUP channel map into a literal setup mapping.
+
+    ``section`` maps a field name to the PV/attribute name that carries it;
+    ``values`` maps that name to the value most recently seen. ``canonical`` is
+    the profile's own ``IOC_RSM_PARAMETER.DETECTOR_SETUP`` table, used as the
+    base so calibration the IOC does not publish as a record (pixel size, ROI,
+    binning, tilt, frame axis order) still reaches live geometry. Only the six
+    fields in the public IOC ``DETECTOR_SETUP`` channel contract may overlay
+    that base. Both inputs are copied so constructing live geometry cannot
+    mutate the raw profile or a frame's metadata. Fields neither side supplies
+    are omitted so
+    :func:`detector_model_from_setup` falls back to its legacy defaults rather
+    than reading a ``None`` as a number.
+    """
+    if canonical is not None and not isinstance(canonical, Mapping):
+        raise TypeError("Canonical DETECTOR_SETUP must be a mapping.")
+    setup: dict = copy.deepcopy(dict(canonical or {}))
+    for field in DETECTOR_SETUP_FIELDS:
+        if setup.get(field) is None:
+            setup.pop(field, None)
+    for field in SECTION_CHANNEL_FIELDS["DETECTOR_SETUP"]:
+        channel = section.get(field)
+        if not channel or channel not in values:
+            continue
+        value = values[channel]
+        if value is None:
+            continue
+        setup[field] = copy.deepcopy(value)
+    missing = [field for field in _DETECTOR_REQUIRED_FIELDS if field not in setup]
+    if missing:
+        raise ValueError(
+            f"DETECTOR_SETUP is missing required value(s): {', '.join(missing)}."
+        )
+    if "SIZE" not in setup and "PIXEL_SIZE" not in setup:
+        raise ValueError(
+            "DETECTOR_SETUP needs either PIXEL_SIZE (preferred) or SIZE to determine "
+            "the physical pixel width."
+        )
+    return setup
+
+
+def detector_model_from_setup(
+    setup: Mapping[str, object],
+    frame_shape: Sequence[int],
+    *,
+    verify_frame_shape: bool = True,
+) -> DetectorModel:
+    """Build a DetectorModel from a DETECTOR_SETUP mapping, converting units.
+
+    This is the single boundary where declared units become canonical mm and
+    degrees. Profiles keep whatever the beamline declared; nothing downstream
+    of here sees a unit string.
+
+    A setup with none of the PR 3 keys reproduces the previous behavior
+    exactly -- full-frame, unbinned, no tilt, pixel width derived from SIZE --
+    so existing beamline profiles convert identically.
+    """
+    def _length(key: str, unit_key: str, default_unit: object) -> object:
+        return setup.get(unit_key, default_unit) if key in setup else default_unit
+
+    base_units = setup.get("UNITS", "mm")
+    normalize_length_units(base_units, "DETECTOR_SETUP.UNITS")
+
+    distance = to_mm(
+        setup["DISTANCE"],
+        _length("DISTANCE", "DISTANCE_UNITS", base_units),
+        "DETECTOR_SETUP.DISTANCE",
+    )
+
+    frame = tuple(int(value) for value in tuple(frame_shape)[:2])
+    binning = tuple(int(value) for value in setup.get("BINNING", (1, 1)))
+    order = str(setup.get("FRAME_AXIS_ORDER", FRAME_AXIS_DIRECT)).strip().lower()
+    if order not in FRAME_AXIS_ORDERS:
+        raise ValueError(
+            f"DETECTOR_SETUP.FRAME_AXIS_ORDER must be one of {FRAME_AXIS_ORDERS}."
+        )
+
+    # The acquired frame is in read-out order; the calibration is in detector
+    # (direction1, direction2) order. Undo the swap before reasoning about ROI.
+    detector_frame = (frame[1], frame[0]) if order == FRAME_AXIS_SWAPPED else frame
+
+    if "DETECTOR_SHAPE" in setup:
+        shape = tuple(int(value) for value in setup["DETECTOR_SHAPE"])
+    else:
+        # Legacy: the frame is assumed to be the whole unbinned detector.
+        shape = (detector_frame[0] * binning[0], detector_frame[1] * binning[1])
+
+    roi = setup.get("ROI")
+    roi = tuple(int(value) for value in roi) if roi is not None else (0, shape[0], 0, shape[1])
+
+    if "PIXEL_SIZE" in setup:
+        raw = tuple(float(value) for value in setup["PIXEL_SIZE"])
+        units = _length("PIXEL_SIZE", "PIXEL_SIZE_UNITS", base_units)
+        pixel_width = (
+            to_mm(raw[0], units, "DETECTOR_SETUP.PIXEL_SIZE"),
+            to_mm(raw[1], units, "DETECTOR_SETUP.PIXEL_SIZE"),
+        )
+    else:
+        units = _length("SIZE", "SIZE_UNITS", base_units)
+        size_mm = tuple(
+            to_mm(value, units, "DETECTOR_SETUP.SIZE") for value in tuple(setup["SIZE"])[:2]
+        )
+        pixel_width = pixel_width_from_size(
+            size_mm, shape, binning=binning, roi=roi if "ROI" in setup else None
+        )
+
+    angle_units = setup.get("ANGLE_UNITS", "deg")
+    tilts = {
+        name.lower(): to_deg(setup[name], angle_units, f"DETECTOR_SETUP.{name}")
+        for name in ("DETROT", "TILT", "TILTAZIMUTH")
+        if name in setup
+    }
+
+    model = DetectorModel(
+        pixel_direction_1=str(setup["PIXEL_DIRECTION_1"]),
+        pixel_direction_2=str(setup["PIXEL_DIRECTION_2"]),
+        center_channel=tuple(float(value) for value in tuple(setup["CENTER_CHANNEL_PIXEL"])[:2]),
+        shape=shape,
+        pixel_width=pixel_width,
+        distance=distance,
+        roi=roi,
+        binning=binning,
+        frame_axis_order=order,
+        **tilts,
+    )
+    if verify_frame_shape:
+        model.require_frame_shape(frame)
+    return model
 
 
 def calculate_q(
@@ -346,9 +676,13 @@ def calculate_q(
     ub = geometry.ub if ub_matrix is None else np.asarray(
         _matrix3(ub_matrix, "UB matrix"), dtype=float
     )
-    return geometry.hxrd.Ang2Q.area(
+    qx, qy, qz = geometry.hxrd.Ang2Q.area(
         *sample_angles,
         *detector_angles,
         UB=ub,
         deg=True,
     )
+    # Ang2Q.area returns (direction1, direction2); hand back the acquired frame
+    # layout so callers can index Q, intensity and mask identically.
+    orient = geometry.model.detector.orient_frame_array
+    return orient(qx), orient(qy), orient(qz)

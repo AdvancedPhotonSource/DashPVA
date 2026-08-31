@@ -10,12 +10,13 @@ import dashpva.settings as app_settings
 from dashpva.utils.hkl_axes import resolved_axis_groups
 from dashpva.utils.rsm_geometry import (
     BuiltRSMGeometry,
-    DetectorModel,
     RotationAxis,
     RSMGeometry,
     build_hxrd,
     calculate_q,
+    detector_model_from_setup,
 )
+from dashpva.utils.units import to_eV
 
 """Utilities for converting detector frames into reciprocal space (RSM).
 This module provides a concise RSMConverter focused on the essential
@@ -149,7 +150,7 @@ class RSMConverter:
             if "ENERGY_UNITS" in meta["SPEC"]
             else "keV"
         )
-        energy = energy_value * self._energy_factor_to_ev(units)
+        energy = to_eV(energy_value, units, "photon energy")
         vectors = np.asarray([primary, inplane, surface], dtype=float)
         if not np.isfinite(vectors).all():
             raise ValueError("Beam and sample reference directions must be finite.")
@@ -174,16 +175,6 @@ class RSMConverter:
         aliases = ", ".join((canonical, *legacy))
         raise KeyError(f"Missing HKL metadata group; expected one of: {aliases}.")
 
-    @staticmethod
-    def _energy_factor_to_ev(units: str) -> float:
-        normalized = str(units).strip().lower()
-        factors = {"ev": 1.0, "kev": 1_000.0, "mev": 1_000_000.0}
-        try:
-            return factors[normalized]
-        except KeyError as exc:
-            raise ValueError(
-                f"Unsupported photon energy units {units!r}; expected eV, keV, or MeV."
-            ) from exc
 
     def get_intensity(self, filename: str) -> np.ndarray:
         """Return detector intensities as a flattened array."""
@@ -191,6 +182,58 @@ class RSMConverter:
             return f["entry/data/data"][:].ravel()
 
     # Detector parameters
+    def _detector_setup_mapping(self, h5_file: h5py.File) -> dict:
+        """Read DETECTOR_SETUP into a plain mapping for detector_model_from_setup.
+
+        Only keys actually present in the file are returned, so a legacy file
+        with no calibration extensions produces exactly the previous
+        full-frame, unbinned, untilted model.
+        """
+        det = h5_file["entry/data/metadata/HKL/DETECTOR_SETUP"]
+        setup: dict = {
+            "PIXEL_DIRECTION_1": self._static_str(det["PIXEL_DIRECTION_1"], "pixel direction 1"),
+            "PIXEL_DIRECTION_2": self._static_str(det["PIXEL_DIRECTION_2"], "pixel direction 2"),
+            "CENTER_CHANNEL_PIXEL": [
+                float(value)
+                for value in self._static_numeric(
+                    det["CENTER_CHANNEL_PIXEL"], 2, "detector center"
+                )
+            ],
+            "DISTANCE": float(
+                self._static_numeric(det["DISTANCE"], 1, "detector distance")[0]
+            ),
+        }
+        if "SIZE" in det:
+            setup["SIZE"] = [
+                float(value)
+                for value in self._static_numeric(det["SIZE"], 2, "detector size")
+            ]
+        for key, count, label in (
+            ("PIXEL_SIZE", 2, "detector pixel size"),
+            ("DETECTOR_SHAPE", 2, "unbinned detector shape"),
+            ("BINNING", 2, "detector binning"),
+            ("ROI", 4, "detector roi"),
+            ("DETROT", 1, "detector rotation"),
+            ("TILT", 1, "detector tilt"),
+            ("TILTAZIMUTH", 1, "detector tilt azimuth"),
+        ):
+            if key in det:
+                values = [
+                    float(value) for value in self._static_numeric(det[key], count, label)
+                ]
+                setup[key] = values[0] if count == 1 else values
+        for key, label in (
+            ("UNITS", "detector length units"),
+            ("DISTANCE_UNITS", "detector distance units"),
+            ("SIZE_UNITS", "detector size units"),
+            ("PIXEL_SIZE_UNITS", "detector pixel size units"),
+            ("ANGLE_UNITS", "detector angle units"),
+            ("FRAME_AXIS_ORDER", "detector frame axis order"),
+        ):
+            if key in det:
+                setup[key] = self._static_str(det[key], label)
+        return setup
+
     def get_detector_setup(self, h5_file: h5py.File, shape: tuple):
         """Return detector setup: directions, center pixels, size, pixel widths, distance, roi."""
         det = h5_file["entry/data/metadata/HKL/DETECTOR_SETUP"]
@@ -329,15 +372,8 @@ class RSMConverter:
     ) -> RSMGeometry:
         """Translate legacy file metadata into the canonical shared model."""
         primary, inplane, surface, ub, energy = self.get_physics_params(h5_file)
-        p_dir1, p_dir2, cch1, cch2, nch1, nch2, pw1, pw2, dist, roi = self.get_detector_setup(h5_file, shape)
-        detector = DetectorModel(
-            pixel_direction_1=p_dir1,
-            pixel_direction_2=p_dir2,
-            center_channel=(cch1, cch2),
-            shape=(nch1, nch2),
-            pixel_width=(pw1, pw2),
-            distance=dist,
-            roi=tuple(roi),
+        detector = detector_model_from_setup(
+            self._detector_setup_mapping(h5_file), shape[1:]
         )
         orientation_path = "entry/data/metadata/HKL/SAMPLE_ORIENTATION"
         sample_orientation = (
