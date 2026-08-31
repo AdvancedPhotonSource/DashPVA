@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) UChicago Argonne, LLC -->
+<!-- See LICENSE file for details -->
+<ui version="4.0">
+ <class>HKL3DImageDockWidget</class>
+ <widget class="QWidget" name="HKL3DImageDockWidget">
+  <property name="maximumSize">
+   <size>
+    <width>380</width>
+    <height>16777215</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>Image</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutImageDock">
+   <property name="spacing">
+    <number>10</number>
+   </property>
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property>
+   <property name="bottomMargin"><number>10</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="layoutPixelOrder">
+     <item>
+      <widget class="QLabel" name="lbl_pixel_order">
+       <property name="text"><string>Image Pixel Order:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="rbtn_C">
+       <property name="text"><string>C</string></property>
+       <attribute name="buttonGroup"><string notr="true">pixel_order_group</string></attribute>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="rbtn_F">
+       <property name="text"><string>Fortran</string></property>
+       <property name="checked"><bool>true</bool></property>
+       <attribute name="buttonGroup"><string notr="true">pixel_order_group</string></attribute>
+      </widget>
+     </item>
+     <item>
+      <spacer name="spacerPixelOrder">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="layoutTools">
+     <item>
+      <widget class="QCheckBox" name="log_image">
+       <property name="text"><string>Log Image</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_reset_camera">
+       <property name="text"><string>Reset Camera</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_plot_cache">
+     <property name="text"><string>Plot Cache</string></property>
+     <property name="role" stdset="0"><string>success</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="btn_save_h5">
+     <property name="minimumSize"><size><width>0</width><height>50</height></size></property>
+     <property name="text"><string>Save Cache</string></property>
+     <property name="role" stdset="0"><string>info</string></property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="spacerImageDockBottom">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+ <buttongroups>
+  <buttongroup name="pixel_order_group"/>
+ </buttongroups>
+</ui>

@@ -18,12 +18,19 @@
 # ******************************************************************************************************
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QRadioButton, QVBoxLayout, QWidget
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
 class PlotModeDock(BaseDock):
+    """HKL3D plot-mode dock: how often the volume is re-plotted during a scan.
+
+        dock = PlotModeDock(main_window=viewer)
+        dock.mode_changed.connect(viewer.on_mode_changed)
+        dock.start_plot_timer()
+        dock.current_mode          # 'post_scan' | 'realtime' | 'per_frame' | 'gridded'
+    """
+
     mode_changed    = pyqtSignal(str)  # 'post_scan' | 'realtime' | 'per_frame' | 'gridded'
     plot_timer_fired = pyqtSignal(str) # fired at interval when a new frame is pending
 
@@ -33,31 +40,11 @@ class PlotModeDock(BaseDock):
         super().__init__(title="Plot Mode", main_window=main_window,
                          segment_name="hkl", dock_area=Qt.RightDockWidgetArea, show=show)
         self._new_frame_pending = False
-        self._setup_ui()
-        self._setup_timer()
-
-    def _setup_ui(self):
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(8, 8, 8, 8)
-        self.rb_post_scan = QRadioButton("Post-scan (on complete)")
-        self.rb_post_scan.setObjectName("rb_post_scan")
-        self.rb_realtime  = QRadioButton("Realtime (cumulative)")
-        self.rb_realtime.setObjectName("rb_realtime")
-        self.rb_per_frame = QRadioButton("Per-frame (single frame)")
-        self.rb_per_frame.setObjectName("rb_per_frame")
-        # Gridded accumulates into a fixed volume instead of a ring buffer, so
-        # a repeated pass over the same region reinforces it rather than
-        # evicting the earlier one.
-        self.rb_gridded   = QRadioButton("Gridded volume (accumulate)")
-        self.rb_gridded.setObjectName("rb_gridded")
-        self.rb_post_scan.setChecked(True)
+        self.load_ui("hkl3d", "docks", "plot_mode.ui")
         for rb in (self.rb_post_scan, self.rb_realtime, self.rb_per_frame,
                    self.rb_gridded):
-            layout.addWidget(rb)
             rb.toggled.connect(self._on_radio_toggled)
-        layout.addStretch()
-        self.setWidget(container)
+        self._setup_timer()
 
     def _setup_timer(self):
         self.timer_plot = QTimer()
