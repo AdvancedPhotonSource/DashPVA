@@ -276,6 +276,16 @@ LAST_PONI_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_CIF_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 
+# UI persistence (QSettings) — see AGENTS.md "UI persistence — QSettings".
+# Bumping the dock-state version invalidates saved dock layouts, so raise it
+# whenever a viewer's dock set changes and a stale restore would misplace them.
+DOCK_STATE_VERSION: int = 1
+# Files at or above this size are not auto-reopened on launch; the path is kept
+# so the user can load it deliberately.
+SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3
+# Restoring more than this many files/folders prompts before loading.
+SESSION_RESTORE_PROMPT_COUNT: int = 5
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'

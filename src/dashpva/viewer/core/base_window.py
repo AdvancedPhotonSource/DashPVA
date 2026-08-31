@@ -7,6 +7,7 @@ A base class for all main window interfaces in the DashPVA application.
 Provides common functionality and consistent behavior across all windows.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -18,11 +19,21 @@ from PyQt5 import uic
 from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QProgressDialog,
+    QRadioButton,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
 )
 
 import dashpva.settings as app_settings
@@ -616,29 +627,199 @@ class BaseWindow(QMainWindow):
         self._close_confirmed = True
         return True
 
-    # ---- Machine-local layout persistence (QSettings, per viewer type) ----
-    # Window geometry and dock layout are physical/machine state, so they live
-    # in Qt's native per-user store rather than a portable TOML/JSON config.
+    # ---- Machine-local UI persistence (QSettings, per viewer type) ----
+    # Geometry, dock layout, input values and the open-file session are physical
+    # machine state, so they live in Qt's per-user store rather than a portable
+    # TOML/JSON config. Set persist_state = False to opt out (the area-detector
+    # viewer keeps its own older area_det_* keys).
+
+    persist_state = True
 
     def _qsettings(self) -> QSettings:
         """QSettings scoped to this viewer type (org "DashPVA")."""
         return QSettings("DashPVA", type(self).__name__)
 
+    #: objectNames never persisted (per class; add to it in subclasses).
+    persist_input_skip: set = set()
+
+    #: Widget type -> (getter, setter). Splitters are included, so splitter
+    #: positions persist alongside the plain inputs.
+    _INPUT_ACCESSORS = (
+        (QLineEdit, lambda w: w.text(), lambda w, v: w.setText(str(v))),
+        (QComboBox, lambda w: w.currentText(), None),          # setter needs a lookup
+        (QDoubleSpinBox, lambda w: w.value(), lambda w, v: w.setValue(float(v))),
+        (QSpinBox, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
+        (QCheckBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
+        (QRadioButton, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
+        (QSlider, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
+        (QTabWidget, lambda w: w.currentIndex(), lambda w, v: w.setCurrentIndex(int(v))),
+        (QSplitter, lambda w: w.sizes(), lambda w, v: w.setSizes([int(x) for x in v])),
+    )
+
+    def _persisted_inputs(self):
+        """Yield ``(name, widget, getter, setter)`` for every persistable input.
+
+        Anything without a stable objectName is skipped: Qt's internal children
+        are named ``qt_*``, and unnamed designer widgets have no key to store
+        them under. ``seen`` guards against a widget matching twice.
+        """
+        seen = set()
+        for cls, getter, setter in self._INPUT_ACCESSORS:
+            for w in self.findChildren(cls):
+                name = w.objectName()
+                if (not name or name.startswith('qt_') or name in seen
+                        or name in self.persist_input_skip):
+                    continue
+                seen.add(name)
+                yield name, w, getter, setter
+
+    def session_inputs(self) -> dict:
+        """Current value of every named input, keyed by objectName."""
+        values = {}
+        for name, w, getter, _ in self._persisted_inputs():
+            try:
+                values[name] = getter(w)
+            except Exception:
+                pass
+        return values
+
+    def apply_session_inputs(self, values: dict) -> None:
+        """Re-apply saved input values, skipping anything that no longer fits."""
+        for name, w, _, setter in self._persisted_inputs():
+            if name not in values:
+                continue
+            value = values[name]
+            try:
+                if isinstance(w, QComboBox):
+                    # Items may be populated at runtime; only restore a choice
+                    # that actually exists, never inject a new one.
+                    idx = w.findText(str(value))
+                    if idx >= 0:
+                        w.setCurrentIndex(idx)
+                    elif w.isEditable():
+                        w.setEditText(str(value))
+                elif setter is not None:
+                    setter(w, value)
+            except Exception:
+                pass
+
+    def session_paths(self) -> list:
+        """Open files/folders as ``[[kind, path], ...]``, kind "file"/"folder"."""
+        return []
+
     def save_layout(self) -> None:
-        """Persist window geometry and dock layout for this viewer."""
+        """Persist geometry, dock layout, inputs and the open-file session."""
+        if not self.persist_state:
+            return
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
-        s.setValue("dock_state", self.saveState())
+        s.setValue("dock_state", self.saveState(app_settings.DOCK_STATE_VERSION))
+        s.setValue("inputs", json.dumps(self.session_inputs()))
+        s.setValue("session", json.dumps(self.session_paths()))
 
-    def restore_layout(self) -> None:
-        """Restore previously saved geometry and dock layout, if any."""
-        s = self._qsettings()
-        geom = s.value("geometry")
+    def restore_geometry(self) -> None:
+        """Restore window geometry. Safe to call from ``__init__``."""
+        if not self.persist_state:
+            return
+        geom = self._qsettings().value("geometry")
         if geom:
             self.restoreGeometry(geom)
-        state = s.value("dock_state")
+
+    def restore_dock_state(self) -> None:
+        """Restore dock layout. Call only once this window's docks exist.
+
+        Qt drops a saved state whose version does not match, so bumping
+        ``app_settings.DOCK_STATE_VERSION`` retires stale layouts instead of
+        restoring docks into places that no longer exist.
+        """
+        if not self.persist_state:
+            return
+        state = self._qsettings().value("dock_state")
         if state:
-            self.restoreState(state)
+            self.restoreState(state, app_settings.DOCK_STATE_VERSION)
+
+    def restore_inputs(self) -> None:
+        """Re-apply the input values saved by the previous session."""
+        if not self.persist_state:
+            return
+        raw = self._qsettings().value("inputs")
+        if not raw:
+            return
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        if isinstance(values, dict) and values:
+            self.apply_session_inputs(values)
+
+    def restore_layout(self) -> None:
+        """Geometry and docks together, for windows whose docks already exist."""
+        self.restore_geometry()
+        self.restore_dock_state()
+
+    def restore_session(self) -> None:
+        """Reopen the files and folders that were open when this window closed.
+
+        Entries that no longer exist are dropped, and files at or above
+        ``app_settings.SESSION_RESTORE_MAX_BYTES`` are skipped so a huge dataset
+        cannot stall startup. Loading runs behind a cancellable progress dialog.
+        """
+        if not self.persist_state:
+            return
+        raw = self._qsettings().value("session")
+        if not raw:
+            return
+        try:
+            entries = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+
+        pending, skipped = [], []
+        for entry in entries or []:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                continue
+            kind, path = entry
+            if not isinstance(path, str) or not os.path.exists(path):
+                continue
+            if kind == "file" and os.path.getsize(path) >= app_settings.SESSION_RESTORE_MAX_BYTES:
+                skipped.append(path)
+                continue
+            pending.append((kind, path))
+
+        if skipped:
+            self.update_status(
+                f"Skipped {len(skipped)} large file(s) from the last session", 'warning')
+        if not pending:
+            return
+        if len(pending) > app_settings.SESSION_RESTORE_PROMPT_COUNT:
+            answer = QMessageBox.question(
+                self, "Restore previous session",
+                f"Reopen {len(pending)} items from your last session?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                return
+
+        progress = QProgressDialog(
+            "Restoring previous session...", "Cancel", 0, len(pending), self)
+        progress.setWindowTitle("Restoring session")
+        progress.setWindowModality(Qt.WindowModal)
+        try:
+            for n, (kind, path) in enumerate(pending):
+                if progress.wasCanceled():
+                    break
+                progress.setLabelText(f"Opening {os.path.basename(path)}...")
+                progress.setValue(n)
+                try:
+                    if kind == "folder":
+                        self.load_folder_content(path)
+                    else:
+                        self.load_file_content(path)
+                except Exception as exc:
+                    self.update_status(
+                        f"Could not reopen {os.path.basename(path)}: {exc}", 'warning')
+            progress.setValue(len(pending))
+        finally:
+            progress.close()
 
     def closeEvent(self, event):
         """Close only once any unsaved edits have been saved or discarded.
