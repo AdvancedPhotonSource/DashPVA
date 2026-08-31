@@ -279,7 +279,9 @@ LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 # UI persistence (QSettings) — see AGENTS.md "UI persistence — QSettings".
 # Bumping the dock-state version invalidates saved dock layouts, so raise it
 # whenever a viewer's dock set changes and a stale restore would misplace them.
-DOCK_STATE_VERSION: int = 1
+# Starts at 3: the area-detector viewer already shipped versions 1-3 under its
+# own key, and migrating its users' layouts means not going backwards.
+DOCK_STATE_VERSION: int = 3
 # Files at or above this size are not auto-reopened on launch; the path is kept
 # so the user can load it deliberately.
 SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3

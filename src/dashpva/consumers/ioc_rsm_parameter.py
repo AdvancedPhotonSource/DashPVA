@@ -425,7 +425,7 @@ def _run_gui(
     pv_values: dict[str, Any],
     pv_lock: threading.Lock,
 ) -> None:
-    from PyQt5.QtCore import QSettings, Qt, QThread, pyqtSignal
+    from PyQt5.QtCore import Qt, QThread, pyqtSignal
     from PyQt5.QtWidgets import (
         QApplication,
         QComboBox,
@@ -649,10 +649,9 @@ def _run_gui(
             self._build_ui()
             self._load_profile(profile)
             self._reset_record_monitor(profile)
-            settings = QSettings("DashPVA", "RSMParameterIOC")
-            geometry = settings.value("window_geom")
-            if geometry:
-                self.restoreGeometry(geometry)
+            self.legacy_settings = ("RSMParameterIOC", "window_geom", None)
+            self.restore_layout()
+            self.restore_inputs()
 
         def _build_ui(self) -> None:
             central = QWidget()
@@ -1294,8 +1293,7 @@ def _run_gui(
             if not self.confirm_close(event):
                 return
             self._stop_worker()
-            settings = QSettings("DashPVA", "RSMParameterIOC")
-            settings.setValue("window_geom", self.saveGeometry())
+            # Geometry and inputs are persisted by BaseWindow.closeEvent.
             super().closeEvent(event)
 
     app = QApplication(sys.argv)

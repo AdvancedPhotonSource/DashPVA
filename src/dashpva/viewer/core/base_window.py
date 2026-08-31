@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -635,6 +636,11 @@ class BaseWindow(QMainWindow):
 
     persist_state = True
 
+    #: One-time migration source ``(app_name, geometry_key, dock_key)``, read
+    #: only when this window's own store is empty, so a viewer that used to
+    #: persist under its own keys keeps the layout its users already have.
+    legacy_settings: tuple = ()
+
     def _qsettings(self) -> QSettings:
         """QSettings scoped to this viewer type (org "DashPVA")."""
         return QSettings("DashPVA", type(self).__name__)
@@ -650,6 +656,7 @@ class BaseWindow(QMainWindow):
         (QDoubleSpinBox, lambda w: w.value(), lambda w, v: w.setValue(float(v))),
         (QSpinBox, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
         (QCheckBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
+        (QGroupBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
         (QRadioButton, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
         (QSlider, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
         (QTabWidget, lambda w: w.currentIndex(), lambda w, v: w.setCurrentIndex(int(v))),
@@ -669,6 +676,9 @@ class BaseWindow(QMainWindow):
                 name = w.objectName()
                 if (not name or name.startswith('qt_') or name in seen
                         or name in self.persist_input_skip):
+                    continue
+                # A plain QGroupBox has no check state worth storing.
+                if isinstance(w, QGroupBox) and not w.isCheckable():
                     continue
                 seen.add(name)
                 yield name, w, getter, setter
@@ -717,13 +727,33 @@ class BaseWindow(QMainWindow):
         s.setValue("inputs", json.dumps(self.session_inputs()))
         s.setValue("session", json.dumps(self.session_paths()))
 
+    def _legacy_value(self, index: int):
+        """Read a pre-migration key: index 0 geometry, 1 dock state."""
+        if not self.legacy_settings:
+            return None
+        app_name, *keys = self.legacy_settings
+        key = keys[index] if index < len(keys) else None
+        return QSettings("DashPVA", app_name).value(key) if key else None
+
     def restore_geometry(self) -> None:
-        """Restore window geometry. Safe to call from ``__init__``."""
+        """Restore window geometry, clamped to the screen it lands on.
+
+        A geometry saved on a larger monitor would otherwise restore a window
+        bigger than the current display, with its controls off-screen.
+        """
         if not self.persist_state:
             return
-        geom = self._qsettings().value("geometry")
-        if geom:
+        geom = self._qsettings().value("geometry") or self._legacy_value(0)
+        if not geom:
+            return
+        try:
             self.restoreGeometry(geom)
+            avail = self.screen().availableGeometry()
+            if self.width() > avail.width() or self.height() > avail.height():
+                self.resize(min(self.width(), avail.width()),
+                            min(self.height(), avail.height()))
+        except Exception:
+            pass
 
     def restore_dock_state(self) -> None:
         """Restore dock layout. Call only once this window's docks exist.
@@ -734,9 +764,12 @@ class BaseWindow(QMainWindow):
         """
         if not self.persist_state:
             return
-        state = self._qsettings().value("dock_state")
+        state = self._qsettings().value("dock_state") or self._legacy_value(1)
         if state:
-            self.restoreState(state, app_settings.DOCK_STATE_VERSION)
+            try:
+                self.restoreState(state, app_settings.DOCK_STATE_VERSION)
+            except Exception:
+                pass
 
     def restore_inputs(self) -> None:
         """Re-apply the input values saved by the previous session."""

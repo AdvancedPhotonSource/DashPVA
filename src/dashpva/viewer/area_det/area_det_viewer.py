@@ -11,7 +11,6 @@ import pyqtgraph as pg
 from epics import PV, ca, caget, camonitor
 from PyQt5 import uic
 from PyQt5.QtCore import (
-    QByteArray,
     QEvent,
     QPointF,
     QSettings,
@@ -76,10 +75,6 @@ from dashpva.viewer.roi_stats_panel import RoiStatsPanel
 rot_gen = rotation_cycle(1,5)
 
 _PERF_TIMER_INTERVAL_MS = 1000
-# Bump when the dock set changes — restoreState silently rejects mismatched
-# versions so users with a stale saved layout fall back to defaults instead
-# of getting a half-broken arrangement.
-_DOCK_STATE_VERSION = 3
 
 
 def _settings() -> QSettings:
@@ -174,9 +169,9 @@ class _RoiStatsWindow(QDialog):
 
 
 class DiffractionImageWindow(BaseWindow):
-    # Keeps its own area_det_* QSettings keys (geometry, dock state, prefix)
-    # with a separate dock-state version, so it opts out of BaseWindow's store.
-    persist_state = False
+    # Geometry and dock state come from BaseWindow; the pre-migration
+    # area_det_* keys are read once so existing layouts survive the switch.
+    legacy_settings = ("Viewer", "area_det_window_geom", "area_det_dock_state")
 
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
@@ -192,15 +187,7 @@ class DiffractionImageWindow(BaseWindow):
                          viewer_name='AreaDetector2D',
                          visible_actions=['Windows', 'Documentation'])
         self.setWindowTitle('DashPVA')
-        saved_geom = _settings().value("area_det_window_geom", QByteArray(), type=QByteArray)
-        if not saved_geom.isEmpty():
-            try:
-                self.restoreGeometry(saved_geom)
-                avail = self.screen().availableGeometry()
-                if self.width() > avail.width() or self.height() > avail.height():
-                    self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
-            except Exception:
-                pass
+        self.restore_geometry()
         self.show()
         self.reader = None
         self.image = None
@@ -488,12 +475,7 @@ class DiffractionImageWindow(BaseWindow):
         self._apply_default_layout()
         # Restore the user's last layout if one was saved; falls through to
         # the defaults applied above on any failure.
-        saved_state = _settings().value("area_det_dock_state", QByteArray(), type=QByteArray)
-        if not saved_state.isEmpty():
-            try:
-                self.restoreState(saved_state, _DOCK_STATE_VERSION)
-            except Exception:
-                pass
+        self.restore_dock_state()
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -588,6 +570,7 @@ class DiffractionImageWindow(BaseWindow):
         self.beam_fit_dock.hide()
 
     def _reset_layout(self) -> None:
+        self._qsettings().remove("dock_state")
         _settings().remove("area_det_dock_state")
         geom = self.saveGeometry()
         for d in (self.stats_dock, self.mask_dock, self.image_dock,
@@ -2572,9 +2555,7 @@ class DiffractionImageWindow(BaseWindow):
             event.ignore()
             return
         try:
-            s = _settings()
-            s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
-            s.setValue("area_det_window_geom", self.saveGeometry())
+            # Geometry and dock state are persisted by BaseWindow.closeEvent.
             self._save_manual_rois()
         except Exception:
             pass
