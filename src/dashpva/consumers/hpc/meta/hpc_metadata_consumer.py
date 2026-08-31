@@ -17,7 +17,6 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # ******************************************************************************************************
 
-import logging
 import time
 
 # COPIED FROM hpc_rsm_consumer.py - Compression libraries
@@ -114,7 +113,6 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         self.old_hkl_attributes = None
 
         self.logger.debug('Created HpcAdMetadataProcessor')
-        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
 
     # COPIED FROM hpc_rsm_consumer.py - Array compression method
     def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
@@ -294,13 +292,8 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            while True:
-                try:
-                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0) # might need to be replaced with metadataQueue.get_nowait()
-                except pva.QueueEmpty:
-                    # No metadata in the queue, we failed
-                    # associationFailed = True 
-                    break
+            while len(metadataQueue) > 0:
+                self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
             result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
             if result is not None:
                 if not result:
