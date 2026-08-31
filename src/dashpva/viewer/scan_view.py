@@ -574,6 +574,7 @@ class ScanMonitorWindow(UiStateMixin, QMainWindow, LogMixin):
         s = self._qsettings()
         s.setValue('geometry', self.saveGeometry())
         s.setValue('inputs', json.dumps(self.session_inputs()))
+        s.sync()
 
     def _restore_state(self) -> None:
         """Restore geometry and input values saved by the previous session."""

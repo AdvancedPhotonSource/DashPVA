@@ -649,6 +649,9 @@ class BaseWindow(UiStateMixin, QMainWindow):
         s.setValue("dock_state", self.saveState(app_settings.DOCK_STATE_VERSION))
         s.setValue("inputs", json.dumps(self.session_inputs()))
         s.setValue("session", json.dumps(self.session_paths()))
+        # Flush now: QSettings buffers writes, and a viewer killed by the
+        # launcher instead of closed cleanly would otherwise lose them.
+        s.sync()
 
     def _legacy_value(self, index: int):
         """Read a pre-migration key: index 0 geometry, 1 dock state."""

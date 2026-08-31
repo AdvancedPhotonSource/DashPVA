@@ -423,7 +423,6 @@ class DiffractionImageWindow(BaseWindow):
         self._analysis_menu.addAction("pyFAI 1D Reduction", self._launch_pyfai)
         self._analysis_menu.addAction("XRD Phase Fitter", self._launch_phase_fitter)
         self._analysis_menu.addAction("HKL 3D Viewer", self._launch_hkl3d)
-        self._analysis_menu.addAction("2D Scan Visualization", self._launch_scan_view)
         self.btn_analysis_window.setMenu(self._analysis_menu)
         self.rbtn_C.clicked.connect(self.c_ordering_clicked)
         self.rbtn_F.clicked.connect(self.f_ordering_clicked)
@@ -1001,14 +1000,6 @@ class DiffractionImageWindow(BaseWindow):
         except Exception as e:
             print(f'[Area Detector] Failed to launch HKL 3D Viewer: {e}')
 
-    def _launch_scan_view(self) -> None:
-        pv_address = self._input_channel or "pvapy:image"
-        cmd = [sys.executable, '-m', 'dashpva.viewer.scan_view', '--channel', pv_address]
-        try:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=None, start_new_session=True)
-            print(f'[Area Detector] 2D Scan Visualization launched with PV: {pv_address}')
-        except Exception as e:
-            print(f'[Area Detector] Failed to launch 2D Scan Visualization: {e}')
 
     def start_live_view_clicked(self) -> None:
         """
