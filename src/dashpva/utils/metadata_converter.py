@@ -497,14 +497,16 @@ def _materialize_canonical_profile(
         raise ValueError("IOC_RSM_PARAMETER.ENERGY_UNITS is required.")
     _replace_dataset(spec, "ENERGY_UNITS", energy_units.strip())
 
-    detector = parameters.get("DETECTOR_SETUP")
-    if not isinstance(detector, dict):
+    if not isinstance(parameters.get("DETECTOR_SETUP"), dict):
         raise ValueError("IOC_RSM_PARAMETER.DETECTOR_SETUP must be a table.")
+    raw_detector = parameters["DETECTOR_SETUP"]
+    detector = validate_parameter_profile(
+        mapping.get("IOC_PREFIX", ""), parameters
+    ).detector_setup
     detector_group = hkl.require_group("DETECTOR_SETUP")
-    for field in SECTION_CHANNEL_FIELDS["DETECTOR_SETUP"]:
-        if field not in detector:
-            raise ValueError(f"IOC_RSM_PARAMETER.DETECTOR_SETUP.{field} is required.")
-        _replace_dataset(detector_group, field, detector[field])
+    for field in detector:
+        if field in raw_detector:
+            _replace_dataset(detector_group, field, raw_detector[field])
 
     orientation = parameters.get("SAMPLE_ORIENTATION")
     if not isinstance(orientation, str) or not orientation.strip():

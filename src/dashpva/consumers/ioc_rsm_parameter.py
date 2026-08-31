@@ -719,7 +719,10 @@ def _run_gui(
             self.resize(1000, 1000)
 
         def _build_calibration_group(self) -> QGroupBox:
-            group = QGroupBox("Static geometry (read-only in issue #132)")
+            group = QGroupBox(
+                "Static geometry — JSON; DETECTOR_SETUP accepts PIXEL_SIZE, "
+                "DETECTOR_SHAPE, ROI, BINNING, DETROT/TILT/TILTAZIMUTH and per-field units"
+            )
             form = QFormLayout(group)
             self.calibration_values: dict[str, QLineEdit] = {}
             for key in (
@@ -730,7 +733,6 @@ def _run_gui(
                 "DETECTOR_SETUP",
             ):
                 edit = QLineEdit()
-                edit.setReadOnly(True)
                 self.calibration_values[key] = edit
                 form.addRow(key.replace("_", " ").title(), edit)
             return group
@@ -745,6 +747,24 @@ def _run_gui(
             )
             form.addRow("Sample orientation", self.sample_orientation)
             return group
+
+        def _calibration_edits(self) -> dict[str, Any]:
+            """Parse the calibration fields, raising on the first bad entry.
+
+            Validation proper happens in normalize_parameters; this only turns
+            the text back into JSON so a typo is reported as a typo instead of
+            surfacing later as an unrelated geometry error.
+            """
+            parsed: dict[str, Any] = {}
+            for key, edit in self.calibration_values.items():
+                text = edit.text().strip()
+                if not text:
+                    continue
+                try:
+                    parsed[key] = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{key} is not valid JSON: {exc}") from exc
+            return parsed
 
         def _build_records_group(self) -> QGroupBox:
             group = QGroupBox("Live IOC records")
@@ -802,6 +822,7 @@ def _run_gui(
                     "SAMPLE_ORIENTATION": self.sample_orientation.currentText().strip(),
                 }
             )
+            current.update(self._calibration_edits())
             return current
 
         def _axis_origins(self) -> dict[str, tuple[int | None, ...]]:

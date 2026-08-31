@@ -161,7 +161,36 @@ SAMPLE_SURFACE_NORMAL_DIRECTION = [0.0, 0.0, 1.0]
     [IOC_RSM_PARAMETER.DETECTOR_SETUP]
     PIXEL_DIRECTION_1 = 'z-'
     PIXEL_DIRECTION_2 = 'x-'
+    # CENTER_CHANNEL_PIXEL is in UNBINNED, FULL-FRAME pixels and does not change
+    # when you crop or bin -- xrayutilities applies ROI and BINNING itself.
     CENTER_CHANNEL_PIXEL = [300.0, 300.0]
     SIZE = [28.38, 28.38]
     DISTANCE = 400.644
-    UNITS = 'mm'
+    UNITS = 'mm'                      # default length unit for this section
+
+    # ---- Optional calibration -------------------------------------------
+    # Every key below is optional. Omitting all of them means full frame,
+    # unbinned, untilted -- exactly how profiles behaved before these existed.
+    #
+    # PIXEL_SIZE = [0.0473, 0.0473]   # unbinned physical pixel size. PREFER this
+    #                                 # over SIZE: deriving pixel size as
+    #                                 # SIZE/frame_shape is only valid for a full
+    #                                 # unbinned frame, and is rejected outright
+    #                                 # once ROI or BINNING is set.
+    # PIXEL_SIZE_UNITS = 'mm'         # per-field override of UNITS
+    # DISTANCE_UNITS = 'mm'           # per-field override of UNITS
+    # DETECTOR_SHAPE = [600, 600]     # full unbinned detector, not the frame
+    # ROI = [0, 600, 0, 600]          # half-open, UNBINNED [s1, e1, s2, e2)
+    # BINNING = [1, 1]                # ROI span must divide exactly by this
+    # DETROT = 0.0                    # rotation about the primary beam
+    # TILT = 0.0                      # detector plane tilt
+    # TILTAZIMUTH = 0.0               # direction of the tilt vector
+    # ANGLE_UNITS = 'deg'             # units for DETROT / TILT / TILTAZIMUTH
+    #
+    # FRAME_AXIS_ORDER: which detector direction array axis 0 runs along.
+    # 'direction1_direction2' (default) matches what Ang2Q.area returns.
+    # 'direction2_direction1' means the detector reads out transposed; Q is
+    # transposed to match so intensity, mask and Q index identically. Getting
+    # this wrong yields a transposed volume that still looks plausible, so it
+    # must be confirmed against a known reflection.
+    # FRAME_AXIS_ORDER = 'direction1_direction2'
