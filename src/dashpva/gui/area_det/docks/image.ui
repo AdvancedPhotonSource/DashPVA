@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) UChicago Argonne, LLC -->
+<!-- See LICENSE file for details -->
+<ui version="4.0">
+ <class>AreaDetImageDockWidget</class>
+ <widget class="QWidget" name="AreaDetImageDockWidget">
+  <property name="windowTitle">
+   <string>Image</string>
+  </property>
+  <layout class="QFormLayout" name="layoutImage">
+   <property name="horizontalSpacing"><number>8</number></property>
+   <property name="verticalSpacing"><number>12</number></property>
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property>
+   <property name="bottomMargin"><number>10</number></property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="lbl_plot_call_id"><property name="text"><string>Plot Call ID:</string></property></widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLabel" name="plot_call_id"><property name="text"><string>0</string></property><property name="frameShape"><enum>QFrame::Box</enum></property><property name="frameShadow"><enum>QFrame::Sunken</enum></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property><property name="valueLabel" stdset="0"><bool>true</bool></property></widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="lbl_plot_rate"><property name="text"><string>Plotting rate (Hz):</string></property></widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QSpinBox" name="image_plotting_frequency"><property name="minimum"><number>1</number></property><property name="maximum"><number>999999999</number></property><property name="value"><number>14</number></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="lbl_size_x"><property name="text"><string>Size X [px]:</string></property></widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLabel" name="size_x_val"><property name="text"><string>0</string></property><property name="frameShape"><enum>QFrame::Box</enum></property><property name="frameShadow"><enum>QFrame::Sunken</enum></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property><property name="valueLabel" stdset="0"><bool>true</bool></property></widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="lbl_size_y"><property name="text"><string>Size Y [px]:</string></property></widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLabel" name="size_y_val"><property name="text"><string>0</string></property><property name="frameShape"><enum>QFrame::Box</enum></property><property name="frameShadow"><enum>QFrame::Sunken</enum></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property><property name="valueLabel" stdset="0"><bool>true</bool></property></widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QCheckBox" name="image_log_image"><property name="text"><string>Log Image</string></property></widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QCheckBox" name="image_freeze_image"><property name="text"><string>Freeze Image</string></property></widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QCheckBox" name="image_chk_transpose"><property name="text"><string>Transpose Image</string></property></widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QCheckBox" name="image_display_rois"><property name="text"><string>Show ROIs</string></property><property name="checked"><bool>true</bool></property></widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="lbl_pixel_order"><property name="text"><string>Image Pixel Order:</string></property></widget>
+   </item>
+   <item row="6" column="1">
+    <layout class="QHBoxLayout" name="layoutPixelOrder"><item><widget class="QRadioButton" name="rbtn_C"><property name="text"><string>C</string></property><attribute name="buttonGroup"><string notr="true">pixel_order_group</string></attribute></widget></item><item><widget class="QRadioButton" name="rbtn_F"><property name="text"><string>Fortran</string></property><property name="checked"><bool>true</bool></property><attribute name="buttonGroup"><string notr="true">pixel_order_group</string></attribute></widget></item><item><spacer name="spacerOrder"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item></layout>
+   </item>
+   <item row="7" column="0">
+    <widget class="QPushButton" name="rotate90degCCW"><property name="text"><string>Rotate 90° CCW</string></property></widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="QCheckBox" name="image_stop_hkl"><property name="text"><string>Stop HKL</string></property></widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+ <buttongroups>
+  <buttongroup name="pixel_order_group"/>
+ </buttongroups>
+</ui>
