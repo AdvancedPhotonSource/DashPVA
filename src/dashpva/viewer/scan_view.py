@@ -6,7 +6,7 @@ from datetime import datetime
 import pyqtgraph as pg
 from epics import caget, caput
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout
 
 import dashpva.settings as app_settings
@@ -28,6 +28,8 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             self.set_log_manager()
         except Exception:
             pass
+
+        self._restore_state()
 
         self.channel = channel or app_settings.get_input_channel("")
         self.scan_state = False
@@ -553,7 +555,22 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             except Exception:
                 pass
 
+    def _qsettings(self) -> QSettings:
+        """QSettings for this viewer (not a BaseWindow, so persisted here)."""
+        return QSettings("DashPVA", "ScanMonitor")
+
+    def _save_state(self) -> None:
+        """Persist window geometry. This window has no docks or splitters."""
+        self._qsettings().setValue('geometry', self.saveGeometry())
+
+    def _restore_state(self) -> None:
+        """Restore window geometry saved by the previous session."""
+        geom = self._qsettings().value('geometry')
+        if geom:
+            self.restoreGeometry(geom)
+
     def closeEvent(self, event):
+        self._save_state()
         self.info_timer.stop()
         self._cleanup_existing_instances()
         super().closeEvent(event)

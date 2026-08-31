@@ -162,6 +162,10 @@ class HKLImageWindow(BaseWindow):
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
         self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
 
+        self.restore_geometry()
+        self.restore_dock_state()
+        self.restore_inputs()
+
         self.show()
 
     def _teardown_reader(self) -> None:

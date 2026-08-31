@@ -68,6 +68,7 @@ class WorkbenchWindow(BaseWindow):
         """Initialize the Workbench window."""
         super().__init__(ui_file_name="workbench/workbench.ui", viewer_name="Workbench")
         self.setup_window_properties("Workbench - Data Analysis", 1600, 1000)
+        self.restore_geometry()
 
         # ====== DOCKS START ====== #
         # 2d
@@ -169,6 +170,27 @@ class WorkbenchWindow(BaseWindow):
             self.roi_manager.setup_docks()
         except Exception:
             pass
+
+        self.restore_dock_state()
+        self.restore_inputs()
+        QTimer.singleShot(0, self.restore_session)
+
+    # === Session persistence ===
+
+    def session_paths(self) -> list:
+        """Files and folders currently loaded in the data tree."""
+        tree = getattr(self, 'tree_data', None)
+        if tree is None:
+            return []
+        kinds = {"folder_section": "folder", "file_root": "file"}
+        entries = []
+        for i in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(i)
+            kind = kinds.get(item.data(0, Qt.UserRole + 2))
+            path = item.data(0, Qt.UserRole + 1)
+            if kind and isinstance(path, str):
+                entries.append([kind, path])
+        return entries
 
     # === 2D workspace forwarding ===
     # The 2D viewer lives in Workspace2D (self.tab_2d). These read-only forwards

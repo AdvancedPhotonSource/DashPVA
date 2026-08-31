@@ -174,6 +174,10 @@ class _RoiStatsWindow(QDialog):
 
 
 class DiffractionImageWindow(BaseWindow):
+    # Keeps its own area_det_* QSettings keys (geometry, dock state, prefix)
+    # with a separate dock-state version, so it opts out of BaseWindow's store.
+    persist_state = False
+
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
     # the main (GUI) thread. Args: message, level ('info' | 'warning' | 'error').

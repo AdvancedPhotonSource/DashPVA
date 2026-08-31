@@ -1365,6 +1365,10 @@ class BayesianViewer(QtWidgets.QMainWindow):
         self._plots.primary_changed.connect(self._refresh_best_label)
         self._plots.point_selected.connect(self._on_point_selected)
 
+        geom = self._settings.value('bayesian_window_geom')
+        if geom:
+            self.restoreGeometry(geom)
+
         self._load_initial()
 
     # ------------------------------------------------------------------
@@ -1888,6 +1892,7 @@ class BayesianViewer(QtWidgets.QMainWindow):
         Named setups (profile *and* local) are written only on explicit Save /
         Save As — closing or starting a run never auto-saves a setup.
         """
+        self._settings.setValue('bayesian_window_geom', self.saveGeometry())
         self._save_env()
         if self._current_setup:
             self._settings.setValue(self._last_setup_key(), self._current_setup)
