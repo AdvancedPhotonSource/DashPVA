@@ -47,7 +47,7 @@ def _load_resolved_config(path):
 class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
 
     # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = 0.001
+    DEFAULT_TIMESTAMP_TOLERANCE = float('inf')
     MIN_COMPRESS_BYTES = 4098
     # Offset that will be applied to metadata timestamp before comparing it with
     # the image timestamp
