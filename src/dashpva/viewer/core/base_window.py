@@ -19,27 +19,18 @@ from PyQt5 import uic
 from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
-    QGroupBox,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMenuBar,
     QMessageBox,
     QProgressDialog,
-    QRadioButton,
-    QSlider,
-    QSpinBox,
-    QSplitter,
-    QTabWidget,
 )
 
 import dashpva.settings as app_settings
 from dashpva.gui.change_review_dialog import ChangeReviewDialog
 from dashpva.utils.log_manager import LogManager, get_default_manager
+from dashpva.viewer.core.ui_state import UiStateMixin
 
 #from dashpva.database import DatabaseInterface
 from dashpva.viewer.documentation.dialog import DocumentationDialog
@@ -50,7 +41,7 @@ project_root = Path(__file__).parent.parent.parent
 
 _SHOW_ALL = object()  # sentinel: visible_actions not passed → show all menus
 
-class BaseWindow(QMainWindow):
+class BaseWindow(UiStateMixin, QMainWindow):
     """
     Base class for all main windows in the DashPVA application.
     Provides common functionality like file operations, UI loading, and standard menu actions.
@@ -644,74 +635,6 @@ class BaseWindow(QMainWindow):
     def _qsettings(self) -> QSettings:
         """QSettings scoped to this viewer type (org "DashPVA")."""
         return QSettings("DashPVA", type(self).__name__)
-
-    #: objectNames never persisted (per class; add to it in subclasses).
-    persist_input_skip: set = set()
-
-    #: Widget type -> (getter, setter). Splitters are included, so splitter
-    #: positions persist alongside the plain inputs.
-    _INPUT_ACCESSORS = (
-        (QLineEdit, lambda w: w.text(), lambda w, v: w.setText(str(v))),
-        (QComboBox, lambda w: w.currentText(), None),          # setter needs a lookup
-        (QDoubleSpinBox, lambda w: w.value(), lambda w, v: w.setValue(float(v))),
-        (QSpinBox, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
-        (QCheckBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
-        (QGroupBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
-        (QRadioButton, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
-        (QSlider, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
-        (QTabWidget, lambda w: w.currentIndex(), lambda w, v: w.setCurrentIndex(int(v))),
-        (QSplitter, lambda w: w.sizes(), lambda w, v: w.setSizes([int(x) for x in v])),
-    )
-
-    def _persisted_inputs(self):
-        """Yield ``(name, widget, getter, setter)`` for every persistable input.
-
-        Anything without a stable objectName is skipped: Qt's internal children
-        are named ``qt_*``, and unnamed designer widgets have no key to store
-        them under. ``seen`` guards against a widget matching twice.
-        """
-        seen = set()
-        for cls, getter, setter in self._INPUT_ACCESSORS:
-            for w in self.findChildren(cls):
-                name = w.objectName()
-                if (not name or name.startswith('qt_') or name in seen
-                        or name in self.persist_input_skip):
-                    continue
-                # A plain QGroupBox has no check state worth storing.
-                if isinstance(w, QGroupBox) and not w.isCheckable():
-                    continue
-                seen.add(name)
-                yield name, w, getter, setter
-
-    def session_inputs(self) -> dict:
-        """Current value of every named input, keyed by objectName."""
-        values = {}
-        for name, w, getter, _ in self._persisted_inputs():
-            try:
-                values[name] = getter(w)
-            except Exception:
-                pass
-        return values
-
-    def apply_session_inputs(self, values: dict) -> None:
-        """Re-apply saved input values, skipping anything that no longer fits."""
-        for name, w, _, setter in self._persisted_inputs():
-            if name not in values:
-                continue
-            value = values[name]
-            try:
-                if isinstance(w, QComboBox):
-                    # Items may be populated at runtime; only restore a choice
-                    # that actually exists, never inject a new one.
-                    idx = w.findText(str(value))
-                    if idx >= 0:
-                        w.setCurrentIndex(idx)
-                    elif w.isEditable():
-                        w.setEditText(str(value))
-                elif setter is not None:
-                    setter(w, value)
-            except Exception:
-                pass
 
     def session_paths(self) -> list:
         """Open files/folders as ``[[kind, path], ...]``, kind "file"/"folder"."""

@@ -1,5 +1,6 @@
 # Copyright (C) UChicago Argonne, LLC
 # See LICENSE file for details
+import json
 import sys
 from datetime import datetime
 
@@ -14,9 +15,10 @@ from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ERROR, SUCCESS, WARNING
 from dashpva.utils import HDF5Handler, PVAReader
 from dashpva.utils.log_manager import LogMixin
+from dashpva.viewer.core.ui_state import UiStateMixin
 
 
-class ScanMonitorWindow(QMainWindow, LogMixin):
+class ScanMonitorWindow(UiStateMixin, QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
     signal_trigger_save = pyqtSignal(bool, bool, bool, str)  # clear_caches, write_temp, write_output, output_override
     
@@ -555,19 +557,39 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
             except Exception:
                 pass
 
+    #: Fields driven by config or live PVs rather than by the user: the channel
+    #: comes from --channel/app_settings, and the save folder/filename are
+    #: caget'd from FILE_PATH_PV/FILE_NAME_PV in _refresh_save_fields(). All
+    #: three are applied after _restore_state(), so persisting them would store
+    #: a value that is immediately overwritten.
+    persist_input_skip = {"lineedit_channel", "lineedit_save_folder",
+                          "lineedit_save_filename"}
+
     def _qsettings(self) -> QSettings:
         """QSettings for this viewer (not a BaseWindow, so persisted here)."""
         return QSettings("DashPVA", "ScanMonitor")
 
     def _save_state(self) -> None:
-        """Persist window geometry. This window has no docks or splitters."""
-        self._qsettings().setValue('geometry', self.saveGeometry())
+        """Persist window geometry and input values. No docks or splitters here."""
+        s = self._qsettings()
+        s.setValue('geometry', self.saveGeometry())
+        s.setValue('inputs', json.dumps(self.session_inputs()))
 
     def _restore_state(self) -> None:
-        """Restore window geometry saved by the previous session."""
-        geom = self._qsettings().value('geometry')
+        """Restore geometry and input values saved by the previous session."""
+        s = self._qsettings()
+        geom = s.value('geometry')
         if geom:
             self.restoreGeometry(geom)
+        raw = s.value('inputs')
+        if not raw:
+            return
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        if isinstance(values, dict) and values:
+            self.apply_session_inputs(values)
 
     def closeEvent(self, event):
         self._save_state()
