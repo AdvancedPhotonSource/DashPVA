@@ -17,7 +17,6 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # ******************************************************************************************************
 
-import logging
 import time
 
 # COPIED FROM hpc_rsm_consumer.py - Compression libraries
@@ -47,7 +46,7 @@ def _load_resolved_config(path):
 class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
 
     # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = 0.001
+    DEFAULT_TIMESTAMP_TOLERANCE = float('inf')
     MIN_COMPRESS_BYTES = 4098
     # Offset that will be applied to metadata timestamp before comparing it with
     # the image timestamp
@@ -81,13 +80,10 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # The last object time
         self.lastFrameTimestamp = 0
 
-        # Throttling for noisy timestamp-tolerance warnings
-        self._lastToleranceWarnTime = 0.0
-        self._toleranceWarnSuppressed = 0
-        self._toleranceWarnIntervalSec = 60.0
         # Per-channel tally of "Metadata channel X not found" occurrences, plus
         # a throttled WARNING (ERROR on every frame floods the associator GUI
         # box, so we warn at most once per _toleranceWarnIntervalSec per channel).
+        self._toleranceWarnIntervalSec = 60.0
         self._mdMissingChannels = {}     # channel -> total count
         self._lastMissingWarnTime = {}   # channel -> last warn time (s)
 
@@ -114,7 +110,6 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         self.old_hkl_attributes = None
 
         self.logger.debug('Created HpcAdMetadataProcessor')
-        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
 
     # COPIED FROM hpc_rsm_consumer.py - Array compression method
     def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
@@ -235,17 +230,6 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         diff = abs(frameTimestamp - mdTimestamp2)
         self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
         if diff > self.timestampTolerance:
-            now = time.time()
-            if now - self._lastToleranceWarnTime >= self._toleranceWarnIntervalSec:
-                suppressed = self._toleranceWarnSuppressed
-                suffix = f' ({suppressed} similar warnings suppressed)' if suppressed else ''
-                self.logger.warning(
-                    f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s{suffix}'
-                )
-                self._lastToleranceWarnTime = now
-                self._toleranceWarnSuppressed = 0
-            else:
-                self._toleranceWarnSuppressed += 1
             self.nMetadataDiscarded += 1
             return False
         self.nMetadataProcessed += 1
@@ -294,13 +278,8 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            while True:
-                try:
-                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0) # might need to be replaced with metadataQueue.get_nowait()
-                except pva.QueueEmpty:
-                    # No metadata in the queue, we failed
-                    # associationFailed = True 
-                    break
+            while len(metadataQueue) > 0:
+                self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
             result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
             if result is not None:
                 if not result:
