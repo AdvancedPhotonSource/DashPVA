@@ -108,6 +108,8 @@ QLabel#file_status_label {
 
 /* -- Dropdown text (force palette delegation — fixes black text on dark bg) */
 QComboBox, QComboBox QAbstractItemView { color: palette(text); }
+/* Floor combo box height so text isn't cropped on macOS / tight desktops. */
+QComboBox { min-height: 28px; }
 
 /* -- Connection state labels ----------------------------------------- */
 QLabel[connectionState="connected"] { color: $SUCCESS; font-weight: bold; }
@@ -355,8 +357,8 @@ QComboBox#comboBoxProfile { border: 1px solid $INFO; border-radius: 3px; padding
 QCheckBox#checkBoxDefaultProfile { color: $WARNING; font-size: $FONT_CAPTION; }
 QCheckBox#checkBoxSelectedProfile { color: $SUCCESS; font-size: $FONT_CAPTION; }
 QLineEdit#lineEditProfileDescription { color: $TEXT_SECONDARY; background: transparent; border: none; }
-QPushButton#buttonCollapseAll, QPushButton#buttonExpandAll { font-size: $FONT_BODY; padding: 1px 6px; }
-QPushButton#buttonAddTopLevel { font-size: $FONT_SMALL; padding: 1px 8px; }
+QPushButton#buttonCollapseAll, QPushButton#buttonExpandAll { font-size: $FONT_BODY; padding: 4px 8px; min-height: 28px; }
+QPushButton#buttonAddTopLevel { font-size: $FONT_SMALL; padding: 4px 8px; min-height: 28px; }
 QPushButton#buttonAddProfile { color: $SUCCESS; border: 1px solid $SUCCESS; border-radius: 4px; padding: 6px 14px; }
 QPushButton#buttonAddProfile:disabled { color: palette(mid); border-color: palette(mid); }
 QPushButton#buttonDeleteProfile { color: $ERROR; border: 1px solid $ERROR; border-radius: 4px; padding: 6px 14px; }

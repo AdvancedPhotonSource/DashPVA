@@ -105,12 +105,12 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <property name="minimumSize">
            <size>
             <width>30</width>
-            <height>0</height>
+            <height>28</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>30</width>
+            <width>36</width>
             <height>16777215</height>
            </size>
           </property>
@@ -155,12 +155,12 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <property name="minimumSize">
            <size>
             <width>30</width>
-            <height>0</height>
+            <height>28</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>30</width>
+            <width>36</width>
             <height>16777215</height>
            </size>
           </property>
@@ -362,7 +362,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <property name="minimumSize">
            <size>
             <width>80</width>
-            <height>0</height>
+            <height>28</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -397,7 +397,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
           <property name="minimumSize">
            <size>
             <width>80</width>
-            <height>0</height>
+            <height>28</height>
            </size>
           </property>
           <property name="maximumSize">
