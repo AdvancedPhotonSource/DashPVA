@@ -108,7 +108,7 @@ def test_ioc_database_supports_arbitrary_circle_counts(
         name.startswith("sim:SampleAxis") or name.startswith("sim:DetectorAxis")
         for name, _ in records
     )
-    # AxisNumber, DirectionAxis, Position -- SpecMotorName was removed.
+    # Three records per axis: AxisNumber, DirectionAxis, Position.
     assert axis_record_count == 3 * (sample_count + detector_count)
     assert sum(name.endswith(":Position") for name, _ in records) == (
         sample_count + detector_count

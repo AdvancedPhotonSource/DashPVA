@@ -309,8 +309,7 @@ def main() -> None:
                 new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
                 if isinstance(rec, dict):
-                    # Eta and Delta only; keyed on the PV now that the
-                    # SpecMotorName field is gone from the record dicts.
+                    # Eta and Delta only, keyed on their motor PVs.
                     if name in ("6idb1:m17.RBV", "6idb1:m18.RBV"):
                         update_ca_record_field(caIoc, name, 'Position', new_position)
                 # elif name == '6idb:spec:Energy':

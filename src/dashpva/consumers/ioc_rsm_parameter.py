@@ -1013,7 +1013,6 @@ def _build_gui_classes() -> tuple[type, type, type]:
     class AxisTable(QWidget):
         headers = (
             "Label",
-            "SPEC motor name",
             "Record name",
             "Source PV / static",
             "Direction",
