@@ -36,7 +36,11 @@ import pvaccess as pva
 
 import dashpva.settings as app_settings
 from dashpva.consumers.hpc.analysis.hpc_rsm_consumer import HpcRsmProcessor
-from dashpva.utils.metadata_binding import MetadataBinder, classify_hkl_channels
+from dashpva.utils.metadata_binding import (
+    METADATA_TIMESTAMP_ATTRIBUTE_PREFIX,
+    MetadataBinder,
+    classify_hkl_channels,
+)
 from dashpva.utils.rsm_grid_session import (
     GridSessionState,
     LiveGridSession,
@@ -131,6 +135,12 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
         self.binder = MetadataBinder(
             classify_hkl_channels(self.hkl_config, monitor_channel=monitor),
             monitor_channel=monitor,
+            max_age_seconds=float(
+                config_dict.get(
+                    "metadataMaxAgeSeconds",
+                    app_settings.RSM_GRID_METADATA_MAX_AGE_SECONDS,
+                )
+            ),
         )
         if self.session is None:
             self.session = LiveGridSession(
@@ -286,6 +296,19 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
         return current
 
     @staticmethod
+    def _metadata_timestamps(attributes: Mapping[str, Any]) -> dict[str, float]:
+        timestamps: dict[str, float] = {}
+        for name, value in attributes.items():
+            if not name.startswith(METADATA_TIMESTAMP_ATTRIBUTE_PREFIX):
+                continue
+            channel = name.removeprefix(METADATA_TIMESTAMP_ATTRIBUTE_PREFIX)
+            try:
+                timestamps[channel] = float(value)
+            except (TypeError, ValueError):
+                continue
+        return timestamps
+
+    @staticmethod
     def _frame_timestamp(pv_object) -> Optional[float]:
         try:
             stamp = pv_object["timeStamp"]
@@ -362,6 +385,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                     current,
                     frame_id=self._frame_id(pvObject),
                     timestamp=self._frame_timestamp(pvObject),
+                    metadata_timestamps=self._metadata_timestamps(current),
                 )
                 if bound is None:
                     if running:

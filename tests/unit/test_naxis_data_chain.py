@@ -313,6 +313,19 @@ def test_axis_preflight_does_not_truncate_existing_file(tmp_path):
         assert h5_file["sentinel"][()] == 42
 
 
+def test_hdf5_keeps_spec_motor_name_compatibility_alias(tmp_path):
+    path = tmp_path / "spec_motor_name_compatibility.h5"
+    config = _config(sample_count=1, detector_count=1)
+
+    HDF5Writer(str(path), _Reader(config)).h5_save(
+        str(path), _writer_data(config), compress=False
+    )
+
+    with h5py.File(path, "r") as h5_file:
+        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
+        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == "Sample 1"
+
+
 def test_axis_preflight_rejects_varying_and_role_invalid_directions(tmp_path):
     config = _config(sample_count=1, detector_count=1)
     data = _writer_data(config)

@@ -295,6 +295,10 @@ class HDF5Writer(LogMixin):
                                 self._write_literal_dataset(grp, key, value)
                         if identity.get('LABEL') and 'NAME' not in grp:
                             self._write_literal_dataset(grp, 'NAME', identity['LABEL'])
+                        if identity.get('LABEL') and 'SPEC_MOTOR_NAME' not in grp:
+                            self._write_literal_dataset(
+                                grp, 'SPEC_MOTOR_NAME', identity['LABEL']
+                            )
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
@@ -572,7 +576,7 @@ class HDF5Writer(LogMixin):
             units = self._first_static_text(axis_group, ('ANGLE_UNITS',)) or 'deg'
             position.attrs['units'] = units
             label = self._first_static_text(
-                axis_group, ('LABEL', 'NAME', 'RECORD_NAME')
+                axis_group, ('LABEL', 'NAME', 'SPEC_MOTOR_NAME', 'RECORD_NAME')
             )
             if label:
                 position.attrs['long_name'] = label

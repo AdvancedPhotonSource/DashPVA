@@ -60,7 +60,10 @@ __all__ = [
     "ChannelClass",
     "ChannelSpec",
     "MetadataBinder",
+    "METADATA_TIMESTAMP_ATTRIBUTE_PREFIX",
 ]
+
+METADATA_TIMESTAMP_ATTRIBUTE_PREFIX = "dashpva:metadata_timestamp:"
 
 
 class ChannelClass(Enum):
@@ -191,7 +194,7 @@ class MetadataBinder:
         *,
         frame_id: Optional[int] = None,
         timestamp: Optional[float] = None,
-        metadata_timestamp: Optional[float] = None,
+        metadata_timestamps: Optional[Mapping[str, float]] = None,
     ) -> Optional[BoundFrame]:
         """Return a BoundFrame, or None (counted) if the frame must be refused."""
         if frame_id is None:
@@ -223,16 +226,6 @@ class MetadataBinder:
             self.counters.reject(BindingRejection.NO_TIMESTAMP)
             return None
 
-        if (
-            self.max_age_seconds is not None
-            and metadata_timestamp is not None
-            and (timestamp - metadata_timestamp) > self.max_age_seconds
-        ):
-            # Older than the tolerance means these angles describe an earlier
-            # frame; gridding this one would place its pixels wrongly.
-            self.counters.reject(BindingRejection.STALE_TIMESTAMP)
-            return None
-
         values: dict[str, Any] = {}
         for spec in self.channels:
             present = spec.name in attributes and attributes[spec.name] is not None
@@ -251,6 +244,18 @@ class MetadataBinder:
             else:
                 self.counters.reject(BindingRejection.MISSING_REQUIRED)
                 return None
+
+            if (
+                spec.channel_class is ChannelClass.REQUIRED_DYNAMIC
+                and self.max_age_seconds is not None
+            ):
+                metadata_timestamp = (metadata_timestamps or {}).get(spec.name)
+                if metadata_timestamp is None:
+                    self.counters.reject(BindingRejection.NO_TIMESTAMP)
+                    return None
+                if abs(timestamp - metadata_timestamp) > self.max_age_seconds:
+                    self.counters.reject(BindingRejection.STALE_TIMESTAMP)
+                    return None
 
             if spec.channel_class is not ChannelClass.OPTIONAL and not self._finite(value):
                 self.counters.reject(BindingRejection.NONFINITE_REQUIRED)

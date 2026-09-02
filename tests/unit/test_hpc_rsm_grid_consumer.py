@@ -33,7 +33,12 @@ from pvapy.hpc.systemController import SystemController
 from dashpva.consumers.hpc.analysis.hpc_rsm_grid_consumer import (
     HpcRsmGridProcessor,
 )
-from dashpva.utils.metadata_binding import ChannelClass, ChannelSpec, MetadataBinder
+from dashpva.utils.metadata_binding import (
+    METADATA_TIMESTAMP_ATTRIBUTE_PREFIX,
+    ChannelClass,
+    ChannelSpec,
+    MetadataBinder,
+)
 from dashpva.utils.rsm_grid_session import GridSessionState, LiveGridSession
 from dashpva.utils.rsm_grid_transport import (
     RSM_GRID_NAMESPACE,
@@ -100,10 +105,15 @@ def _configure(harness, command, payload=None, *, request_id=None):
     return envelope
 
 
-def _frame(frame_id, *, angle=1.0, energy=None):
+def _frame(frame_id, *, angle=1.0, energy=None, metadata_timestamp=None):
     attributes = []
     if angle is not None:
         attributes.append({"name": "angle", "value": [{"value": angle}]})
+        timestamp = frame_id if metadata_timestamp is None else metadata_timestamp
+        attributes.append({
+            "name": f"{METADATA_TIMESTAMP_ATTRIBUTE_PREFIX}angle",
+            "value": [{"value": timestamp}],
+        })
     if energy is not None:
         attributes.append({"name": "energy", "value": [{"value": energy}]})
     frame = {
@@ -113,6 +123,20 @@ def _frame(frame_id, *, angle=1.0, energy=None):
         "timeStamp": {"secondsPastEpoch": frame_id, "nanoseconds": 0},
     }
     return frame
+
+
+def test_stale_dynamic_metadata_is_rejected(tmp_path):
+    processor = _processor(tmp_path)
+    processor.binder.max_age_seconds = 0.5
+    controller, harness = _pipeline(processor)
+    _start(harness)
+
+    controller.process(_frame(2, energy=10.0, metadata_timestamp=1.0))
+
+    status = controller.getUserStats()[RSM_GRID_NAMESPACE]
+    assert status["frames_accepted"] == 0
+    assert status["frames_rejected_binding"] == 1
+    assert processor.binder.counters.rejections["stale_timestamp"] == 1
 
 
 def _start(harness, *, request_id="start-1"):

@@ -188,6 +188,45 @@ def test_metadata_processor_resolves_canonical_toml_before_reading_hkl(tmp_path)
     assert processor.hkl_config == resolved["HKL"]
 
 
+def test_metadata_associator_attaches_source_timestamp_after_validation():
+    import pvaccess as pva
+
+    from dashpva.consumers.hpc.meta.hpc_metadata_consumer import (
+        HpcAdMetadataProcessor,
+    )
+    from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
+
+    processor = object.__new__(HpcAdMetadataProcessor)
+    processor.logger = MagicMock()
+    processor.currentMetadataMap = {
+        "ioc:Mu": pva.PvObject(
+            {
+                "value": pva.DOUBLE,
+                "timeStamp": {
+                    "secondsPastEpoch": pva.LONG,
+                    "nanoseconds": pva.INT,
+                },
+            },
+            {
+                "value": 3.0,
+                "timeStamp": {"secondsPastEpoch": 10, "nanoseconds": 0},
+            },
+        )
+    }
+    processor.metadataTimestampOffset = 0.0
+    processor.timestampTolerance = float("inf")
+    processor.nMetadataProcessed = 0
+    processor.nMetadataDiscarded = 0
+    attributes = []
+
+    assert processor.associateMetadata("ioc:Mu", 1, 10.0, attributes)
+    assert [attribute["name"] for attribute in attributes] == [
+        "ioc:Mu",
+        f"{METADATA_TIMESTAMP_ATTRIBUTE_PREFIX}ioc:Mu",
+    ]
+    assert attributes[1]["value"].toDict()["value"] == 10.0
+
+
 class TestDerivedCircleAccessors:
     """settings.HKL_SAMPLE_CIRCLES / HKL_DETECTOR_CIRCLES.
 

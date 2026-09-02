@@ -33,6 +33,7 @@ from pvapy.utility.timeUtility import TimeUtility
 from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
 
 
 def _load_resolved_config(path):
@@ -197,12 +198,18 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         if 'timeStamp' in mdObject:
             mdTimestamp = TimeUtility.getTimeStampAsFloat(mdObject['timeStamp'])
             mdTimestamp2 = mdTimestamp + self.metadataTimestampOffset
-        # else:
-        #     mdTimestamp = frameTimestamp  # Use frame timestamp if no metadata timestamp
-        #     mdTimestamp2 = mdTimestamp  # No offset in this case
+        else:
+            self.nMetadataDiscarded += 1
+            return False
 
         if 'value' not in mdObject:
             self.logger.error(f'Metadata object {mdObject} does not have field "value"')
+            return False
+
+        diff = abs(frameTimestamp - mdTimestamp2)
+        self.logger.debug(f'Metadata {mdChannel} has timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
+        if diff > self.timestampTolerance:
+            self.nMetadataDiscarded += 1
             return False
 
         mdValue = mdObject['value']  # Read value as a string
@@ -223,15 +230,14 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
                 raise ValueError(f'Failed to create metadata attribute: {mdChannel}: {mdValue}')
 
             frameAttributes.append(nt_attribute)
+            frameAttributes.append({
+                'name': f'{METADATA_TIMESTAMP_ATTRIBUTE_PREFIX}{mdChannel}',
+                'value': pva.PvDouble(mdTimestamp2),
+            })
         except Exception as e:
             self.logger.error(f"[Metadata Associator] Error associatating metadata {e}")
             return False
         
-        diff = abs(frameTimestamp - mdTimestamp2)
-        self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-        if diff > self.timestampTolerance:
-            self.nMetadataDiscarded += 1
-            return False
         self.nMetadataProcessed += 1
         return True
         

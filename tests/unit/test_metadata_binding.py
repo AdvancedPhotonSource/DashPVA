@@ -97,16 +97,30 @@ class TestFailClosed:
 
     def test_metadata_older_than_the_tolerance_is_rejected(self):
         binder = _binder(max_age_seconds=0.5)
-        assert binder.bind(GOOD, frame_id=1, timestamp=100.0, metadata_timestamp=99.0) is None
+        timestamps = {"ioc:Mu:Position": 99.0}
+        assert binder.bind(
+            GOOD, frame_id=1, timestamp=100.0, metadata_timestamps=timestamps
+        ) is None
         assert binder.counters.rejections[BindingRejection.STALE_TIMESTAMP.value] == 1
 
     def test_metadata_within_the_tolerance_is_accepted(self):
         binder = _binder(max_age_seconds=0.5)
-        assert binder.bind(GOOD, frame_id=1, timestamp=100.0, metadata_timestamp=99.8) is not None
+        timestamps = {"ioc:Mu:Position": 99.8}
+        assert binder.bind(
+            GOOD, frame_id=1, timestamp=100.0, metadata_timestamps=timestamps
+        ) is not None
 
-    def test_age_check_is_skipped_when_metadata_carries_no_timestamp(self):
+    def test_required_dynamic_timestamp_is_required_when_age_check_enabled(self):
         binder = _binder(max_age_seconds=0.5)
-        assert binder.bind(GOOD, frame_id=1, timestamp=100.0, metadata_timestamp=None) is not None
+        assert binder.bind(GOOD, frame_id=1, timestamp=100.0) is None
+        assert binder.counters.rejections[BindingRejection.NO_TIMESTAMP.value] == 1
+
+    def test_static_channels_do_not_require_fresh_timestamps(self):
+        binder = _binder(max_age_seconds=0.5)
+        timestamps = {"ioc:Mu:Position": 100.0}
+        assert binder.bind(
+            GOOD, frame_id=1, timestamp=100.0, metadata_timestamps=timestamps
+        ) is not None
 
 
 class TestMonitor:
