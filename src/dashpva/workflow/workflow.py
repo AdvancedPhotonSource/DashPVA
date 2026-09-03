@@ -396,6 +396,8 @@ class Workflow(QDialog, LogMixin):
         self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
 
         # Sim Server Tab
+        self._populate_sim_type_combos()
+        self.comboBoxSimType.currentIndexChanged.connect(self._on_sim_type_changed)
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
@@ -2229,6 +2231,47 @@ class Workflow(QDialog, LogMixin):
     # Sim Server
     # ------------------------------------------------------------------ #
 
+    def _populate_sim_type_combos(self):
+        """Fill the simulation-type and probe-shape dropdowns from settings."""
+        self.comboBoxSimType.blockSignals(True)
+        self.comboBoxSimType.clear()
+        self.comboBoxSimType.addItems(list(app_settings.SIM_SERVER_TYPES))
+        self.comboBoxSimType.blockSignals(False)
+        self.comboBoxProbeShape.clear()
+        self.comboBoxProbeShape.addItems(list(app_settings.SIM_PROBE_SHAPES))
+        self._on_sim_type_changed(self.comboBoxSimType.currentIndex())
+
+    def _selected_sim_is_probe(self) -> bool:
+        return self.comboBoxSimType.currentText() == 'Probe beam'
+
+    def _on_sim_type_changed(self, _index):
+        """Point the processor-file field at the chosen simulation."""
+        name = self.comboBoxSimType.currentText()
+        relative = (app_settings.SIM_SERVER_TYPES.get(name) or {}).get('path')
+        if relative:
+            self.lineEditProcessorFileSim.setText(
+                str(pathlib.Path(app_settings.PROJECT_ROOT) / relative)
+            )
+        # -shape only exists on the probe server; hide it for the others.
+        is_probe = self._selected_sim_is_probe()
+        self.labelProbeShape.setVisible(is_probe)
+        self.comboBoxProbeShape.setVisible(is_probe)
+
+    def _sim_option_values(self) -> dict:
+        """Value for every flag any simulation server might accept."""
+        return {
+            'cn': self.lineEditInputChannelSim.text(),
+            'nx': str(self.spinBoxNx.value()),
+            'ny': str(self.spinBoxNy.value()),
+            'fps': str(self.spinBoxFps.value()),
+            'dt': self.comboBoxDt.currentText(),
+            'nf': str(self.spinBoxNf.value()),
+            'rt': str(self.spinBoxRt.value()),
+            'rp': str(self.spinBoxRp.value()),
+            'mpv': self.lineEditMpv.text(),
+            'shape': self.comboBoxProbeShape.currentText(),
+        }
+
     def run_sim_server(self):
         if 'sim_server' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
@@ -2237,21 +2280,15 @@ class Workflow(QDialog, LogMixin):
         sim_path = self.lineEditProcessorFileSim.text()
         if not os.path.isabs(sim_path):
             sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
-        cmd = [
-            sys.executable, '-u', sim_path,
-            '-cn', self.lineEditInputChannelSim.text(),
-            '-nx', str(self.spinBoxNx.value()),
-            '-ny', str(self.spinBoxNy.value()),
-            '-fps', str(self.spinBoxFps.value()),
-            '-dt', self.comboBoxDt.currentText(),
-            '-nf', str(self.spinBoxNf.value()),
-            '-rt', str(self.spinBoxRt.value()),
-            '-rp', str(self.spinBoxRp.value())
-        ]
-
-        metadata_output_pvs = self.lineEditMpv.text()
-        if metadata_output_pvs:
-            cmd.extend(['-mpv', metadata_output_pvs])
+        # Only the flags this server's parser accepts -- argparse exits on any
+        # other, and the RSM data server takes none.
+        spec = app_settings.SIM_SERVER_TYPES.get(self.comboBoxSimType.currentText(), {})
+        values = self._sim_option_values()
+        cmd = [sys.executable, '-u', sim_path]
+        for option in spec.get('options', ()):
+            value = values.get(option, '')
+            if value != '':
+                cmd.extend([f'-{option}', value])
 
         try:
             process = subprocess.Popen(
