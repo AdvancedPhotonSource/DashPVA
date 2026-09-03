@@ -102,6 +102,9 @@ class HpcMcaAssociator(BaseHpcProcessor):
         self._mca_latest = {}          # short name -> (np.ndarray, unix_ts)
         self._pvs = []                 # live epics.PV handles
         self._ca_started = False
+        self._seen_channels = set()    # channels whose first reading was logged
+        self._logged_no_readings = False
+        self._announced_associating = False
 
         # -- statistics (nFrames*/processingTime/lastFrameTimestamp from base) -
         self.nMcaWithin = 0            # readings attached within the window
@@ -120,9 +123,15 @@ class HpcMcaAssociator(BaseHpcProcessor):
         """Start CA monitors once. Called from configure() and process() so the
         first one the framework invokes wins; a no-op when startMonitors=False
         (used by unit tests that inject readings directly)."""
-        if self._ca_started or not self.startMonitors:
+        if self._ca_started:
+            return
+        if not self.startMonitors:
+            self.logger.info('startMonitors=False -- no CA monitors will be started')
             return
         self._ca_started = True
+        self.logger.info(
+            'starting CA monitors for %d MCA PV(s): %s', len(self.mcaPvs), self.mcaPvs
+        )
         for pv_name in self.mcaPvs:
             try:
                 pv = EpicsPV(pv_name, form='time', auto_monitor=True,
@@ -139,7 +148,14 @@ class HpcMcaAssociator(BaseHpcProcessor):
         ts = float(timestamp) if timestamp is not None else time.time()
         short = self._pv_short.get(pvname, self._short_name(pvname))
         with self._lock:
+            first = short not in self._seen_channels
+            self._seen_channels.add(short)
             self._mca_latest[short] = (arr, ts)
+        if first:
+            self.logger.info(
+                'first MCA reading on %s (%s): %d element(s), ts=%.3f',
+                short, pvname, arr.size, ts
+            )
 
     def _stop_ca(self) -> None:
         for pv in self._pvs:
@@ -193,11 +209,33 @@ class HpcMcaAssociator(BaseHpcProcessor):
         frame_ts = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         frameAttributes = pvObject['attribute'] if 'attribute' in pvObject else []
 
-        for short, (vals, ts, within) in self._match_mca(frame_ts).items():
+        matched = self._match_mca(frame_ts)
+        if not matched and not self._logged_no_readings:
+            self._logged_no_readings = True
+            self.logger.warning(
+                'frame %s: no MCA readings available yet (ca_started=%s, monitors=%d, '
+                'channels seen=%s)',
+                frameId, self._ca_started, len(self._pvs), sorted(self._seen_channels)
+            )
+        if matched and not self._announced_associating:
+            self._announced_associating = True
+            print(
+                f'{type(self).__name__}: associating -- frame {frameId} matched '
+                f'{len(matched)} MCA channel(s): {", ".join(sorted(matched))}',
+                flush=True,
+            )
+        for short, (vals, ts, within) in matched.items():
             if within:
                 self.nMcaWithin += 1
             else:
                 self.nMcaStale += 1
+                if self.nMcaStale == 1:
+                    self.logger.warning(
+                        'first stale MCA reading on %s: frame ts=%.3f, mca ts=%.3f, '
+                        'delta=%.3fs, window=%.3fs, dropStale=%s',
+                        short, frame_ts, ts, abs(frame_ts - ts), self.mcaWindow,
+                        self.mcaDropStale
+                    )
                 if self.mcaDropStale:
                     continue
             pv = pva.PvScalarArray(pva.DOUBLE)
@@ -222,6 +260,23 @@ class HpcMcaAssociator(BaseHpcProcessor):
         self.lastFrameTimestamp = frame_ts
         self.processingTime += (time.time() - t0)
         return pvObject
+
+    def start(self):
+        super().start()
+        # Bring CA up here rather than on the first frame: readings have to be
+        # in hand before a frame arrives to fall inside the freshness window.
+        self._ensure_ca()
+        print(
+            f'{type(self).__name__}: watching {len(self.mcaPvs)} MCA PV(s), '
+            f'window={self.mcaWindow}s. Associating starts once readings and frames '
+            'arrive -- this can take a moment, and nothing shows here until then.',
+            flush=True,
+        )
+        self.logger.info(
+            'MCA associator started: %d PV(s) configured, window=%.3fs, elements=%d, '
+            'CA monitors up=%s',
+            len(self.mcaPvs), self.mcaWindow, self.mcaElements, self._ca_started
+        )
 
     def stop(self, *args, **kwargs):
         self._stop_ca()
