@@ -72,8 +72,8 @@ class HpcAnalysisProcessor(BaseAnalysisProcessor):
                 raw_data = np.array(pva_object['value'][0][self.data_type])
                 # Reshape and transpose if necessary to get correct orientation
                 self.image = np.reshape(raw_data, shape).T
-        except Exception:
-            print("error parsing images")
+        except Exception as exc:
+            self.log_error("error parsing images", exc)
 
 
     def process(self, pvObject):

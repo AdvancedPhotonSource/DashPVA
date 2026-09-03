@@ -270,11 +270,7 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
                 det_circle_positions,
             )
         except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception(f"RSM creation failed: {e}")
-            except Exception:
-                pass
+            self.log_error("RSM creation failed", e)
             return None, None, None
 
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
@@ -303,7 +299,7 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
             return pvObject
 
         if 'attribute' not in pvObject:
-            print('attributes not in pvObject')
+            self.log_error('attributes not in pvObject')
             return pvObject
 
         # Optionally decode image data for local use, but do not modify pvObject['value']
@@ -438,9 +434,5 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
 
         except Exception as e:
             self.nFrameErrors += 1
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception("Frame processing error", exc_info=e)
-            except Exception:
-                pass
+            self.log_error("Frame processing error", e)
             return pvObject

@@ -1,3 +1,5 @@
+import logging
+
 import bitshuffle
 import blosc2
 import lz4.block
@@ -27,6 +29,44 @@ class BaseHpcProcessor(AdImageProcessor, LogMixin):
                 self.updateOutputChannel(pvObject)
                 return pvObject
     """
+
+    def start(self) -> None:
+        """Announce startup on stdout so the workflow console shows it at once.
+
+        Errors go to the log, but this one is deliberately printed: the console
+        box is where an operator looks after hitting Start, and a consumer can
+        sit for a while before its first frame arrives. ``flush`` matters --
+        stdout to a pipe is block-buffered, so without it the line would not
+        appear until the buffer filled.
+        """
+        print(
+            f"{type(self).__name__} started -- this can take some time before "
+            "the first frame arrives.",
+            flush=True,
+        )
+        super().start()
+
+    def log_error(self, message: str, exc: BaseException | None = None) -> None:
+        """Record a processing error in the log rather than on stdout.
+
+        A consumer's stdout is captured into the workflow console box, where it
+        scrolls away and cannot be searched once the run is over. The log file
+        is the durable record, so every consumer reports failures through here
+        instead of printing them.
+
+        Example:
+            try:
+                pixels = self.decompress_image(pvObject)
+            except Exception as exc:
+                self.log_error("failed to decompress frame", exc)
+        """
+        # set_log_manager() is best-effort, so fall back to a module logger
+        # rather than letting the error disappear.
+        logger = getattr(self, "logger", None) or logging.getLogger(__name__)
+        if exc is not None:
+            logger.exception("%s: %s", message, exc)
+        else:
+            logger.error(message)
 
     def __init__(self, configDict={}):
         super().__init__(configDict)
