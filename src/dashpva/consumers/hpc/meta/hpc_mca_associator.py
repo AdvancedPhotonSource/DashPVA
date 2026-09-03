@@ -52,14 +52,13 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 from epics import PV as EpicsPV
-from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
-from dashpva.utils.log_manager import LogMixin
+from dashpva.consumers.core.base_hpc import BaseHpcProcessor
 
 
-class HpcMcaAssociator(AdImageProcessor, LogMixin):
+class HpcMcaAssociator(BaseHpcProcessor):
 
     # Default SIS3820 scaler channels at 12-ID-C.
     DEFAULT_MCA_BASE = '12idc:3820:mca'
@@ -72,7 +71,7 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
     MIN_COMPRESS_BYTES = 4098
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
+        super().__init__(configDict)
         try:
             self.set_log_manager(viewer_name="HpcMcaAssociator")
         except Exception:
@@ -103,23 +102,14 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         self._mca_latest = {}          # short name -> (np.ndarray, unix_ts)
         self._pvs = []                 # live epics.PV handles
         self._ca_started = False
+        self._seen_channels = set()    # channels whose first reading was logged
+        self._logged_no_readings = False
+        self._announced_associating = False
 
-        # -- statistics -------------------------------------------------------
-        self.nFramesProcessed = 0
-        self.nFrameErrors = 0
+        # -- statistics (nFrames*/processingTime/lastFrameTimestamp from base) -
         self.nMcaWithin = 0            # readings attached within the window
         self.nMcaStale = 0             # readings older than the window
-        self.processingTime = 0
-        self.lastFrameTimestamp = 0
 
-        # Type map for the lz4 codec-parameters field (matches HpcAdMetadataProcessor).
-        self.CODEC_PARAMETERS_MAP = {
-            np.dtype('uint8'): pva.UBYTE, np.dtype('int8'): pva.BYTE,
-            np.dtype('uint16'): pva.USHORT, np.dtype('int16'): pva.SHORT,
-            np.dtype('uint32'): pva.UINT, np.dtype('int32'): pva.INT,
-            np.dtype('uint64'): pva.ULONG, np.dtype('int64'): pva.LONG,
-            np.dtype('float32'): pva.FLOAT, np.dtype('float64'): pva.DOUBLE,
-        }
         self.logger.setLevel(logging.DEBUG)
         self.logger.debug(f'Created HpcMcaAssociator for {self.mcaPvs}')
 
@@ -133,9 +123,15 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         """Start CA monitors once. Called from configure() and process() so the
         first one the framework invokes wins; a no-op when startMonitors=False
         (used by unit tests that inject readings directly)."""
-        if self._ca_started or not self.startMonitors:
+        if self._ca_started:
+            return
+        if not self.startMonitors:
+            self.logger.info('startMonitors=False -- no CA monitors will be started')
             return
         self._ca_started = True
+        self.logger.info(
+            'starting CA monitors for %d MCA PV(s): %s', len(self.mcaPvs), self.mcaPvs
+        )
         for pv_name in self.mcaPvs:
             try:
                 pv = EpicsPV(pv_name, form='time', auto_monitor=True,
@@ -152,7 +148,14 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         ts = float(timestamp) if timestamp is not None else time.time()
         short = self._pv_short.get(pvname, self._short_name(pvname))
         with self._lock:
+            first = short not in self._seen_channels
+            self._seen_channels.add(short)
             self._mca_latest[short] = (arr, ts)
+        if first:
+            self.logger.info(
+                'first MCA reading on %s (%s): %d element(s), ts=%.3f',
+                short, pvname, arr.size, ts
+            )
 
     def _stop_ca(self) -> None:
         for pv in self._pvs:
@@ -206,11 +209,32 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         frame_ts = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         frameAttributes = pvObject['attribute'] if 'attribute' in pvObject else []
 
-        for short, (vals, ts, within) in self._match_mca(frame_ts).items():
+        matched = self._match_mca(frame_ts)
+        if not matched and not self._logged_no_readings:
+            self._logged_no_readings = True
+            self.logger.warning(
+                'frame %s: no MCA readings available yet (ca_started=%s, monitors=%d, '
+                'channels seen=%s)',
+                frameId, self._ca_started, len(self._pvs), sorted(self._seen_channels)
+            )
+        if matched and not self._announced_associating:
+            self._announced_associating = True
+            self.announce(
+                f'{type(self).__name__}: associating -- frame {frameId} matched '
+                f'{len(matched)} MCA channel(s): {", ".join(sorted(matched))}'
+            )
+        for short, (vals, ts, within) in matched.items():
             if within:
                 self.nMcaWithin += 1
             else:
                 self.nMcaStale += 1
+                if self.nMcaStale == 1:
+                    self.logger.warning(
+                        'first stale MCA reading on %s: frame ts=%.3f, mca ts=%.3f, '
+                        'delta=%.3fs, window=%.3fs, dropStale=%s',
+                        short, frame_ts, ts, abs(frame_ts - ts), self.mcaWindow,
+                        self.mcaDropStale
+                    )
                 if self.mcaDropStale:
                     continue
             pv = pva.PvScalarArray(pva.DOUBLE)
@@ -236,6 +260,20 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         self.processingTime += (time.time() - t0)
         return pvObject
 
+    def startup_details(self) -> str:
+        return f'watching {len(self.mcaPvs)} MCA PV(s), window={self.mcaWindow}s'
+
+    def start(self):
+        super().start()
+        # Bring CA up here rather than on the first frame: readings have to be
+        # in hand before a frame arrives to fall inside the freshness window.
+        self._ensure_ca()
+        self.logger.info(
+            'MCA associator started: %d PV(s) configured, window=%.3fs, elements=%d, '
+            'CA monitors up=%s',
+            len(self.mcaPvs), self.mcaWindow, self.mcaElements, self._ca_started
+        )
+
     def stop(self, *args, **kwargs):
         self._stop_ca()
         try:
@@ -257,14 +295,7 @@ class HpcMcaAssociator(AdImageProcessor, LogMixin):
         pv_arr = union_dict[field_name]
         data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
 
-        UNION_FIELD_TO_DTYPE = {
-            'ubyteValue': np.uint8, 'byteValue': np.int8,
-            'ushortValue': np.uint16, 'shortValue': np.int16,
-            'uintValue': np.uint32, 'intValue': np.int32,
-            'ulongValue': np.uint64, 'longValue': np.int64,
-            'floatValue': np.float32, 'doubleValue': np.float64,
-        }
-        dtype = UNION_FIELD_TO_DTYPE.get(field_name)
+        dtype = self.UNION_FIELD_TO_DTYPE.get(field_name)
         arr = np.ascontiguousarray(
             np.asarray(data_list, dtype=dtype) if dtype is not None
             else np.asarray(data_list))

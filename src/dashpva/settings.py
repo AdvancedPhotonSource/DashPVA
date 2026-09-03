@@ -196,6 +196,31 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 # BaseWindow.confirm_unsaved_changes on its class or instance.
 CONFIRM_UNSAVED_CHANGES_ON_CLOSE: bool = True
 
+# Simulation servers the workflow Sim Server tab can launch, label -> path
+# relative to PROJECT_ROOT (static -- not config-driven). The label order is the
+# dropdown order; the first entry is the default.
+#: ``options`` lists only the flags that server's parser accepts -- passing any
+#: other makes argparse exit before the server starts. The RSM data server takes
+#: none at all.
+SIM_SERVER_TYPES: dict[str, dict] = {
+    "Area detector": {
+        "path": "src/dashpva/consumers/caIOC_servers/ad_sim_server_modified.py",
+        "options": ("cn", "nx", "ny", "fps", "dt", "nf", "rt", "rp", "mpv"),
+    },
+    "Probe beam": {
+        "path": "src/dashpva/consumers/caIOC_servers/probe_sim_server.py",
+        "options": ("cn", "nx", "ny", "fps", "dt", "rt", "rp", "shape"),
+    },
+    "RSM data": {
+        "path": "src/dashpva/consumers/caIOC_servers/sim_rsm_data.py",
+        "options": (),
+    },
+}
+
+# Beam shapes the probe simulation server accepts (its -shape choices). Only
+# meaningful when SIM_SERVER_TYPES["Probe beam"] is the selected simulation.
+SIM_PROBE_SHAPES: tuple[str, ...] = ("gaussian", "laplacian", "lorentzian", "zone-plate")
+
 # Bounded pvapy monitor queue depth for the PVA reader (static — not
 # config-driven). The network thread enqueues frames here and a consumer thread
 # drains them; when the consumer falls behind the queue fills and pvapy drops

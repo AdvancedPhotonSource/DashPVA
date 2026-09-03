@@ -194,6 +194,26 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
            </property>
           </widget>
          </item>
+         <item row="11" column="0">
+          <widget class="QLabel" name="labelSimType">
+           <property name="text">
+            <string>Simulation Type:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="11" column="1">
+          <widget class="QComboBox" name="comboBoxSimType"/>
+         </item>
+         <item row="12" column="0">
+          <widget class="QLabel" name="labelProbeShape">
+           <property name="text">
+            <string>Probe Shape:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="12" column="1">
+          <widget class="QComboBox" name="comboBoxProbeShape"/>
+         </item>
          <item row="8" column="0">
           <widget class="QLabel" name="labelProcessorFileSim">
            <property name="text">

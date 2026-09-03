@@ -396,6 +396,8 @@ class Workflow(QDialog, LogMixin):
         self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
 
         # Sim Server Tab
+        self._populate_sim_type_combos()
+        self.comboBoxSimType.currentIndexChanged.connect(self._on_sim_type_changed)
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
@@ -2229,6 +2231,47 @@ class Workflow(QDialog, LogMixin):
     # Sim Server
     # ------------------------------------------------------------------ #
 
+    def _populate_sim_type_combos(self):
+        """Fill the simulation-type and probe-shape dropdowns from settings."""
+        self.comboBoxSimType.blockSignals(True)
+        self.comboBoxSimType.clear()
+        self.comboBoxSimType.addItems(list(app_settings.SIM_SERVER_TYPES))
+        self.comboBoxSimType.blockSignals(False)
+        self.comboBoxProbeShape.clear()
+        self.comboBoxProbeShape.addItems(list(app_settings.SIM_PROBE_SHAPES))
+        self._on_sim_type_changed(self.comboBoxSimType.currentIndex())
+
+    def _selected_sim_is_probe(self) -> bool:
+        return self.comboBoxSimType.currentText() == 'Probe beam'
+
+    def _on_sim_type_changed(self, _index):
+        """Point the processor-file field at the chosen simulation."""
+        name = self.comboBoxSimType.currentText()
+        relative = (app_settings.SIM_SERVER_TYPES.get(name) or {}).get('path')
+        if relative:
+            self.lineEditProcessorFileSim.setText(
+                str(pathlib.Path(app_settings.PROJECT_ROOT) / relative)
+            )
+        # -shape only exists on the probe server; hide it for the others.
+        is_probe = self._selected_sim_is_probe()
+        self.labelProbeShape.setVisible(is_probe)
+        self.comboBoxProbeShape.setVisible(is_probe)
+
+    def _sim_option_values(self) -> dict:
+        """Value for every flag any simulation server might accept."""
+        return {
+            'cn': self.lineEditInputChannelSim.text(),
+            'nx': str(self.spinBoxNx.value()),
+            'ny': str(self.spinBoxNy.value()),
+            'fps': str(self.spinBoxFps.value()),
+            'dt': self.comboBoxDt.currentText(),
+            'nf': str(self.spinBoxNf.value()),
+            'rt': str(self.spinBoxRt.value()),
+            'rp': str(self.spinBoxRp.value()),
+            'mpv': self.lineEditMpv.text(),
+            'shape': self.comboBoxProbeShape.currentText(),
+        }
+
     def run_sim_server(self):
         if 'sim_server' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
@@ -2237,21 +2280,15 @@ class Workflow(QDialog, LogMixin):
         sim_path = self.lineEditProcessorFileSim.text()
         if not os.path.isabs(sim_path):
             sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
-        cmd = [
-            sys.executable, '-u', sim_path,
-            '-cn', self.lineEditInputChannelSim.text(),
-            '-nx', str(self.spinBoxNx.value()),
-            '-ny', str(self.spinBoxNy.value()),
-            '-fps', str(self.spinBoxFps.value()),
-            '-dt', self.comboBoxDt.currentText(),
-            '-nf', str(self.spinBoxNf.value()),
-            '-rt', str(self.spinBoxRt.value()),
-            '-rp', str(self.spinBoxRp.value())
-        ]
-
-        metadata_output_pvs = self.lineEditMpv.text()
-        if metadata_output_pvs:
-            cmd.extend(['-mpv', metadata_output_pvs])
+        # Only the flags this server's parser accepts -- argparse exits on any
+        # other, and the RSM data server takes none.
+        spec = app_settings.SIM_SERVER_TYPES.get(self.comboBoxSimType.currentText(), {})
+        values = self._sim_option_values()
+        cmd = [sys.executable, '-u', sim_path]
+        for option in spec.get('options', ()):
+            value = values.get(option, '')
+            if value != '':
+                cmd.extend([f'-{option}', value])
 
         try:
             process = subprocess.Popen(
@@ -2836,6 +2873,75 @@ class Workflow(QDialog, LogMixin):
             return
         self._format_and_append_output(line, self.textEditAssociatorConsumersOutput)
 
+    def _format_analysis_output(self, line: str) -> None:
+        """Accumulate pvapy stats blocks and replace them with a compact one-liner.
+
+        Same treatment the associator output gets -- the raw block is dozens of
+        lines per report, which pushed everything worth reading off screen.
+        """
+        if not hasattr(self, '_analysis_buffer'):
+            self._analysis_buffer = []
+            self._analysis_in_stats = False
+        stripped = line.strip()
+        if "'consumerId'" in stripped:
+            if self._analysis_buffer:
+                self._flush_analysis_stats()
+            self._analysis_buffer = [stripped]
+            self._analysis_in_stats = True
+            return
+        if self._analysis_in_stats:
+            self._analysis_buffer.append(stripped)
+            if stripped.endswith('}}'):
+                self._flush_analysis_stats()
+            return
+        self._format_and_append_output(line, self.textEditAnalysisConsumerOutput)
+
+    def _flush_analysis_stats(self) -> None:
+        """Parse accumulated stats lines and emit a compact live-grid summary."""
+        full = ' '.join(self._analysis_buffer)
+        self._analysis_buffer = []
+        self._analysis_in_stats = False
+
+        def get_int(pat):
+            m = re.search(pat, full)
+            return int(m.group(1)) if m else 0
+
+        def get_float(pat):
+            m = re.search(pat, full)
+            return float(m.group(1)) if m else 0.0
+
+        consumer_id = get_int(r"'consumerId':\s*(\d+)")
+        ch_m = re.search(r"'inputChannel':\s*'([^']+)'", full)
+        channel = ch_m.group(1) if ch_m else '?'
+        recv_rate = get_float(r"'receivedRate':\s*([\d.]+)Hz")
+        pub_rate = get_float(r"'publishedRate':\s*([\d.]+)Hz")
+        n_proc = get_int(r"'nFramesProcessed':\s*(\d+)")
+        n_err = get_int(r"'nFrameErrors':\s*(\d+)")
+
+        # rsm_grid namespace: what the accumulation actually did with the frames.
+        state_m = re.search(r"'state':\s*'([^']+)'", full)
+        state = state_m.group(1) if state_m else 'idle'
+        accepted = get_int(r"'frames_accepted':\s*(\d+)")
+        binned = get_int(r"'points_binned':\s*(\d+)")
+        out_of_range = get_int(r"'points_out_of_range':\s*(\d+)")
+        voxels = get_int(r"'voxels_filled':\s*(\d+)")
+        err_m = re.search(r"'last_error':\s*'([^']+)'", full)
+
+        ts = datetime.now().strftime('%H:%M:%S')
+        color = ERROR if (n_err or err_m) else (SUCCESS if accepted else WARNING)
+        summary = (
+            f"Consumer {consumer_id} | {channel} | "
+            f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
+            f"frames: {n_proc} ok  {n_err} err | "
+            f"grid {state}: {accepted} accepted  {binned:,} binned  "
+            f"{out_of_range:,} out  {voxels:,} voxels"
+        )
+        if err_m:
+            summary += f" | {err_m.group(1)}"
+        self.textEditAnalysisConsumerOutput.appendHtml(
+            f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
+        )
+
     def _flush_associator_stats(self) -> None:
         """Parse accumulated stats lines and emit a compact summary."""
         full = ' '.join(self._assoc_buffer)
@@ -2990,7 +3096,7 @@ class Workflow(QDialog, LogMixin):
             )
             self.processes['analysis_consumer'] = process
             worker = Worker(process)
-            worker.output_signal.connect(self.textEditAnalysisConsumerOutput.appendPlainText)
+            worker.output_signal.connect(self._format_analysis_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()

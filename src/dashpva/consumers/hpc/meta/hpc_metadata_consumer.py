@@ -26,13 +26,12 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 import toml
-from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
 from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.config.resolver import resolve_profile_config
-from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
 
 
@@ -44,58 +43,14 @@ def _load_resolved_config(path):
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
-class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
+class HpcAdMetadataProcessor(BaseMetaAssociator):
 
-    # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = float('inf')
     MIN_COMPRESS_BYTES = 4098
-    # Offset that will be applied to metadata timestamp before comparing it with
-    # the image timestamp
-    DEFAULT_METADATA_TIMESTAMP_OFFSET = .001
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
-        try:
-            self.set_log_manager(viewer_name="HpcAdMetadataProcessor")
-        except Exception:
-            pass
-        # Configuration
-        self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
-        # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
-        self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset', self.DEFAULT_METADATA_TIMESTAMP_OFFSET))
-        # self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
-
-        # Statistics
-        self.nFramesProcessed = 0 # Number of images associated with metadata
-        self.nFrameErrors = 0 # Number of images that could not be associated with metadata
-        self.nMetadataProcessed = 0 # Number of metadata values associated with images
-        self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
-        self.processingTime = 0
-        self.processor_id = configDict.get('collectorId') if 'collectorId' in configDict else configDict.get('metadataId', None)
-        self.cd = None
-
-        # Current metadata map       
-        self.currentMetadataMap = {}
-        # self.currentframe_attributes = {}
-
-        # The last object time
-        self.lastFrameTimestamp = 0
-
-        # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
-        self.CODEC_PARAMETERS_MAP = {
-            np.dtype('uint8'): pva.UBYTE,
-            np.dtype('int8'): pva.BYTE,
-            np.dtype('uint16'): pva.USHORT,
-            np.dtype('int16'): pva.SHORT,
-            np.dtype('uint32'): pva.UINT,
-            np.dtype('int32'): pva.INT,
-            np.dtype('uint64'): pva.ULONG,
-            np.dtype('int64'): pva.LONG,
-            np.dtype('float32'): pva.FLOAT,
-            np.dtype('float64'): pva.DOUBLE,
-        }
-
-        # COPIED FROM hpc_rsm_consumer.py - HKL parameters
+        # The base supplies the log manager, the codec map, the generic frame
+        # and metadata counters, and the tolerance/offset configuration.
+        super().__init__(configDict)
         self.all_attributes = {}
         self.hkl_pv_channels = set()
         self.hkl_attributes = {}
