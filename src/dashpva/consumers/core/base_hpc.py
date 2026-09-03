@@ -30,19 +30,42 @@ class BaseHpcProcessor(AdImageProcessor, LogMixin):
                 return pvObject
     """
 
+    def startup_details(self) -> str:
+        """Processor-specific detail for the startup line; "" adds nothing.
+
+        Example:
+            def startup_details(self):
+                return f"watching {len(self.mcaPvs)} MCA PV(s)"
+        """
+        return ""
+
+    def announce(self, message: str) -> None:
+        """Put a progress line in the workflow console box.
+
+        The one place a processor writes to stdout. Errors belong in
+        :meth:`log_error`; this is for the handful of lines an operator needs
+        to see live -- startup, and the first sign that data is flowing.
+        ``flush`` matters: stdout to a pipe is block-buffered, so without it
+        the line would not appear until the buffer filled.
+
+        Example:
+            self.announce(f"{type(self).__name__}: first frame processed")
+        """
+        print(message, flush=True)
+
     def start(self) -> None:
         """Announce startup on stdout so the workflow console shows it at once.
 
         Errors go to the log, but this one is deliberately printed: the console
         box is where an operator looks after hitting Start, and a consumer can
-        sit for a while before its first frame arrives. ``flush`` matters --
-        stdout to a pipe is block-buffered, so without it the line would not
-        appear until the buffer filled.
+        sit for a while before anything else appears.
         """
-        print(
-            f"{type(self).__name__} started -- this can take some time before "
-            "the first frame arrives.",
-            flush=True,
+        detail = self.startup_details()
+        self.announce(
+            f"{type(self).__name__} started"
+            + (f": {detail}" if detail else "")
+            + ". Processing begins once data arrives -- this can take a moment, "
+              "and nothing shows here until then."
         )
         super().start()
 

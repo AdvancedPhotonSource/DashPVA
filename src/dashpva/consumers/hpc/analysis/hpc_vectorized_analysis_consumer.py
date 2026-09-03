@@ -225,7 +225,7 @@ class HpcAnalysisProcessor(BaseAnalysisProcessor):
         # TODO: make it so that starting pv has a tolerance for when it's detected similar to check in analysis portions
         if (x_value == 0) and (y_value == 0) and not self.first_scan_detected:
             self.first_scan_detected = True
-            print("First Scan detected...")
+            self.announce(f"{type(self).__name__}: first scan detected")
 
         if self.first_scan_detected:
             if self.id_diff > 0:

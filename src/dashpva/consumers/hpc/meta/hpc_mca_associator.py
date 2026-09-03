@@ -219,10 +219,9 @@ class HpcMcaAssociator(BaseHpcProcessor):
             )
         if matched and not self._announced_associating:
             self._announced_associating = True
-            print(
+            self.announce(
                 f'{type(self).__name__}: associating -- frame {frameId} matched '
-                f'{len(matched)} MCA channel(s): {", ".join(sorted(matched))}',
-                flush=True,
+                f'{len(matched)} MCA channel(s): {", ".join(sorted(matched))}'
             )
         for short, (vals, ts, within) in matched.items():
             if within:
@@ -261,17 +260,14 @@ class HpcMcaAssociator(BaseHpcProcessor):
         self.processingTime += (time.time() - t0)
         return pvObject
 
+    def startup_details(self) -> str:
+        return f'watching {len(self.mcaPvs)} MCA PV(s), window={self.mcaWindow}s'
+
     def start(self):
         super().start()
         # Bring CA up here rather than on the first frame: readings have to be
         # in hand before a frame arrives to fall inside the freshness window.
         self._ensure_ca()
-        print(
-            f'{type(self).__name__}: watching {len(self.mcaPvs)} MCA PV(s), '
-            f'window={self.mcaWindow}s. Associating starts once readings and frames '
-            'arrive -- this can take a moment, and nothing shows here until then.',
-            flush=True,
-        )
         self.logger.info(
             'MCA associator started: %d PV(s) configured, window=%.3fs, elements=%d, '
             'CA monitors up=%s',
