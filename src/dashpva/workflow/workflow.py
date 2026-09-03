@@ -2873,6 +2873,75 @@ class Workflow(QDialog, LogMixin):
             return
         self._format_and_append_output(line, self.textEditAssociatorConsumersOutput)
 
+    def _format_analysis_output(self, line: str) -> None:
+        """Accumulate pvapy stats blocks and replace them with a compact one-liner.
+
+        Same treatment the associator output gets -- the raw block is dozens of
+        lines per report, which pushed everything worth reading off screen.
+        """
+        if not hasattr(self, '_analysis_buffer'):
+            self._analysis_buffer = []
+            self._analysis_in_stats = False
+        stripped = line.strip()
+        if "'consumerId'" in stripped:
+            if self._analysis_buffer:
+                self._flush_analysis_stats()
+            self._analysis_buffer = [stripped]
+            self._analysis_in_stats = True
+            return
+        if self._analysis_in_stats:
+            self._analysis_buffer.append(stripped)
+            if stripped.endswith('}}'):
+                self._flush_analysis_stats()
+            return
+        self._format_and_append_output(line, self.textEditAnalysisConsumerOutput)
+
+    def _flush_analysis_stats(self) -> None:
+        """Parse accumulated stats lines and emit a compact live-grid summary."""
+        full = ' '.join(self._analysis_buffer)
+        self._analysis_buffer = []
+        self._analysis_in_stats = False
+
+        def get_int(pat):
+            m = re.search(pat, full)
+            return int(m.group(1)) if m else 0
+
+        def get_float(pat):
+            m = re.search(pat, full)
+            return float(m.group(1)) if m else 0.0
+
+        consumer_id = get_int(r"'consumerId':\s*(\d+)")
+        ch_m = re.search(r"'inputChannel':\s*'([^']+)'", full)
+        channel = ch_m.group(1) if ch_m else '?'
+        recv_rate = get_float(r"'receivedRate':\s*([\d.]+)Hz")
+        pub_rate = get_float(r"'publishedRate':\s*([\d.]+)Hz")
+        n_proc = get_int(r"'nFramesProcessed':\s*(\d+)")
+        n_err = get_int(r"'nFrameErrors':\s*(\d+)")
+
+        # rsm_grid namespace: what the accumulation actually did with the frames.
+        state_m = re.search(r"'state':\s*'([^']+)'", full)
+        state = state_m.group(1) if state_m else 'idle'
+        accepted = get_int(r"'frames_accepted':\s*(\d+)")
+        binned = get_int(r"'points_binned':\s*(\d+)")
+        out_of_range = get_int(r"'points_out_of_range':\s*(\d+)")
+        voxels = get_int(r"'voxels_filled':\s*(\d+)")
+        err_m = re.search(r"'last_error':\s*'([^']+)'", full)
+
+        ts = datetime.now().strftime('%H:%M:%S')
+        color = ERROR if (n_err or err_m) else (SUCCESS if accepted else WARNING)
+        summary = (
+            f"Consumer {consumer_id} | {channel} | "
+            f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
+            f"frames: {n_proc} ok  {n_err} err | "
+            f"grid {state}: {accepted} accepted  {binned:,} binned  "
+            f"{out_of_range:,} out  {voxels:,} voxels"
+        )
+        if err_m:
+            summary += f" | {err_m.group(1)}"
+        self.textEditAnalysisConsumerOutput.appendHtml(
+            f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
+        )
+
     def _flush_associator_stats(self) -> None:
         """Parse accumulated stats lines and emit a compact summary."""
         full = ' '.join(self._assoc_buffer)
@@ -3027,7 +3096,7 @@ class Workflow(QDialog, LogMixin):
             )
             self.processes['analysis_consumer'] = process
             worker = Worker(process)
-            worker.output_signal.connect(self.textEditAnalysisConsumerOutput.appendPlainText)
+            worker.output_signal.connect(self._format_analysis_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()
