@@ -73,6 +73,29 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
       </spacer>
      </item>
      <item>
+      <widget class="QCheckBox" name="chk_follow">
+       <property name="text">
+        <string>Follow</string>
+       </property>
+       <property name="toolTip">
+        <string>Keep showing new lines as they are written.</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_clear">
+       <property name="text">
+        <string>Clear</string>
+       </property>
+       <property name="toolTip">
+        <string>Clear this window. The log file on disk is not touched.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btn_refresh">
        <property name="text">
         <string>Refresh</string>

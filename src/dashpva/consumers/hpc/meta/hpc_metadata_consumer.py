@@ -81,13 +81,6 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # The last object time
         self.lastFrameTimestamp = 0
 
-        # Per-channel tally of "Metadata channel X not found" occurrences, plus
-        # a throttled WARNING (ERROR on every frame floods the associator GUI
-        # box, so we warn at most once per _toleranceWarnIntervalSec per channel).
-        self._toleranceWarnIntervalSec = 60.0
-        self._mdMissingChannels = {}     # channel -> total count
-        self._lastMissingWarnTime = {}   # channel -> last warn time (s)
-
         # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
         self.CODEC_PARAMETERS_MAP = {
             np.dtype('uint8'): pva.UBYTE,
@@ -179,17 +172,10 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
             # Metadata for this channel has not arrived, so it cannot be
-            # attached to the frame. Tally per channel and warn at most once
-            # per interval per channel (ERROR every frame floods the GUI box).
-            count = self._mdMissingChannels.get(mdChannel, 0) + 1
-            self._mdMissingChannels[mdChannel] = count
-            now = time.time()
-            if now - self._lastMissingWarnTime.get(mdChannel, 0.0) >= self._toleranceWarnIntervalSec:
-                self.logger.warning(
-                    f'[Metadata Associator] {mdChannel} not attaching: no metadata '
-                    f'received yet (missed {count} times)'
-                )
-                self._lastMissingWarnTime[mdChannel] = now
+            # attached. A routine discard, not a fault: counted for the status
+            # channel, not logged -- warning per channel per frame buried real
+            # errors under thousands of lines.
+            self.nMetadataDiscarded += 1
             return False
 
         mdObject = self.currentMetadataMap[mdChannel]
