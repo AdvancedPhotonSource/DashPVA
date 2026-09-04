@@ -252,7 +252,9 @@ RSM_GRID_ENERGY_RELATIVE_TOLERANCE: float = 1e-4
 RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
 RSM_GRID_PREVIEW_BUDGET_BYTES: int = 4 * 1024 * 1024
 RSM_GRID_PREVIEW_INTERVAL_SECONDS: float = 1.0
-RSM_GRID_METADATA_MAX_AGE_SECONDS: float = 0.001
+# Motors publish only on value changes; infinity still requires the associator
+# source timestamp, while a finite age limit remains an explicit override.
+RSM_GRID_METADATA_MAX_AGE_SECONDS: float = float("inf")
 RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
 RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
 RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
@@ -261,6 +263,14 @@ RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
 RSM_IOC_SNAPSHOT_EVERY: int = 5
 METADATA_ASSOCIATOR_STALENESS_CHECK_MS: int = 2_000
+
+ANALYSIS_PROCESSOR_CLASSES: dict[str, str] = {
+    "hpc_rsm_consumer.py": "HpcRsmProcessor",
+    "hpc_rsm_grid_consumer.py": "HpcRsmGridProcessor",
+    "hpc_spontaneous_analysis_consumer.py": "HpcAnalysisProcessor",
+    "hpc_vectorized_analysis_consumer.py": "HpcAnalysisProcessor",
+}
+RSM_GRID_PROCESSOR_CLASS: str = "HpcRsmGridProcessor"
 
 # Combined byte budget for mask-editor undo and redo data.
 MASK_UNDO_MAX_BYTES: int = 32 * 1024 * 1024

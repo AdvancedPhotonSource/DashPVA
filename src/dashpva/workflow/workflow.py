@@ -394,6 +394,7 @@ class Workflow(QDialog, LogMixin):
         self._edited_item_ids: set = set()
         self._structural_changed: bool = False
         self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
+        self._analysis_non_grid_consumers = self.spinBoxNConsumersAnalysis.value()
 
         # Sim Server Tab
         self._populate_sim_type_combos()
@@ -457,6 +458,12 @@ class Workflow(QDialog, LogMixin):
         self.buttonStopCollector.clicked.connect(self.stop_collector)
 
         # Analysis Consumer Tab
+        self.comboBoxProcessorFileAnalysis.currentTextChanged.connect(
+            self._on_analysis_processor_file_changed
+        )
+        self.spinBoxNConsumersAnalysis.valueChanged.connect(
+            self._remember_analysis_consumer_count
+        )
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
@@ -589,6 +596,49 @@ class Workflow(QDialog, LogMixin):
             if current:
                 combo.setCurrentText(current)
             combo.blockSignals(False)
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
+
+    def _remember_analysis_consumer_count(self, value):
+        if self.spinBoxNConsumersAnalysis.isEnabled():
+            self._analysis_non_grid_consumers = int(value)
+
+    @staticmethod
+    def _processor_file_path(processor_file):
+        value = str(processor_file).strip()
+        if not value:
+            return value
+        path = pathlib.Path(value).expanduser()
+        if not path.is_absolute():
+            path = app_settings.PROJECT_ROOT / path
+        return str(path.resolve())
+
+    def _on_analysis_processor_file_changed(self, processor_file):
+        filename = pathlib.Path(str(processor_file)).name
+        processor_class = app_settings.ANALYSIS_PROCESSOR_CLASSES.get(filename)
+        if processor_class:
+            self.lineEditProcessorClassAnalysis.setText(processor_class)
+
+        is_grid = processor_class == app_settings.RSM_GRID_PROCESSOR_CLASS
+        was_enabled = self.spinBoxNConsumersAnalysis.isEnabled()
+        if is_grid:
+            if was_enabled:
+                self._analysis_non_grid_consumers = (
+                    self.spinBoxNConsumersAnalysis.value()
+                )
+            self.spinBoxNConsumersAnalysis.setEnabled(False)
+            self.spinBoxNConsumersAnalysis.setValue(1)
+            self.spinBoxNConsumersAnalysis.setToolTip(
+                "Live gridding is stateful and requires exactly one consumer."
+            )
+        else:
+            self.spinBoxNConsumersAnalysis.setEnabled(True)
+            if not was_enabled:
+                self.spinBoxNConsumersAnalysis.setValue(
+                    self._analysis_non_grid_consumers
+                )
+            self.spinBoxNConsumersAnalysis.setToolTip("")
 
     # ------------------------------------------------------------------ #
     # Config source toggle
@@ -2579,6 +2629,9 @@ class Workflow(QDialog, LogMixin):
                 self.spinBoxNConsumersAnalysis.setValue(int(last['n_consumers']))
             if 'distributor_updates' in last:
                 self.spinBoxDistributorUpdatesAnalysis.setValue(int(last['distributor_updates']))
+            self._on_analysis_processor_file_changed(
+                self.comboBoxProcessorFileAnalysis.currentText()
+            )
         except Exception:
             pass
 
@@ -2636,6 +2689,9 @@ class Workflow(QDialog, LogMixin):
             self.spinBoxNConsumersAnalysis.setValue(int(cfg['n_consumers']))
         if 'distributor_updates' in cfg:
             self.spinBoxDistributorUpdatesAnalysis.setValue(int(cfg['distributor_updates']))
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
 
     def run_associator_consumers(self):
         self.logger.info('Start Metadata Associator requested')
@@ -2720,7 +2776,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAssociator.text(),
             '--status-channel', self.lineEditStatusChannelAssociator.text(),
             '--output-channel', self.lineEditOutputChannelAssociator.text(),
-            '--processor-file', self.comboBoxProcessorFileAssociator.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileAssociator.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassAssociator.text(),
             '--report-period', str(self.spinBoxReportPeriodAssociator.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
@@ -2926,6 +2984,9 @@ class Workflow(QDialog, LogMixin):
         out_of_range = get_int(r"'points_out_of_range':\s*(\d+)")
         voxels = get_int(r"'voxels_filled':\s*(\d+)")
         err_m = re.search(r"'last_error':\s*'([^']+)'", full)
+        binding_m = re.search(
+            r"'last_binding_rejection':\s*'([^']+)'", full
+        )
 
         ts = datetime.now().strftime('%H:%M:%S')
         color = ERROR if (n_err or err_m) else (SUCCESS if accepted else WARNING)
@@ -2938,6 +2999,11 @@ class Workflow(QDialog, LogMixin):
         )
         if err_m:
             summary += f" | {err_m.group(1)}"
+        elif binding_m and not accepted:
+            summary += (
+                " | metadata rejected: "
+                f"{binding_m.group(1).replace('_', ' ')}"
+            )
         self.textEditAnalysisConsumerOutput.appendHtml(
             f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
         )
@@ -3014,7 +3080,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),
             '--output-channel', self.lineEditOutputChannelCollector.text(),
-            '--processor-file', self.comboBoxProcessorFileCollector.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileCollector.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassCollector.text(),
             '--report-period', str(self.spinBoxReportPeriodCollector.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeCollector.value()),
@@ -3065,6 +3133,9 @@ class Workflow(QDialog, LogMixin):
         if 'analysis_consumer' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Analysis Consumer is already running.')
             return
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
         self._save_analysis_last()
 
         cmd = [
@@ -3073,7 +3144,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAnalysis.text(),
             '--status-channel', self.lineEditStatusChannelAnalysis.text(),
             '--output-channel', self.lineEditOutputChannelAnalysis.text(),
-            '--processor-file', self.comboBoxProcessorFileAnalysis.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileAnalysis.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),

@@ -254,7 +254,8 @@ class GridControlDock(BaseDock):
         )
         self._apply_running_state()
         self.state_label.setText(self._state)
-        self.frames_label.setText(f"{int(state.get('frames_accepted', 0)):,}")
+        frames_accepted = int(state.get("frames_accepted", 0))
+        self.frames_label.setText(f"{frames_accepted:,}")
         self.binned_label.setText(f"{int(state.get('points_binned', 0)):,}")
 
         out_of_range = int(state.get("points_out_of_range", 0))
@@ -264,6 +265,18 @@ class GridControlDock(BaseDock):
 
         if state.get("last_error"):
             self.notice_label.setText(str(state["last_error"]))
+            self._set_level(self.notice_label, "error")
+        elif (
+            frames_accepted == 0
+            and int(state.get("frames_rejected_binding", 0)) > 0
+        ):
+            reason = str(
+                state.get("last_binding_rejection") or "metadata mismatch"
+            )
+            self.notice_label.setText(
+                "No frames reached the grid — metadata binding rejected them "
+                f"({reason.replace('_', ' ')})."
+            )
             self._set_level(self.notice_label, "error")
         elif state.get("incomplete"):
             self.notice_label.setText(

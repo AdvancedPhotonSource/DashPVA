@@ -598,7 +598,7 @@ class HKLImageWindow(BaseWindow):
         self._grid_status_busy = busy
         if busy:
             self.grid_dock.set_busy(True)
-        self._grid_status_future = self._grid_executor.submit(client.get_status)
+        self._grid_status_future = self._grid_executor.submit(client.refresh_status)
         QTimer.singleShot(50, self._poll_grid_status)
 
     def _poll_grid_status(self) -> None:
@@ -726,6 +726,8 @@ class HKLImageWindow(BaseWindow):
                     self.logger.exception(f'[HKL Viewer] Gridded render failed: {e}')
             except Exception:
                 pass
+            self._grid_error(RuntimeError(f'Could not render live-grid preview: {e}'))
+            return
         self.grid_dock.update_status(state)
 
     def update_image_cumulative(self) -> None:

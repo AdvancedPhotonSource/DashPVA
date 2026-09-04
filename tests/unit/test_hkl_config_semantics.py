@@ -227,6 +227,17 @@ def test_metadata_associator_attaches_source_timestamp_after_validation():
     assert attributes[1]["value"].toDict()["value"] == 10.0
 
 
+def test_base_metadata_associator_rejects_metadata_without_timestamp():
+    from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
+
+    processor = object.__new__(BaseMetaAssociator)
+    processor.currentMetadataMap = {"ioc:Mu": {"value": 3.0}}
+    processor.nMetadataDiscarded = 0
+
+    assert not processor.associateMetadata("ioc:Mu", 1, 10.0, [])
+    assert processor.nMetadataDiscarded == 1
+
+
 class TestDerivedCircleAccessors:
     """settings.HKL_SAMPLE_CIRCLES / HKL_DETECTOR_CIRCLES.
 

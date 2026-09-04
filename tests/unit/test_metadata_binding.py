@@ -21,6 +21,7 @@
 
 import pytest
 
+import dashpva.settings as app_settings
 from dashpva.utils.metadata_binding import (
     BindingRejection,
     ChannelClass,
@@ -88,6 +89,12 @@ class TestFailClosed:
         assert binder.bind(GOOD, frame_id=1, timestamp=None) is None
         assert binder.counters.rejections[BindingRejection.NO_TIMESTAMP.value] == 1
 
+    @pytest.mark.parametrize("timestamp", [float("nan"), float("inf")])
+    def test_nonfinite_frame_timestamp_is_rejected(self, timestamp):
+        binder = _binder()
+        assert binder.bind(GOOD, frame_id=1, timestamp=timestamp) is None
+        assert binder.counters.rejections[BindingRejection.NO_TIMESTAMP.value] == 1
+
     @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
     def test_nonfinite_required_value_is_rejected(self, bad):
         binder = _binder()
@@ -110,9 +117,36 @@ class TestFailClosed:
             GOOD, frame_id=1, timestamp=100.0, metadata_timestamps=timestamps
         ) is not None
 
+    def test_production_policy_accepts_an_unchanged_motor_timestamp(self):
+        binder = _binder(
+            max_age_seconds=app_settings.RSM_GRID_METADATA_MAX_AGE_SECONDS
+        )
+        timestamps = {"ioc:Mu:Position": 1.0}
+        assert binder.bind(
+            GOOD, frame_id=1, timestamp=100.0, metadata_timestamps=timestamps
+        ) is not None
+
+        without_source_timestamp = _binder(
+            max_age_seconds=app_settings.RSM_GRID_METADATA_MAX_AGE_SECONDS
+        )
+        assert without_source_timestamp.bind(
+            GOOD, frame_id=1, timestamp=100.0
+        ) is None
+
     def test_required_dynamic_timestamp_is_required_when_age_check_enabled(self):
         binder = _binder(max_age_seconds=0.5)
         assert binder.bind(GOOD, frame_id=1, timestamp=100.0) is None
+        assert binder.counters.rejections[BindingRejection.NO_TIMESTAMP.value] == 1
+
+    @pytest.mark.parametrize("timestamp", [float("nan"), float("inf")])
+    def test_nonfinite_metadata_timestamp_is_rejected(self, timestamp):
+        binder = _binder(max_age_seconds=float("inf"))
+        assert binder.bind(
+            GOOD,
+            frame_id=1,
+            timestamp=100.0,
+            metadata_timestamps={"ioc:Mu:Position": timestamp},
+        ) is None
         assert binder.counters.rejections[BindingRejection.NO_TIMESTAMP.value] == 1
 
     def test_static_channels_do_not_require_fresh_timestamps(self):
@@ -186,6 +220,8 @@ class TestFrameIdentity:
         assert binder.bind(GOOD, frame_id=None, timestamp=1.0) is None
         reason = BindingRejection.MISSING_FRAME_ID.value
         assert binder.counters.rejections[reason] == 1
+        assert binder.counters.last_rejection == reason
+        assert binder.counters.as_dict()["last_rejection"] == reason
 
     def test_metadata_rejection_does_not_create_a_false_upstream_gap(self):
         binder = _binder()

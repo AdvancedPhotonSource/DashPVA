@@ -38,6 +38,7 @@ import dashpva.settings as app_settings
 from dashpva.consumers.hpc.analysis.hpc_rsm_consumer import HpcRsmProcessor
 from dashpva.utils.metadata_binding import (
     METADATA_TIMESTAMP_ATTRIBUTE_PREFIX,
+    BindingRejection,
     MetadataBinder,
     classify_hkl_channels,
 )
@@ -393,7 +394,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                     self.nFrameErrors += 1
                     return pvObject
 
-                image = self.decompress_image(pvObject).reshape(shape)
+                image = self.decompress_image(pvObject).reshape(shape, order="F")
                 qxyz = self.create_rsm(dict(bound.values), shape)
                 if qxyz is None or qxyz[0] is None:
                     raise ValueError("Angle-to-Q conversion returned no coordinates.")
@@ -490,6 +491,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "estimated_bounds": self._estimated_bounds,
             "frames_seen_running": int(state.get("frames_seen_running", 0)),
             "frames_bound": int(binder.get("frames_bound", 0)),
+            "last_binding_rejection": str(binder.get("last_rejection", "")),
             "frames_accepted": int(state.get("frames_accepted", 0)),
             "frames_rejected_binding": int(
                 state.get("frames_rejected_binding", 0)
@@ -518,6 +520,10 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "intensity_range": [],
             "voxels_filled": 0,
         }
+        for reason in BindingRejection:
+            status[f"frames_rejected_{reason.value}"] = int(
+                binder.get(f"rejected_{reason.value}", 0)
+            )
         if preview is not None:
             status.update(
                 preview_shape=list(preview.shape),
@@ -561,6 +567,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "estimated_bounds": [pva.DOUBLE],
             "frames_seen_running": pva.ULONG,
             "frames_bound": pva.ULONG,
+            "last_binding_rejection": pva.STRING,
             "frames_accepted": pva.ULONG,
             "frames_rejected_binding": pva.ULONG,
             "frames_rejected_processing": pva.ULONG,
@@ -581,4 +588,6 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "intensity_range": [pva.DOUBLE],
             "voxels_filled": pva.ULONG,
         }
+        for reason in BindingRejection:
+            types[RSM_GRID_NAMESPACE][f"frames_rejected_{reason.value}"] = pva.ULONG
         return types

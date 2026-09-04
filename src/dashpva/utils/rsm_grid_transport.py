@@ -139,6 +139,7 @@ class GridControlClient:
         status_channel: str,
         *,
         channel_factory: Optional[Callable[[str], Any]] = None,
+        control_value_factory: Optional[Callable[[str, str], Any]] = None,
         timeout_seconds: float = app_settings.RSM_GRID_CONTROL_TIMEOUT_SECONDS,
         save_timeout_seconds: float = app_settings.RSM_GRID_SAVE_TIMEOUT_SECONDS,
         poll_interval_seconds: float = (
@@ -159,13 +160,23 @@ class GridControlClient:
 
             def channel_factory(name):
                 return pva.Channel(name, pva.PVA)
+
+            if control_value_factory is None:
+                def control_value_factory(command, args):
+                    return pva.PvObject(
+                        {"command": pva.STRING, "args": pva.STRING},
+                        {"command": command, "args": args},
+                    )
         self._channel_factory = channel_factory
+        self._control_value_factory = control_value_factory or (
+            lambda command, args: {"command": command, "args": args}
+        )
         self._control = channel_factory(control_channel)
         self._status = channel_factory(status_channel)
 
     def _put_control(self, command: str, args: str = "") -> None:
         try:
-            self._control.put({"command": command, "args": args})
+            self._control.put(self._control_value_factory(command, args))
         except Exception as exc:
             raise GridTransportError(
                 f"Could not write analysis control channel "
@@ -182,17 +193,34 @@ class GridControlClient:
                 f"Could not read analysis status channel "
                 f"{self.status_channel_name!r}: {exc}"
             ) from exc
-        user_stats = outer.get("userStats", {})
-        if not isinstance(user_stats, Mapping):
-            user_stats = {}
-        grid = user_stats.get(RSM_GRID_NAMESPACE, {})
+        user_stats = outer.get("userStats")
+        if (
+            not isinstance(user_stats, Mapping)
+            or RSM_GRID_NAMESPACE not in user_stats
+        ):
+            raise GridTransportError(
+                f"Analysis status channel {self.status_channel_name!r} does not "
+                "expose userStats.rsm_grid. In Workflow > Analysis, select "
+                "hpc_rsm_grid_consumer.py with HpcRsmGridProcessor and exactly "
+                "one consumer."
+            )
+        grid = user_stats[RSM_GRID_NAMESPACE]
         if not isinstance(grid, Mapping):
-            grid = {}
+            raise GridTransportError(
+                f"Analysis status channel {self.status_channel_name!r} has an "
+                "invalid userStats.rsm_grid value."
+            )
         result = dict(grid)
         processor_stats = outer.get("processorStats", {})
         if isinstance(processor_stats, Mapping):
             result["frames_missed_pvapy"] = int(processor_stats.get("nMissed", 0))
         return result
+
+    def refresh_status(self) -> dict[str, Any]:
+        """Ask pvapy to publish current processor stats, then read them."""
+        self._put_control("get_stats")
+        time.sleep(self.poll_interval_seconds)
+        return self.get_status()
 
     def command(
         self,
@@ -211,9 +239,7 @@ class GridControlClient:
             # pvapy schedules control commands on independent short-delay
             # timers, so one get_stats can run before configure. Repeating it
             # until the request id is acknowledged makes ordering explicit.
-            self._put_control("get_stats")
-            time.sleep(self.poll_interval_seconds)
-            status = self.get_status()
+            status = self.refresh_status()
             if status.get("ack_request_id") == envelope["request_id"]:
                 if status.get("command_error"):
                     raise GridTransportError(str(status["command_error"]))

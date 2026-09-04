@@ -125,6 +125,12 @@ def _frame(frame_id, *, angle=1.0, energy=None, metadata_timestamp=None):
     return frame
 
 
+def test_processor_uses_the_stationary_motor_timestamp_policy():
+    processor = HpcRsmGridProcessor({"path": str(PROFILE)})
+
+    assert np.isinf(processor.binder.max_age_seconds)
+
+
 def test_stale_dynamic_metadata_is_rejected(tmp_path):
     processor = _processor(tmp_path)
     processor.binder.max_age_seconds = 0.5
@@ -136,6 +142,8 @@ def test_stale_dynamic_metadata_is_rejected(tmp_path):
     status = controller.getUserStats()[RSM_GRID_NAMESPACE]
     assert status["frames_accepted"] == 0
     assert status["frames_rejected_binding"] == 1
+    assert status["frames_rejected_stale_timestamp"] == 1
+    assert status["last_binding_rejection"] == "stale_timestamp"
     assert processor.binder.counters.rejections["stale_timestamp"] == 1
 
 
@@ -175,6 +183,8 @@ def test_actual_pvapy_configure_process_and_nested_user_stats(tmp_path):
     assert status["frames_seen_running"] == 2
     assert status["frames_accepted"] == 1
     assert status["frames_rejected_binding"] == 1
+    assert status["frames_rejected_missing_required"] == 1
+    assert status["last_binding_rejection"] == "missing_required"
     assert status["accounting_consistent"] == 1
     assert status["preview_values"].nbytes <= 1024
 
@@ -182,7 +192,34 @@ def test_actual_pvapy_configure_process_and_nested_user_stats(tmp_path):
         controller.getUserStatsPvaTypes(),
         controller.getUserStats(),
     )
-    assert wire.toDict()[RSM_GRID_NAMESPACE]["frames_accepted"] == 1
+    wire_status = wire.toDict()[RSM_GRID_NAMESPACE]
+    assert wire_status["frames_accepted"] == 1
+    assert wire_status["frames_rejected_missing_required"] == 1
+
+
+def test_detector_pixels_are_reconstructed_in_ntndarray_order(tmp_path):
+    processor = _processor(tmp_path)
+    processor.decompress_image = lambda _frame: np.arange(6, dtype=np.float32)
+    processor.create_rsm = lambda _attributes, shape: tuple(
+        np.ones(shape, dtype=float) * value for value in (0.2, 0.4, 0.6)
+    )
+    captured = []
+
+    def capture_frame(qx, qy, qz, intensity, **kwargs):
+        captured.append(intensity.copy())
+        return intensity.size
+
+    processor.session.add_frame = capture_frame
+    controller, harness = _pipeline(processor)
+    _start(harness)
+    frame = _frame(1, energy=10.0)
+    frame["dimension"] = [{"size": 2}, {"size": 3}]
+    controller.process(frame)
+
+    np.testing.assert_array_equal(
+        captured[0],
+        np.array([[0.0, 2.0, 4.0], [1.0, 3.0, 5.0]], dtype=np.float32),
+    )
 
 
 def test_static_geometry_change_stops_before_mixing_frames(tmp_path):

@@ -64,6 +64,9 @@ class BaseMetaAssociator(BaseHpcProcessor):
         if 'timeStamp' in mdObject:
             mdTimestamp = TimeUtility.getTimeStampAsFloat(mdObject['timeStamp'])
             mdTimestamp2 = mdTimestamp + self.metadataTimestampOffset
+        else:
+            self.nMetadataDiscarded += 1
+            return False
 
         if 'value' not in mdObject:
             self.logger.error(f'Metadata object {mdObject} does not have field "value"')

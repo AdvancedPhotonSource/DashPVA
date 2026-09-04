@@ -46,12 +46,12 @@ class _Dock:
         self.states.append(value)
 
 
-def test_remote_status_get_runs_on_the_injected_executor(monkeypatch):
+def test_remote_status_refresh_runs_on_the_injected_executor(monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
     class _Client:
-        def get_status(self):
+        def refresh_status(self):
             started.set()
             assert release.wait(2)
             return {"state": "running", "estimate_state": "idle"}
@@ -123,12 +123,79 @@ def test_estimate_reconciliation_attaches_to_an_existing_grid():
         assert dock.states == [state]
 
 
+def test_grid_render_failure_is_reported_in_the_control_dock(monkeypatch):
+    errors = []
+    dock = _Dock()
+    payload = SimpleNamespace(
+        shape=(2, 2, 2),
+        origin=(0.0, 0.0, 0.0),
+        spacing=(1.0, 1.0, 1.0),
+        mean=None,
+        intensity_range=[0.0, 1.0],
+    )
+
+    def fail_image_data():
+        raise RuntimeError("renderer unavailable")
+
+    monkeypatch.setattr(hkl_viewer, "preview_from_status", lambda _state: payload)
+    monkeypatch.setattr(hkl_viewer.pyv, "ImageData", fail_image_data)
+    window = SimpleNamespace(
+        _grid_estimate_started=False,
+        _grid_error=errors.append,
+        grid_actor=None,
+        grid_dock=dock,
+    )
+
+    hkl_viewer.HKLImageWindow._render_gridded_volume(window, {})
+
+    assert "renderer unavailable" in str(errors[0])
+    assert dock.states == []
+
+
 class _EnableTarget:
     def __init__(self):
         self.enabled = None
 
     def setEnabled(self, enabled):
         self.enabled = enabled
+
+
+class _TextTarget:
+    def __init__(self):
+        self.text = ""
+
+    def setText(self, text):
+        self.text = text
+
+
+def test_grid_dock_explains_why_no_frames_reached_the_grid():
+    targets = [_TextTarget() for _ in range(6)]
+    levels = []
+    dock = SimpleNamespace(
+        _state="idle",
+        _has_accumulator=False,
+        _apply_running_state=lambda: None,
+        _set_level=lambda widget, level: levels.append((widget, level)),
+        state_label=targets[0],
+        frames_label=targets[1],
+        binned_label=targets[2],
+        out_of_range_label=targets[3],
+        filled_label=targets[4],
+        notice_label=targets[5],
+    )
+
+    GridControlDock.update_status(
+        dock,
+        {
+            "state": "running",
+            "frames_accepted": 0,
+            "frames_rejected_binding": 3,
+            "last_binding_rejection": "missing_required",
+        },
+    )
+
+    assert "missing required" in dock.notice_label.text
+    assert levels[-1] == (dock.notice_label, "error")
 
 
 def _dock_state(state, *, has_accumulator=False):

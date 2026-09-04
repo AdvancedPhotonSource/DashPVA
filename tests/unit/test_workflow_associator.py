@@ -62,6 +62,7 @@ class _AssociatorHarness:
     stop_associator_consumers = Workflow.stop_associator_consumers
     _sync_associator_metadata = Workflow._sync_associator_metadata
     _on_associator_staleness_timer = Workflow._on_associator_staleness_timer
+    _processor_file_path = staticmethod(Workflow._processor_file_path)
 
     def __init__(self):
         self.processes = {}

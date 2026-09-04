@@ -73,8 +73,10 @@ class _FakeCluster:
 class _FakeControl:
     def __init__(self, cluster):
         self.cluster = cluster
+        self.values = []
 
     def put(self, value):
+        self.values.append(value)
         if value["command"] == "configure":
             payload = json.loads(value["args"])
             self.cluster.pending = payload["rsm_grid"]
@@ -113,6 +115,66 @@ def test_client_repeats_get_stats_until_delayed_configure_is_acknowledged():
     assert state["state"] == "running"
     assert state["frames_missed_pvapy"] == 7
     assert cluster.refreshes >= 2
+
+
+def test_refresh_status_requests_fresh_processor_stats_before_reading():
+    cluster = _FakeCluster()
+    client = GridControlClient(
+        "control",
+        "status",
+        channel_factory=cluster.factory,
+        poll_interval_seconds=0.0,
+    )
+
+    status = client.refresh_status()
+
+    assert status["frames_missed_pvapy"] == 7
+    assert cluster.refreshes == 1
+    assert cluster.control.values[-1]["command"] == "get_stats"
+
+
+def test_client_uses_the_control_value_factory_for_wire_writes():
+    cluster = _FakeCluster()
+    created = []
+
+    def control_value(command, args):
+        created.append((command, args))
+        return {"command": command, "args": args}
+
+    client = GridControlClient(
+        "control",
+        "status",
+        channel_factory=cluster.factory,
+        control_value_factory=control_value,
+    )
+    client._put_control("get_stats")
+
+    assert created == [("get_stats", "")]
+    assert cluster.control.values[-1]["command"] == "get_stats"
+
+
+def test_default_control_value_is_a_typed_pvobject(monkeypatch):
+    pva = pytest.importorskip("pvaccess")
+    channel = _FakeCluster().control
+    monkeypatch.setattr(pva, "Channel", lambda *_args: channel)
+
+    client = GridControlClient("control", "status")
+    value = client._control_value_factory("configure", "{}")
+
+    assert value.toDict() == {"command": "configure", "args": "{}"}
+
+
+def test_client_rejects_status_from_the_non_grid_processor():
+    cluster = _FakeCluster()
+    cluster.status.get = lambda: {"userStats": {}, "processorStats": {}}
+    client = GridControlClient(
+        "control",
+        "status",
+        channel_factory=cluster.factory,
+    )
+
+    with pytest.raises(GridTransportError, match="HpcRsmGridProcessor"):
+        client.get_status()
 
 
 def test_save_waits_for_completion_not_only_command_acknowledgement():

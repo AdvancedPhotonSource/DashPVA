@@ -34,8 +34,9 @@ Channels are classified because not all metadata carries equal weight:
     Geometry that does not change during a scan (directions, UB, detector
     calibration). A stale value is fine -- it is the same value.
 ``REQUIRED_DYNAMIC``
-    Circle positions and, when normalizing, the monitor. These must be fresh
-    for *this* frame; a stale one silently mis-places the frame.
+    Circle positions and, when normalizing, the monitor. These must carry a
+    source timestamp. A finite maximum age additionally requires a
+    trigger-latched value for each frame.
 ``OPTIONAL``
     Environment (temperature, and so on). Recorded when present, never a
     reason to reject.
@@ -104,10 +105,12 @@ class BindingCounters:
     id_gap_events: int = 0
     frames_missing_upstream: int = 0
     ids_out_of_order: int = 0
+    last_rejection: str = ""
     rejections: dict = field(default_factory=dict)
 
     def reject(self, reason: BindingRejection) -> None:
         self.frames_rejected += 1
+        self.last_rejection = reason.value
         self.rejections[reason.value] = self.rejections.get(reason.value, 0) + 1
 
     def as_dict(self) -> dict:
@@ -117,7 +120,11 @@ class BindingCounters:
             "id_gap_events": self.id_gap_events,
             "frames_missing_upstream": self.frames_missing_upstream,
             "ids_out_of_order": self.ids_out_of_order,
-            **{f"rejected_{key}": value for key, value in self.rejections.items()},
+            "last_rejection": self.last_rejection,
+            **{
+                f"rejected_{reason.value}": self.rejections.get(reason.value, 0)
+                for reason in BindingRejection
+            },
         }
 
     @property
@@ -145,8 +152,9 @@ class MetadataBinder:
     """Validates and binds per-frame scalar metadata, fail-closed.
 
     ``max_age_seconds`` bounds how old a REQUIRED_DYNAMIC value may be relative
-    to the frame timestamp. ``None`` disables the age check for setups where
-    metadata carries no timestamp of its own.
+    to the frame timestamp. Infinity requires a valid source timestamp without
+    expiring unchanged motors; ``None`` disables only that metadata-source
+    timestamp requirement. Frames themselves must always carry a timestamp.
     """
 
     def __init__(
@@ -222,7 +230,11 @@ class MetadataBinder:
         # later misreported as missing upstream.
         self._last_frame_id = frame_id
 
-        if timestamp is None:
+        try:
+            frame_timestamp = float(timestamp)
+        except (TypeError, ValueError):
+            frame_timestamp = math.nan
+        if not math.isfinite(frame_timestamp):
             self.counters.reject(BindingRejection.NO_TIMESTAMP)
             return None
 
@@ -253,7 +265,17 @@ class MetadataBinder:
                 if metadata_timestamp is None:
                     self.counters.reject(BindingRejection.NO_TIMESTAMP)
                     return None
-                if abs(timestamp - metadata_timestamp) > self.max_age_seconds:
+                try:
+                    metadata_timestamp = float(metadata_timestamp)
+                except (TypeError, ValueError):
+                    metadata_timestamp = math.nan
+                if not math.isfinite(metadata_timestamp):
+                    self.counters.reject(BindingRejection.NO_TIMESTAMP)
+                    return None
+                if (
+                    abs(frame_timestamp - metadata_timestamp)
+                    > self.max_age_seconds
+                ):
                     self.counters.reject(BindingRejection.STALE_TIMESTAMP)
                     return None
 
@@ -282,7 +304,7 @@ class MetadataBinder:
         return BoundFrame(
             values=values,
             frame_id=frame_id,
-            timestamp=timestamp,
+            timestamp=frame_timestamp,
             monitor=monitor,
             followed_gap=followed_gap,
             missing_before=missing_before,
