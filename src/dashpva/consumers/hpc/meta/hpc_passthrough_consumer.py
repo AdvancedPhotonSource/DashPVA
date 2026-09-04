@@ -1,62 +1,35 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import time
 
-import pvaccess as pva
-from pvapy.hpc.adImageProcessor import AdImageProcessor
-from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
 
-# Example AD Metadata Processor for the streaming framework
-# Updates image attributes with values from metadata channels
-class HpcPassthroughProcessor(AdImageProcessor):
 
-    # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = 0.001
-
-    # Offset that will be applied to metadata timestamp before comparing it with
-    # the image timestamp
-    DEFAULT_METADATA_TIMESTAMP_OFFSET = .001
+class HpcPassthroughProcessor(BaseMetaAssociator):
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
-        # Configuration
-        self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
-        # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
-        self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset', self.DEFAULT_METADATA_TIMESTAMP_OFFSET))
-        # self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
+        super().__init__(configDict)
+        self.logger.debug('Created HpcPassthroughProcessor')
 
-        # Statistics
-        self.nFramesProcessed = 0 # Number of images associated with metadata
-        self.nFrameErrors = 0 # Number of images that could not be associated with metadata
-        self.nMetadataProcessed = 0 # Number of metadata values associated with images
-        self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
-        self.processingTime = 0
-
-        # Current metadata map       
-        self.currentMetadataMap = {}
-        # self.currentframe_attributes = {}
-
-        # The last object time
-        self.lastFrameTimestamp = 0
-
-        self.logger.debug('Created HpcAdMetadataProcessor')
-        # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
-      
-
-    # Configure user processor
-    def configure(self, configDict):
-        self.logger.debug(f'Configuration update: {configDict}')
-        if 'timestampTolerance' in configDict:
-            self.timestampTolerance = float(configDict.get('timestampTolerance'))
-            self.logger.debug(f'Updated timestamp tolerance: {self.timestampTolerance} seconds')
-        if 'metadataTimestampOffset' in configDict:
-            self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset'))
-            self.logger.debug(f'Updated metadata timestamp offset: {self.metadataTimestampOffset} seconds')
-
-        
-    # Process monitor update
     def process(self, pvObject):
         t0 = time.time()
         frameId = pvObject['uniqueId']
@@ -72,46 +45,9 @@ class HpcPassthroughProcessor(AdImageProcessor):
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
-                       
+
         self.updateOutputChannel(pvObject)
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
-        self.processingTime += (t1-t0)
+        self.processingTime += (t1 - t0)
         return pvObject
-
-    # Reset statistics for user processor
-    def resetStats(self):
-        self.nFramesProcessed = 0 
-        self.nFrameErrors = 0 
-        self.nMetadataProcessed = 0 
-        self.nMetadataDiscarded = 0 
-        self.processingTime = 0
-
-    # Retrieve statistics for user processor
-    def getStats(self):
-        processedFrameRate = 0
-        frameErrorRate = 0
-        if self.processingTime > 0:
-            processedFrameRate = self.nFramesProcessed/self.processingTime
-            frameErrorRate = self.nFrameErrors/self.processingTime
-        return { 
-            'nFramesProcessed' : self.nFramesProcessed,
-            'nFrameErrors' : self.nFrameErrors,
-            'nMetadataProcessed' : self.nMetadataProcessed,
-            'nMetadataDiscarded' : self.nMetadataDiscarded,
-            'processingTime' : FloatWithUnits(self.processingTime, 's'),
-            'processedFrameRate' : FloatWithUnits(processedFrameRate, 'fps'),
-            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
-        }
-
-    # Define PVA types for different stats variables
-    def getStatsPvaTypes(self):
-        return { 
-            'nFramesProcessed' : pva.UINT,
-            'nFrameErrors' : pva.UINT,
-            'nMetadataProcessed' : pva.UINT,
-            'nMetadataDiscarded' : pva.UINT,
-            'processingTime' : pva.DOUBLE,
-            'processedFrameRate' : pva.DOUBLE,
-            'frameErrorRate' : pva.DOUBLE
-        }

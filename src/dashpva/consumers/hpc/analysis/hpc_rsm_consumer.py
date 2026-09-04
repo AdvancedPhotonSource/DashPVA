@@ -1,26 +1,37 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import copy
 import time
 
-# logging
-import bitshuffle
-import blosc2
-import lz4.block
 import numpy as np
 import pvaccess as pva
 from pvaccess import PvObject
-from pvapy.hpc.adImageProcessor import AdImageProcessor
-from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.consumers.core.base_analysis_processor import BaseAnalysisProcessor
 from dashpva.utils.config.hkl import (
     axis_field_channels,
     get_hkl_section,
     required_rsm_channels,
     section_field_channels,
 )
-from dashpva.utils.log_manager import LogMixin
 from dashpva.utils.rsm_geometry import (
     RotationAxis,
     RSMGeometry,
@@ -32,10 +43,10 @@ from dashpva.utils.rsm_geometry import (
 from dashpva.utils.units import to_eV
 
 
-class HpcRsmProcessor(AdImageProcessor, LogMixin):
+class HpcRsmProcessor(BaseAnalysisProcessor):
 
     def __init__(self, configDict={}):
-        super(HpcRsmProcessor, self).__init__(configDict)
+        super().__init__(configDict)
         try:
             self.set_log_manager(viewer_name="HpcRsmProcessor")
         except Exception:
@@ -43,56 +54,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         # Config Variables
         self.hkl_config = {}
-
-        # Statistics
-        self.nFramesProcessed = 0
-        self.nFrameErrors = 0
-        self.nMetadataProcessed = 0
-        self.nMetadataDiscarded = 0
-        self.processingTime = 0
-
-        # Type Mapping
-        self.CODEC_PARAMETERS_MAP = {
-            np.dtype('uint8'): pva.UBYTE,
-            np.dtype('int8'): pva.BYTE,
-            np.dtype('uint16'): pva.USHORT,
-            np.dtype('int16'): pva.SHORT,
-            np.dtype('uint32'): pva.UINT,
-            np.dtype('int32'): pva.INT,
-            np.dtype('uint64'): pva.ULONG,
-            np.dtype('int64'): pva.LONG,
-            np.dtype('float32'): pva.FLOAT,
-            np.dtype('float64'): pva.DOUBLE,
-
-        }
-
-        # Reverse mapping from PVA codec enum to numpy dtype for decompression
-        self.PVA_TO_NUMPY_DTYPE_MAP = {
-            pva.UBYTE: np.uint8,
-            pva.BYTE: np.int8,
-            pva.USHORT: np.uint16,
-            pva.SHORT: np.int16,
-            pva.UINT: np.uint32,
-            pva.INT: np.int32,
-            pva.ULONG: np.uint64,
-            pva.LONG: np.int64,
-            pva.FLOAT: np.float32,
-            pva.DOUBLE: np.float64,
-        }
-
-        # Mapping from union field name to numpy dtype for uncompressed payloads
-        self.UNION_FIELD_TO_DTYPE = {
-            'ubyteValue': np.uint8,
-            'byteValue': np.int8,
-            'ushortValue': np.uint16,
-            'shortValue': np.int16,
-            'uintValue': np.uint32,
-            'intValue': np.int32,
-            'ulongValue': np.uint64,
-            'longValue': np.int64,
-            'floatValue': np.float32,
-            'doubleValue': np.float64,
-        }
 
         # PV attributes
         self.shape : tuple = (0,0)
@@ -309,11 +270,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
                 det_circle_positions,
             )
         except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception(f"RSM creation failed: {e}")
-            except Exception:
-                pass
+            self.log_error("RSM creation failed", e)
             return None, None, None
 
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
@@ -327,55 +284,6 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             elif old != value:
                 return True
         return False
-
-    def decompress_image(self, pvObject):
-        """Return image pixels as a NumPy array, handling compressed (lz4) and uncompressed payloads.
-        Kept intentionally simple: no dict.get usage on PvObject, no reshaping.
-        """
-        codec_name = pvObject['codec']['name']
-        if codec_name == 'lz4':
-            # Extract compressed bytes from UBYTE union branch
-            u8_pv = pvObject['value'][0]['ubyteValue']
-            u8_list = u8_pv.get() if hasattr(u8_pv, 'get') else u8_pv
-            comp_bytes = np.asarray(u8_list, dtype=np.uint8).tobytes()
-            # Decompress using explicit uncompressed size (store_size=False was used)
-            out_bytes = lz4.block.decompress(comp_bytes, uncompressed_size=pvObject['uncompressedSize'])
-            # Decode original dtype from codec.parameters
-            params = pvObject['codec']['parameters']
-            enum = params[0]['value'] if (isinstance(params, tuple) and len(params) > 0) else pva.UBYTE
-            dtype = self.PVA_TO_NUMPY_DTYPE_MAP.get(enum, np.uint8)
-            return np.frombuffer(out_bytes, dtype=dtype)
-        # Non-compressed path: convert the active union field to NumPy
-        union_dict = pvObject['value'][0]
-        field_name = next(iter(union_dict))
-        pv_arr = union_dict[field_name]
-        data_list = pv_arr.get() if hasattr(pv_arr, 'get') else pv_arr
-        dtype = self.UNION_FIELD_TO_DTYPE.get(field_name, None)
-        return np.asarray(data_list, dtype=dtype) if dtype is not None else np.asarray(data_list)
-
-
-    def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
-        if not isinstance(hkl_array, np.ndarray):
-            raise TypeError("hkl_array must be a numpy array")
-        if hkl_array.ndim != 1:
-            raise ValueError("hkl_array must be a 1D numpy array")
-        byte_data = hkl_array.tobytes()
-        typesize = hkl_array.dtype.itemsize
-
-        if codec_name == 'lz4':
-            compressed = lz4.block.compress(byte_data, store_size=False)
-        elif codec_name == 'bslz4':
-            compressed = bitshuffle.compress_lz4(hkl_array)
-        elif codec_name == 'blosc':
-            compressed = blosc2.compress(
-                byte_data,
-                typesize=typesize
-            )
-        else:
-            raise ValueError(f"Unsupported codec: {codec_name}")
-
-        # Convert compressed bytes to a uint8 numpy array
-        return np.frombuffer(compressed, dtype=np.uint8)
 
     def process(self, pvObject):
         t0 = time.time()
@@ -391,7 +299,7 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
             return pvObject
 
         if 'attribute' not in pvObject:
-            print('attributes not in pvObject')
+            self.log_error('attributes not in pvObject')
             return pvObject
 
         # Optionally decode image data for local use, but do not modify pvObject['value']
@@ -526,52 +434,5 @@ class HpcRsmProcessor(AdImageProcessor, LogMixin):
 
         except Exception as e:
             self.nFrameErrors += 1
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception("Frame processing error", exc_info=e)
-            except Exception:
-                pass
+            self.log_error("Frame processing error", e)
             return pvObject
-
-    def resetStats(self):
-        """
-        Reset processor statistics.
-        """
-        self.nFramesProcessed = 0
-        self.nFrameErrors = 0
-        self.nMetadataProcessed = 0
-        self.nMetadataDiscarded = 0
-        self.processingTime = 0
-
-    def getStats(self):
-        """
-        Get current statistics of processing.
-        """
-        processedFrameRate = 0
-        frameErrorRate = 0
-        if self.processingTime > 0:
-            processedFrameRate = self.nFramesProcessed / self.processingTime
-            frameErrorRate = self.nFrameErrors / self.processingTime
-        return {
-            'nFramesProcessed' : self.nFramesProcessed,
-            'nFrameErrors' : self.nFrameErrors,
-            'nMetadataProcessed' : self.nMetadataProcessed,
-            'nMetadataDiscarded' : self.nMetadataDiscarded,
-            'processingTime' : FloatWithUnits(self.processingTime, 's'),
-            'processedFrameRate' : FloatWithUnits(processedFrameRate, 'fps'),
-            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
-        }
-
-    def getStatsPvaTypes(self):
-        """
-        Define PVA types for different stats variables.
-        """
-        return {
-            'nFramesProcessed' : pva.UINT,
-            'nFrameErrors' : pva.UINT,
-            'nMetadataProcessed' : pva.UINT,
-            'nMetadataDiscarded' : pva.UINT,
-            'processingTime' : pva.DOUBLE,
-            'processedFrameRate' : pva.DOUBLE,
-            'frameErrorRate' : pva.DOUBLE
-        }

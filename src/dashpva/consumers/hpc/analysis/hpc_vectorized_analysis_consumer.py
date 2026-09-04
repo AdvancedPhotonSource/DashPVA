@@ -1,58 +1,54 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import time
 
 import numpy as np
 import pvaccess as pva
 from pvaccess import DOUBLE, PvObject
-from pvapy.hpc.adImageProcessor import AdImageProcessor
-from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
-# import logging
-#custom imports
+from dashpva.consumers.core.base_analysis_processor import BaseAnalysisProcessor
+
+# custom imports
 from dashpva.utils.generators import rotation_cycle
 
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
-class HpcAnalysisProcessor(AdImageProcessor):
+class HpcAnalysisProcessor(BaseAnalysisProcessor):
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
-
-        # Statistics
-        self.nFramesProcessed = 0 # Number of images associated with metadata
-        self.nFrameErrors = 0 # Number of images that could not be associated with metadata
-        self.nMetadataProcessed = 0 # Number of metadata values associated with images
-        self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
-        self.processingTime = 0
+        super().__init__(configDict)
         # pass through any variables that were sent in the command line
         self.configure(configDict)
 
         # PVObject vars needed for caching
-        self.images_cache = None    
+        self.images_cache = None
         self.positions_cache = None
-        self.image = None
-        self.shape = (0,0)
-        self.data_type = None
-        self.attributes = {}
         self.cache_id = 0
         self.id_diff = 0
-        self.cache_id_gen = rotation_cycle(0,self.MAX_CACHE_SIZE)
-        self.first_scan_detected = False 
-        self.last_frame_id = None 
+        self.cache_id_gen = rotation_cycle(0, self.MAX_CACHE_SIZE)
+        self.first_scan_detected = False
+        self.last_frame_id = None
         self.call_times = 0
-        # Configure Processor Settings
-        # The last object time
-        self.lastFrameTimestamp = 0
-        self.roi_x = 0
-        self.roi_y = 0
-        self.roi_height = 50
-        self.roi_width = 50
-        # self.logger.debug(f'Created HpcAnalysisProcessor')
-        # self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
-      
+
     # Configure user processor
     def configure(self, configDict):
         # TODO: Use Configdict to get all these parameters.
@@ -62,14 +58,9 @@ class HpcAnalysisProcessor(AdImageProcessor):
         self.ypos_path = "/home/beams0/JULIO.RODRIGUEZ/Desktop/Lab Software/area_det_PVA_viewer/ypos.npy"
         # self.save_path = "save_path"
         self.load_path()
-        
+
     ####################### Porting Code From Original Area Detector View and Analysis Views ###############################
-    
-    def parse_image_data_type(self, pva_object):
-        """Parse through a PVA Object to store the incoming datatype."""
-        if pva_object is not None:
-            self.data_type = list(pva_object['value'][0].keys())[0]
-    
+
     def parse_pva_ndattributes(self, pva_object):
         """Convert a pva object to python dict and parses attributes into a separate dict."""
         if pva_object is None:
@@ -85,7 +76,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         for value in ["codec", "uniqueId", "uncompressedSize"]:
             if value in pva_object:
                 attributes[value] = pva_object[value]
-        
+
         self.attributes = attributes
 
     def pva_to_image(self, pva_object):
@@ -116,7 +107,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
         """
         self.x_positions = np.load(self.xpos_path)
         self.y_positions = np.load(self.ypos_path)
-    
+
         self.unique_x_positions = np.unique(self.x_positions) # Time Complexity = O(nlog(n))
         self.unique_y_positions = np.unique(self.y_positions) # Time Complexity = O(nlog(n))
 
@@ -125,7 +116,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
     def process_analysis_objects(self, frameAttributes=None):
         """
-        Processes image data stored in the cache to compute intensity and center of mass (COM) 
+        Processes image data stored in the cache to compute intensity and center of mass (COM)
         values, then stores the results in matrices and appends them as a PV attribute.
 
         Parameters:
@@ -156,8 +147,8 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
 
         # (np.abs(xpos_plan-xpos_det) < (np.abs(x2-x1) * 0.2)) and (np.abs(ypos_plan-ypos_det) < (np.abs(y2-y1) * 0.2)))
-        if True: 
-            
+        if True:
+
             self.call_times += 1
             image_rois = self.images_cache[:,
                                             self.roi_y:self.roi_y + self.roi_height,
@@ -178,7 +169,7 @@ class HpcAnalysisProcessor(AdImageProcessor):
             #filter out inf
             com_x[com_x==np.nan] = 0 # time complexity = O(1)
             com_y[com_y==np.nan] = 0 # time complexity = O(1)
-            #Two lines below don't work if unique positions are messed by incomplete x y positions 
+            #Two lines below don't work if unique positions are messed by incomplete x y positions
             self.intensity_matrix = np.zeros((len(self.unique_y_positions), len(self.unique_x_positions))) # Time Complexity = O(n)
             self.intensity_matrix[self.y_indices, self.x_indices] = intensity_values # Time Complexity = O(1)
             # gets the shape of the image to set the length of the axis
@@ -191,13 +182,13 @@ class HpcAnalysisProcessor(AdImageProcessor):
             # TODO: Create pv object out of the matrices and append them to the original pvobject
             analysis_object = PvObject({'value':{
                                             "Intensity": [DOUBLE],
-                                            "ComX": [DOUBLE], 
-                                            "ComY": [DOUBLE]}}, 
+                                            "ComX": [DOUBLE],
+                                            "ComY": [DOUBLE]}},
                                         {'value':{
-                                            "Intensity":self.intensity_matrix.ravel(), 
-                                            "ComX": self.com_x_matrix.ravel(), 
+                                            "Intensity":self.intensity_matrix.ravel(),
+                                            "ComX": self.com_x_matrix.ravel(),
                                             "ComY": self.com_y_matrix.ravel()}})
-            
+
             pvAttr = pva.NtAttribute('Analysis', analysis_object)
 
             frameAttributes.append(pvAttr)
@@ -217,38 +208,38 @@ class HpcAnalysisProcessor(AdImageProcessor):
         if 'timeStamp' not in pvObject:
             # self.logger.error(f'Frame id {frameId} does not have field "timeStamp"')
             return pvObject
-        
+
         self.parse_pva_ndattributes(pvObject)
         self.parse_image_data_type(pvObject)
         self.pva_to_image(pvObject)
 
         # Check for missed frame starts here:
-        if self.last_frame_id is not None: 
+        if self.last_frame_id is not None:
             self.id_diff = frameId - self.last_frame_id - 1
         self.last_frame_id = frameId
 
         # TODO: USE --processor-args flag in the command line options to pass a config dict and get these values instead
         x_value = self.attributes.get('x')[0]['value']
         y_value = self.attributes.get('y')[0]['value']
-        
+
         # TODO: make it so that starting pv has a tolerance for when it's detected similar to check in analysis portions
         if (x_value == 0) and (y_value == 0) and not self.first_scan_detected:
             self.first_scan_detected = True
-            print("First Scan detected...")
+            self.announce(f"{type(self).__name__}: first scan detected")
 
         if self.first_scan_detected:
             if self.id_diff > 0:
                 for i in range(self.id_diff):
                     self.cache_id = next(self.cache_id_gen)
                 self.images_cache[self.cache_id-self.id_diff+1:self.cache_id+1,:,:] = 0
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN 
-                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN 
+                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,0] = np.NaN
+                self.positions_cache[self.cache_id-self.id_diff+1:self.cache_id+1,1] = np.NaN
             else:
                 self.cache_id = next(self.cache_id_gen)
                 self.images_cache[self.cache_id,:,:] = self.image
                 self.positions_cache[self.cache_id,0] = x_value
                 self.positions_cache[self.cache_id,1] = y_value
-            
+
             # self.process_analysis_objects(pvObject=pvObject)
             frameAttributes = pvObject['attribute']
             self.process_analysis_objects(frameAttributes=frameAttributes)
@@ -256,47 +247,10 @@ class HpcAnalysisProcessor(AdImageProcessor):
 
         frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
         #self.logger.debug(f'Frame id {frameId} timestamp: {frameTimestamp}')
-                       
+
         # self.updateOutputChannel(pvObject) # check what this does in comparison to just returning
         self.updateOutputChannel(pvObject)
         self.lastFrameTimestamp = frameTimestamp
         t1 = time.time()
         self.processingTime += (t1-t0)
         return pvObject
-
-    # Reset statistics for user processor
-    def resetStats(self):
-        self.nFramesProcessed = 0 
-        self.nFrameErrors = 0 
-        self.nMetadataProcessed = 0 
-        self.nMetadataDiscarded = 0 
-        self.processingTime = 0
-
-    # Retrieve statistics for user processor
-    def getStats(self):
-        processedFrameRate = 0
-        frameErrorRate = 0
-        if self.processingTime > 0:
-            processedFrameRate = self.nFramesProcessed/self.processingTime
-            frameErrorRate = self.nFrameErrors/self.processingTime
-        return { 
-            'nFramesProcessed' : self.nFramesProcessed,
-            'nFrameErrors' : self.nFrameErrors,
-            'nMetadataProcessed' : self.nMetadataProcessed,
-            'nMetadataDiscarded' : self.nMetadataDiscarded,
-            'processingTime' : FloatWithUnits(self.processingTime, 's'),
-            'processedFrameRate' : FloatWithUnits(processedFrameRate, 'fps'),
-            'frameErrorRate' : FloatWithUnits(frameErrorRate, 'fps')
-        }
-
-    # Define PVA types for different stats variables
-    def getStatsPvaTypes(self):
-        return { 
-            'nFramesProcessed' : pva.UINT,
-            'nFrameErrors' : pva.UINT,
-            'nMetadataProcessed' : pva.UINT,
-            'nMetadataDiscarded' : pva.UINT,
-            'processingTime' : pva.DOUBLE,
-            'processedFrameRate' : pva.DOUBLE,
-            'frameErrorRate' : pva.DOUBLE
-        }

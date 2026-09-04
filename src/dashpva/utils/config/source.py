@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """
 Unified configuration source for DashPVA.
 
@@ -239,6 +256,10 @@ class TomlConfigSource:
                 return False
         return False
 
+    def resolved_identity(self) -> Optional[str]:
+        """Which configuration this source actually reads: its file path."""
+        return self.path
+
 
 class DbProfileConfigSource:
     """Load/save configuration from a database profile (by id or 'profile:<name>')."""
@@ -337,6 +358,16 @@ class DbProfileConfigSource:
             if result.status is ConfigSaveStatus.ERROR:
                 return False
         return False
+
+    def resolved_identity(self) -> Optional[int]:
+        """Which profile this source actually reads: its resolved database id.
+
+        Not the same as ``self.locator`` -- a locator of None (or a
+        'profile:<name>' locator) still resolves to one concrete profile id,
+        and it's that resolved id callers need to detect "the active profile
+        changed" even when the locator itself never changes.
+        """
+        return self._resolve_profile_id()
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +475,20 @@ class ConfigSource:
         if self._backend is not None:
             return self._backend.save(update)
         return False
+
+    def resolved_identity(self) -> Any:
+        """Which configuration source is actually active right now.
+
+        Unlike ``self.locator`` (which is often None under DB auto-detect),
+        this is resolved fresh from the backend built at construction time --
+        a TOML path, a DB profile id, or None if no source is available.
+        Constructing a new ConfigSource on every check (rather than caching
+        one) is what makes this reflect a DB selection change made elsewhere,
+        even when the locator passed in stays the same (e.g. always None).
+        """
+        if self._backend is None:
+            return None
+        return self._backend.resolved_identity()
 
     def ensure_path(self, config: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Return a file path to a TOML representation of the config.

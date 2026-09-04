@@ -1,8 +1,28 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """Semantic HKL channel discovery contracts."""
 
+from unittest.mock import MagicMock
+
 import pytest
+import toml
 
 from dashpva.utils.config.hkl import (
     axis_field_channels,
@@ -51,7 +71,6 @@ def _axis(index, stem):
         "AXIS_NUMBER": f"{stem}.axis.RBV",
         "DIRECTION_AXIS": f"{stem}.direction.RBV",
         "POSITION": f"{stem}.position.RBV",
-        "SPEC_MOTOR_NAME": f"{stem}.name.RBV",
         "VENDOR_EXTENSION": f"{stem}.ignore.RBV",
     }
 
@@ -137,6 +156,86 @@ def test_missing_semantic_field_fails_loudly():
 
     with pytest.raises(ValueError, match="POSITION"):
         required_rsm_channels(hkl)
+
+
+def test_metadata_processor_resolves_canonical_toml_before_reading_hkl(tmp_path):
+    from dashpva.consumers.hpc.meta.hpc_metadata_consumer import (
+        HpcAdMetadataProcessor,
+    )
+    from dashpva.utils.rsm_parameter_config import default_parameter_mapping
+
+    raw = {
+        "IOC_PREFIX": "sim:",
+        "IOC_RSM_PARAMETER": default_parameter_mapping(),
+        "HKL": {},
+        "METADATA": {"CA": {}},
+    }
+    path = tmp_path / "canonical.toml"
+    path.write_text(toml.dumps(raw))
+
+    processor = object.__new__(HpcAdMetadataProcessor)
+    processor.logger = MagicMock()
+    processor.timestampTolerance = 0.001
+    processor.metadataTimestampOffset = 0.001
+    processor.configure({"path": str(path)})
+    resolved = processor.config
+
+    assert required_rsm_channels(resolved["HKL"]) <= set(
+        semantic_hkl_channels(resolved["HKL"])
+    )
+    assert "sim:spec:UB_matrix:Value" in semantic_hkl_channels(resolved["HKL"])
+    assert resolved["METADATA"]["CA"] == {}
+    assert processor.hkl_config == resolved["HKL"]
+
+
+def test_metadata_associator_attaches_source_timestamp_after_validation():
+    import pvaccess as pva
+
+    from dashpva.consumers.hpc.meta.hpc_metadata_consumer import (
+        HpcAdMetadataProcessor,
+    )
+    from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
+
+    processor = object.__new__(HpcAdMetadataProcessor)
+    processor.logger = MagicMock()
+    processor.currentMetadataMap = {
+        "ioc:Mu": pva.PvObject(
+            {
+                "value": pva.DOUBLE,
+                "timeStamp": {
+                    "secondsPastEpoch": pva.LONG,
+                    "nanoseconds": pva.INT,
+                },
+            },
+            {
+                "value": 3.0,
+                "timeStamp": {"secondsPastEpoch": 10, "nanoseconds": 0},
+            },
+        )
+    }
+    processor.metadataTimestampOffset = 0.0
+    processor.timestampTolerance = float("inf")
+    processor.nMetadataProcessed = 0
+    processor.nMetadataDiscarded = 0
+    attributes = []
+
+    assert processor.associateMetadata("ioc:Mu", 1, 10.0, attributes)
+    assert [attribute["name"] for attribute in attributes] == [
+        "ioc:Mu",
+        f"{METADATA_TIMESTAMP_ATTRIBUTE_PREFIX}ioc:Mu",
+    ]
+    assert attributes[1]["value"].toDict()["value"] == 10.0
+
+
+def test_base_metadata_associator_rejects_metadata_without_timestamp():
+    from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
+
+    processor = object.__new__(BaseMetaAssociator)
+    processor.currentMetadataMap = {"ioc:Mu": {"value": 3.0}}
+    processor.nMetadataDiscarded = 0
+
+    assert not processor.associateMetadata("ioc:Mu", 1, 10.0, [])
+    assert processor.nMetadataDiscarded == 1
 
 
 class TestDerivedCircleAccessors:

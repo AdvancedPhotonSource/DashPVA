@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """Arbitrary-axis contracts for HDF5 persistence and discovery."""
 
 from __future__ import annotations
@@ -69,7 +86,6 @@ def _writer_data(config: dict) -> dict:
             metadata[section["AXIS_NUMBER"]] = [number]
             metadata[section["DIRECTION_AXIS"]] = ["x+" if number % 2 else "z-"]
             metadata[section["POSITION"]] = [float(number)]
-            metadata[section["SPEC_MOTOR_NAME"]] = [f"{role.title()} {number}"]
             number += 1
     return {
         "images": [np.arange(4, dtype=np.uint16)],
@@ -258,44 +274,6 @@ def test_varying_legacy_axis_number_fails_before_destination_is_opened(tmp_path)
         assert h5_file["sentinel"][()] == 42
 
 
-def test_canonical_spec_motor_name_is_not_replaced_by_label(tmp_path):
-    path = tmp_path / "spec_motor_name.h5"
-    config = _config(sample_count=1, detector_count=1)
-    axis = config["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
-    axis["LABEL"] = "friendly label"
-    axis["SPEC_MOTOR_NAME"] = "th"
-    data = _writer_data(config)
-    spec_channel = config["HKL"]["SAMPLE_CIRCLE_AXIS_1"]["SPEC_MOTOR_NAME"]
-    del data["metadata"][spec_channel]
-
-    HDF5Writer(str(path), _Reader(config)).h5_save(
-        str(path), data, compress=False
-    )
-
-    with h5py.File(path, "r") as h5_file:
-        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
-        assert axis_group["LABEL"].asstr()[()] == "friendly label"
-        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == "th"
-
-
-def test_absent_canonical_spec_motor_name_uses_label_compatibility_value(tmp_path):
-    path = tmp_path / "spec_motor_name_fallback.h5"
-    config = _config(sample_count=1, detector_count=1)
-    axis = config["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
-    axis["LABEL"] = "historical motor label"
-    data = _writer_data(config)
-    spec_channel = config["HKL"]["SAMPLE_CIRCLE_AXIS_1"]["SPEC_MOTOR_NAME"]
-    del data["metadata"][spec_channel]
-
-    HDF5Writer(str(path), _Reader(config)).h5_save(
-        str(path), data, compress=False
-    )
-
-    with h5py.File(path, "r") as h5_file:
-        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
-        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == (
-            "historical motor label"
-        )
 
 
 def test_kappa_direction_has_a_nexus_vector(tmp_path):
@@ -333,6 +311,19 @@ def test_axis_preflight_does_not_truncate_existing_file(tmp_path):
 
     with h5py.File(path, "r") as h5_file:
         assert h5_file["sentinel"][()] == 42
+
+
+def test_hdf5_keeps_spec_motor_name_compatibility_alias(tmp_path):
+    path = tmp_path / "spec_motor_name_compatibility.h5"
+    config = _config(sample_count=1, detector_count=1)
+
+    HDF5Writer(str(path), _Reader(config)).h5_save(
+        str(path), _writer_data(config), compress=False
+    )
+
+    with h5py.File(path, "r") as h5_file:
+        axis_group = h5_file["entry/data/metadata/HKL/SAMPLE_CIRCLE_AXIS_1"]
+        assert axis_group["SPEC_MOTOR_NAME"].asstr()[()] == "Sample 1"
 
 
 def test_axis_preflight_rejects_varying_and_role_invalid_directions(tmp_path):

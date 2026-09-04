@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """
 Centralized settings module for DashPVA.
 
@@ -179,6 +196,31 @@ _FILE_NAME_SUFFIX = "FileName:Value"
 # BaseWindow.confirm_unsaved_changes on its class or instance.
 CONFIRM_UNSAVED_CHANGES_ON_CLOSE: bool = True
 
+# Simulation servers the workflow Sim Server tab can launch, label -> path
+# relative to PROJECT_ROOT (static -- not config-driven). The label order is the
+# dropdown order; the first entry is the default.
+#: ``options`` lists only the flags that server's parser accepts -- passing any
+#: other makes argparse exit before the server starts. The RSM data server takes
+#: none at all.
+SIM_SERVER_TYPES: dict[str, dict] = {
+    "Area detector": {
+        "path": "src/dashpva/consumers/caIOC_servers/ad_sim_server_modified.py",
+        "options": ("cn", "nx", "ny", "fps", "dt", "nf", "rt", "rp", "mpv"),
+    },
+    "Probe beam": {
+        "path": "src/dashpva/consumers/caIOC_servers/probe_sim_server.py",
+        "options": ("cn", "nx", "ny", "fps", "dt", "rt", "rp", "shape"),
+    },
+    "RSM data": {
+        "path": "src/dashpva/consumers/caIOC_servers/sim_rsm_data.py",
+        "options": (),
+    },
+}
+
+# Beam shapes the probe simulation server accepts (its -shape choices). Only
+# meaningful when SIM_SERVER_TYPES["Probe beam"] is the selected simulation.
+SIM_PROBE_SHAPES: tuple[str, ...] = ("gaussian", "laplacian", "lorentzian", "zone-plate")
+
 # Bounded pvapy monitor queue depth for the PVA reader (static — not
 # config-driven). The network thread enqueues frames here and a consumer thread
 # drains them; when the consumer falls behind the queue fills and pvapy drops
@@ -208,10 +250,31 @@ RSM_GRID_MAX_MEMORY_FRACTION: float = 0.70
 RSM_GRID_WORKING_BYTES_PER_PIXEL: int = 96
 RSM_GRID_ENERGY_RELATIVE_TOLERANCE: float = 1e-4
 RSM_GRID_UB_ABSOLUTE_TOLERANCE: float = 1e-4
+RSM_GRID_PREVIEW_BUDGET_BYTES: int = 4 * 1024 * 1024
+RSM_GRID_PREVIEW_INTERVAL_SECONDS: float = 1.0
+# Motors publish only on value changes; infinity still requires the associator
+# source timestamp, while a finite age limit remains an explicit override.
+RSM_GRID_METADATA_MAX_AGE_SECONDS: float = float("inf")
+RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
+RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
+RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
+RSM_GRID_DEFAULT_RESOLUTION: int = 200
+# Grid lines the box preview will draw per axis before it stops subdividing --
+# past this the lines merge into a solid block and stop conveying anything.
+RSM_GRID_PREVIEW_MAX_DIVISIONS: int = 24
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
 RSM_IOC_SNAPSHOT_EVERY: int = 5
+METADATA_ASSOCIATOR_STALENESS_CHECK_MS: int = 2_000
+
+ANALYSIS_PROCESSOR_CLASSES: dict[str, str] = {
+    "hpc_rsm_consumer.py": "HpcRsmProcessor",
+    "hpc_rsm_grid_consumer.py": "HpcRsmGridProcessor",
+    "hpc_spontaneous_analysis_consumer.py": "HpcAnalysisProcessor",
+    "hpc_vectorized_analysis_consumer.py": "HpcAnalysisProcessor",
+}
+RSM_GRID_PROCESSOR_CLASS: str = "HpcRsmGridProcessor"
 
 # Combined byte budget for mask-editor undo and redo data.
 MASK_UNDO_MAX_BYTES: int = 32 * 1024 * 1024
@@ -281,13 +344,23 @@ _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
 
 
-def set_locator(locator: Union[int, str]) -> None:
+def set_locator(locator: Optional[Union[int, str]]) -> None:
     """Set the configuration locator (TOML path, "profile:<name>", or int profile_id).
 
     Persists to a state file so sibling subprocesses can find the active config.
+    Passing None clears the locator instead of writing the literal string
+    'None' -- writing that string used to make the next read treat it as a
+    real, unresolvable locator instead of "unset".
     """
     global _locator_internal
     _locator_internal = locator
+    if locator is None:
+        os.environ.pop('DASPVA_CONFIG_LOCATOR', None)
+        try:
+            _STATE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
     os.environ['DASPVA_CONFIG_LOCATOR'] = str(locator)
     try:
         _STATE_FILE.write_text(str(locator))
@@ -445,6 +518,24 @@ def reload() -> None:
     CONSUMERS_PATH = cfg.get('CONSUMERS_PATH')
 
 
+def _parse_locator(value: Optional[str]) -> Union[int, str, None]:
+    """Parse a raw locator string from the env var or state file.
+
+    A blank string, or the literal 'None', is treated as unset rather than as
+    a real locator -- set_locator(None) used to write that exact string to
+    both, poisoning the next read into treating "unset" as a bogus locator.
+    This also lets an already-poisoned state file recover on the next call.
+    """
+    if value is None:
+        return None
+    loc = value.strip()
+    if not loc or loc == 'None':
+        return None
+    if loc.isdigit():
+        return int(loc)
+    return loc
+
+
 def _get_effective_locator() -> Union[int, str, None]:
     """Determine the effective locator: set_locator → env var → state file → None.
 
@@ -456,20 +547,15 @@ def _get_effective_locator() -> Union[int, str, None]:
         return _locator_internal
 
     # 2) Optional override via environment variable
-    env_locator = os.getenv('DASPVA_CONFIG_LOCATOR')
-    if env_locator and env_locator.strip():
-        loc = env_locator.strip()
-        if loc.isdigit():
-            return int(loc)
-        return loc
+    parsed = _parse_locator(os.getenv('DASPVA_CONFIG_LOCATOR'))
+    if parsed is not None:
+        return parsed
 
     # 3) State file written by set_locator in another process
     try:
-        loc = _STATE_FILE.read_text().strip()
-        if loc:
-            if loc.isdigit():
-                return int(loc)
-            return loc
+        parsed = _parse_locator(_STATE_FILE.read_text())
+        if parsed is not None:
+            return parsed
     except Exception:
         pass
 
@@ -554,6 +640,62 @@ def save_input_channel_hkl3d(channel: str) -> bool:
         return src.save({'INPUT_CHANNEL_HKL3D': channel})
     except Exception:
         return False
+
+
+def get_analysis_transport_channels(database=None) -> tuple[str, str]:
+    """Return the one live analysis consumer's control and status channels.
+
+    Workflow persists these names under ``APP_DATA/workflow/analysis/last``.
+    Profile ``[ANALYSIS]`` values are accepted for legacy/TOML-only setups.
+    The live grid is stateful and deliberately supports one consumer only.
+    """
+    profile_analysis = ANALYSIS if isinstance(ANALYSIS, dict) else {}
+    config = {
+        "control_channel": profile_analysis.get("CONTROL_CHANNEL", ""),
+        "status_channel": profile_analysis.get("STATUS_CHANNEL", ""),
+        "n_consumers": profile_analysis.get("N_CONSUMERS", 1),
+        "consumer_id": profile_analysis.get("CONSUMER_ID", 1),
+    }
+    try:
+        if database is None:
+            from dashpva.database import DatabaseInterface
+
+            database = DatabaseInterface()
+        setting = database.get_setting_by_path(
+            ["APP_DATA", "workflow", "analysis"]
+        )
+        saved = database.get_setting_value(setting.id, "last") if setting else None
+        if isinstance(saved, dict):
+            config.update(saved)
+    except Exception as exc:
+        _logger.debug("Could not read analysis workflow channels: %s", exc)
+
+    try:
+        n_consumers = int(config.get("n_consumers", 1))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Analysis n_consumers must be an integer.") from exc
+    if n_consumers != 1:
+        raise RuntimeError(
+            "Live RSM gridding requires exactly one stateful analysis consumer; "
+            f"workflow is configured for {n_consumers}."
+        )
+
+    try:
+        consumer_id = int(config.get("consumer_id", 1))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Analysis consumer_id must be an integer.") from exc
+    control = str(config.get("control_channel", "")).strip().replace(
+        "*", str(consumer_id)
+    )
+    status = str(config.get("status_channel", "")).strip().replace(
+        "*", str(consumer_id)
+    )
+    if not control or not status:
+        raise RuntimeError(
+            "Analysis control/status channels are not configured. Open Workflow, "
+            "set both Analysis Consumer channels, and save the configuration."
+        )
+    return control, status
 
 
 # Initialize on import

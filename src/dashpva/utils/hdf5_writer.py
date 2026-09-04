@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 # removed traceback import
 # from dashpva.utils import PVAReader
 import time
@@ -8,7 +25,6 @@ from pathlib import Path
 import h5py
 import hdf5plugin
 import numpy as np
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 import dashpva.settings as settings
 from dashpva.utils.config.hkl import (
@@ -30,11 +46,18 @@ from dashpva.utils.rsm_geometry import (
 )
 
 
-class HDF5Writer(QObject, LogMixin):
-    hdf5_writer_finished = pyqtSignal(str)
+class HDF5Writer(LogMixin):
+    """Pure HDF5 writing. Deliberately imports no Qt.
 
-    def __init__(self, file_path: str, pva_reader):
-        super(HDF5Writer, self).__init__()
+    The live grid accumulator runs inside a pvaccess consumer, and mixing
+    pvaccess with PyQt5 in one process core-dumps (see the two-process note in
+    consumers/ioc_rsm_parameter). Progress is reported through an optional
+    ``on_finished`` callback; HDF5Handler wraps that back into a Qt signal for
+    the viewers.
+    """
+
+    def __init__(self, file_path: str, pva_reader, on_finished=None):
+        self.on_finished = on_finished
         self.file_path = file_path
         self.pva_reader = pva_reader
         # Default used when no OUTPUT_FILE_CONFIG is provided: filename under OUTPUT_PATH
@@ -45,7 +68,11 @@ class HDF5Writer(QObject, LogMixin):
         except Exception:
             pass
 
-    @pyqtSlot(bool, bool, bool, str)
+    def _notify(self, message: str) -> None:
+        """Report completion to the caller, if one asked to be told."""
+        if self.on_finished is not None:
+            self.on_finished(message)
+
     def save_caches_to_h5(self, clear_caches: bool = True, write_temp: bool = True, write_output: bool = True, output_override: str = '') -> None:
         # TODO: add analysis
         """
@@ -142,7 +169,7 @@ class HDF5Writer(QObject, LogMixin):
                     self.logger.info("Skipped writing (no targets selected)")
                 except Exception:
                     pass
-                self.hdf5_writer_finished.emit("Skipped writing (no targets selected)")
+                self._notify("Skipped writing (no targets selected)")
                 return
 
             # Write TEMP (uncompressed) when requested
@@ -155,17 +182,17 @@ class HDF5Writer(QObject, LogMixin):
 
             # Emit appropriate message (logging handled by the receiver)
             if write_temp and write_output:
-                self.hdf5_writer_finished.emit(f"{data['len_images']} successfully saved to {TEMP_FILE_LOCATION} and {OUTPUT_FILE_LOCATION}")
+                self._notify(f"{data['len_images']} successfully saved to {TEMP_FILE_LOCATION} and {OUTPUT_FILE_LOCATION}")
             elif write_output:
-                self.hdf5_writer_finished.emit(f"{data['len_images']} successfully saved to {OUTPUT_FILE_LOCATION}")
+                self._notify(f"{data['len_images']} successfully saved to {OUTPUT_FILE_LOCATION}")
             else:
-                self.hdf5_writer_finished.emit(f"{data['len_images']} successfully saved to {TEMP_FILE_LOCATION} (temp only)")
+                self._notify(f"{data['len_images']} successfully saved to {TEMP_FILE_LOCATION} (temp only)")
         except Exception as e:
             try:
                 self.logger.exception(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
             except Exception:
                 pass
-            self.hdf5_writer_finished.emit(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
+            self._notify(f"Failed to save caches to {OUTPUT_FILE_LOCATION}: {e}")
 
     def h5_save(self, file_path: str, data: dict, compress: bool = False):
         """Write caches directly in NeXus structure — no flat intermediate, no post-conversion."""
@@ -258,7 +285,6 @@ class HDF5Writer(QObject, LogMixin):
                             )
                         for key in (
                             'LABEL',
-                            'SPEC_MOTOR_NAME',
                             'RECORD_NAME',
                             'ANGLE_UNITS',
                         ):
@@ -267,15 +293,12 @@ class HDF5Writer(QObject, LogMixin):
                                 continue
                             if key not in grp:
                                 self._write_literal_dataset(grp, key, value)
-                        if (
-                            'SPEC_MOTOR_NAME' not in grp
-                            and identity.get('LABEL')
-                        ):
+                        if identity.get('LABEL') and 'NAME' not in grp:
+                            self._write_literal_dataset(grp, 'NAME', identity['LABEL'])
+                        if identity.get('LABEL') and 'SPEC_MOTOR_NAME' not in grp:
                             self._write_literal_dataset(
                                 grp, 'SPEC_MOTOR_NAME', identity['LABEL']
                             )
-                        if identity.get('LABEL') and 'NAME' not in grp:
-                            self._write_literal_dataset(grp, 'NAME', identity['LABEL'])
 
                 spec = hkl_cfg.get('SPEC', {})
                 if spec:
@@ -810,6 +833,6 @@ class HDF5Writer(QObject, LogMixin):
                         else:
                             subgrp.create_dataset(field_name, data=np.array(series, dtype=np.float64))
 
-        self.hdf5_writer_finished.emit(
+        self._notify(
             f"Saved to: {file_path}\nFormat: {formatter['name']}"
         )

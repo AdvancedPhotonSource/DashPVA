@@ -1,7 +1,25 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import gc
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pyvista as pyv
@@ -9,14 +27,20 @@ from PyQt5 import uic
 
 # from epics import caget
 from PyQt5.QtCore import QThread, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
 from pyvistaqt import QtInteractor
 
 import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
-from dashpva.utils import HDF5Writer, PVAReader, SizeManager
+from dashpva.utils import HDF5Handler, PVAReader, SizeManager
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.rsm_grid_transport import (
+    GridControlClient,
+    GridTransportError,
+    preview_from_status,
+)
 from dashpva.viewer.core.base_window import BaseWindow
+from dashpva.viewer.hkl3d.docks.grid_control import GridControlDock
 from dashpva.viewer.hkl3d.docks.image import ImageDock
 from dashpva.viewer.hkl3d.docks.plot_mode import PlotModeDock
 from dashpva.viewer.hkl3d.docks.stats import StatsDock
@@ -59,7 +83,7 @@ class ConfigDialog(QDialog, LogMixin):
 class HKLImageWindow(BaseWindow):
     images_plotted = pyqtSignal(bool)
 
-    def __init__(self, input_channel=None):
+    def __init__(self, input_channel=None, grid_client=None, grid_executor=None):
         """
         Initializes the main window for real-time image visualization and manipulation.
 
@@ -98,6 +122,25 @@ class HKLImageWindow(BaseWindow):
         self.plot_mode_dock = PlotModeDock(main_window=self)
         self.plot_mode_dock.mode_changed.connect(self._on_mode_changed)
         self.plot_mode_dock.plot_timer_fired.connect(self._on_timer_plot)
+
+        self.grid_dock = GridControlDock(main_window=self)
+        self.grid_dock.start_requested.connect(self._on_grid_start)
+        self.grid_dock.stop_requested.connect(self._on_grid_stop)
+        self.grid_dock.clear_requested.connect(self._on_grid_clear)
+        self.grid_dock.save_requested.connect(self._on_grid_save)
+        self.grid_dock.estimate_requested.connect(self._on_grid_estimate)
+        self.grid_client = grid_client
+        self._grid_executor = grid_executor or ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='DashPVA-grid-control'
+        )
+        self._owns_grid_executor = grid_executor is None
+        self._grid_command_future = None
+        self._grid_command_callback = None
+        self._grid_status_future = None
+        self._grid_status_callback = None
+        self._grid_status_busy = False
+        self.grid_actor = None
+        self._grid_estimate_started = False
 
         self.stats_dock = StatsDock(main_window=self)
         self.image_dock = ImageDock(main_window=self)
@@ -210,7 +253,7 @@ class HKLImageWindow(BaseWindow):
             if self.reader is None:
                 self.reader = PVAReader(input_channel=self._input_channel,
                                          viewer_type='rsm')
-                self.file_writer = HDF5Writer(self.reader.OUTPUT_FILE_LOCATION, self.reader)
+                self.file_writer = HDF5Handler(self.reader.OUTPUT_FILE_LOCATION, self.reader)
                 self.file_writer.moveToThread(self.file_writer_thread)
             else:
                 try:
@@ -264,6 +307,8 @@ class HKLImageWindow(BaseWindow):
             self.start_timers()
             if not self.plot_mode_dock.is_post_scan:
                 self.plot_mode_dock.start_plot_timer()
+            if self.plot_mode_dock.is_gridded:
+                self._begin_grid_estimate()
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -340,6 +385,10 @@ class HKLImageWindow(BaseWindow):
 
     def _on_new_frame(self) -> None:
         self.plot_mode_dock.notify_new_frame()
+        if self.plot_mode_dock.is_gridded:
+            # The grid consumer computes Q and accumulates beside the incoming
+            # frames. The GUI consumes only its bounded status preview.
+            return
         if self.plot_mode_dock.is_realtime and self.reader is not None:
             rsm = self.reader.rsm_attributes
             if self.reader.image is not None and rsm:
@@ -371,6 +420,7 @@ class HKLImageWindow(BaseWindow):
                 self._cum_int_raw[start:end]     = intensity[::s][:ppf]
                 self._cum_write_slot = (slot + 1) % self._CUMULATIVE_MAX
                 self._cum_n_frames   = min(self._cum_n_frames + 1, self._CUMULATIVE_MAX)
+
 
     def _init_cumulative_cloud(self, frame_size: int,
                                qx=None, qy=None, qz=None) -> None:
@@ -408,8 +458,12 @@ class HKLImageWindow(BaseWindow):
             self.update_image_cumulative()
         elif mode == 'per_frame':
             self.update_image_current_frame()
+        elif mode == 'gridded':
+            self.update_gridded_volume()
 
     def _on_mode_changed(self, mode: str) -> None:
+        if mode == 'gridded':
+            self._begin_grid_estimate()
         if self.reader is None or not self.reader.channel.isMonitorActive():
             return
         if self.actor is not None:
@@ -477,6 +531,204 @@ class HKLImageWindow(BaseWindow):
             self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
 
         self.plotter.render()
+
+
+    # ---- Gridded volume mode --------------------------------------------
+
+    def _ensure_grid_client(self):
+        if self.grid_client is None:
+            control, status = app_settings.get_analysis_transport_channels()
+            self.grid_client = GridControlClient(control, status)
+        return self.grid_client
+
+    def _grid_error(self, error: Exception) -> None:
+        self.grid_dock.set_busy(False)
+        self.grid_dock.update_status({'last_error': str(error)})
+
+    def _submit_grid_command(self, command, payload=None, on_success=None) -> None:
+        if (
+            self._grid_command_future is not None
+            and not self._grid_command_future.done()
+        ):
+            self._grid_error(RuntimeError('Another live-grid command is still running.'))
+            return
+        try:
+            client = self._ensure_grid_client()
+        except (GridTransportError, RuntimeError) as exc:
+            self._grid_error(exc)
+            return
+        self.grid_dock.set_busy(True)
+        self._grid_command_callback = on_success
+        self._grid_command_future = self._grid_executor.submit(
+            client.command, command, payload or {}
+        )
+        QTimer.singleShot(50, self._poll_grid_command)
+
+    def _poll_grid_command(self) -> None:
+        if self._grid_command_future is None:
+            return
+        if not self._grid_command_future.done():
+            QTimer.singleShot(50, self._poll_grid_command)
+            return
+        future = self._grid_command_future
+        callback = self._grid_command_callback
+        self._grid_command_future = None
+        self._grid_command_callback = None
+        self.grid_dock.set_busy(False)
+        try:
+            state = future.result()
+        except Exception as exc:
+            self._grid_error(exc)
+            return
+        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
+        if callback is not None:
+            callback(state)
+        else:
+            self.grid_dock.update_status(state)
+
+    def _submit_grid_status(self, on_success, *, busy=False) -> None:
+        if self._grid_status_future is not None:
+            return
+        try:
+            client = self._ensure_grid_client()
+        except (GridTransportError, RuntimeError) as exc:
+            self._grid_error(exc)
+            return
+        self._grid_status_callback = on_success
+        self._grid_status_busy = busy
+        if busy:
+            self.grid_dock.set_busy(True)
+        self._grid_status_future = self._grid_executor.submit(client.refresh_status)
+        QTimer.singleShot(50, self._poll_grid_status)
+
+    def _poll_grid_status(self) -> None:
+        if self._grid_status_future is None:
+            return
+        if not self._grid_status_future.done():
+            QTimer.singleShot(50, self._poll_grid_status)
+            return
+        future = self._grid_status_future
+        callback = self._grid_status_callback
+        was_busy = self._grid_status_busy
+        self._grid_status_future = None
+        self._grid_status_callback = None
+        self._grid_status_busy = False
+        if was_busy:
+            self.grid_dock.set_busy(False)
+        try:
+            state = future.result()
+        except Exception as exc:
+            self._grid_error(exc)
+            return
+        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
+        callback(state)
+
+    def _begin_grid_estimate(self) -> None:
+        if self._grid_estimate_started:
+            return
+        self._submit_grid_status(self._continue_grid_estimate, busy=True)
+
+    def _continue_grid_estimate(self, state) -> None:
+        if state.get('estimate_state') == 'collecting':
+            self._grid_estimate_started = True
+            self.grid_dock.update_status(state)
+            return
+        if state.get('state') == 'idle':
+            self._submit_grid_command('estimate_start')
+            return
+        self.grid_dock.update_status(state)
+
+    def _on_grid_estimate(self) -> None:
+        if not self._grid_estimate_started:
+            self._begin_grid_estimate()
+            return
+        self._submit_grid_command('estimate_finish', on_success=self._finish_estimate)
+
+    def _finish_estimate(self, state) -> None:
+        bounds = state.get('estimated_bounds', [])
+        if len(bounds) == 6:
+            self.grid_dock.set_bounds({
+                'HMIN': bounds[0], 'HMAX': bounds[1],
+                'KMIN': bounds[2], 'KMAX': bounds[3],
+                'LMIN': bounds[4], 'LMAX': bounds[5],
+            })
+        self.grid_dock.update_status(state)
+
+    def _on_grid_start(self, payload: dict) -> None:
+        self._submit_grid_command('start', payload)
+
+    def _on_grid_stop(self) -> None:
+        self._submit_grid_command('stop')
+
+    def _on_grid_clear(self) -> None:
+        if self.grid_actor is not None:
+            self.plotter.remove_actor(self.grid_actor)
+            self.grid_actor = None
+        self._submit_grid_command('clear')
+
+    def _on_grid_save(self) -> None:
+        name, accepted = QInputDialog.getText(
+            self, 'Save gridded volume', 'File name:', text='live_grid.h5'
+        )
+        if not accepted or not name.strip():
+            return
+        self._submit_grid_command(
+            'save',
+            {'filename': name.strip()},
+            on_success=self._grid_save_finished,
+        )
+
+    def _grid_save_finished(self, result) -> None:
+        QMessageBox.information(
+            self, 'Volume saved', f"Saved to {result['saved_path']}"
+        )
+        self.grid_dock.update_status(result)
+
+    def update_gridded_volume(self) -> None:
+        """Render the consumer's bounded preview; the full volume stays remote."""
+        self._submit_grid_status(self._render_gridded_volume)
+
+    def _render_gridded_volume(self, state) -> None:
+        try:
+            payload = preview_from_status(state)
+        except (GridTransportError, RuntimeError) as exc:
+            self._grid_error(exc)
+            return
+        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
+        if payload is None:
+            self.grid_dock.update_status(state)
+            return
+        try:
+            grid = pyv.ImageData()
+            # +1 because the array holds cell values, not point values.
+            grid.dimensions = tuple(value + 1 for value in payload.shape)
+            grid.origin = payload.origin
+            grid.spacing = payload.spacing
+            grid.cell_data['intensity'] = payload.mean.flatten(order='F')
+
+            low, high = payload.intensity_range
+            if self.grid_actor is not None:
+                self.plotter.remove_actor(self.grid_actor)
+            lut = pyv.LookupTable(cmap='viridis')
+            lut.scalar_range = (low, high)
+            # Voxels nothing scattered into are NaN, and must read as empty
+            # space rather than as a confident measurement of zero.
+            lut.nan_color = (0.0, 0.0, 0.0, 0.0)
+            self.grid_actor = self.plotter.add_volume(
+                grid, scalars='intensity', cmap=lut, opacity='linear',
+                show_scalar_bar=True,
+            )
+            self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+            self.plotter.render()
+        except Exception as e:
+            try:
+                if hasattr(self, 'logger'):
+                    self.logger.exception(f'[HKL Viewer] Gridded render failed: {e}')
+            except Exception:
+                pass
+            self._grid_error(RuntimeError(f'Could not render live-grid preview: {e}'))
+            return
+        self.grid_dock.update_status(state)
 
     def update_image_cumulative(self) -> None:
         """Realtime mode: pass the full ring buffer (with strided data) to _plot_point_cloud.
@@ -594,6 +846,8 @@ class HKLImageWindow(BaseWindow):
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread.wait()
+        if self._owns_grid_executor:
+            self._grid_executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
 
     def open_3d_slice_window(self) -> None:
