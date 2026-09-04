@@ -26,19 +26,21 @@ DashPVA's per-frame Q-conversion in rsm_converter.py.
 Output is in HKL (reciprocal lattice units), not Q: rsm_converter always passes
 each file's own UB to Ang2Q.area, which returns hkl rather than Q.
 
-Two passes are required, not merely an optimization. Gridder3D latches
-``fixed_range = True`` on its first call when KeepData is set (gridder3d.py
-``_checktransinput``), after which every point outside the first batch's range
-is silently dropped. So the global bounds must be known and set via
-``dataRange(..., fixed=True)`` before any gridding call.
+Two passes are required whenever the bounds must be discovered, not merely an
+optimization. Gridder3D latches ``fixed_range = True`` on its first call when
+KeepData is set (gridder3d.py ``_checktransinput``), after which every point
+outside the first batch's range is silently dropped. So the global bounds must
+be known and set via ``dataRange(..., fixed=True)`` before any gridding call.
+A caller that supplies ``fixed_bounds`` already knows them, so that build runs
+pass 2 alone.
 
 Masked pixels are excluded from the arrays entirely, never zeroed:
 ``Gridder3D.data`` is a per-bin mean, so a zeroed-but-present pixel would count
 as a real "intensity = 0" measurement and bias its voxel low.
 
-Known limitations vs rsMap3D: no flat-field correction, no user-specified grid
-crop (we always auto-range), and no detector tilt (rot1/rot2/rot3 from PONI
-files are not applied -- a pre-existing rsm_converter limitation).
+Known limitations vs rsMap3D: no flat-field correction, and no detector tilt
+(rot1/rot2/rot3 from PONI files are not applied -- a pre-existing rsm_converter
+limitation).
 """
 import logging
 from dataclasses import dataclass
@@ -87,6 +89,20 @@ class GridBounds:
             zmin=min(self.zmin, other.zmin), zmax=max(self.zmax, other.zmax),
         )
 
+    def contains_mask(self, qx: np.ndarray, qy: np.ndarray, qz: np.ndarray) -> np.ndarray:
+        """Boolean mask of samples inside the grid.
+
+        xrayutilities drops out-of-range points silently; counting them here is
+        what turns "nothing appeared" into a number the user can act on. Only
+        needed for a caller-supplied crop -- auto-derived bounds contain every
+        point by construction.
+        """
+        return (
+            (qx >= self.xmin) & (qx <= self.xmax)
+            & (qy >= self.ymin) & (qy <= self.ymax)
+            & (qz >= self.zmin) & (qz <= self.zmax)
+        )
+
 
 @dataclass
 class FileValidationInfo:
@@ -107,6 +123,8 @@ class VolumeResult:
     num_points_binned: int
     num_points_excluded_by_mask: int
     num_points_excluded_nonfinite: int
+    num_points_out_of_range: int
+    grid_range_user_specified: bool
     monitor_dataset: Optional[str]
     mask_applied: bool
     mask_transposed: bool
@@ -322,6 +340,20 @@ def _read_monitor(h5_file, monitor_dataset: Optional[str], n_frames: int,
     return values
 
 
+def read_file_info(filename: str, converter: RSMConverter) -> FileValidationInfo:
+    """Energy/UB/shape for one file without sweeping its frames.
+
+    Everything in FileValidationInfo comes from the file's static geometry, so
+    when the caller supplies the grid bounds there is no reason to pay for
+    compute_file_bounds' per-frame Q conversion just to fill this in.
+    """
+    with h5py.File(filename, "r") as f:
+        n_frames = f["entry/data/data"].shape[0]
+        geom = converter.build_file_geometry(f)
+    return FileValidationInfo(filename=filename, energy_eV=geom.energy_eV, ub=geom.ub,
+                               num_frames=n_frames, detector_shape=tuple(geom.shape[1:]))
+
+
 def compute_file_bounds(
     filename: str,
     converter: RSMConverter,
@@ -440,6 +472,10 @@ def build_volume(
             ``None`` disables the guard for an explicitly managed script/HPC job.
         progress_cb: called with (frames_done, frames_total) across both passes.
         warn: called with each consistency-warning message.
+        fixed_bounds: explicit HKL box to grid, instead of the data's own extent.
+            Points outside it are dropped and counted in
+            ``num_points_out_of_range``. Skips the bounds-discovery pass, so a
+            build with a range costs roughly half a build without one.
     """
     if nx < 2 or ny < 2 or nz < 2:
         raise RSMMergeError(f"nx, ny, nz must each be >= 2 (got {nx}, {ny}, {nz}).")
@@ -458,29 +494,35 @@ def build_volume(
     mask = _resolve_mask(mask_manager, use_mask, mask_transposed)
 
     # Pass 1: bounds + consistency. Frame counts are discovered here, so the
-    # progress denominator only becomes exact once this pass completes.
+    # progress denominator only becomes exact once this pass completes. Skipped
+    # entirely when the caller fixes the bounds -- discovering them is the only
+    # thing the per-frame sweep is for, and the rest of FileValidationInfo is
+    # static geometry that read_file_info gets for free.
     per_file_bounds: List[GridBounds] = []
     per_file_info: List[FileValidationInfo] = []
     for index, filename in enumerate(filenames):
         if progress_cb is not None:
             progress_cb(index, len(filenames))
         try:
-            bounds, info = compute_file_bounds(
-                filename, converter, mask=mask, batch_bytes=batch_bytes
-            )
+            if fixed_bounds is None:
+                bounds, info = compute_file_bounds(
+                    filename, converter, mask=mask, batch_bytes=batch_bytes
+                )
+                per_file_bounds.append(bounds)
+            else:
+                info = read_file_info(filename, converter)
         except RSMMergeError:
             raise
         except Exception as exc:
             raise RSMMergeError(f"Invalid RSM metadata in '{filename}': {exc}") from exc
-        per_file_bounds.append(bounds)
         per_file_info.append(info)
 
     validate_consistency(per_file_info, energy_rtol=energy_rtol, ub_atol=ub_atol, warn=warn)
 
     if fixed_bounds is not None:
-        # Caller-supplied bounds: used to reproduce a live accumulation offline
-        # at exactly the same grid. Points outside are dropped by the gridder,
-        # the same way the live path drops them.
+        # Caller-supplied bounds: a user-typed HKL crop, or a replay of a live
+        # accumulation at exactly the same grid. Points outside are dropped --
+        # counted below rather than left to vanish silently in the gridder.
         global_bounds = fixed_bounds
     else:
         global_bounds = per_file_bounds[0]
@@ -500,6 +542,7 @@ def build_volume(
     num_points_binned = 0
     num_points_excluded_by_mask = 0
     num_points_excluded_nonfinite = 0
+    num_points_out_of_range = 0
 
     for filename, info in zip(filenames, per_file_info):
         with h5py.File(filename, "r") as f:
@@ -515,6 +558,11 @@ def build_volume(
                 qx_f, qy_f, qz_f, int_f, n_excl, n_nonfinite = _mask_and_ravel(
                     qx, qy, qz, mask, intensity
                 )
+                if fixed_bounds is not None:
+                    inside = global_bounds.contains_mask(qx_f, qy_f, qz_f)
+                    num_points_out_of_range += int(inside.size - np.count_nonzero(inside))
+                    qx_f, qy_f, qz_f = qx_f[inside], qy_f[inside], qz_f[inside]
+                    int_f = int_f[inside]
                 if qx_f.size:
                     gridder(qx_f, qy_f, qz_f, int_f)
                 num_points_binned += int(qx_f.size)
@@ -525,6 +573,14 @@ def build_volume(
                     progress_cb(frames_done, total_frames)
 
     if num_points_binned == 0:
+        if num_points_out_of_range:
+            raise RSMMergeError(
+                f"All {num_points_out_of_range} remaining point(s) fell outside the "
+                f"requested HKL range (H {global_bounds.xmin:g}..{global_bounds.xmax:g}, "
+                f"K {global_bounds.ymin:g}..{global_bounds.ymax:g}, "
+                f"L {global_bounds.zmin:g}..{global_bounds.zmax:g}). Widen the range "
+                f"or switch it back to automatic."
+            )
         raise RSMMergeError("No finite, unmasked detector points remain to grid.")
     if num_points_excluded_nonfinite:
         message = (
@@ -550,6 +606,8 @@ def build_volume(
         num_points_binned=num_points_binned,
         num_points_excluded_by_mask=num_points_excluded_by_mask,
         num_points_excluded_nonfinite=num_points_excluded_nonfinite,
+        num_points_out_of_range=num_points_out_of_range,
+        grid_range_user_specified=fixed_bounds is not None,
         monitor_dataset=monitor_dataset,
         mask_applied=mask is not None,
         mask_transposed=bool(mask is not None and mask_transposed),
@@ -612,6 +670,10 @@ def volume_result_to_metadata(result: VolumeResult, extra: Optional[dict] = None
         "num_points_binned": result.num_points_binned,
         "num_points_excluded_by_mask": result.num_points_excluded_by_mask,
         "num_points_excluded_nonfinite": result.num_points_excluded_nonfinite,
+        "num_points_out_of_range": result.num_points_out_of_range,
+        # Whether the range was typed rather than derived: without it a reader
+        # cannot tell a complete map from one cropped to a region of interest.
+        "grid_range_user_specified": result.grid_range_user_specified,
     }
     if extra:
         metadata.update(extra)

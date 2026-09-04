@@ -258,6 +258,10 @@ RSM_GRID_METADATA_MAX_AGE_SECONDS: float = float("inf")
 RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
 RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
 RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
+RSM_GRID_DEFAULT_RESOLUTION: int = 200
+# Grid lines the box preview will draw per axis before it stops subdividing --
+# past this the lines merge into a solid block and stop conveying anything.
+RSM_GRID_PREVIEW_MAX_DIVISIONS: int = 24
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
