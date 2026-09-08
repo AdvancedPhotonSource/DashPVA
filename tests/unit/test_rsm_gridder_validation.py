@@ -31,6 +31,7 @@ import numpy as np
 import pytest
 
 from dashpva.utils.rsm_gridder import (
+    GridBounds,
     RSMMergeError,
     build_volume,
     ensure_memory_available,
@@ -101,6 +102,45 @@ class TestInputGuards:
         make_synthetic_scan_h5(path, n_frames=2, shape=(4, 4))
         with pytest.raises(RSMMergeError):
             build_volume([path], nx=1, ny=4, nz=4)
+
+    def test_fixed_bounds_count_partially_excluded_points(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=2, shape=(3, 5))
+        auto = build_volume([path], nx=5, ny=6, nz=7, use_mask=False)
+        bounds = GridBounds(
+            float(auto.xaxis[0]), float(auto.xaxis[-1]),
+            float(auto.yaxis[0]), float(auto.yaxis[-1]),
+            float(auto.zaxis[0]), float(auto.zaxis[-1] - np.diff(auto.zaxis).mean()),
+        )
+
+        cropped = build_volume(
+            [path], nx=5, ny=6, nz=7, use_mask=False, fixed_bounds=bounds
+        )
+
+        assert cropped.volume.shape == (5, 6, 7)
+        assert cropped.grid_range_user_specified
+        assert cropped.num_points_binned > 0
+        assert cropped.num_points_out_of_range > 0
+
+    def test_fixed_bounds_reject_when_every_point_is_outside(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=1, shape=(2, 3))
+        bounds = GridBounds(100, 101, 100, 101, 100, 101)
+
+        with pytest.raises(RSMMergeError, match="fell outside the requested HKL range"):
+            build_volume(
+                [path], nx=2, ny=3, nz=4, use_mask=False, fixed_bounds=bounds
+            )
+
+    def test_auto_range_reports_complete_uncropped_grid(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=2, shape=(3, 5))
+
+        result = build_volume([path], nx=4, ny=5, nz=6, use_mask=False)
+
+        assert result.volume.shape == (4, 5, 6)
+        assert not result.grid_range_user_specified
+        assert result.num_points_out_of_range == 0
 
     def test_fully_masked_file_raises_instead_of_nan_volume(self, tmp_path):
         # With every pixel masked the bounds stay at +/-inf, which would reach

@@ -163,7 +163,6 @@ class RSMGridBuilderDialog(QDialog):
         }
         self.spn_resolution.setValue(
             getattr(settings, 'RSM_GRID_DEFAULT_RESOLUTION', 200))
-        self.cmb_resolution_units.currentIndexChanged.connect(self._on_units_changed)
         self.chk_per_axis.toggled.connect(self._on_per_axis_toggled)
         self.chk_auto_range.toggled.connect(self._on_auto_range_toggled)
         for spinbox in (self.spn_resolution, self.spn_nx, self.spn_ny, self.spn_nz):
@@ -201,14 +200,8 @@ class RSMGridBuilderDialog(QDialog):
     def _per_axis(self):
         return self.chk_per_axis.isChecked()
 
-    def _on_units_changed(self, *_args):
-        """The unit is a label on the same number -- only the suffix moves."""
-        suffix = " " + self.cmb_resolution_units.currentText()
-        for box in (self.spn_resolution, self.spn_nx, self.spn_ny, self.spn_nz):
-            box.setSuffix(suffix)
-
     def _grid_dims(self):
-        """Pixel counts: one number cubed, or per-axis when that's selected."""
+        """Voxel counts: one number cubed, or per-axis when that's selected."""
         if self._per_axis():
             return self.spn_nx.value(), self.spn_ny.value(), self.spn_nz.value()
         resolution = self.spn_resolution.value()
