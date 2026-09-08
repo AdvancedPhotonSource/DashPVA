@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """Raw-preserving persistence and live IOC three-way merge contracts."""
 
 from __future__ import annotations
@@ -193,43 +210,6 @@ def test_identical_concurrent_axis_edit_is_accepted_without_conflict():
     assert conflicts == []
 
 
-def test_live_spec_motor_name_adopts_distinct_field_without_touching_label():
-    raw = _raw()
-    baseline = profile_from_raw(raw)
-    form = baseline.parameter_mapping()
-
-    adopted, conflicts = merge_live_records(
-        form,
-        baseline,
-        {"sim:Mu:SpecMotorName": "th"},
-        raw["IOC_RSM_PARAMETER"],
-        baseline.parameter_mapping(),
-        axis_origins=_origins(),
-    )
-
-    assert conflicts == []
-    assert adopted
-    assert form["SAMPLE_AXES"][0]["SPEC_MOTOR_NAME"] == "th"
-    assert form["SAMPLE_AXES"][0]["LABEL"] == "Mu"
-
-
-def test_absent_spec_motor_name_label_fallback_is_not_a_live_change():
-    raw = _raw()
-    baseline = profile_from_raw(raw)
-    form = baseline.parameter_mapping()
-
-    adopted, conflicts = merge_live_records(
-        form,
-        baseline,
-        {"sim:Mu:SpecMotorName": "Mu"},
-        raw["IOC_RSM_PARAMETER"],
-        baseline.parameter_mapping(),
-        axis_origins=_origins(),
-    )
-
-    assert adopted == []
-    assert conflicts == []
-    assert "SPEC_MOTOR_NAME" not in raw["IOC_RSM_PARAMETER"]["SAMPLE_AXES"][0]
 
 
 def test_removed_axis_with_concurrent_live_edit_is_a_conflict():

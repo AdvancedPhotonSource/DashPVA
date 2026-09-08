@@ -1,6 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
-import logging
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import time
 
 # COPIED FROM hpc_rsm_consumer.py - Compression libraries
@@ -10,78 +26,31 @@ import lz4.block
 import numpy as np
 import pvaccess as pva
 import toml
-from pvapy.hpc.adImageProcessor import AdImageProcessor
 from pvapy.utility.floatWithUnits import FloatWithUnits
 from pvapy.utility.timeUtility import TimeUtility
 
+from dashpva.consumers.core.base_meta_associator import BaseMetaAssociator
 from dashpva.utils.config.hkl import semantic_hkl_channels
-from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.config.resolver import resolve_profile_config
+from dashpva.utils.metadata_binding import METADATA_TIMESTAMP_ATTRIBUTE_PREFIX
+
+
+def _load_resolved_config(path):
+    """Load TOML and derive canonical HKL records before metadata selection."""
+    with open(path, "r") as config_file:
+        return resolve_profile_config(toml.load(config_file))
 
 
 # Example AD Metadata Processor for the streaming framework
 # Updates image attributes with values from metadata channels
-class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
+class HpcAdMetadataProcessor(BaseMetaAssociator):
 
-    # Acceptable difference between image timestamp and metadata timestamp
-    DEFAULT_TIMESTAMP_TOLERANCE = 0.001
     MIN_COMPRESS_BYTES = 4098
-    # Offset that will be applied to metadata timestamp before comparing it with
-    # the image timestamp
-    DEFAULT_METADATA_TIMESTAMP_OFFSET = .001
 
     def __init__(self, configDict={}):
-        AdImageProcessor.__init__(self, configDict)
-        try:
-            self.set_log_manager(viewer_name="HpcAdMetadataProcessor")
-        except Exception:
-            pass
-        # Configuration
-        self.timestampTolerance = float(configDict.get('timestampTolerance', self.DEFAULT_TIMESTAMP_TOLERANCE))
-        # self.logger.debug(f'Using timestamp tolerance: {self.timestampTolerance} seconds')
-        self.metadataTimestampOffset = float(configDict.get('metadataTimestampOffset', self.DEFAULT_METADATA_TIMESTAMP_OFFSET))
-        # self.logger.debug(f'Using metadata timestamp offset: {self.metadataTimestampOffset} seconds')
-
-        # Statistics
-        self.nFramesProcessed = 0 # Number of images associated with metadata
-        self.nFrameErrors = 0 # Number of images that could not be associated with metadata
-        self.nMetadataProcessed = 0 # Number of metadata values associated with images
-        self.nMetadataDiscarded = 0 # Number of metadata values that were discarded
-        self.processingTime = 0
-        self.processor_id = configDict.get('collectorId') if 'collectorId' in configDict else configDict.get('metadataId', None)
-        self.cd = None
-
-        # Current metadata map       
-        self.currentMetadataMap = {}
-        # self.currentframe_attributes = {}
-
-        # The last object time
-        self.lastFrameTimestamp = 0
-
-        # Throttling for noisy timestamp-tolerance warnings
-        self._lastToleranceWarnTime = 0.0
-        self._toleranceWarnSuppressed = 0
-        self._toleranceWarnIntervalSec = 60.0
-        # Per-channel tally of "Metadata channel X not found" occurrences, plus
-        # a throttled WARNING (ERROR on every frame floods the associator GUI
-        # box, so we warn at most once per _toleranceWarnIntervalSec per channel).
-        self._mdMissingChannels = {}     # channel -> total count
-        self._lastMissingWarnTime = {}   # channel -> last warn time (s)
-
-        # COPIED FROM hpc_rsm_consumer.py - Type mapping for compression
-        self.CODEC_PARAMETERS_MAP = {
-            np.dtype('uint8'): pva.UBYTE,
-            np.dtype('int8'): pva.BYTE,
-            np.dtype('uint16'): pva.USHORT,
-            np.dtype('int16'): pva.SHORT,
-            np.dtype('uint32'): pva.UINT,
-            np.dtype('int32'): pva.INT,
-            np.dtype('uint64'): pva.ULONG,
-            np.dtype('int64'): pva.LONG,
-            np.dtype('float32'): pva.FLOAT,
-            np.dtype('float64'): pva.DOUBLE,
-        }
-
-        # COPIED FROM hpc_rsm_consumer.py - HKL parameters
+        # The base supplies the log manager, the codec map, the generic frame
+        # and metadata counters, and the tolerance/offset configuration.
+        super().__init__(configDict)
         self.all_attributes = {}
         self.hkl_pv_channels = set()
         self.hkl_attributes = {}
@@ -90,7 +59,6 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         self.old_hkl_attributes = None
 
         self.logger.debug('Created HpcAdMetadataProcessor')
-        self.logger.setLevel(logging.DEBUG)  # Set the logger level to DEBUG
 
     # COPIED FROM hpc_rsm_consumer.py - Array compression method
     def compress_array(self, hkl_array: np.ndarray, codec_name: str) -> np.ndarray:
@@ -140,8 +108,7 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
                     "no effective config path is available — configure a profile first."
                 )
 
-        with open(self.path, "r") as config_file:
-            self.config = toml.load(config_file)
+        self.config = _load_resolved_config(self.path)
 
         self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = set(semantic_hkl_channels(self.hkl_config))
@@ -160,17 +127,10 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # self.logger.debug(f" current metadata map: {self.currentMetadataMap}") #modified since 3.8 env isn't working for me, works w/ 3.8
         if mdChannel not in self.currentMetadataMap:
             # Metadata for this channel has not arrived, so it cannot be
-            # attached to the frame. Tally per channel and warn at most once
-            # per interval per channel (ERROR every frame floods the GUI box).
-            count = self._mdMissingChannels.get(mdChannel, 0) + 1
-            self._mdMissingChannels[mdChannel] = count
-            now = time.time()
-            if now - self._lastMissingWarnTime.get(mdChannel, 0.0) >= self._toleranceWarnIntervalSec:
-                self.logger.warning(
-                    f'[Metadata Associator] {mdChannel} not attaching: no metadata '
-                    f'received yet (missed {count} times)'
-                )
-                self._lastMissingWarnTime[mdChannel] = now
+            # attached. A routine discard, not a fault: counted for the status
+            # channel, not logged -- warning per channel per frame buried real
+            # errors under thousands of lines.
+            self.nMetadataDiscarded += 1
             return False
 
         mdObject = self.currentMetadataMap[mdChannel]
@@ -179,12 +139,18 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         if 'timeStamp' in mdObject:
             mdTimestamp = TimeUtility.getTimeStampAsFloat(mdObject['timeStamp'])
             mdTimestamp2 = mdTimestamp + self.metadataTimestampOffset
-        # else:
-        #     mdTimestamp = frameTimestamp  # Use frame timestamp if no metadata timestamp
-        #     mdTimestamp2 = mdTimestamp  # No offset in this case
+        else:
+            self.nMetadataDiscarded += 1
+            return False
 
         if 'value' not in mdObject:
             self.logger.error(f'Metadata object {mdObject} does not have field "value"')
+            return False
+
+        diff = abs(frameTimestamp - mdTimestamp2)
+        self.logger.debug(f'Metadata {mdChannel} has timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
+        if diff > self.timestampTolerance:
+            self.nMetadataDiscarded += 1
             return False
 
         mdValue = mdObject['value']  # Read value as a string
@@ -205,26 +171,14 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
                 raise ValueError(f'Failed to create metadata attribute: {mdChannel}: {mdValue}')
 
             frameAttributes.append(nt_attribute)
+            frameAttributes.append({
+                'name': f'{METADATA_TIMESTAMP_ATTRIBUTE_PREFIX}{mdChannel}',
+                'value': pva.PvDouble(mdTimestamp2),
+            })
         except Exception as e:
             self.logger.error(f"[Metadata Associator] Error associatating metadata {e}")
             return False
         
-        diff = abs(frameTimestamp - mdTimestamp2)
-        self.logger.debug(f'Metadata {mdChannel} has value of {mdValue}, timestamp: {mdTimestamp} (with offset: {mdTimestamp2}), timestamp diff: {diff}')
-        if diff > self.timestampTolerance:
-            now = time.time()
-            if now - self._lastToleranceWarnTime >= self._toleranceWarnIntervalSec:
-                suppressed = self._toleranceWarnSuppressed
-                suffix = f' ({suppressed} similar warnings suppressed)' if suppressed else ''
-                self.logger.warning(
-                    f'[Metadata Associator] Rejecting {mdChannel}: timestamp diff {diff:.6f}s exceeds tolerance {self.timestampTolerance}s{suffix}'
-                )
-                self._lastToleranceWarnTime = now
-                self._toleranceWarnSuppressed = 0
-            else:
-                self._toleranceWarnSuppressed += 1
-            self.nMetadataDiscarded += 1
-            return False
         self.nMetadataProcessed += 1
         return True
         
@@ -271,13 +225,8 @@ class HpcAdMetadataProcessor(AdImageProcessor, LogMixin):
         # self.metadataQueueMap will contain channel:pvObjectQueue map
         associationFailed = False
         for metadataChannel,metadataQueue in self.metadataQueueMap.items():
-            while True:
-                try:
-                    self.currentMetadataMap[metadataChannel] = metadataQueue.get(0) # might need to be replaced with metadataQueue.get_nowait()
-                except pva.QueueEmpty:
-                    # No metadata in the queue, we failed
-                    # associationFailed = True 
-                    break
+            while len(metadataQueue) > 0:
+                self.currentMetadataMap[metadataChannel] = metadataQueue.get(0)
             result = self.associateMetadata(metadataChannel, frameId, frameTimestamp, frameAttributes)
             if result is not None:
                 if not result:

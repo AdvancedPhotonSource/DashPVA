@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """Cross-file merge behavior and input guards for the RSM Volume Builder.
 
 Energy/UB differences WARN rather than block: each file's own UB is applied
@@ -14,6 +31,7 @@ import numpy as np
 import pytest
 
 from dashpva.utils.rsm_gridder import (
+    GridBounds,
     RSMMergeError,
     build_volume,
     ensure_memory_available,
@@ -84,6 +102,45 @@ class TestInputGuards:
         make_synthetic_scan_h5(path, n_frames=2, shape=(4, 4))
         with pytest.raises(RSMMergeError):
             build_volume([path], nx=1, ny=4, nz=4)
+
+    def test_fixed_bounds_count_partially_excluded_points(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=2, shape=(3, 5))
+        auto = build_volume([path], nx=5, ny=6, nz=7, use_mask=False)
+        bounds = GridBounds(
+            float(auto.xaxis[0]), float(auto.xaxis[-1]),
+            float(auto.yaxis[0]), float(auto.yaxis[-1]),
+            float(auto.zaxis[0]), float(auto.zaxis[-1] - np.diff(auto.zaxis).mean()),
+        )
+
+        cropped = build_volume(
+            [path], nx=5, ny=6, nz=7, use_mask=False, fixed_bounds=bounds
+        )
+
+        assert cropped.volume.shape == (5, 6, 7)
+        assert cropped.grid_range_user_specified
+        assert cropped.num_points_binned > 0
+        assert cropped.num_points_out_of_range > 0
+
+    def test_fixed_bounds_reject_when_every_point_is_outside(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=1, shape=(2, 3))
+        bounds = GridBounds(100, 101, 100, 101, 100, 101)
+
+        with pytest.raises(RSMMergeError, match="fell outside the requested HKL range"):
+            build_volume(
+                [path], nx=2, ny=3, nz=4, use_mask=False, fixed_bounds=bounds
+            )
+
+    def test_auto_range_reports_complete_uncropped_grid(self, tmp_path):
+        path = str(tmp_path / "scan.h5")
+        make_synthetic_scan_h5(path, n_frames=2, shape=(3, 5))
+
+        result = build_volume([path], nx=4, ny=5, nz=6, use_mask=False)
+
+        assert result.volume.shape == (4, 5, 6)
+        assert not result.grid_range_user_specified
+        assert result.num_points_out_of_range == 0
 
     def test_fully_masked_file_raises_instead_of_nan_volume(self, tmp_path):
         # With every pixel masked the bounds stay at +/-inf, which would reach

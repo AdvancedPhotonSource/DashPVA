@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QRadioButton, QVBoxLayout, QWidget
 
@@ -7,7 +24,7 @@ from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
 class PlotModeDock(BaseDock):
-    mode_changed    = pyqtSignal(str)  # 'post_scan' | 'realtime' | 'per_frame'
+    mode_changed    = pyqtSignal(str)  # 'post_scan' | 'realtime' | 'per_frame' | 'gridded'
     plot_timer_fired = pyqtSignal(str) # fired at interval when a new frame is pending
 
     _PLOT_INTERVAL_MS = 200
@@ -26,8 +43,13 @@ class PlotModeDock(BaseDock):
         self.rb_post_scan = QRadioButton("Post-scan (on complete)")
         self.rb_realtime  = QRadioButton("Realtime (cumulative)")
         self.rb_per_frame = QRadioButton("Per-frame (single frame)")
+        # Gridded accumulates into a fixed volume instead of a ring buffer, so
+        # a repeated pass over the same region reinforces it rather than
+        # evicting the earlier one.
+        self.rb_gridded   = QRadioButton("Gridded volume (accumulate)")
         self.rb_post_scan.setChecked(True)
-        for rb in (self.rb_post_scan, self.rb_realtime, self.rb_per_frame):
+        for rb in (self.rb_post_scan, self.rb_realtime, self.rb_per_frame,
+                   self.rb_gridded):
             layout.addWidget(rb)
             rb.toggled.connect(self._on_radio_toggled)
         layout.addStretch()
@@ -54,6 +76,8 @@ class PlotModeDock(BaseDock):
             return 'realtime'
         if self.rb_per_frame.isChecked():
             return 'per_frame'
+        if self.rb_gridded.isChecked():
+            return 'gridded'
         return 'post_scan'
 
     @property
@@ -67,6 +91,10 @@ class PlotModeDock(BaseDock):
     @property
     def is_per_frame(self) -> bool:
         return self.rb_per_frame.isChecked()
+
+    @property
+    def is_gridded(self) -> bool:
+        return self.rb_gridded.isChecked()
 
     def notify_new_frame(self):
         self._new_frame_pending = True

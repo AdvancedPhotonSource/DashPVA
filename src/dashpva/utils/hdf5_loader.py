@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import os
 from pathlib import Path
 from typing import Optional, Tuple
@@ -10,6 +27,7 @@ import numpy as np
 
 from dashpva.utils.config.hkl import numbered_axis_group_names
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.volume_io import save_volume
 
 
 class HDF5Loader(LogMixin):
@@ -814,87 +832,30 @@ class HDF5Loader(LogMixin):
             "save_images_to_h5 is not implemented. Use save_vol_to_h5 for volume/slice saving or implement image-stack saving."
         )
     
-    def save_vol_to_h5(self, file_path: str, volume: np.ndarray, 
-                         metadata: Optional[dict] = None) -> bool:
-        """
-        Save 3D volume (or 2D slice) to HDF5 file using standard structure.
-        Writes the array to /entry/data/data and metadata to /entry/data/metadata.
-        
-        Args:
-            file_path (str): Output file path
-            volume (np.ndarray): Volume array. Shape should be:
-                                 - (D, H, W) for 3D volumes
-                                 - (H, W) for 2D slices
-            metadata (dict, optional): Additional metadata to save. Will be merged
-                                       with defaults (including data_type).
-        Returns:
-            bool: True if save successful
+    def save_vol_to_h5(self, file_path: str, volume: np.ndarray,
+                         metadata: Optional[dict] = None,
+                         coverage: Optional[np.ndarray] = None) -> bool:
+        """Save a 3D volume (or 2D slice) in the standard volume layout.
+
+        Compatibility delegator: the write itself lives in
+        dashpva.utils.volume_io, which imports no Qt, so the live grid
+        consumer can reuse it inside a pvaccess process. Passing ``coverage``
+        adds the sibling /entry/data/coverage dataset.
         """
         try:
-            if volume is None or volume.size == 0:
+            if volume is None:
                 raise ValueError("Volume array cannot be empty")
-            if volume.ndim not in (2, 3):
-                raise ValueError(f"Volume must be 2D or 3D, got ndim={volume.ndim}")
-            
-            # Prepare metadata and infer data_type if not provided
-            meta = {} if metadata is None else dict(metadata)
-            inferred_type = 'volume' if volume.ndim == 3 else 'slice'
-            meta.setdefault('data_type', inferred_type)
-            meta.setdefault('creation_timestamp', str(np.datetime64('now')))
-            meta.setdefault('source_file', getattr(self, 'current_file_path', 'unknown'))
-            if volume.ndim == 3:
-                meta.setdefault('volume_shape', tuple(int(x) for x in volume.shape))
-            else:
-                meta.setdefault('slice_shape', tuple(int(x) for x in volume.shape))
-            
-            # Create HDF5 structure and write data
-            with h5py.File(file_path, 'w') as h5f:
-                # /entry
-                entry_grp = h5f.create_group(self.hdf5_structure['entry'])
-                # /entry/data
-                data_grp = entry_grp.create_group(self.hdf5_structure['data'].split('/')[-1])
-                # /entry/data/data -> write as float32 for consistency
-                data_ds_name = self.hdf5_structure['images'].split('/')[-1]
-                data_grp.create_dataset(data_ds_name, data=volume.astype(np.float32))
-                
-                # /entry/data/metadata
-                metadata_grp = data_grp.create_group(self.hdf5_structure['metadata'].split('/')[-1])
-                for key, value in meta.items():
-                    try:
-                        if isinstance(value, (int, float, np.number)):
-                            metadata_grp.create_dataset(key, data=value)
-                        elif isinstance(value, str):
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            metadata_grp.create_dataset(key, data=value, dtype=dt)
-                        elif isinstance(value, (list, tuple, np.ndarray)):
-                            if len(value) > 0:
-                                if all(isinstance(v, (int, float, np.number)) for v in value):
-                                    metadata_grp.create_dataset(key, data=np.array(value))
-                                elif all(isinstance(v, str) for v in value):
-                                    dt = h5py.string_dtype(encoding='utf-8')
-                                    metadata_grp.create_dataset(key, data=np.array(value, dtype=dt))
-                                else:
-                                    dt = h5py.string_dtype(encoding='utf-8')
-                                    metadata_grp.create_dataset(key, data=str(value), dtype=dt)
-                        else:
-                            dt = h5py.string_dtype(encoding='utf-8')
-                            metadata_grp.create_dataset(key, data=str(value), dtype=dt)
-                    except Exception as e:
-                        try:
-                            self.logger.warning(f"Could not save metadata key '{key}': {e}")
-                        except Exception:
-                            pass
-
-                # Attributes for quick discovery
-                entry_grp.attrs['data_type'] = meta.get('data_type', inferred_type)
-                data_grp.attrs['array_rank'] = volume.ndim
-                data_grp.attrs['array_shape'] = np.array(volume.shape, dtype=np.int64)
-
+            ok = save_volume(
+                file_path, volume, coverage=coverage, metadata=metadata
+            )
             try:
-                self.logger.info(f"{meta.get('data_type', inferred_type).capitalize()} saved to {file_path}")
+                kind = (metadata or {}).get(
+                    'data_type', 'volume' if volume.ndim == 3 else 'slice'
+                )
+                self.logger.info(f"{str(kind).capitalize()} saved to {file_path}")
             except Exception:
                 pass
-            return True
+            return ok
         except Exception as e:
             self._handle_saving_error(e, file_path)
             return False

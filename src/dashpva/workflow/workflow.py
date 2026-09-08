@@ -1,5 +1,22 @@
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 import ast
 import json
 import os
@@ -13,7 +30,7 @@ from datetime import datetime
 
 import toml
 from PyQt5 import QtGui, QtWidgets, uic
-from PyQt5.QtCore import QObject, Qt, pyqtSignal
+from PyQt5.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -43,7 +60,7 @@ from dashpva.gui.theme_colors import (
     WARNING,
     status_style,
 )
-from dashpva.utils.config.hkl import semantic_hkl_channels
+from dashpva.utils.config.hkl import required_rsm_channels, semantic_hkl_channels
 from dashpva.utils.config.resolver import resolve_profile_config
 from dashpva.utils.log_manager import LogMixin
 
@@ -377,8 +394,11 @@ class Workflow(QDialog, LogMixin):
         self._edited_item_ids: set = set()
         self._structural_changed: bool = False
         self._clipboard_item = None  # {'key': str, 'value': str} — persists across deletes
+        self._analysis_non_grid_consumers = self.spinBoxNConsumersAnalysis.value()
 
         # Sim Server Tab
+        self._populate_sim_type_combos()
+        self.comboBoxSimType.currentIndexChanged.connect(self._on_sim_type_changed)
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
@@ -438,6 +458,12 @@ class Workflow(QDialog, LogMixin):
         self.buttonStopCollector.clicked.connect(self.stop_collector)
 
         # Analysis Consumer Tab
+        self.comboBoxProcessorFileAnalysis.currentTextChanged.connect(
+            self._on_analysis_processor_file_changed
+        )
+        self.spinBoxNConsumersAnalysis.valueChanged.connect(
+            self._remember_analysis_consumer_count
+        )
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
@@ -478,6 +504,16 @@ class Workflow(QDialog, LogMixin):
         self._load_meta_assoc_last()
         self._load_collector_last()
         self._load_analysis_last()
+
+        # HKL Setup edits IOC_RSM_PARAMETER from a separate OS process, so it
+        # never runs through this window's own save paths (which already call
+        # _sync_associator_metadata()). Poll instead, so a running associator
+        # still gets flagged stale when the config changes from over there.
+        self._associator_staleness_timer = QTimer(self)
+        self._associator_staleness_timer.timeout.connect(self._on_associator_staleness_timer)
+        self._associator_staleness_timer.setInterval(
+            app_settings.METADATA_ASSOCIATOR_STALENESS_CHECK_MS
+        )
 
     # ------------------------------------------------------------------ #
     # DB availability check
@@ -560,6 +596,49 @@ class Workflow(QDialog, LogMixin):
             if current:
                 combo.setCurrentText(current)
             combo.blockSignals(False)
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
+
+    def _remember_analysis_consumer_count(self, value):
+        if self.spinBoxNConsumersAnalysis.isEnabled():
+            self._analysis_non_grid_consumers = int(value)
+
+    @staticmethod
+    def _processor_file_path(processor_file):
+        value = str(processor_file).strip()
+        if not value:
+            return value
+        path = pathlib.Path(value).expanduser()
+        if not path.is_absolute():
+            path = app_settings.PROJECT_ROOT / path
+        return str(path.resolve())
+
+    def _on_analysis_processor_file_changed(self, processor_file):
+        filename = pathlib.Path(str(processor_file)).name
+        processor_class = app_settings.ANALYSIS_PROCESSOR_CLASSES.get(filename)
+        if processor_class:
+            self.lineEditProcessorClassAnalysis.setText(processor_class)
+
+        is_grid = processor_class == app_settings.RSM_GRID_PROCESSOR_CLASS
+        was_enabled = self.spinBoxNConsumersAnalysis.isEnabled()
+        if is_grid:
+            if was_enabled:
+                self._analysis_non_grid_consumers = (
+                    self.spinBoxNConsumersAnalysis.value()
+                )
+            self.spinBoxNConsumersAnalysis.setEnabled(False)
+            self.spinBoxNConsumersAnalysis.setValue(1)
+            self.spinBoxNConsumersAnalysis.setToolTip(
+                "Live gridding is stateful and requires exactly one consumer."
+            )
+        else:
+            self.spinBoxNConsumersAnalysis.setEnabled(True)
+            if not was_enabled:
+                self.spinBoxNConsumersAnalysis.setValue(
+                    self._analysis_non_grid_consumers
+                )
+            self.spinBoxNConsumersAnalysis.setToolTip("")
 
     # ------------------------------------------------------------------ #
     # Config source toggle
@@ -2100,18 +2179,76 @@ class Workflow(QDialog, LogMixin):
     # Config parsing helpers
     # ------------------------------------------------------------------ #
 
-    def _build_metadata_channels(self) -> str:
-        """Build --metadata-channels string from app_settings."""
-        ca_pvs = ''
+    def _build_metadata_channel_list(self):
+        """Ordered, deduped scheme://name URIs, plus the bare channel-name set.
+
+        Returned as a (list, set) pair -- rather than making callers re-split
+        the joined ','-delimited string built from it -- because a channel
+        name (SCAN_*_PV, a METADATA_CA/METADATA_PVA value, anything free-text
+        and user-editable via the Settings tree) can itself legitimately
+        contain a comma or '://'-like substring, which makes re-parsing the
+        joined string ambiguous and, for a literal comma, an IndexError.
+
+        Deduplicates across ALL sources (SCAN_*_PV, METADATA_CA, the HKL-derived
+        channels, METADATA_PVA) by full scheme://name URI -- previously only
+        semantic_hkl_channels() deduped within itself, so the same PV named in
+        both METADATA_CA and IOC_RSM_PARAMETER would be attached twice.
+        METADATA.CA itself is only read here, never written -- it stays
+        reserved for user-defined channels.
+        """
+        seen_urls: set = set()
+        ordered: list = []
+        bare_names: set = set()
+
+        def add(scheme: str, name: str) -> None:
+            url = f'{scheme}://{name}'
+            if url not in seen_urls:
+                seen_urls.add(url)
+                ordered.append(url)
+                bare_names.add(name)
+
         for pv in (app_settings.SCAN_FLAG_PV, app_settings.FILE_PATH_PV, app_settings.FILE_NAME_PV):
             if pv:
-                ca_pvs += f'ca://{pv},'
-        ca_pvs += ''.join(f'ca://{v},' for v in app_settings.METADATA_CA.values() if v)
-        pva_pvs = ''.join(f'pva://{v},' for v in app_settings.METADATA_PVA.values() if v)
+                add('ca', pv)
+        for v in app_settings.METADATA_CA.values():
+            if v:
+                add('ca', v)
         for pv_channel in semantic_hkl_channels(app_settings.HKL):
-            ca_pvs += f'ca://{pv_channel},'
-        all_pvs = ca_pvs.strip(',') if not pva_pvs else ca_pvs + pva_pvs.strip(',')
-        return all_pvs
+            add('ca', pv_channel)
+        for v in app_settings.METADATA_PVA.values():
+            if v:
+                add('pva', v)
+        return ordered, bare_names
+
+    def _build_metadata_channels(self) -> str:
+        """Build --metadata-channels string from app_settings, in order, once each."""
+        ordered, _bare_names = self._build_metadata_channel_list()
+        return ','.join(ordered)
+
+    def _resolved_profile_identity(self):
+        """Best-effort 'which profile is actually active right now' check.
+
+        Tolerant of ConfigSource not (yet) exposing resolved_identity() --
+        falls back to None, which only weakens the staleness check below to
+        channel-set drift alone rather than breaking it.
+
+        KNOWN LIMITATION: a transient failure here (e.g. brief DB contention,
+        plausible given HKL Setup/other Workflow DB calls can run
+        concurrently) is indistinguishable from "genuinely no active
+        profile" -- both return None. _sync_associator_metadata's baseline
+        always advances to the latest observed value, so a spurious None
+        causes an extra, harmless notice (not a missed one) when the DB
+        hiccup clears and the real identity reappears -- an acceptable
+        trade-off given the alternative (permanently missing a later, real
+        profile switch) is worse. Logged rather than silently swallowed so a
+        recurring DB problem is at least visible.
+        """
+        try:
+            from dashpva.utils.config.source import ConfigSource
+            return ConfigSource(app_settings.LOCATOR).resolved_identity()
+        except Exception as exc:
+            self.logger.debug(f'Could not resolve active profile identity: {exc}')
+            return None
 
     def _build_roi_channels(self) -> str:
         """Build --metadata-channels string from app_settings ROI section."""
@@ -2144,6 +2281,47 @@ class Workflow(QDialog, LogMixin):
     # Sim Server
     # ------------------------------------------------------------------ #
 
+    def _populate_sim_type_combos(self):
+        """Fill the simulation-type and probe-shape dropdowns from settings."""
+        self.comboBoxSimType.blockSignals(True)
+        self.comboBoxSimType.clear()
+        self.comboBoxSimType.addItems(list(app_settings.SIM_SERVER_TYPES))
+        self.comboBoxSimType.blockSignals(False)
+        self.comboBoxProbeShape.clear()
+        self.comboBoxProbeShape.addItems(list(app_settings.SIM_PROBE_SHAPES))
+        self._on_sim_type_changed(self.comboBoxSimType.currentIndex())
+
+    def _selected_sim_is_probe(self) -> bool:
+        return self.comboBoxSimType.currentText() == 'Probe beam'
+
+    def _on_sim_type_changed(self, _index):
+        """Point the processor-file field at the chosen simulation."""
+        name = self.comboBoxSimType.currentText()
+        relative = (app_settings.SIM_SERVER_TYPES.get(name) or {}).get('path')
+        if relative:
+            self.lineEditProcessorFileSim.setText(
+                str(pathlib.Path(app_settings.PROJECT_ROOT) / relative)
+            )
+        # -shape only exists on the probe server; hide it for the others.
+        is_probe = self._selected_sim_is_probe()
+        self.labelProbeShape.setVisible(is_probe)
+        self.comboBoxProbeShape.setVisible(is_probe)
+
+    def _sim_option_values(self) -> dict:
+        """Value for every flag any simulation server might accept."""
+        return {
+            'cn': self.lineEditInputChannelSim.text(),
+            'nx': str(self.spinBoxNx.value()),
+            'ny': str(self.spinBoxNy.value()),
+            'fps': str(self.spinBoxFps.value()),
+            'dt': self.comboBoxDt.currentText(),
+            'nf': str(self.spinBoxNf.value()),
+            'rt': str(self.spinBoxRt.value()),
+            'rp': str(self.spinBoxRp.value()),
+            'mpv': self.lineEditMpv.text(),
+            'shape': self.comboBoxProbeShape.currentText(),
+        }
+
     def run_sim_server(self):
         if 'sim_server' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Sim Server is already running.')
@@ -2152,21 +2330,15 @@ class Workflow(QDialog, LogMixin):
         sim_path = self.lineEditProcessorFileSim.text()
         if not os.path.isabs(sim_path):
             sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
-        cmd = [
-            sys.executable, '-u', sim_path,
-            '-cn', self.lineEditInputChannelSim.text(),
-            '-nx', str(self.spinBoxNx.value()),
-            '-ny', str(self.spinBoxNy.value()),
-            '-fps', str(self.spinBoxFps.value()),
-            '-dt', self.comboBoxDt.currentText(),
-            '-nf', str(self.spinBoxNf.value()),
-            '-rt', str(self.spinBoxRt.value()),
-            '-rp', str(self.spinBoxRp.value())
-        ]
-
-        metadata_output_pvs = self.lineEditMpv.text()
-        if metadata_output_pvs:
-            cmd.extend(['-mpv', metadata_output_pvs])
+        # Only the flags this server's parser accepts -- argparse exits on any
+        # other, and the RSM data server takes none.
+        spec = app_settings.SIM_SERVER_TYPES.get(self.comboBoxSimType.currentText(), {})
+        values = self._sim_option_values()
+        cmd = [sys.executable, '-u', sim_path]
+        for option in spec.get('options', ()):
+            value = values.get(option, '')
+            if value != '':
+                cmd.extend([f'-{option}', value])
 
         try:
             process = subprocess.Popen(
@@ -2457,6 +2629,9 @@ class Workflow(QDialog, LogMixin):
                 self.spinBoxNConsumersAnalysis.setValue(int(last['n_consumers']))
             if 'distributor_updates' in last:
                 self.spinBoxDistributorUpdatesAnalysis.setValue(int(last['distributor_updates']))
+            self._on_analysis_processor_file_changed(
+                self.comboBoxProcessorFileAnalysis.currentText()
+            )
         except Exception:
             pass
 
@@ -2514,6 +2689,9 @@ class Workflow(QDialog, LogMixin):
             self.spinBoxNConsumersAnalysis.setValue(int(cfg['n_consumers']))
         if 'distributor_updates' in cfg:
             self.spinBoxDistributorUpdatesAnalysis.setValue(int(cfg['distributor_updates']))
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
 
     def run_associator_consumers(self):
         self.logger.info('Start Metadata Associator requested')
@@ -2521,6 +2699,75 @@ class Workflow(QDialog, LogMixin):
             self.logger.warning('Start Metadata Associator ignored — already running')
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
+
+        # Reload before building anything below, so a profile switched (or
+        # edited via the separate HKL Setup process) since the last reload is
+        # actually reflected in app_settings.HKL / METADATA_CA / METADATA_PVA.
+        try:
+            app_settings.reload()
+        except Exception as exc:
+            self.logger.exception('Could not reload the active metadata profile')
+            QtWidgets.QMessageBox.critical(
+                self,
+                'Cannot start Metadata Associator',
+                f'The active profile could not be reloaded:\n\n{exc}',
+            )
+            return
+        if app_settings.CONFIG_ERROR:
+            self.logger.warning(
+                'Start Metadata Associator refused — active profile resolution failed: '
+                f'{app_settings.CONFIG_ERROR}'
+            )
+            QtWidgets.QMessageBox.critical(
+                self,
+                'Cannot start Metadata Associator',
+                'The active profile could not be resolved into a valid runtime '
+                f'configuration:\n\n{app_settings.CONFIG_ERROR}',
+            )
+            return
+
+        try:
+            metadata_pv_list, _built_channels = self._build_metadata_channel_list()
+            required_channels = required_rsm_channels(app_settings.HKL)
+        except Exception as exc:
+            self.logger.warning(
+                f'Start Metadata Associator refused — could not resolve required RSM channels: {exc}')
+            QtWidgets.QMessageBox.critical(
+                self, 'Cannot start Metadata Associator',
+                'The active profile could not be resolved into the RSM channels '
+                f'required to compute Q:\n\n{exc}',
+            )
+            return
+
+        missing = sorted(
+            channel
+            for channel in required_channels
+            if metadata_pv_list.count(f'ca://{channel}') == 0
+        )
+        duplicated = sorted(
+            channel
+            for channel in required_channels
+            if metadata_pv_list.count(f'ca://{channel}') > 1
+        )
+        if missing or duplicated:
+            details = []
+            if missing:
+                details.append('Missing:\n' + '\n'.join(missing))
+            if duplicated:
+                details.append('Duplicated:\n' + '\n'.join(duplicated))
+            self.logger.warning(
+                'Start Metadata Associator refused — required channel validation '
+                f'failed (missing={missing}, duplicated={duplicated})'
+            )
+            QtWidgets.QMessageBox.critical(
+                self, 'Cannot start Metadata Associator',
+                'Every required RSM channel must be monitored exactly once:\n\n'
+                + '\n\n'.join(details),
+            )
+            return
+
+        metadata_pvs = ','.join(metadata_pv_list)
+
         self._save_meta_assoc_last()
 
         cmd = [
@@ -2529,7 +2776,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAssociator.text(),
             '--status-channel', self.lineEditStatusChannelAssociator.text(),
             '--output-channel', self.lineEditOutputChannelAssociator.text(),
-            '--processor-file', self.comboBoxProcessorFileAssociator.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileAssociator.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassAssociator.text(),
             '--report-period', str(self.spinBoxReportPeriodAssociator.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAssociator.value()),
@@ -2538,15 +2787,12 @@ class Workflow(QDialog, LogMixin):
             '-dc'
         ]
 
-        metadata_pvs = self._build_metadata_channels()
         if metadata_pvs:
             cmd.extend(['--metadata-channels', metadata_pvs])
         else:
             self.logger.warning(
                 'Start Metadata Associator: no metadata channels built — '
                 'associator will have nothing to attach')
-        self._associator_metadata_channels = metadata_pvs
-
         try:
             process = subprocess.Popen(
                 cmd,
@@ -2556,6 +2802,13 @@ class Workflow(QDialog, LogMixin):
                 universal_newlines=True
             )
             self.processes['associator_consumers'] = process
+            self._associator_metadata_channels = metadata_pvs
+            self._associator_profile_identity = self._resolved_profile_identity()
+            self._associator_stale = False
+            stale_box = getattr(self, '_associator_stale_notice_box', None)
+            if stale_box is not None:
+                stale_box.close()
+                self._associator_stale_notice_box = None
             worker = Worker(process)
             worker.output_signal.connect(self._format_associator_output)
             thread = threading.Thread(target=worker.run)
@@ -2565,6 +2818,7 @@ class Workflow(QDialog, LogMixin):
             self.buttonRunAssociatorConsumers.setEnabled(False)
             self.buttonStopAssociatorConsumers.setEnabled(True)
             self.labelStatusAssociatorConsumers.setText(f'Process ID: {process.pid}')
+            self._associator_staleness_timer.start()
             self.logger.info(f'Metadata Associator started (PID {process.pid})')
         except Exception as e:
             self.logger.exception('Failed to start Metadata Associator')
@@ -2581,19 +2835,69 @@ class Workflow(QDialog, LogMixin):
             self.labelStatusAssociatorConsumers.setText('Process ID: Not running')
             self.textEditAssociatorConsumersOutput.appendPlainText('Associator Consumers stopped.')
             print(f"Associator Stopped @ {datetime.now().strftime('%Y/%d/%m %H:%S:%f')[:-3]}")
+            self._associator_staleness_timer.stop()
+            self._associator_stale = False
+            # A non-modal staleness notice from the run that just stopped would
+            # otherwise linger on screen telling the user to "stop and restart"
+            # something they already stopped.
+            box = getattr(self, '_associator_stale_notice_box', None)
+            if box is not None:
+                box.close()
+                self._associator_stale_notice_box = None
+
+    def _on_associator_staleness_timer(self) -> None:
+        """Periodic drift check, driven by the timer started in __init__.
+
+        HKL Setup edits IOC_RSM_PARAMETER from a separate OS process and never
+        calls _sync_associator_metadata() itself, so this timer is the only
+        path that notices a config change made over there while an associator
+        is already running.
+        """
+        if 'associator_consumers' not in self.processes:
+            return
+        try:
+            app_settings.reload()
+        except Exception:
+            pass
+        self._sync_associator_metadata()
 
     def _sync_associator_metadata(self) -> None:
-        """Restart the associator if it is running and metadata channels changed."""
+        """Warn -- never auto-restart -- when a running associator has gone stale.
+
+        Restarting here would interrupt whatever the associator is doing
+        mid-acquisition; that decision belongs to the user. The launch-time
+        channel/profile fingerprint remains pinned until an explicit Stop/Start
+        cycle, and a one-shot flag prevents a warning storm while it is stale.
+        """
         if 'associator_consumers' not in self.processes:
             return
         new_channels = self._build_metadata_channels()
-        if new_channels == getattr(self, '_associator_metadata_channels', None):
+        new_identity = self._resolved_profile_identity()
+        channels_changed = new_channels != getattr(self, '_associator_metadata_channels', None)
+        identity_changed = new_identity != getattr(self, '_associator_profile_identity', None)
+        if not channels_changed and not identity_changed:
             return
+        if getattr(self, '_associator_stale', False):
+            return
+        self._associator_stale = True
         self.textEditAssociatorConsumersOutput.appendPlainText(
-            '[Config] Metadata channels changed — restarting associator...'
+            '[Config] WARNING: metadata configuration changed — the running '
+            'associator is stale; stop and restart it to apply the change.'
         )
-        self.stop_associator_consumers()
-        self.run_associator_consumers()
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle('Metadata configuration changed — restart required')
+        box.setText(
+            'Metadata configuration changed — restart required.\n\n'
+            'The running Metadata Associator is still using its previous '
+            'channel set. Live acquisition is unaffected, but new metadata '
+            'will not reflect this change until you stop and restart the '
+            'associator.'
+        )
+        box.setModal(False)
+        box.show()
+        # Keep a reference so Qt doesn't garbage-collect a shown, non-modal box.
+        self._associator_stale_notice_box = box
 
     def _format_and_append_output(self, text: str, target_widget: QTextEdit):
         timestamp = datetime.now().strftime('%H:%M:%S')
@@ -2626,6 +2930,83 @@ class Workflow(QDialog, LogMixin):
                 self._flush_associator_stats()
             return
         self._format_and_append_output(line, self.textEditAssociatorConsumersOutput)
+
+    def _format_analysis_output(self, line: str) -> None:
+        """Accumulate pvapy stats blocks and replace them with a compact one-liner.
+
+        Same treatment the associator output gets -- the raw block is dozens of
+        lines per report, which pushed everything worth reading off screen.
+        """
+        if not hasattr(self, '_analysis_buffer'):
+            self._analysis_buffer = []
+            self._analysis_in_stats = False
+        stripped = line.strip()
+        if "'consumerId'" in stripped:
+            if self._analysis_buffer:
+                self._flush_analysis_stats()
+            self._analysis_buffer = [stripped]
+            self._analysis_in_stats = True
+            return
+        if self._analysis_in_stats:
+            self._analysis_buffer.append(stripped)
+            if stripped.endswith('}}'):
+                self._flush_analysis_stats()
+            return
+        self._format_and_append_output(line, self.textEditAnalysisConsumerOutput)
+
+    def _flush_analysis_stats(self) -> None:
+        """Parse accumulated stats lines and emit a compact live-grid summary."""
+        full = ' '.join(self._analysis_buffer)
+        self._analysis_buffer = []
+        self._analysis_in_stats = False
+
+        def get_int(pat):
+            m = re.search(pat, full)
+            return int(m.group(1)) if m else 0
+
+        def get_float(pat):
+            m = re.search(pat, full)
+            return float(m.group(1)) if m else 0.0
+
+        consumer_id = get_int(r"'consumerId':\s*(\d+)")
+        ch_m = re.search(r"'inputChannel':\s*'([^']+)'", full)
+        channel = ch_m.group(1) if ch_m else '?'
+        recv_rate = get_float(r"'receivedRate':\s*([\d.]+)Hz")
+        pub_rate = get_float(r"'publishedRate':\s*([\d.]+)Hz")
+        n_proc = get_int(r"'nFramesProcessed':\s*(\d+)")
+        n_err = get_int(r"'nFrameErrors':\s*(\d+)")
+
+        # rsm_grid namespace: what the accumulation actually did with the frames.
+        state_m = re.search(r"'state':\s*'([^']+)'", full)
+        state = state_m.group(1) if state_m else 'idle'
+        accepted = get_int(r"'frames_accepted':\s*(\d+)")
+        binned = get_int(r"'points_binned':\s*(\d+)")
+        out_of_range = get_int(r"'points_out_of_range':\s*(\d+)")
+        voxels = get_int(r"'voxels_filled':\s*(\d+)")
+        err_m = re.search(r"'last_error':\s*'([^']+)'", full)
+        binding_m = re.search(
+            r"'last_binding_rejection':\s*'([^']+)'", full
+        )
+
+        ts = datetime.now().strftime('%H:%M:%S')
+        color = ERROR if (n_err or err_m) else (SUCCESS if accepted else WARNING)
+        summary = (
+            f"Consumer {consumer_id} | {channel} | "
+            f"recv {recv_rate:.1f} Hz  pub {pub_rate:.1f} Hz | "
+            f"frames: {n_proc} ok  {n_err} err | "
+            f"grid {state}: {accepted} accepted  {binned:,} binned  "
+            f"{out_of_range:,} out  {voxels:,} voxels"
+        )
+        if err_m:
+            summary += f" | {err_m.group(1)}"
+        elif binding_m and not accepted:
+            summary += (
+                " | metadata rejected: "
+                f"{binding_m.group(1).replace('_', ' ')}"
+            )
+        self.textEditAnalysisConsumerOutput.appendHtml(
+            f"<font color='{TEXT_MUTED}'>{ts}</font> <font color='{color}'>{summary}</font>"
+        )
 
     def _flush_associator_stats(self) -> None:
         """Parse accumulated stats lines and emit a compact summary."""
@@ -2699,7 +3080,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelCollector.text(),
             '--status-channel', self.lineEditStatusChannelCollector.text(),
             '--output-channel', self.lineEditOutputChannelCollector.text(),
-            '--processor-file', self.comboBoxProcessorFileCollector.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileCollector.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassCollector.text(),
             '--report-period', str(self.spinBoxReportPeriodCollector.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeCollector.value()),
@@ -2750,6 +3133,9 @@ class Workflow(QDialog, LogMixin):
         if 'analysis_consumer' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Analysis Consumer is already running.')
             return
+        self._on_analysis_processor_file_changed(
+            self.comboBoxProcessorFileAnalysis.currentText()
+        )
         self._save_analysis_last()
 
         cmd = [
@@ -2758,7 +3144,9 @@ class Workflow(QDialog, LogMixin):
             '--control-channel', self.lineEditControlChannelAnalysis.text(),
             '--status-channel', self.lineEditStatusChannelAnalysis.text(),
             '--output-channel', self.lineEditOutputChannelAnalysis.text(),
-            '--processor-file', self.comboBoxProcessorFileAnalysis.currentText(),
+            '--processor-file', self._processor_file_path(
+                self.comboBoxProcessorFileAnalysis.currentText()
+            ),
             '--processor-class', self.lineEditProcessorClassAnalysis.text(),
             '--report-period', str(self.spinBoxReportPeriodAnalysis.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeAnalysis.value()),
@@ -2781,7 +3169,7 @@ class Workflow(QDialog, LogMixin):
             )
             self.processes['analysis_consumer'] = process
             worker = Worker(process)
-            worker.output_signal.connect(self.textEditAnalysisConsumerOutput.appendPlainText)
+            worker.output_signal.connect(self._format_analysis_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
             thread.start()

@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
-# Copyright (C) UChicago Argonne, LLC
-# See LICENSE file for details
+# Copyright © 2026, UChicago Argonne, LLC
+# All Rights Reserved
+# Software Name: DashPVA
+# By: Argonne National Laboratory
+#
+# BSD OPEN SOURCE LICENSE
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+#
+# ******************************************************************************************************
+# DISCLAIMER
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ******************************************************************************************************
+
 """
 This script sets up a CA IOC (using pva.CaIoc) to broadcast a set of PVs
 exclusively via the Channel Access (CA) protocol. It includes:
@@ -35,37 +52,31 @@ import pvaccess as pva  # pva module provides CaIoc and related functions
 axis_records = {
     "6idb1:m28.RBV": {
         "AxisNumber": 1,
-        "SpecMotorName": "Mu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
     "6idb1:m17.RBV": {
         "AxisNumber": 2,
-        "SpecMotorName": "Eta",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
     "6idb1:m19.RBV": {
         "AxisNumber": 3,
-        "SpecMotorName": "Chi",
         "DirectionAxis": "y+",
         "Position": 0.0
     },
     "6idb1:m20.RBV": {
         "AxisNumber": 4,
-        "SpecMotorName": "Phi",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
     "6idb1:m29.RBV": {
         "AxisNumber": 1,
-        "SpecMotorName": "Nu",
         "DirectionAxis": "x+",
         "Position": 0.0,
     },
     "6idb1:m18.RBV": {
         "AxisNumber": 2,
-        "SpecMotorName": "Delta",
         "DirectionAxis": "z-",
         "Position": 0.0,
     },
@@ -298,11 +309,8 @@ def main() -> None:
                 new_position = 5 + (amplitude * math.sin(elapsed)) # caget(name) #+ amplitude * math.sin(elapsed)
                 # Only update the Eta field For Now
                 if isinstance(rec, dict):
-                    if rec["SpecMotorName"] == "Eta":
-                        # Only Update Eta Position
-                        update_ca_record_field(caIoc, name, 'Position', new_position)
-                    if rec["SpecMotorName"] == "Delta":
-                        # Only Update Eta Position
+                    # Eta and Delta only, keyed on their motor PVs.
+                    if name in ("6idb1:m17.RBV", "6idb1:m18.RBV"):
                         update_ca_record_field(caIoc, name, 'Position', new_position)
                 # elif name == '6idb:spec:Energy':
                 #     update_ca_record_field(caIoc, name, 'Value', new_position)
