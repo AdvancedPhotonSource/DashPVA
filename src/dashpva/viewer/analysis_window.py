@@ -361,6 +361,7 @@ class AnalysisWindow(QMainWindow):
         """
         Redraws plots based on the configured frequency.
         """
+        self.analysis_index = self.parent.reader.analysis_index
         if self.analysis_index is not None:
 
             self.update_counter += 1
