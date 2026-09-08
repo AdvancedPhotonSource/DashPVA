@@ -307,3 +307,58 @@ DashPVA spawns each analysis tool as an independent process (node). Data flows f
 
 **What is the difference between Full and Standalone editions?**
 Full includes everything — live streaming via pvaccess/EPICS, all real-time analysis tools, and Bayesian optimization. Area Detector is the lean streaming foundation (detector viewer + EPICS). Bayesian adds the blop optimizer on top of Area Detector. Standalone is a lighter install for offline post-analysis: Workbench, File Convert, Metadata Converter, and Phase Fitter (file mode only). Use `bash install.sh --full`, `--area-det`, `--standalone`, or `--bayesian` to choose.
+
+### Preview delivery and performance settings
+
+Live 2D/HKL previews keep the latest owned frame and coalesce GUI notifications.
+Scientific scan/alignment/bin caches continue to consume their ordered queue;
+preview sampling does not make PVA acquisition lossless. HKL realtime mode is a
+rolling sampled preview. Its points must not be used as quantitative scan data.
+
+The Stats docks distinguish attempted processing, observed frame-ID gaps,
+intentional preview skips before decode / before GUI, and rejected previews.
+Observed ID gaps include intentional preview selection and are not acquisition
+loss counts. Reader timings measure local decode/processing, not completed paint
+FPS or cross-machine source-to-display latency.
+
+`PREVIEW` is stored in the active DB profile and included in TOML import/export.
+New profiles are seeded with these defaults through `seed_profile_defaults_sql.py`:
+
+```toml
+[PREVIEW]
+QUEUE_FRAMES = 2
+MAX_ARRAY_BYTES = 536870912
+AUTOSCALE_SAMPLES_PER_AXIS = 256
+HKL_MAX_POINTS = 1000000
+HKL_MAX_FRAMES = 100
+LABEL_INTERVAL_MS = 100
+MIN_TIMER_INTERVAL_MS = 1
+```
+
+All values must be positive integers. Restart monitoring to apply queue and
+snapshot limits; reopen HKL3D to apply its point/ring limits. Autoscale sampling
+reads the current settings when invoked. Change cache/delivery modes only while
+monitoring is stopped; a detected midstream cache-mode change stops delivery.
+
+`MAX_ARRAY_BYTES` bounds one decoded preview snapshot's NumPy arrays, including
+coordinates and array-valued metadata. It is checked before snapshot copies.
+Writable upstream arrays are copied to immutable backing bytes; arrays already
+backed by immutable decoded bytes can be retained without an additional copy.
+The last displayed packet and the latest producer packet may coexist. This is
+not a whole-process memory limit: native transport/decode allocations, scientific
+caches, Python metadata, VTK buffers and writer staging need their own budgets.
+An oversized preview is counted/rejected without rejecting an already processed
+scientific frame. The last valid display can remain visible; check rejection
+counters when diagnosing a stationary preview.
+
+Point sampling selects matching C-indexed intensity/Q values before float32
+conversion without flattening a full F-contiguous frame. Point caps affect only
+display. Deterministic sampling and sampled autoscale may miss narrow peaks;
+raw pixels, quantitative analysis and scientific storage retain their own data.
+Future worker-based geometry/image products, recording byte/age budgets and
+completed-paint benchmarks remain tracked in GitHub issue #156.
+
+Reproduce the sampling CPU/allocation proxy with
+`PYTHONPATH=src python tests/benchmarks/preview_sampling.py`.
+It compares identical selected values; its timings exclude snapshot ownership,
+transport, decoding, GUI work and rendering.

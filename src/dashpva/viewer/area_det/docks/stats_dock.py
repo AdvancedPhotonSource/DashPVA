@@ -61,12 +61,18 @@ class StatsDock(BaseDock):
 
         self.frames_received_val = _value_label("0")
         self.missed_frames_val   = _value_label("0")
+        self.preview_skipped_val = QLabel('0 / 0')
+        self.preview_rejected_val = QLabel('0')
+        self.preview_skipped_val.setToolTip('Intentional preview skips before decode / before GUI; scientific caches keep their ordered delivery.')
+        self.missed_frames_val.setToolTip('Gaps between processed source IDs, including preview selection. This is not a count of acquisition loss.')
         self.max_px_val          = _value_label("0.0")
         self.min_px_val          = _value_label("0.0")
         self.data_type_val       = _value_label("none")
 
-        layout.addRow(QLabel("Frames Received:"), self.frames_received_val)
-        layout.addRow(QLabel("Frames Missed:"),   self.missed_frames_val)
+        layout.addRow(QLabel("Frames Attempted:"), self.frames_received_val)
+        layout.addRow(QLabel("Observed ID Gaps:"),   self.missed_frames_val)
+        layout.addRow(QLabel('Preview skips (decode / GUI):'), self.preview_skipped_val)
+        layout.addRow(QLabel('Preview rejected:'), self.preview_rejected_val)
         layout.addRow(QLabel("Max [px value]:"),  self.max_px_val)
         layout.addRow(QLabel("Min [px value]:"),  self.min_px_val)
         layout.addRow(QLabel("Image Data Type:"), self.data_type_val)
@@ -86,7 +92,7 @@ class StatsDock(BaseDock):
         layout.addRow(QLabel("Set Min Intensity:"), self.min_setting_val)
         layout.addRow(QLabel("Set Max Intensity:"), self.max_setting_val)
 
-        self.chk_autoscale = QCheckBox("Autoscale (5%-95% histogram)")
+        self.chk_autoscale = QCheckBox("Autoscale (sampled 5%-95%)")
         layout.addRow(self.chk_autoscale)
 
         self.chk_threshold = QCheckBox("Auto threshold:")
@@ -94,3 +100,14 @@ class StatsDock(BaseDock):
         layout.addRow(self.chk_threshold, self.lbl_threshold_range)
 
         self.setWidget(container)
+
+    def update_preview_metrics(self):
+        reader = self.main_window.reader
+        if reader is None:
+            return
+        metrics = reader.performance_snapshot()
+        skipped = f"{metrics['preview_frames_superseded_before_decode']} / {metrics['preview_frames_superseded_before_gui']}"
+        rejected = str(metrics['preview_frames_rejected'])
+        for label, text in ((self.preview_skipped_val, skipped), (self.preview_rejected_val, rejected)):
+            if label.text() != text:
+                label.setText(text)

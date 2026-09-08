@@ -87,7 +87,7 @@ def test_missing_rsm_does_not_reuse_previous_coordinates(reader):
 def test_bad_frame_is_counted_not_published_and_next_frame_recovers(reader, failure):
     reader.HKL_IN_CONFIG = True
     calls = []
-    reader.reader_new_frame.connect(lambda: calls.append(reader.last_array_id))
+    reader.reader_new_frame.connect(lambda: calls.append(reader.take_latest_frame().unique_id))
     reader.pva_callbackSuccess(frame())
     broken = frame(2, [('RSM', rsm(3))] if failure == 'rsm' else [])
     if failure == 'shape':

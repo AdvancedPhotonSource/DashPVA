@@ -34,6 +34,11 @@ import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.utils import HDF5Handler, PVAReader, SizeManager
 from dashpva.utils.log_manager import LogMixin
+from dashpva.utils.point_sampling import (
+    evenly_spaced_indices,
+    sampled_point_cloud,
+    sampled_point_cloud_chunks,
+)
 from dashpva.utils.rsm_grid_transport import (
     GridControlClient,
     GridTransportError,
@@ -180,15 +185,18 @@ class HKLImageWindow(BaseWindow):
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
 
         # Ring buffer for cumulative mode
-        self._CUMULATIVE_MAX     = 100
-        self._CUMULATIVE_MAX_PTS = 1_000_000  # hard cap: total strided points across all frames
+        self._CUMULATIVE_MAX = min(app_settings.PREVIEW['HKL_MAX_FRAMES'], app_settings.PREVIEW['HKL_MAX_POINTS'])
+        self._CUMULATIVE_MAX_PTS = app_settings.PREVIEW['HKL_MAX_POINTS']
+        self._PER_FRAME_MAX_PTS = app_settings.PREVIEW['HKL_MAX_POINTS']
+        self._POST_SCAN_MAX_PTS = app_settings.PREVIEW['HKL_MAX_POINTS']
         self._cum_frame_size     = 0   # raw pixels per frame
-        self._cum_pts_per_frame  = 0   # strided points per frame kept in ring buffer
-        self._cum_stride         = 1   # spatial stride applied when ingesting each frame
+        self._cum_pts_per_frame  = 0   # sampled points per frame kept in ring buffer
+        self._cum_indices        = np.empty(0, dtype=np.intp)
         self._cum_n_frames       = 0   # frames currently in buffer (0–100)
         self._cum_write_slot     = 0   # next ring slot to write
         self._cum_pts_raw        = None  # plain np.ndarray (MAX*ppf, 3) — ring buffer for xyz
         self._cum_int_raw        = None  # plain np.ndarray (MAX*ppf,)   — ring buffer for intensity
+        self._pending_frame = None
         # Auto-scale color range only on the first plot of each live-view session
         self._first_plot = True
 
@@ -209,6 +217,7 @@ class HKLImageWindow(BaseWindow):
 
     def _teardown_reader(self) -> None:
         """Fully disconnect and release the current reader, its signals, and all resources."""
+        self._pending_frame = None
         if self.reader is None:
             return
         try:
@@ -230,7 +239,7 @@ class HKLImageWindow(BaseWindow):
         """
         Starts timers for updating labels and plotting at specified frequencies.
         """
-        self.timer_labels.start(int(1000/100))
+        self.timer_labels.start(app_settings.PREVIEW['LABEL_INTERVAL_MS'])
 
     def stop_timers(self) -> None:
         """
@@ -297,7 +306,6 @@ class HKLImageWindow(BaseWindow):
             self.lut = None
             self._cum_frame_size    = 0
             self._cum_pts_per_frame = 0
-            self._cum_stride        = 1
             self._cum_n_frames      = 0
             self._cum_write_slot    = 0
             self._cum_pts_raw       = None
@@ -361,6 +369,8 @@ class HKLImageWindow(BaseWindow):
 
     def _set_connection_label(self, connected: bool) -> None:
         state = "connected" if connected else "disconnected"
+        if self.is_connected.property("connectionState") == state:
+            return
         self.is_connected.setText("Connected" if connected else "Disconnected")
         self.is_connected.setProperty("connectionState", state)
         self.is_connected.style().unpolish(self.is_connected)
@@ -371,6 +381,7 @@ class HKLImageWindow(BaseWindow):
         Updates the UI labels with current connection and cached data.
         """
         if self.reader is not None:
+            self.stats_dock.update_preview_metrics()
             provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
             self.provider_name.setText(provider_name)
             self._set_connection_label(self.reader.channel.isMonitorActive())
@@ -384,19 +395,28 @@ class HKLImageWindow(BaseWindow):
         self.update_image(is_scan_signal=False)
 
     def _on_new_frame(self) -> None:
+        if self.reader is None or self.sender() is not self.reader:
+            return
+        frame = self.reader.take_latest_frame()
+        if frame is None or frame is self._pending_frame:
+            return
+        self._pending_frame = frame
         self.plot_mode_dock.notify_new_frame()
         if self.plot_mode_dock.is_gridded:
             # The grid consumer computes Q and accumulates beside the incoming
             # frames. The GUI consumes only its bounded status preview.
             return
         if self.plot_mode_dock.is_realtime and self.reader is not None:
-            rsm = self.reader.rsm_attributes
-            if self.reader.image is not None and rsm:
-                intensity = np.ravel(self.reader.image).astype(np.float32)
-                qx = np.asarray(rsm['qx'], dtype=np.float32)
-                qy = np.asarray(rsm['qy'], dtype=np.float32)
-                qz = np.asarray(rsm['qz'], dtype=np.float32)
-                frame_size = len(intensity)
+            image = frame.image
+            rsm = frame.rsm_attributes
+            if image is not None and rsm:
+                raw_intensity = image
+                qx = np.asarray(rsm['qx'])
+                qy = np.asarray(rsm['qy'])
+                qz = np.asarray(rsm['qz'])
+                frame_size = raw_intensity.size
+                if not (qx.size == qy.size == qz.size == frame_size):
+                    raise ValueError("intensity and HKL arrays must have matching sizes")
                 if self._cum_frame_size != frame_size or self._cum_pts_raw is None:
                     # First frame or detector size changed: reset ring buffer.
                     # Pass qx/qy/qz so placeholders are seeded at real HKL positions
@@ -406,18 +426,18 @@ class HKLImageWindow(BaseWindow):
                     self._cum_write_slot = 0
                     self._init_cumulative_cloud(frame_size, qx=qx, qy=qy, qz=qz)
                     if self._first_plot:
-                        self.sbox_min_intensity.setValue(float(np.min(intensity)))
-                        self.sbox_max_intensity.setValue(float(np.max(intensity)))
+                        self.sbox_min_intensity.setValue(float(np.min(raw_intensity)))
+                        self.sbox_max_intensity.setValue(float(np.max(raw_intensity)))
                         self._first_plot = False
                 slot  = self._cum_write_slot
                 ppf   = self._cum_pts_per_frame
                 start = slot * ppf
                 end   = start + ppf
-                s = self._cum_stride
-                self._cum_pts_raw[start:end, 0] = qx[::s][:ppf]
-                self._cum_pts_raw[start:end, 1] = qy[::s][:ppf]
-                self._cum_pts_raw[start:end, 2] = qz[::s][:ppf]
-                self._cum_int_raw[start:end]     = intensity[::s][:ppf]
+                indices = self._cum_indices
+                self._cum_pts_raw[start:end, 0] = qx.flat[indices]
+                self._cum_pts_raw[start:end, 1] = qy.flat[indices]
+                self._cum_pts_raw[start:end, 2] = qz.flat[indices]
+                self._cum_int_raw[start:end] = raw_intensity.flat[indices]
                 self._cum_write_slot = (slot + 1) % self._CUMULATIVE_MAX
                 self._cum_n_frames   = min(self._cum_n_frames + 1, self._CUMULATIVE_MAX)
 
@@ -426,20 +446,23 @@ class HKLImageWindow(BaseWindow):
                                qx=None, qy=None, qz=None) -> None:
         """Allocate the plain-numpy ring buffer for cumulative mode.
 
-        Computes the stride so the total stored points stay ≤ CUMULATIVE_MAX_PTS.
+        Selects matching indices within the total point budget.
         If the first frame's qx/qy/qz are provided, all placeholder slots are seeded
         with those positions so the bounding box is correct from the very first render
         (without qx/qy/qz the placeholders would be at the origin, inflating the axes).
         """
-        total_raw = self._CUMULATIVE_MAX * frame_size
-        self._cum_stride        = max(1, total_raw // self._CUMULATIVE_MAX_PTS)
-        self._cum_pts_per_frame = frame_size // self._cum_stride
+        per_frame_budget = max(1, self._CUMULATIVE_MAX_PTS // self._CUMULATIVE_MAX)
+        self._cum_indices = evenly_spaced_indices(frame_size, per_frame_budget)
+        self._cum_pts_per_frame = len(self._cum_indices)
         n_total = self._CUMULATIVE_MAX * self._cum_pts_per_frame
-        ppf, s  = self._cum_pts_per_frame, self._cum_stride
         if qx is not None:
             # Tile the first frame's positions across all slots so the bounding box
             # reflects real HKL space rather than being anchored to the origin.
-            first_pts = np.column_stack([qx[::s][:ppf], qy[::s][:ppf], qz[::s][:ppf]])
+            first_pts = np.column_stack([
+                np.asarray(qx).flat[self._cum_indices],
+                np.asarray(qy).flat[self._cum_indices],
+                np.asarray(qz).flat[self._cum_indices],
+            ])
             self._cum_pts_raw = np.tile(first_pts, (self._CUMULATIVE_MAX, 1)).astype(np.float32)
         else:
             self._cum_pts_raw = np.zeros((n_total, 3), dtype=np.float32)
@@ -476,7 +499,6 @@ class HKLImageWindow(BaseWindow):
             if mode == 'realtime':
                 self._cum_frame_size    = 0
                 self._cum_pts_per_frame = 0
-                self._cum_stride        = 1
                 self._cum_n_frames      = 0
                 self._cum_write_slot    = 0
                 self._cum_pts_raw       = None
@@ -731,7 +753,7 @@ class HKLImageWindow(BaseWindow):
         self.grid_dock.update_status(state)
 
     def update_image_cumulative(self) -> None:
-        """Realtime mode: pass the full ring buffer (with strided data) to _plot_point_cloud.
+        """Realtime mode: pass the bounded sampled ring to _plot_point_cloud.
 
         The ring buffer is always CUMULATIVE_MAX * pts_per_frame points (≤1M total).
         After the first render, _plot_point_cloud's in-place path is always taken
@@ -753,14 +775,22 @@ class HKLImageWindow(BaseWindow):
         """Per-frame mode: plot only the latest frame, independent of FLAG_PV."""
         if self.reader is None or self.reader.image is None:
             return
-        if not self.reader.rsm_attributes:
+        frame = self._pending_frame
+        if frame is None:
+            return
+        image = frame.image
+        rsm = frame.rsm_attributes
+        if image is None or not rsm:
             return
         try:
-            intensity = np.asarray(np.ravel(self.reader.image), dtype=np.float32)
-            qx = np.asarray(self.reader.rsm_attributes['qx'], dtype=np.float32)
-            qy = np.asarray(self.reader.rsm_attributes['qy'], dtype=np.float32)
-            qz = np.asarray(self.reader.rsm_attributes['qz'], dtype=np.float32)
-            self._plot_point_cloud(np.column_stack((qx, qy, qz)), intensity)
+            points, intensity = sampled_point_cloud(
+                image,
+                rsm['qx'],
+                rsm['qy'],
+                rsm['qz'],
+                self._PER_FRAME_MAX_PTS,
+            )
+            self._plot_point_cloud(points, intensity)
         except Exception as e:
             try:
                 if hasattr(self, 'logger'):
@@ -780,11 +810,13 @@ class HKLImageWindow(BaseWindow):
             num_rsm = len(self.reader.cached_qx)
             if num_images != num_rsm:
                 raise ValueError(f'Size of caches are uneven: images={num_images} qxyz={num_rsm}')
-            flat_intensity = np.concatenate(self.reader.cached_images, dtype=np.float32)
-            qx = np.concatenate(self.reader.cached_qx, dtype=np.float32)
-            qy = np.concatenate(self.reader.cached_qy, dtype=np.float32)
-            qz = np.concatenate(self.reader.cached_qz, dtype=np.float32)
-            points = np.column_stack((qx, qy, qz))
+            points, flat_intensity = sampled_point_cloud_chunks(
+                self.reader.cached_images,
+                self.reader.cached_qx,
+                self.reader.cached_qy,
+                self.reader.cached_qz,
+                self._POST_SCAN_MAX_PTS,
+            )
         except Exception as e:
             try:
                 if hasattr(self, 'logger'):
