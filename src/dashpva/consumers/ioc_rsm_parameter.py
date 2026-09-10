@@ -1217,6 +1217,11 @@ def _build_gui_classes() -> tuple[type, type, type]:
 
 
     class SimulatorWindow(BaseWindow):
+        #: Geometry only: this window's fields come from the DB profile loaded in
+        #: __init__, so re-applying last session's inputs would silently revert
+        #: profile values.
+        restore_inputs_on_start = False
+
         def __init__(
             self,
             session: RSMParameterEditSession,
@@ -1242,11 +1247,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
             self._build_ui()
             self._load_profile(profile)
             self._reset_record_monitor(profile)
-            # Geometry only: this window's fields come from the DB profile
-            # loaded above, so re-applying last session's inputs would silently
-            # revert profile values.
             self.legacy_settings = ("RSMParameterIOC", "window_geom", None)
-            self.restore_layout()
             settings = self._qsettings()
             for section, key, default in (
                 (self.calibration_group, "static_geometry_expanded", True),

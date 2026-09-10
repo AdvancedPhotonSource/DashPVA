@@ -85,7 +85,6 @@ class WorkbenchWindow(BaseWindow):
         """Initialize the Workbench window."""
         super().__init__(ui_file_name="workbench/workbench.ui", viewer_name="Workbench")
         self.setup_window_properties("Workbench - Data Analysis", 1600, 1000)
-        self.restore_geometry()
 
         # ====== DOCKS START ====== #
         # 2d
@@ -187,10 +186,6 @@ class WorkbenchWindow(BaseWindow):
             self.roi_manager.setup_docks()
         except Exception:
             pass
-
-        self.restore_dock_state()
-        self.restore_inputs()
-        QTimer.singleShot(0, self.restore_session)
 
     # === Session persistence ===
 

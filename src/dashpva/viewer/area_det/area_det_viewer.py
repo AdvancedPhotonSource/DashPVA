@@ -219,7 +219,6 @@ class DiffractionImageWindow(BaseWindow):
             ca.initialize_libca()
         except Exception as e:
             print(f'[Diffraction Image Viewer] CA init failed: {e}')
-        self.restore_geometry()
         self.show()
         self.reader = None
         self.image = None
@@ -479,10 +478,6 @@ class DiffractionImageWindow(BaseWindow):
         # Sync any post-init label state for the dock-mounted mask widgets
         self._update_mask_labels()
 
-        # Last: __init__ hardcodes defaults above (autoscale/threshold), so the
-        # saved values have to be applied after them or they are overwritten.
-        self.restore_inputs()
-
     def _setup_docks(self):
         """Build side panels as dock widgets and alias their members onto self.
 
@@ -515,9 +510,6 @@ class DiffractionImageWindow(BaseWindow):
         self.beam_fit_dock  = BeamFitDock(main_window=self, show=False)
 
         self._apply_default_layout()
-        # Restore the user's last layout if one was saved; falls through to
-        # the defaults applied above on any failure.
-        self.restore_dock_state()
 
         # Mask dock widgets
         self.lbl_mask_info        = self.mask_dock.lbl_mask_info
@@ -2504,6 +2496,19 @@ class DiffractionImageWindow(BaseWindow):
         if not self.chk_autoscale.isChecked():
             self.image_view.setLevels(self.min_setting_val.value(),
                                       self.max_setting_val.value())
+
+    def on_session_restored(self) -> None:
+        """Make the restored intensity limits take effect.
+
+        The input walk applies the spin boxes before the check box, so the
+        restored min/max arrive while autoscale still holds its __init__
+        default of on -- update_min_max_setting is passive then, and nothing
+        applies them once autoscale is restored to off.
+        """
+        if self.chk_autoscale.isChecked():
+            self.apply_autoscale()
+        else:
+            self.update_min_max_setting()
 
     def autoscale_checked(self) -> None:
         if self.chk_autoscale.isChecked() and self.image is not None:

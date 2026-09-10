@@ -118,6 +118,9 @@ class BaseWindow(UiStateMixin, QMainWindow):
         # CPU, GPU, runtime in status bar
         self.init_perf_statusbar()
 
+        if self.persist_state:
+            QTimer.singleShot(0, self._restore_on_start)
+
     def load_ui(self):
         """Load the UI file for this window."""
         if not self.ui_file_name:
@@ -460,13 +463,19 @@ class BaseWindow(UiStateMixin, QMainWindow):
         except Exception:
             pass
 
+    #: Set False in a subclass to drop the status-bar GPU readout. It also
+    #: skips the per-second nvidia-smi subprocess, so a viewer that does not
+    #: show the figure does not pay for it either.
+    show_gpu_stat = True
+
     def init_perf_statusbar(self):
         sb = QMainWindow.statusBar(self)
         self._cpu_label = QLabel("CPU: -%")
-        self._gpu_label = QLabel("GPU: N/A")
+        self._gpu_label = QLabel("GPU: N/A") if self.show_gpu_stat else None
         self._runtime_label = QLabel("Runtime: 0s")
         sb.addPermanentWidget(self._cpu_label)
-        sb.addPermanentWidget(self._gpu_label)
+        if self._gpu_label is not None:
+            sb.addPermanentWidget(self._gpu_label)
         sb.addPermanentWidget(self._runtime_label)
         self._start_time = time.monotonic()
         self._cpu_prev = None
@@ -495,16 +504,17 @@ class BaseWindow(UiStateMixin, QMainWindow):
             self._cpu_label.setText("CPU: N/A")
 
         # GPU
-        gpu_text = "GPU: N/A"
-        smi = shutil.which("nvidia-smi")
-        if smi is not None:
-            res = subprocess.run([smi, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True)
-            lines = res.stdout.strip().splitlines()
-            if lines:
-                val = lines[0].strip()
-                if val.isdigit():
-                    gpu_text = f"GPU: {int(val)}%"
-        self._gpu_label.setText(gpu_text)
+        if self._gpu_label is not None:
+            gpu_text = "GPU: N/A"
+            smi = shutil.which("nvidia-smi")
+            if smi is not None:
+                res = subprocess.run([smi, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True)
+                lines = res.stdout.strip().splitlines()
+                if lines:
+                    val = lines[0].strip()
+                    if val.isdigit():
+                        gpu_text = f"GPU: {int(val)}%"
+            self._gpu_label.setText(gpu_text)
 
         # Runtime
         elapsed = int(time.monotonic() - self._start_time)
@@ -644,10 +654,28 @@ class BaseWindow(UiStateMixin, QMainWindow):
 
     persist_state = True
 
+    #: Re-apply the previous session's input values on start. Set False for a window
+    #: whose fields come from elsewhere (e.g. an active DB profile), where restoring
+    #: last session's inputs would silently revert them. Geometry and docks still restore.
+    restore_inputs_on_start = True
+
     #: One-time migration source ``(app_name, geometry_key, dock_key)``, read
     #: only when this window's own store is empty, so a viewer that used to
     #: persist under its own keys keeps the layout its users already have.
     legacy_settings: tuple = ()
+
+    def _restore_on_start(self) -> None:
+        """Restore geometry, docks, inputs and session once __init__ has finished.
+
+        Deferred to the next event-loop turn so every subclass __init__ body is done:
+        its docks exist (dock state cannot be restored before them) and its hardcoded
+        defaults are already set (they would otherwise overwrite restored values).
+        """
+        if not self.persist_state:
+            return
+        self.restore_layout()
+        if self.restore_inputs_on_start:
+            self.restore_previous_session()
 
     def _qsettings(self) -> QSettings:
         """QSettings scoped to this viewer type (org "DashPVA")."""
@@ -656,6 +684,70 @@ class BaseWindow(UiStateMixin, QMainWindow):
     def session_paths(self) -> list:
         """Open files/folders as ``[[kind, path], ...]``, kind "file"/"folder"."""
         return []
+
+    #: Set when the user answers No to the restore prompt, so a subclass does
+    #: not go on to reopen what went with that session.
+    _session_declined = False
+
+    #: Reserved key holding session_state() inside the persisted inputs blob,
+    #: so non-widget state needs no second QSettings key or call site.
+    _STATE_KEY = '__window_state__'
+
+    def session_state(self) -> dict:
+        """Window state that is not a named widget, e.g. what file is open.
+
+        The input walk only sees widgets with an objectName, so a viewer that
+        tracks what it is displaying in plain attributes came back with its
+        tree repopulated and nothing on screen. Subclasses add their own keys
+        by extending this and :meth:`apply_session_state`.
+        """
+        return {'current_file': str(getattr(self, 'current_file_path', '') or ''),
+                'selected_dataset': str(getattr(self, 'selected_dataset_path', '') or '')}
+
+    def apply_session_state(self, state: dict) -> None:
+        """Hold the restored state until the session's files are back open."""
+        self._restored_state = dict(state or {})
+
+    def session_inputs(self) -> dict:
+        """Named inputs plus :meth:`session_state`."""
+        values = super().session_inputs()
+        values[self._STATE_KEY] = self.session_state()
+        return values
+
+    def apply_session_inputs(self, values: dict) -> None:
+        """Restore named inputs, then the non-widget state."""
+        super().apply_session_inputs(values)
+        self.apply_session_state((values or {}).get(self._STATE_KEY) or {})
+
+    def restore_last_view(self) -> None:
+        """Re-open the dataset that was displayed when the window closed.
+
+        Runs after the session's files are back open. Any window that tracks
+        ``current_file_path``/``selected_dataset_path`` and exposes
+        ``start_dataset_load()`` gets this without adding anything.
+        """
+        state = getattr(self, '_restored_state', None) or {}
+        file_path = state.get('current_file') or ''
+        dataset_path = state.get('selected_dataset') or ''
+        loader = getattr(self, 'start_dataset_load', None)
+        if not (file_path and dataset_path and callable(loader)):
+            return
+        if not os.path.exists(file_path):
+            return
+        try:
+            import h5py
+            with h5py.File(file_path, 'r') as h5f:
+                if dataset_path not in h5f:
+                    return
+        except Exception:
+            return
+        self.current_file_path = file_path
+        self.selected_dataset_path = dataset_path
+        self.update_status(f"Reopening {dataset_path}")
+        try:
+            loader()
+        except Exception as e:
+            self.update_status(f"Could not reopen {dataset_path}: {e}", 'warning')
 
     def save_layout(self) -> None:
         """Persist geometry, dock layout, inputs and the open-file session."""
@@ -733,22 +825,55 @@ class BaseWindow(UiStateMixin, QMainWindow):
         self.restore_geometry()
         self.restore_dock_state()
 
-    def restore_session(self) -> None:
-        """Reopen the files and folders that were open when this window closed.
+    def restore_previous_session(self) -> bool:
+        """Restore everything the last session had, behind a single prompt.
+
+        Inputs, the files and folders that were open, and the dataset that was
+        on screen all hang off one Yes/No: restoring half a session is worse
+        than restoring none, so they are not asked about separately.
+
+        The question is only put when there were files or folders open, since
+        that is the slow, visible part. A window that only has inputs to
+        restore does it silently rather than nagging on every launch.
+        """
+        if not self.persist_state:
+            return False
+        pending = self._pending_session_entries()
+        if pending:
+            answer = QMessageBox.question(
+                self, "Restore previous session",
+                f"Restore your last session?\n\n"
+                f"{len(pending)} item(s) will reopen, along with your inputs.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                self._session_declined = True
+                return False
+        self.restore_inputs()
+        if pending:
+            self._open_session_entries(pending)
+        self.restore_last_view()
+        self.on_session_restored()
+        return True
+
+    def on_session_restored(self) -> None:
+        """Hook: restored inputs are now applied. Subclasses read them here."""
+
+    def _pending_session_entries(self) -> list:
+        """Openable ``(kind, path)`` pairs from the last session.
 
         Entries that no longer exist are dropped, and files at or above
         ``app_settings.SESSION_RESTORE_MAX_BYTES`` are skipped so a huge dataset
-        cannot stall startup. Loading runs behind a cancellable progress dialog.
+        cannot stall startup.
         """
         if not self.persist_state:
-            return
+            return []
         raw = self._qsettings().value("session")
         if not raw:
-            return
+            return []
         try:
             entries = json.loads(raw)
         except (TypeError, ValueError):
-            return
+            return []
 
         pending, skipped = [], []
         for entry in entries or []:
@@ -761,20 +886,13 @@ class BaseWindow(UiStateMixin, QMainWindow):
                 skipped.append(path)
                 continue
             pending.append((kind, path))
-
         if skipped:
             self.update_status(
                 f"Skipped {len(skipped)} large file(s) from the last session", 'warning')
-        if not pending:
-            return
-        if len(pending) > app_settings.SESSION_RESTORE_PROMPT_COUNT:
-            answer = QMessageBox.question(
-                self, "Restore previous session",
-                f"Reopen {len(pending)} items from your last session?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-            if answer != QMessageBox.Yes:
-                return
+        return pending
 
+    def _open_session_entries(self, pending: list) -> None:
+        """Reopen the session's files and folders behind a cancellable dialog."""
         progress = QProgressDialog(
             "Restoring previous session...", "Cancel", 0, len(pending), self)
         progress.setWindowTitle("Restoring session")

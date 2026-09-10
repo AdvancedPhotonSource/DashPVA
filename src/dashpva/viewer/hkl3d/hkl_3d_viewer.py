@@ -26,7 +26,7 @@ import pyvista as pyv
 from PyQt5 import uic
 
 # from epics import caget
-from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
 from pyvistaqt import QtInteractor
 
@@ -81,6 +81,7 @@ class ConfigDialog(QDialog, LogMixin):
 
 class HKLImageWindow(BaseWindow):
     images_plotted = pyqtSignal(bool)
+    signal_trigger_save = pyqtSignal(bool, bool, bool, str)  # clear_caches, write_temp, write_output, output_override
 
     def __init__(self, input_channel=None, grid_client=None, grid_executor=None):
         """
@@ -202,10 +203,6 @@ class HKLImageWindow(BaseWindow):
         self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
 
-        self.restore_geometry()
-        self.restore_dock_state()
-        self.restore_inputs()
-
         self.show()
 
     def _teardown_reader(self) -> None:
@@ -269,6 +266,10 @@ class HKLImageWindow(BaseWindow):
                     self.file_writer.hdf5_writer_finished.disconnect()
                 except (RuntimeError, TypeError):
                     pass
+                try:
+                    self.signal_trigger_save.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
                 if self.file_writer_thread.isRunning():
                     self.file_writer_thread.quit()
                     self.file_writer_thread.wait()
@@ -278,6 +279,9 @@ class HKLImageWindow(BaseWindow):
                 self.file_writer.pva_reader = self.reader
             self.btn_save_h5.clicked.connect(self.save_caches_clicked)
             self.btn_plot_cache.clicked.connect(self.update_image_from_button)
+            self.signal_trigger_save.connect(self.file_writer.save_to_h5, Qt.QueuedConnection)
+            self.file_writer.hdf5_writer_finished.connect(self.on_writer_finished,
+                                                          Qt.QueuedConnection)
             self.reader.reader_scan_complete.connect(self.update_image_from_scan)
             self.reader.reader_new_frame.connect(self._on_new_frame)
         except Exception as e:
@@ -322,24 +326,20 @@ class HKLImageWindow(BaseWindow):
         self.provider_name.setText('N/A')
         self._set_connection_label(False)
 
-    def trigger_save_caches(self, clear_caches:bool=True) -> None:
-        if not self.file_writer_thread.isRunning():
-                self.file_writer_thread.start()
-        self.file_writer.save_caches_to_h5(clear_caches=clear_caches)
-
     def save_caches_clicked(self) -> None:
-        if not self.reader.channel.isMonitorActive():  
-            if not self.file_writer_thread.isRunning():
-                self.file_writer_thread.start()
-            self.file_writer.save_caches_to_h5()
-        else:
+        if self.reader is not None and self.reader.channel.isMonitorActive():
             QMessageBox.critical(None,
                                 'Error',
                                 'Stop Live View to Save Cache',
                                 QMessageBox.Ok)
-    
+            return
+        if not self.file_writer_thread.isRunning():
+            self.file_writer_thread.start()
+        self.signal_trigger_save.emit(True, True, True, '')
+
     def on_writer_finished(self, message) -> None:
-        print(message)
+        self.update_status(message,
+                           level='error' if message.startswith('Failed') else 'info')
         self.file_writer_thread.quit()
         self.file_writer_thread.wait()
 
