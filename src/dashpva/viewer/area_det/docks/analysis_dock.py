@@ -23,10 +23,10 @@ from dashpva.viewer.core.docks.base_dock import BaseDock
 
 
 class AnalysisDock(BaseDock):
-    """Area-detector analysis dock: opens the standalone analysis window.
+    """Area-detector analysis dock: hosts the analysis tool menu.
 
         dock = AnalysisDock(main_window=viewer)
-        dock.btn_analysis_window.clicked.connect(viewer.open_analysis_window)
+        dock.btn_analysis_window.setMenu(viewer._analysis_menu)
     """
 
     def __init__(self, main_window=None, show: bool = True):
