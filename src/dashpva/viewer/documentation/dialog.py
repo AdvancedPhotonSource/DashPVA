@@ -37,10 +37,12 @@ Viewers may override discovery by setting an attribute 'doc_path' on their windo
 
 import inspect
 from pathlib import Path
+from string import Template
 
 from PyQt5.QtCore import QUrl
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
 
+from dashpva.gui import theme_colors
 from dashpva.gui.theme_colors import (
     FONT_BODY,
     FONT_HEADING,
@@ -94,18 +96,22 @@ class DocumentationDialog(QDialog):
             self.view.setHtml(html)
 
     def load_html_file(self, file_path: str) -> None:
-        """Load and render a local HTML file by path."""
+        """Load a local HTML file, substituting $NAME theme tokens as theme.qss does.
+
+        Doc pages carry no literal colors or font sizes; they use the same
+        theme_colors names the stylesheet does, so a theme edit reaches them too.
+        Unknown tokens are left untouched (safe_substitute), so a page written
+        with hardcoded values still renders unchanged.
+        """
         p = Path(file_path)
+        try:
+            html = Template(p.read_text(encoding="utf-8")).safe_substitute(vars(theme_colors))
+        except Exception:
+            html = f"<html><body><h3>Unable to read HTML file:</h3><pre>{p}</pre></body></html>"
+        # A base URL keeps any relative asset in the page resolvable after setHtml.
         if WEBENGINE_AVAILABLE:
-            # Load file via URL for QWebEngineView
-            url = QUrl.fromLocalFile(str(p.resolve()))
-            self.view.setUrl(url)
+            self.view.setHtml(html, QUrl.fromLocalFile(str(p.resolve())))
         else:
-            # Read file and render HTML as text
-            try:
-                html = p.read_text(encoding="utf-8")
-            except Exception:
-                html = f"<html><body><h3>Unable to read HTML file:</h3><pre>{p}</pre></body></html>"
             self.view.setHtml(html)
 
     @staticmethod
