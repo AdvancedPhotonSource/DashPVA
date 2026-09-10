@@ -44,7 +44,10 @@ def configure_app(app):
     module_label = os.environ.get('DASHPVA_MODULE_LABEL')
     if module_label:
         app.setApplicationName(f'DashPVA — {module_label}')
-        app.setApplicationDisplayName(f'DashPVA — {module_label}')
+        # Qt appends the display name to every window title, so it must carry
+        # only the app identity: including the module label too rendered as
+        # "Scan Monitor — DashPVA — Scan Monitor".
+        app.setApplicationDisplayName('DashPVA')
 
     app.setStyle(QStyleFactory.create("Fusion"))
 
