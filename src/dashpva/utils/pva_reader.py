@@ -426,6 +426,18 @@ class PVAReader(QObject):
                                    'qy' : rsm_attributes['qy']['value'],
                                    'qz' : rsm_attributes['qz']['value']}
                           
+    ROI_DIMENSIONS = ('MinX', 'MinY', 'SizeX', 'SizeY')
+
+    def complete_rois(self) -> dict:
+        """``self.rois`` with partial ROIs filtered out.
+
+        An ROI is only usable when all four corners have arrived; anything less
+        would draw a degenerate box.
+        """
+        return {name: dict(fields) for name, fields in self.rois.items()
+                if isinstance(fields, dict)
+                and all(fields.get(d) is not None for d in self.ROI_DIMENSIONS)}
+
     def parse_roi_pvs(self, pv_attributes: dict) -> None:
         """Parse PVA attributes to extract ROI-specific PVs.
 
@@ -623,7 +635,14 @@ class PVAReader(QObject):
         except Exception:
             initial = None
         if initial is not None:
-            self.is_scan_complete = not bool(initial)
+            # Adopt the flag's current state. Only reacting to transitions meant
+            # that connecting mid-scan left is_caching False, so no frame was
+            # ever cached and the save failed with "Caches cannot be empty";
+            # and that a low flag set is_scan_complete, firing a bogus
+            # scan-complete on the very first frame with nothing cached.
+            self.is_caching = (initial == self.START_SCAN)
+            self.is_scan_complete = False
+            self.scan_state_changed.emit(self.is_caching)
         camonitor(pvname=self.FLAG_PV, callback=self._flag_pv_ca_callback)
 
     def stop_channel_monitor(self) -> None:
