@@ -37,6 +37,9 @@ QLabel[messageLevel="info"] { color: palette(text); }
 QLabel[messageLevel="warning"] { color: $WARNING; font-weight: bold; }
 QLabel[messageLevel="error"] { color: $ERROR; font-weight: bold; }
 
+/* -- Scan Monitor: configured detector ROIs -------------------------- */
+QLabel#label_detector_rois { color: $SUCCESS; }
+
 /* -- Dock widget borders + title bar --------------------------------- */
 QDockWidget::pane {
     border: 1px solid palette(mid);

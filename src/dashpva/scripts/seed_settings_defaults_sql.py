@@ -31,7 +31,7 @@ Creates (if missing):
     LOG     (BASE=logs)         — log file directory
     CONFIGS (BASE=configs)      — PV config directory
     OUTPUTS (BASE=outputs)
-        SCAN   (BASE=scans)
+        SCAN   (BASE=scans, FILENAME=scan)
         SLICES (BASE=slices)
 - PATHS (root) continued:
     CONSUMERS (path)
@@ -113,6 +113,7 @@ def seed_defaults() -> None:
         add_value_if_missing(cur, outputs_id, "BASE", "outputs")
         scan_id = get_or_create_setting(cur, "SCAN", "path", "Scans directory", outputs_id)
         add_value_if_missing(cur, scan_id, "BASE", "scans")
+        add_value_if_missing(cur, scan_id, "FILENAME", "scan")
         slices_id = get_or_create_setting(cur, "SLICES", "path", "Slices directory", outputs_id)
         add_value_if_missing(cur, slices_id, "BASE", "slices")
 

@@ -348,8 +348,25 @@ DOCK_STATE_VERSION: int = 3
 # Files at or above this size are not auto-reopened on launch; the path is kept
 # so the user can load it deliberately.
 SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3
-# Restoring more than this many files/folders prompts before loading.
-SESSION_RESTORE_PROMPT_COUNT: int = 5
+# Scan Monitor save-override numbering: an override filename is written as
+# ``<stem><n><suffix>``, counting up from this index so consecutive scans in a
+# session cannot overwrite one another.
+SCAN_OVERRIDE_SUFFIX: str = '.h5'
+SCAN_OVERRIDE_START_INDEX: int = 1
+# Fallbacks for the PATHS > OUTPUTS > SCAN settings tree, used when the DB has
+# not been seeded (e.g. a TOML-only session).
+SCAN_OUTPUTS_BASE_DEFAULT: str = 'outputs'
+SCAN_DIR_DEFAULT: str = 'scans'
+SCAN_FILENAME_DEFAULT: str = 'scan'
+# Grace period after Stop Scan writes the flag PV before the viewer saves on its
+# own: the reader only reports completion if its CA monitor also saw the scan
+# start, so without this a Stop can silently produce nothing.
+SCAN_STOP_SAVE_GRACE_MS: int = 1500
+# Samples kept per activity trace (1 Hz, so ~10 minutes of history).
+SCAN_GRAPH_MAX_POINTS: int = 600
+# Scan start/stop markers are click targets on a sliding axis, so they are drawn
+# larger than a plain data point.
+SCAN_MARKER_SIZE: int = 16
 
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
@@ -411,10 +428,68 @@ def _circles_by_role(hkl: Dict[str, Any], role: str) -> "list":
         return []
 
 
+
+def get_beamline_name() -> str:
+    """Beamline identifier, e.g. ``'6ID'``.
+
+    Seeded into the settings tree as ``BEAMLINE_NAME`` rather than into a
+    profile's config, so ``reload()`` cannot see it -- ``cfg.get`` returns None
+    and every caller rendered a blank. A value that *is* in the config wins, so
+    a TOML-only session still works. The database import is deferred for the
+    same circular-import reason as :func:`get_scan_output_defaults`.
+
+    Example:
+        get_beamline_name()   # '6ID'
+    """
+    if BEAMLINE_NAME:
+        return str(BEAMLINE_NAME)
+    try:
+        from dashpva.database.managers.settings import SettingsManager
+        value = SettingsManager().get_setting_value_by_name('BEAMLINE_NAME', 'BEAMLINE_NAME')
+        if value:
+            return str(value)
+    except Exception:
+        _logger.debug('Settings tree unavailable; no beamline name', exc_info=True)
+    return ''
+
+
+def get_scan_output_defaults() -> tuple:
+    """Return ``(folder, filename)`` for the Scan Monitor save override.
+
+    Reads ``PATHS > OUTPUTS (BASE)`` and ``PATHS > OUTPUTS > SCAN (BASE,
+    FILENAME)`` from the settings tree, giving e.g.
+    ``<PROJECT_ROOT>/outputs/scans`` and ``scan``. A relative OUTPUTS base is
+    anchored at :data:`PROJECT_ROOT`.
+
+    The database import is deferred rather than module-scope: ``database.db``
+    imports this module, and ``reload()`` runs at import time, so importing it
+    up here would be circular.
+
+    Example:
+        folder, name = get_scan_output_defaults()
+        # ('/opt/dashpva/outputs/scans', 'scan')
+    """
+    outputs = SCAN_OUTPUTS_BASE_DEFAULT
+    scan_dir = SCAN_DIR_DEFAULT
+    filename = SCAN_FILENAME_DEFAULT
+    try:
+        from dashpva.database.managers.settings import SettingsManager
+        manager = SettingsManager()
+        outputs = manager.get_setting_value_by_name('OUTPUTS', 'BASE') or outputs
+        scan_dir = manager.get_setting_value_by_name('SCAN', 'BASE') or scan_dir
+        filename = manager.get_setting_value_by_name('SCAN', 'FILENAME') or filename
+    except Exception:
+        _logger.debug('Settings tree unavailable; using scan output defaults', exc_info=True)
+    base = Path(str(outputs)).expanduser()
+    if not base.is_absolute():
+        base = PROJECT_ROOT / base
+    return str(base / str(scan_dir)), str(filename)
+
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
     global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE, CONFIG_ERROR
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
+    global BEAMLINE_NAME
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
     global SCAN_START_SCAN, SCAN_STOP_SCAN, SCAN_THRESHOLD, SCAN_MAX_CACHE_SIZE
@@ -454,6 +529,7 @@ def reload() -> None:
     # silent caget/camonitor miss when they enter "6idb1" instead of "6idb1:".
     if IOC_PREFIX and not IOC_PREFIX.endswith(':'):
         IOC_PREFIX += ':'
+    BEAMLINE_NAME = cfg.get('BEAMLINE_NAME')
     INPUT_CHANNEL = cfg.get('INPUT_CHANNEL')
     INPUT_CHANNEL_HKL3D = cfg.get('INPUT_CHANNEL_HKL3D')
     OUTPUT_FILE_LOCATION = cfg.get('OUTPUT_FILE_LOCATION')
