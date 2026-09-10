@@ -19,7 +19,16 @@
 
 """DashPVA: Distributed Analysis and Streaming Hub with Process Variable Access."""
 
+import os
 import tomllib
+
+# HDF5 >= 1.10 locks files by default, which NFS cannot honour: every write to
+# an NFS output directory fails with errno 11, "Resource temporarily
+# unavailable", and no file is produced. HDF5 reads this when its library
+# loads, so it has to be set before anything imports h5py -- earlier than
+# settings.py, which is why the value is not defined there. setdefault leaves
+# an explicit choice from the environment alone.
+os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
