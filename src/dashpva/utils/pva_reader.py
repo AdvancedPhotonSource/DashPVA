@@ -32,6 +32,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 import dashpva.settings as app_settings
 from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.frame_delivery import FramePacket, LatestFrame
+from dashpva.utils.performance_metrics import BoundedLatencyWindow
 
 
 class PVAReader(QObject):
@@ -201,6 +202,9 @@ class PVAReader(QObject):
         self.last_decode_seconds = 0.0
         self.last_processing_seconds = 0.0
         self.last_dequeue_monotonic = None
+        self._decode_latencies = BoundedLatencyWindow()
+        self._processing_latencies = BoundedLatencyWindow()
+        self._preview_ages = BoundedLatencyWindow()
         self._configure()
 
     @staticmethod
@@ -301,6 +305,7 @@ class PVAReader(QObject):
             decode_started = time.monotonic()
             self.image = self.pva_to_image(pv)
             self.last_decode_seconds = time.monotonic() - decode_started
+            self._decode_latencies.observe(self.last_decode_seconds)
 
             # update with latest pv metadata
             frame_attributes = self.parse_attributes(pv)
@@ -384,13 +389,17 @@ class PVAReader(QObject):
             traceback.print_exc()
         finally:
             self.last_processing_seconds = time.monotonic() - started
+            self._processing_latencies.observe(self.last_processing_seconds)
 
     @property
     def latest_frame(self):
         return self._preview.peek()
 
     def take_latest_frame(self):
-        return self._preview.take()
+        frame = self._preview.take()
+        if frame is not None:
+            self._preview_ages.observe(max(0.0, time.monotonic() - frame.dequeued_monotonic))
+        return frame
 
     def performance_snapshot(self):
         frame = self.latest_frame
@@ -406,9 +415,17 @@ class PVAReader(QObject):
             'preview_frames_rejected': self.preview_frames_rejected,
             'last_decode_seconds': self.last_decode_seconds,
             'last_processing_seconds': self.last_processing_seconds,
+            'decode_latency': self._decode_latencies.snapshot(),
+            'processing_latency': self._processing_latencies.snapshot(),
+            'preview_age_at_take': self._preview_ages.snapshot(),
             'client_queue_frames': len(queue) if queue is not None else 0,
             'client_queue_counters': dict(queue.getCounters()) if queue is not None else {},
         }
+
+    def reset_performance_metrics(self) -> None:
+        self._decode_latencies.reset()
+        self._processing_latencies.reset()
+        self._preview_ages.reset()
 
     def _count_processing_error(self, error: Exception) -> None:
         name = type(error).__name__

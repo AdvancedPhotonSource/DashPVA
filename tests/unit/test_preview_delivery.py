@@ -110,6 +110,19 @@ def test_packet_records_source_timestamp_shape_and_bounded_error_categories(read
     assert metrics['processing_error_counts'] == {'ValueError': 1}
 
 
+def test_reader_snapshot_separates_decode_processing_and_preview_age(reader, monkeypatch):
+    ticks = iter(value / 10 for value in range(10, 100))
+    monkeypatch.setattr('dashpva.utils.pva_reader.time.monotonic', lambda: next(ticks))
+    reader.pva_callbackSuccess(frame())
+    reader.take_latest_frame()
+    metrics = reader.performance_snapshot()
+    assert metrics['decode_latency']['samples'] == 1
+    assert metrics['processing_latency']['samples'] == 1
+    assert metrics['preview_age_at_take']['samples'] == 1
+    reader.reset_performance_metrics()
+    assert reader.performance_snapshot()['decode_latency']['samples'] == 0
+
+
 def test_stop_clears_latest_frame_without_configured_caches(reader):
     reader.pva_callbackSuccess(frame())
     reader.stop_channel_monitor()
