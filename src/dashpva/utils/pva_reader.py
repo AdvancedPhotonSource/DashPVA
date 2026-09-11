@@ -160,6 +160,7 @@ class PVAReader(QObject):
         self.last_array_id = None
         self.frames_missed = 0
         self.frames_received = 0
+        self.processing_errors = 0
         self.id_diff = 0
 
         # Producer/consumer buffering. pvapy's network thread pushes frames into
@@ -219,7 +220,7 @@ class PVAReader(QObject):
             self.init_caches()
 
         if self.ANALYSIS_IN_CONFIG and self.CONSUMER_MODE == "continuous":
-            self.analysis_cache_dict = {"Position": set(),
+            self.analysis_cache_dict = {"Position": {},
                                         "Intensity": {},
                                         "ComX": {},
                                         "ComY": {}}
@@ -271,6 +272,10 @@ class PVAReader(QObject):
         try:
             self.frames_received += 1
             self.pva_object = pv
+            self.rsm_attributes = {}
+            self.analysis_attributes = {}
+            self.analysis_index = None
+            self.attributes = list(pv["attribute"]) if "attribute" in pv else []
 
             # parse data required to manipulate pv image
             self.parse_image_data_type(pv)
@@ -295,7 +300,7 @@ class PVAReader(QObject):
                 self.parse_rsm_attributes(self.pv_attributes)
 
             if self.ANALYSIS_IN_CONFIG and 'Analysis' in self.pv_attributes:
-                self.parse_analysis_attributes()
+                self.parse_analysis_attributes(self.pv_attributes)
             
             if self.caches_initialized:
                 try:
@@ -311,23 +316,6 @@ class PVAReader(QObject):
                     import traceback
                     traceback.print_exc()
 
-            #TODO: depreciated change the parsing to be closer to parsing RSM attributes with the new parse_attributes function
-            if self.ANALYSIS_IN_CONFIG:
-                self.analysis_index = self.locate_analysis_index()
-                # Only runs if an analysis index was found
-                if self.analysis_index is not None:
-                    self.analysis_attributes = self.attributes[self.analysis_index]
-                    if self.CONSUMER_MODE == "continuous":
-                        # turns axis1 and axis2 into a tuple
-                        incoming_coord = (self.analysis_attributes["value"][0]["value"].get("Axis1", 0.0), 
-                                        self.analysis_attributes["value"][0]["value"].get("Axis2", 0.0))
-                        # use a tuple as a key so that we can check if there is a repeat position
-                        self.analysis_cache_dict["Intensity"].update({incoming_coord: self.analysis_cache_dict["Intensity"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("Intensity", 0.0)})
-                        self.analysis_cache_dict["ComX"].update({incoming_coord: self.analysis_cache_dict["ComX"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComX", 0.0)})
-                        self.analysis_cache_dict["ComY"].update({incoming_coord: self.analysis_cache_dict["ComY"].get(incoming_coord, 0) + self.analysis_attributes["value"][0]["value"].get("ComY", 0.0)})
-                        # double storing of the postion, will find out if needed
-                        self.analysis_cache_dict["Position"][incoming_coord] = incoming_coord
-
             self.reader_new_frame.emit()
 
             if self.is_scan_complete and not self.is_caching:
@@ -335,6 +323,12 @@ class PVAReader(QObject):
                 self.reader_scan_complete.emit()
 
         except Exception:
+            self.processing_errors += 1
+            self.image = None
+            self.pv_attributes = {}
+            self.rsm_attributes = {}
+            self.analysis_attributes = {}
+            self.analysis_index = None
             import traceback
             traceback.print_exc()
 
@@ -360,12 +354,11 @@ class PVAReader(QObject):
         Returns:
             int: The index of the analysis attribute or None if not found.
         """
-        if self.pv_attributes:
-            for i, attr_name in enumerate(self.pv_attributes.keys()): 
-                if attr_name == "Analysis":
-                    return i
-            else:
-                return None
+        return next(
+            (index for index, attribute in enumerate(self.attributes)
+             if attribute['name'] == 'Analysis'),
+            None,
+        )
 
     def parse_image_data_type(self, pva_object) -> None:
         """
@@ -399,11 +392,26 @@ class PVAReader(QObject):
             return {}
 
     def parse_analysis_attributes(self, pv_attributes: dict) -> None:
-        raise NotImplementedError
-        # analysis_attributes: dict = pv_attributes['Analysis']
-        # axis_pos = (analysis_attributes['Axis1'], analysis_attributes['Axis2'])
-        # intensity = analysis_attributes['Intensity']
-    
+        analysis = pv_attributes['Analysis']
+        if not isinstance(analysis, dict):
+            raise ValueError("Analysis must contain a structured result")
+        fields = ['Intensity', 'ComX', 'ComY']
+        if self.CONSUMER_MODE == 'continuous':
+            fields += ['Axis1', 'Axis2']
+        values = {name: np.asarray(analysis[name], dtype=np.float64) for name in fields}
+        if self.CONSUMER_MODE == 'continuous':
+            if any(value.ndim != 0 or not np.isfinite(value) for value in values.values()):
+                raise ValueError("Continuous Analysis requires finite scalar results and axes")
+            position = (float(values['Axis1']), float(values['Axis2']))
+            for name in ('Intensity', 'ComX', 'ComY'):
+                cache = self.analysis_cache_dict[name]
+                cache[position] = cache.get(position, 0.0) + float(values[name])
+            self.analysis_cache_dict['Position'][position] = position
+        elif len({value.shape for value in values.values()}) != 1:
+            raise ValueError("Analysis result arrays must have matching shapes")
+        self.analysis_attributes = analysis
+        self.analysis_index = self.locate_analysis_index()
+
     def parse_rsm_attributes(self, pv_attributes: dict) -> None:
         rsm_attributes: dict = pv_attributes['RSM']
         codec = rsm_attributes['codec'].get('name', '')
@@ -425,7 +433,10 @@ class PVAReader(QObject):
             self.rsm_attributes = {'qx' : rsm_attributes['qx']['value'], 
                                    'qy' : rsm_attributes['qy']['value'],
                                    'qz' : rsm_attributes['qz']['value']}
-                          
+        if any(np.asarray(values).size != self.image.size for values in self.rsm_attributes.values()):
+            self.rsm_attributes = {}
+            raise ValueError("RSM coordinate arrays must match the detector pixel count")
+
     def parse_roi_pvs(self, pv_attributes: dict) -> None:
         """Parse PVA attributes to extract ROI-specific PVs.
 
@@ -452,36 +463,28 @@ class PVAReader(QObject):
 
         image is of type np.ndarray
         """
-        try:
-            if 'dimension' in pva_object:
-                if pva_object['codec']['name'] != '':
-                    image: np.ndarray = self.decompress_array(compressed_array=pva_object['value'][0][self.data_type],
-                                                  codec=pva_object['codec']['name'],
-                                                  uncompressed_size=pva_object['uncompressedSize'],
-                                                  dtype=self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value']))
-                else:
-                    # Handle uncompressed data  
-                    image: np.ndarray = pva_object['value'][0][self.data_type]
+        if not self.shape or any(size <= 0 for size in self.shape):
+            raise ValueError("Image dimensions must be nonempty and positive")
+        if pva_object['codec']['name']:
+            image = self.decompress_array(
+                compressed_array=pva_object['value'][0][self.data_type],
+                codec=pva_object['codec']['name'],
+                uncompressed_size=pva_object['uncompressedSize'],
+                dtype=self.NUMPY_DATA_TYPE_MAP.get(pva_object['codec']['parameters'][0]['value']),
+            )
+        else:
+            image = pva_object['value'][0][self.data_type]
+        image = np.asarray(image).reshape(self.shape, order=self.pixel_ordering)
+        current_array_id = pva_object['uniqueId']
+        if self.last_array_id is not None:
+            self.frames_missed += max(0, current_array_id - self.last_array_id - 1)
+        self.last_array_id = current_array_id
+        self.id_diff = 0
+        return image.T if self.image_is_transposed else image
 
-                # Check for missed frame starts here
-                # TODO: can be it's own function
-                current_array_id = pva_object['uniqueId']
-                if self.last_array_id is not None: 
-                    self.id_diff = current_array_id - self.last_array_id - 1
-                    if (self.id_diff > 0):
-                        self.frames_missed += self.id_diff 
-                self.last_array_id = current_array_id
-                self.id_diff = 0
-                
-                return image.reshape(self.shape, order=self.pixel_ordering).T if self.image_is_transposed else image.reshape(self.shape, order=self.pixel_ordering)
-            else:
-                self.image = None
-                raise ValueError("[PV Parsing] Image data could not be processed.")
-                
-        except Exception:
-            pass
-            
     def decompress_array(self, compressed_array: np.ndarray, codec: str, uncompressed_size: int, dtype: np.dtype) -> np.ndarray: 
+        if dtype is None:
+            raise ValueError('Unknown compressed array dtype')
         # Handle LZ4 compressed data
         if codec == 'lz4':
             decompressed_bytes = lz4.block.decompress(compressed_array, uncompressed_size=uncompressed_size)
@@ -497,6 +500,8 @@ class PVAReader(QObject):
         elif codec == 'blosc':
             decompressed_bytes = blosc2.decompress(compressed_array)
             return np.frombuffer(decompressed_bytes, dtype=dtype)
+
+        raise ValueError(f"Unsupported array codec: {codec}")
 
 ################################## Caching ####################################
     def cache_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> bool:

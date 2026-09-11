@@ -302,20 +302,19 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
             self.log_error('attributes not in pvObject')
             return pvObject
 
-        # Optionally decode image data for local use, but do not modify pvObject['value']
-        _ = self.decompress_image(pvObject)
-
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
-        self.shape = tuple([dim['size'] for dim in dims])
+        shape = tuple(dim['size'] for dim in dims)
+        layout_changed = shape != self.shape or pvObject['codec']['name'] != self.codec_name
+        self.shape = shape
 
         if self.old_attrbutes is not None:
             attributes_diff = self.attributes_diff(self.hkl_attributes, self.old_attrbutes)
         else:
             attributes_diff = True
-        self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
 
-        if attributes_diff:
-            # Only recalculate qxyz if there are new attributes
+        if attributes_diff or layout_changed:
+            self.qx = self.qy = self.qz = None
+            self.old_attrbutes = None
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
             if qxyz is None or qxyz[0] is None:
                 self.nFrameErrors += 1
@@ -345,6 +344,8 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
                 self.compressed_size_qx = self.qx.shape[0]
                 self.compressed_size_qy = self.qy.shape[0]
                 self.compressed_size_qz = self.qz.shape[0]
+
+            self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
 
         if self.qx is None or self.codec_name is None:
             self.updateOutputChannel(pvObject)
