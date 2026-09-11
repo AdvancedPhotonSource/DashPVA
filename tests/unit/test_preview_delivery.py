@@ -96,6 +96,20 @@ def test_static_ca_fallback_is_labelled_in_owned_packet(reader):
     assert snapshot.attributes['energy'] == 12.
 
 
+def test_packet_records_source_timestamp_shape_and_bounded_error_categories(reader):
+    reader.pva_callbackSuccess(frame())
+    snapshot = reader.take_latest_frame()
+    assert snapshot.source_timestamp == 1.
+    assert snapshot.shape == (4, 6)
+    assert snapshot.published_monotonic >= snapshot.dequeued_monotonic
+    broken = frame(2)
+    broken['codec']['name'] = 'unsupported'
+    reader.pva_callbackSuccess(broken)
+    metrics = reader.performance_snapshot()
+    assert metrics['processing_errors'] == 1
+    assert metrics['processing_error_counts'] == {'ValueError': 1}
+
+
 def test_stop_clears_latest_frame_without_configured_caches(reader):
     reader.pva_callbackSuccess(frame())
     reader.stop_channel_monitor()

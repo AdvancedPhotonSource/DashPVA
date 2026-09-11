@@ -58,12 +58,16 @@ class FramePacket:
     stream_epoch: int
     sequence: int
     unique_id: int | None
+    source_timestamp: float | None
     dequeued_monotonic: float
+    published_monotonic: float
     image: np.ndarray
+    shape: tuple[int, ...]
     pixel_ordering: str
     attributes: Mapping
     rsm_attributes: Mapping
     fallback_channels: tuple[str, ...]
+    geometry_revision: str | None
 
     @property
     def identity(self):
