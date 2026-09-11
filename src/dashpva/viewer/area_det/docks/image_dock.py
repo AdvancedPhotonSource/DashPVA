@@ -32,6 +32,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+import dashpva.settings as app_settings
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "controls"
@@ -67,7 +68,8 @@ class ImageDock(BaseDock):
 
         self.plotting_frequency = QSpinBox()
         self.plotting_frequency.setObjectName("plotting_frequency")
-        self.plotting_frequency.setRange(1, 999999999)
+        self.plotting_frequency.setRange(1, max(1, 1000 // app_settings.PREVIEW['MIN_TIMER_INTERVAL_MS']))
+        self.plotting_frequency.setFixedWidth(100)
         self.plotting_frequency.setValue(14)
         self.plotting_frequency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addRow(QLabel("Plotting rate (Hz):"), self.plotting_frequency)

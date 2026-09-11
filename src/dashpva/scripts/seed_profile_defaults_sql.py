@@ -70,6 +70,7 @@ DB_PATH = str(_DB_FILE)
 # ── Canonical default profile data ─────────────────────────────────────────── #
 # Edit values here (not in a TOML file). Mirrors pv_configs/sample_config.toml.
 DEFAULT_PROFILE_DATA: Dict[str, Any] = {
+    "PREVIEW": dict(_settings.PREVIEW_DEFAULTS),
     "DETECTOR_PREFIX": "xlambda",
     "IOC_PREFIX": "xidb",
     "IOC_RSM_PARAMETER": {

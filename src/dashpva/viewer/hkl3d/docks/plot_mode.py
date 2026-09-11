@@ -41,7 +41,8 @@ class PlotModeDock(BaseDock):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
         self.rb_post_scan = QRadioButton("Post-scan (on complete)")
-        self.rb_realtime  = QRadioButton("Realtime (cumulative)")
+        self.rb_realtime  = QRadioButton("Realtime (sampled preview)")
+        self.rb_realtime.setToolTip("Rolling display sample; skipped preview frames are counted in Stats. Use scientific recording or gridded accumulation for scan results.")
         self.rb_per_frame = QRadioButton("Per-frame (single frame)")
         # Gridded accumulates into a fixed volume instead of a ring buffer, so
         # a repeated pass over the same region reinforces it rather than

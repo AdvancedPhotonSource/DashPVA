@@ -243,6 +243,31 @@ PVA_MONITOR_SERVER_QUEUE_SIZE: int = 64
 # 'record[queueSize=N]' enlarges the server monitor queue (see above).
 PVA_MONITOR_REQUEST: str = f'field() record[queueSize={PVA_MONITOR_SERVER_QUEUE_SIZE}]'
 
+PREVIEW_DEFAULTS = {
+    "QUEUE_FRAMES": 2,
+    "MAX_ARRAY_BYTES": 512 * 1024 * 1024,
+    "AUTOSCALE_SAMPLES_PER_AXIS": 256,
+    "HKL_MAX_POINTS": 1_000_000,
+    "HKL_MAX_FRAMES": 100,
+    "LABEL_INTERVAL_MS": 100,
+    "MIN_TIMER_INTERVAL_MS": 1,
+}
+PREVIEW = dict(PREVIEW_DEFAULTS)
+
+
+def preview_settings(config):
+    values = dict(PREVIEW_DEFAULTS)
+    overrides = config.get("PREVIEW", {}) or {}
+    if not isinstance(overrides, dict):
+        raise ValueError("PREVIEW must be a settings table")
+    for key, default in values.items():
+        value = overrides.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"PREVIEW.{key} must be a positive integer")
+        values[key] = value
+    return values
+
+
 # RSM Volume Builder memory policy. Batching bounds the coordinate arrays, but the
 # dense Gridder3D result scales with nx * ny * nz, so reject unsafe peaks up front.
 RSM_GRID_BATCH_MEMORY_BYTES: int = 256 * 1024 * 1024
@@ -401,7 +426,7 @@ def _circles_by_role(hkl: Dict[str, Any], role: str) -> "list":
 
 def reload() -> None:
     """Re-resolve current LOCATOR and repopulate all exported constants from the configuration source."""
-    global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE, CONFIG_ERROR
+    global RAW_CONFIG, CONFIG, SOURCE_TYPE, LOCATOR, TOML_FILE, CONFIG_ERROR, PREVIEW
     global DETECTOR_PREFIX, IOC_PREFIX, INPUT_CHANNEL, INPUT_CHANNEL_HKL3D, OUTPUT_FILE_LOCATION, CONSUMER_MODE
     global CACHING_MODE, CACHE_OPTIONS, ALIGNMENT_MAX_CACHE_SIZE
     global SCAN_FLAG_PV, FILE_PATH_PV, FILE_NAME_PV
@@ -425,6 +450,7 @@ def reload() -> None:
         cfg = dict(raw_cfg or {})
     RAW_CONFIG = raw_cfg
     CONFIG = cfg
+    PREVIEW = preview_settings(cfg)
     SOURCE_TYPE = src.source_type if (src and eff is not None) else None
 
     try:

@@ -100,7 +100,7 @@ class TestDefaultProfileDataLiteral:
         expected = {
             "DETECTOR_PREFIX", "OUTPUT_FILE_LOCATION", "CONSUMER_MODE",
             "IOC_PREFIX", "CACHE_OPTIONS", "METADATA", "ANALYSIS", "HKL",
-            "IOC_RSM_PARAMETER", "ROI", "STATS",
+            "IOC_RSM_PARAMETER", "ROI", "STATS", "PREVIEW",
         }
         assert set(DEFAULT_PROFILE_DATA.keys()) == expected
 

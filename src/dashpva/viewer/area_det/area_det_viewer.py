@@ -55,6 +55,7 @@ from PyQt5.QtWidgets import (
 from pyqtgraph.colormap import get as get_colormap
 
 # Custom imported classes
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils import HDF5Handler, PVAReader, rotation_cycle
@@ -65,6 +66,7 @@ from dashpva.utils.config.hkl import (
     section_field_channels,
 )
 from dashpva.utils.mask_manager import MaskManager
+from dashpva.utils.preview import plot_interval_ms, sampled_percentiles
 from dashpva.utils.roi_ops import _extract_roi_subarray
 from dashpva.utils.rsm_geometry import (
     RotationAxis,
@@ -218,6 +220,7 @@ class DiffractionImageWindow(BaseWindow):
         self.reader = None
         self.image = None
         self.call_id_plot = 0
+        self._last_display_key = None
         self.first_plot = True
         self.image_is_transposed = False
         # True while _connect_pv_pollers is sweeping ROI/Stats PVs in its
@@ -353,6 +356,7 @@ class DiffractionImageWindow(BaseWindow):
         self._grip_start_side = self._avg_side
         # second is a separate plot to show the horizontal avg of peaks in the image
         self.horizontal_avg_plot = pg.PlotWidget()
+        self._horizontal_avg_curve = self.horizontal_avg_plot.plot()
         self.horizontal_avg_plot.invertY(True)
         # Fixed width (min == max) driven by self._avg_side so the column tracks
         # it — mirrors the bottom plot's fixed height. (max alone left the column
@@ -372,6 +376,7 @@ class DiffractionImageWindow(BaseWindow):
         # right margins so its plot area lines up with the image's (which is
         # narrowed on the right by the HistogramLUT). Hidden until live view.
         self.bottom_avg_plot = pg.PlotWidget()
+        self._bottom_avg_curve = self.bottom_avg_plot.plot()
         # Height == the left plot's width (self._avg_side) so the two profiles
         # stay symmetric and the corner button stays square.
         self.bottom_avg_plot.setMinimumHeight(self._avg_side)
@@ -683,6 +688,11 @@ class DiffractionImageWindow(BaseWindow):
                 self._cpu_label.setText("CPU: N/A")
         self._runtime_label.setText(f"Runtime: {int(time.monotonic() - self._start_time)}s")
 
+    @staticmethod
+    def _set_text_if_changed(label, text: str) -> None:
+        if label.text() != text:
+            label.setText(text)
+
     # ---- Mask handler methods ----
 
     def load_mask_clicked(self):
@@ -754,6 +764,7 @@ class DiffractionImageWindow(BaseWindow):
         self.mask_manager.combine_masks(new_mask, replace=replace)
         self.mask_manager.mask_sources.append(filepath)
         self.mask_manager.save_active_mask()
+        self._last_display_key = None
         self._update_mask_labels()
 
     def edit_mask_clicked(self):
@@ -875,6 +886,7 @@ class DiffractionImageWindow(BaseWindow):
                     return
                 self.mask_manager.combine_masks(result_mask)
                 self.mask_manager.save_active_mask()
+                self._last_display_key = None
                 self._update_mask_labels()
                 # Refresh mask viewer if open
                 if self.mask_viewer is not None and self.mask_viewer.isVisible():
@@ -913,10 +925,12 @@ class DiffractionImageWindow(BaseWindow):
             QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.mask_manager.clear_mask()
+            self._last_display_key = None
             self._update_mask_labels()
 
     def _on_mask_edited(self, mask):
         self.mask_manager.mask = mask.copy()
+        self._last_display_key = None
         self._update_mask_labels()
 
     def _update_mask_labels(self):
@@ -937,8 +951,8 @@ class DiffractionImageWindow(BaseWindow):
         Starts timers for updating labels and plotting at specified frequencies.
         """
         if self.reader is not None and self.reader.channel.isMonitorActive():
-            self.timer_labels.start(int(1000/100))
-            self.timer_plot.start(int(1000/self.plotting_frequency.value()))
+            self.timer_labels.start(app_settings.PREVIEW['LABEL_INTERVAL_MS'])
+            self.timer_plot.start(plot_interval_ms(self.plotting_frequency.value()))
 
     def stop_timers(self) -> None:
         """
@@ -977,6 +991,7 @@ class DiffractionImageWindow(BaseWindow):
         if self.reader is not None:
             self.reader.pixel_ordering = 'C'
             self.reader.image_is_transposed = True
+            self._last_display_key = None
 
     def f_ordering_clicked(self) -> None:
         """
@@ -986,6 +1001,7 @@ class DiffractionImageWindow(BaseWindow):
             self.reader.pixel_ordering = 'F'
             self.image_is_transposed = False
             self.reader.image_is_transposed = False
+            self._last_display_key = None
 
     def _launch_pyfai(self) -> None:
         pv_address = self._input_channel or "pvapy:image"
@@ -1049,6 +1065,9 @@ class DiffractionImageWindow(BaseWindow):
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             self.bottom_avg_plot.getPlotItem().clear()
+            self._horizontal_avg_curve = self.horizontal_avg_plot.plot()
+            self._bottom_avg_curve = self.bottom_avg_plot.plot()
+            self._last_display_key = None
             # Drop any ROI rectangles + "ROI too large" labels from the
             # previous PV. add_rois() appends both kinds to self.rois.
             for item in self.rois:
@@ -1110,6 +1129,9 @@ class DiffractionImageWindow(BaseWindow):
             self.image_view.clear()
             self.horizontal_avg_plot.getPlotItem().clear()
             self.bottom_avg_plot.getPlotItem().clear()
+            self._horizontal_avg_curve = self.horizontal_avg_plot.plot()
+            self._bottom_avg_curve = self.bottom_avg_plot.plot()
+            self._last_display_key = None
             self.reset_rsm_vars()
             del self.file_writer
             del self.reader
@@ -1794,6 +1816,7 @@ class DiffractionImageWindow(BaseWindow):
         Resets the `first_plot` flag, ensuring the next plot behaves as the first one.
         """
         self.first_plot = True
+        self._last_display_key = None
 
     def rotation_count(self) -> None:
         """
@@ -2205,6 +2228,8 @@ class DiffractionImageWindow(BaseWindow):
 
     def _set_connection_label(self, connected: bool) -> None:
         state = "connected" if connected else "disconnected"
+        if self.is_connected.property("connectionState") == state:
+            return
         self.is_connected.setText("Connected" if connected else "Disconnected")
         self.is_connected.setProperty("connectionState", state)
         self.is_connected.style().unpolish(self.is_connected)
@@ -2376,26 +2401,38 @@ class DiffractionImageWindow(BaseWindow):
         Updates the UI labels with current connection and cached data.
         """
         if self.reader is not None:
+            self.stats_dock.update_preview_metrics()
             provider_name = f"{self.reader.provider if self.reader.channel.isMonitorActive() else 'N/A'}"
-            self.provider_name.setText(provider_name)
+            self._set_text_if_changed(self.provider_name, provider_name)
             self._set_connection_label(self.reader.channel.isMonitorActive())
             # Also reflect connection state in the window title (flip once on change).
             connected = self.reader.channel.isMonitorActive()
             if self._running and connected != self._last_connected:
                 self._last_connected = connected
                 self._update_title()
-            self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
-            self.frames_received_val.setText(f'{self.reader.frames_received:d}')
-            self.plot_call_id.setText(f'{self.call_id_plot:d}')
+            self._set_text_if_changed(
+                self.missed_frames_val, f'{self.reader.frames_missed:d}'
+            )
+            self._set_text_if_changed(
+                self.frames_received_val, f'{self.reader.frames_received:d}'
+            )
+            self._set_text_if_changed(self.plot_call_id, f'{self.call_id_plot:d}')
             self.update_mouse_labels()
             if len(self.reader.shape):
-                self.size_x_val.setText(f'{self.reader.shape[0]:d}')
-                self.size_y_val.setText(f'{self.reader.shape[1]:d}')
-            self.data_type_val.setText(self.reader.display_dtype)
+                self._set_text_if_changed(
+                    self.size_x_val, f'{self.reader.shape[0]:d}'
+                )
+                self._set_text_if_changed(
+                    self.size_y_val, f'{self.reader.shape[1]:d}'
+                )
+            self._set_text_if_changed(self.data_type_val, self.reader.display_dtype)
             self.update_threshold_label()
             for i in range(1, 5):
                 label = getattr(self, f"roi{i}_total_value")
-                label.setText(f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}")
+                self._set_text_if_changed(
+                    label,
+                    f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}",
+                )
 
     def update_rsm(self) -> None:
         if (self.reader is not None) and (not self.stop_hkl.isChecked()):
@@ -2418,9 +2455,28 @@ class DiffractionImageWindow(BaseWindow):
         and log transformations. Also sets initial min/max pixel values in the UI.
         """
         if self.reader is not None:
-            self.call_id_plot +=1
+            frame = self.reader.take_latest_frame()
+            if frame is None:
+                return
+            display_key = (
+                id(self.reader),
+                frame.identity,
+                self.bottom_avg_plot.isVisible(),
+                self.reader.CACHING_MODE,
+                self.reader.pixel_ordering,
+                self.slider.value() if self.reader.CACHING_MODE == "bin" else None,
+                self.chk_threshold.isChecked(),
+                self.chk_apply_mask.isChecked(),
+                id(self.mask_manager.mask),
+                self.image_is_transposed,
+                self.rot_num,
+                self.log_image.isChecked(),
+            )
+            if display_key == self._last_display_key:
+                return
+            self.call_id_plot += 1
             if self.reader.CACHING_MODE in ['', 'alignment', 'scan']:
-                self.image = self.reader.image
+                self.image = frame.image
             elif self.reader.CACHING_MODE == 'bin':
                 index = self.slider.value()
                 self.image = np.reshape(np.mean(np.stack(self.reader.cached_images[index]), axis=0), self.reader.shape) # (self.reader.shape)
@@ -2489,18 +2545,21 @@ class DiffractionImageWindow(BaseWindow):
                             self.apply_autoscale()
                             self._last_autoscale_ts = now
                 # Separate image update for horizontal average plot
-                self.horizontal_avg_plot.plot(x=np.mean(self.image, axis=0),
-                                            y=np.arange(self.image.shape[1]),
-                                            clear=True)
+                self._horizontal_avg_curve.setData(
+                    x=np.mean(self.image, axis=0),
+                    y=np.arange(self.image.shape[1]),
+                )
                 # Bottom plot: average along the vertical axis, aligned under image
                 if self.bottom_avg_plot.isVisible():
-                    self.bottom_avg_plot.plot(x=np.arange(self.image.shape[0]),
-                                              y=np.mean(self.image, axis=1),
-                                              clear=True)
+                    self._bottom_avg_curve.setData(
+                        x=np.arange(self.image.shape[0]),
+                        y=np.mean(self.image, axis=1),
+                    )
                     self._sync_bottom_margins()
 
                 self.min_px_val.setText(f"{min_level:.2f}")
                 self.max_px_val.setText(f"{max_level:.2f}")
+                self._last_display_key = display_key
     
     def update_min_max_setting(self) -> None:
         # Passive when autoscale is on — autoscale drives the LUT each frame.
@@ -2517,13 +2576,10 @@ class DiffractionImageWindow(BaseWindow):
     def apply_autoscale(self) -> None:
         if self.image is None:
             return
-        intensities = self.image.flatten()
-        intensities = intensities[np.isfinite(intensities)]
-        if len(intensities) == 0:
+        levels = sampled_percentiles(self.image)
+        if levels is None:
             return
-        min_pct, max_pct = np.percentile(intensities, [5, 95])
-        min_pct = float(min_pct)
-        max_pct = float(max_pct)
+        min_pct, max_pct = levels
         self.min_setting_val.blockSignals(True)
         self.max_setting_val.blockSignals(True)
         self.min_setting_val.setValue(min_pct)

@@ -18,6 +18,7 @@
 # ******************************************************************************************************
 
 import threading
+import time
 from collections import deque
 
 import bitshuffle
@@ -30,6 +31,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 import dashpva.settings as app_settings
 from dashpva.utils.config.hkl import semantic_hkl_channels
+from dashpva.utils.frame_delivery import FramePacket, LatestFrame
 
 
 class PVAReader(QObject):
@@ -47,7 +49,8 @@ class PVAReader(QObject):
                  input_channel=None,
                  provider=pva.PVA,
                  viewer_type:str='image',
-                 pva_prefix:str=None):
+                 pva_prefix:str=None,
+                 delivery_mode: str = 'auto'):
         """
         Initializes the PVA Reader for monitoring connections and handling image data.
 
@@ -185,6 +188,18 @@ class PVAReader(QObject):
         self.cached_qz = None
         # self._on_scan_complete_callbacks = []
 
+        if delivery_mode not in ('auto', 'preview', 'ordered'):
+            raise ValueError('delivery_mode must be auto, preview, or ordered')
+        self.delivery_mode = delivery_mode
+        self._preview_delivery = False
+        self._preview = LatestFrame()
+        self._frame_sequence = 0
+        self._preview_policy = dict(app_settings.PREVIEW)
+        self.preview_frames_superseded = 0
+        self.preview_frames_rejected = 0
+        self.last_decode_seconds = 0.0
+        self.last_processing_seconds = 0.0
+        self.last_dequeue_monotonic = None
         self._configure()
 
     @staticmethod
@@ -262,13 +277,15 @@ class PVAReader(QObject):
     # def add_on_scan_complete_callback(self, callback_func):
     #     if callable(callback_func):
     #         self._on_scan_complete_callbacks.append(callback_func)
-    def pva_callbackSuccess(self, pv) -> None:
+    def pva_callbackSuccess(self, pv, *, stream_epoch=None) -> None:
         """
         Callback for handling monitored PVA changes.
 
         Args:
             pv (PvObject): The PVA object received by the channel monitor.
         """
+        started = time.monotonic()
+        epoch = self._preview.epoch if stream_epoch is None else stream_epoch
         try:
             self.frames_received += 1
             self.pva_object = pv
@@ -280,17 +297,21 @@ class PVAReader(QObject):
             # parse data required to manipulate pv image
             self.parse_image_data_type(pv)
             self.shape = self.parse_img_shape(pv)
+            decode_started = time.monotonic()
             self.image = self.pva_to_image(pv)
+            self.last_decode_seconds = time.monotonic() - decode_started
 
             # update with latest pv metadata
-            self.pv_attributes = self.parse_attributes(pv)
+            frame_attributes = self.parse_attributes(pv)
+            self.pv_attributes = frame_attributes.copy()
 
-            # Fill any HKL PVs the associator didn't attach with the reader's own
-            # camonitor'd values. setdefault keeps a timestamp-matched associator
-            # value when present; otherwise the scan H5 would save empty HKL groups.
+            # Preserve legacy CA fallback, but label it separately in the preview packet.
+            fallback_channels = []
             for pv_name, pv_value in list(self.hkl_values.items()):
-                if pv_value is not None:
-                    self.pv_attributes.setdefault(pv_name, pv_value)
+                if pv_value is not None and pv_name not in frame_attributes:
+                    fallback_channels.append(pv_name)
+                    frame_attributes[pv_name] = pv_value
+                    self.pv_attributes[pv_name] = pv_value
 
             # Check for any roi pvs in metadata
             self.parse_roi_pvs(self.pv_attributes)
@@ -316,7 +337,25 @@ class PVAReader(QObject):
                     import traceback
                     traceback.print_exc()
 
-            self.reader_new_frame.emit()
+            self._frame_sequence += 1
+            try:
+                packet = FramePacket.capture(
+                    max_array_bytes=self._preview_policy['MAX_ARRAY_BYTES'],
+                    stream_epoch=epoch,
+                    sequence=self._frame_sequence,
+                    unique_id=self.last_array_id,
+                    dequeued_monotonic=self.last_dequeue_monotonic or started,
+                    image=self.image,
+                    pixel_ordering=self.pixel_ordering,
+                    attributes={key: value for key, value in frame_attributes.items() if key != 'RSM'},
+                    rsm_attributes=self.rsm_attributes,
+                    fallback_channels=tuple(fallback_channels),
+                )
+            except ValueError:
+                self.preview_frames_rejected += 1
+            else:
+                if self._preview.publish(packet):
+                    self.reader_new_frame.emit()
 
             if self.is_scan_complete and not self.is_caching:
                 self.is_scan_complete = False
@@ -331,6 +370,32 @@ class PVAReader(QObject):
             self.analysis_index = None
             import traceback
             traceback.print_exc()
+        finally:
+            self.last_processing_seconds = time.monotonic() - started
+
+    @property
+    def latest_frame(self):
+        return self._preview.peek()
+
+    def take_latest_frame(self):
+        return self._preview.take()
+
+    def performance_snapshot(self):
+        frame = self.latest_frame
+        queue = self._queue
+        return {
+            'frame_identity': frame.identity if frame is not None else None,
+            'frames_processed_attempted': self.frames_received,
+            'observed_id_gaps_after_selection': self.frames_missed,
+            'processing_errors': self.processing_errors,
+            'preview_frames_superseded_before_decode': self.preview_frames_superseded,
+            'preview_frames_superseded_before_gui': self._preview.superseded,
+            'preview_frames_rejected': self.preview_frames_rejected,
+            'last_decode_seconds': self.last_decode_seconds,
+            'last_processing_seconds': self.last_processing_seconds,
+            'client_queue_frames': len(queue) if queue is not None else 0,
+            'client_queue_counters': dict(queue.getCounters()) if queue is not None else {},
+        }
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         # PV format: {pva_prefix}:{roi}:{dimension}
@@ -545,11 +610,10 @@ class PVAReader(QObject):
                 return   
             
     def reset_caches(self) -> None:
-        self.cached_images.clear()
-        self.cached_attributes.clear()
-        self.cached_qx.clear()
-        self.cached_qy.clear()
-        self.cached_qz.clear()
+        for name in ('cached_images', 'cached_attributes', 'cached_qx', 'cached_qy', 'cached_qz'):
+            cache = getattr(self, name, None)
+            if cache is not None:
+                cache.clear()
 
 ########################### Start and Stop Channel Monitors ##########################    
     def _flag_pv_ca_callback(self, pvname, value, **kwargs) -> None:
@@ -583,13 +647,32 @@ class PVAReader(QObject):
         the background PV-pollers thread, so a dead/slow FLAG_PV can't stall
         the GUI thread on Start Live View. See area_det_viewer._connect_pv_pollers.
         """
-        self._process_callback = callback if callback is not None else self.pva_callbackSuccess
-        self._queue = pva.PvObjectQueue(self.QUEUE_SIZE)
+        if self._consumer_thread is not None and self._consumer_thread.is_alive():
+            raise RuntimeError('The previous reader worker is still running')
+        if self.delivery_mode == 'preview' and (self.CACHING_MODE or callback is not None):
+            raise ValueError('Preview delivery cannot feed scientific caches or a custom processor')
+        self._preview_delivery = self.delivery_mode != 'ordered' and not self.CACHING_MODE and callback is None
+        self._preview_policy = dict(app_settings.PREVIEW)
+        epoch = self._preview.reset()
+        self._frame_sequence = 0
+        self.last_array_id = None
+        self.last_dequeue_monotonic = None
+        self._monitor_caching_mode = self.CACHING_MODE
+        self._process_callback = callback if callback is not None else (
+            lambda pv: self.pva_callbackSuccess(pv, stream_epoch=epoch)
+        )
+        queue_size = self._preview_policy['QUEUE_FRAMES'] if self._preview_delivery else self.QUEUE_SIZE
+        request = f'field() record[queueSize={queue_size}]' if self._preview_delivery else self.MONITOR_REQUEST
+        self._queue = pva.PvObjectQueue(queue_size)
         self._consuming = True
         self._consumer_thread = threading.Thread(target=self._consume_loop, daemon=True)
         self._consumer_thread.start()
         # qMonitor starts the monitor itself — no separate startMonitor() call.
-        self.channel.qMonitor(self._queue, self.MONITOR_REQUEST)
+        try:
+            self.channel.qMonitor(self._queue, request)
+        except Exception:
+            self.stop_channel_monitor()
+            raise
 
     def _consume_loop(self) -> None:
         """Drain the monitor queue and process one frame at a time.
@@ -600,6 +683,11 @@ class PVAReader(QObject):
         """
         q = self._queue
         while self._consuming:
+            if self.CACHING_MODE != self._monitor_caching_mode:
+                self._consuming = False
+                self._preview.reset()
+                self.channel.stopMonitor()
+                return
             try:
                 pv = q.get()
             except pva.QueueEmpty:
@@ -608,7 +696,17 @@ class PVAReader(QObject):
                 except Exception:
                     pass
                 continue
+            if self._preview_delivery:
+                for _ in range(min(len(q), self._preview_policy['QUEUE_FRAMES'])):
+                    try:
+                        pv = q.get()
+                    except pva.QueueEmpty:
+                        break
+                    self.preview_frames_superseded += 1
+            if not self._consuming:
+                break
             try:
+                self.last_dequeue_monotonic = time.monotonic()
                 self._process_callback(pv)
             except Exception:
                 import traceback
@@ -636,6 +734,7 @@ class PVAReader(QObject):
         Stops the queueing monitor, drains-loop consumer, and CA callbacks.
         """
         self._consuming = False
+        self._preview.reset()
         try:
             self.channel.stopMonitor()
         except Exception:
@@ -648,6 +747,8 @@ class PVAReader(QObject):
             self._queue = None
         if self._consumer_thread is not None:
             self._consumer_thread.join(timeout=2.0)
+            if self._consumer_thread.is_alive():
+                raise RuntimeError("Reader worker is still stopping; retry before restarting")
             self._consumer_thread = None
         if self.CACHING_MODE == 'scan' and self.FLAG_PV:
             try:
