@@ -32,6 +32,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 import dashpva.settings as app_settings
 from dashpva.utils.config.hkl import semantic_hkl_channels
 from dashpva.utils.frame_delivery import FramePacket, LatestFrame
+from dashpva.utils.performance_metrics import BoundedLatencyWindow
 
 
 class PVAReader(QObject):
@@ -164,6 +165,7 @@ class PVAReader(QObject):
         self.frames_missed = 0
         self.frames_received = 0
         self.processing_errors = 0
+        self.processing_error_counts = {}
         self.id_diff = 0
 
         # Producer/consumer buffering. pvapy's network thread pushes frames into
@@ -200,6 +202,9 @@ class PVAReader(QObject):
         self.last_decode_seconds = 0.0
         self.last_processing_seconds = 0.0
         self.last_dequeue_monotonic = None
+        self._decode_latencies = BoundedLatencyWindow()
+        self._processing_latencies = BoundedLatencyWindow()
+        self._preview_ages = BoundedLatencyWindow()
         self._configure()
 
     @staticmethod
@@ -300,6 +305,7 @@ class PVAReader(QObject):
             decode_started = time.monotonic()
             self.image = self.pva_to_image(pv)
             self.last_decode_seconds = time.monotonic() - decode_started
+            self._decode_latencies.observe(self.last_decode_seconds)
 
             # update with latest pv metadata
             frame_attributes = self.parse_attributes(pv)
@@ -339,20 +345,30 @@ class PVAReader(QObject):
 
             self._frame_sequence += 1
             try:
+                seconds = frame_attributes.get('timeStamp-secondsPastEpoch')
+                nanoseconds = frame_attributes.get('timeStamp-nanoseconds')
+                source_timestamp = None
+                if seconds is not None and nanoseconds is not None:
+                    source_timestamp = float(seconds) + float(nanoseconds) * 1e-9
                 packet = FramePacket.capture(
                     max_array_bytes=self._preview_policy['MAX_ARRAY_BYTES'],
                     stream_epoch=epoch,
                     sequence=self._frame_sequence,
                     unique_id=self.last_array_id,
+                    source_timestamp=source_timestamp,
                     dequeued_monotonic=self.last_dequeue_monotonic or started,
+                    published_monotonic=time.monotonic(),
                     image=self.image,
+                    shape=tuple(self.shape),
                     pixel_ordering=self.pixel_ordering,
                     attributes={key: value for key, value in frame_attributes.items() if key != 'RSM'},
                     rsm_attributes=self.rsm_attributes,
                     fallback_channels=tuple(fallback_channels),
+                    geometry_revision=None,
                 )
-            except ValueError:
+            except ValueError as exc:
                 self.preview_frames_rejected += 1
+                self._count_processing_error(exc)
             else:
                 if self._preview.publish(packet):
                     self.reader_new_frame.emit()
@@ -361,8 +377,9 @@ class PVAReader(QObject):
                 self.is_scan_complete = False
                 self.reader_scan_complete.emit()
 
-        except Exception:
+        except Exception as exc:
             self.processing_errors += 1
+            self._count_processing_error(exc)
             self.image = None
             self.pv_attributes = {}
             self.rsm_attributes = {}
@@ -372,13 +389,17 @@ class PVAReader(QObject):
             traceback.print_exc()
         finally:
             self.last_processing_seconds = time.monotonic() - started
+            self._processing_latencies.observe(self.last_processing_seconds)
 
     @property
     def latest_frame(self):
         return self._preview.peek()
 
     def take_latest_frame(self):
-        return self._preview.take()
+        frame = self._preview.take()
+        if frame is not None:
+            self._preview_ages.observe(max(0.0, time.monotonic() - frame.dequeued_monotonic))
+        return frame
 
     def performance_snapshot(self):
         frame = self.latest_frame
@@ -388,14 +409,27 @@ class PVAReader(QObject):
             'frames_processed_attempted': self.frames_received,
             'observed_id_gaps_after_selection': self.frames_missed,
             'processing_errors': self.processing_errors,
+            'processing_error_counts': dict(self.processing_error_counts),
             'preview_frames_superseded_before_decode': self.preview_frames_superseded,
             'preview_frames_superseded_before_gui': self._preview.superseded,
             'preview_frames_rejected': self.preview_frames_rejected,
             'last_decode_seconds': self.last_decode_seconds,
             'last_processing_seconds': self.last_processing_seconds,
+            'decode_latency': self._decode_latencies.snapshot(),
+            'processing_latency': self._processing_latencies.snapshot(),
+            'preview_age_at_take': self._preview_ages.snapshot(),
             'client_queue_frames': len(queue) if queue is not None else 0,
             'client_queue_counters': dict(queue.getCounters()) if queue is not None else {},
         }
+
+    def reset_performance_metrics(self) -> None:
+        self._decode_latencies.reset()
+        self._processing_latencies.reset()
+        self._preview_ages.reset()
+
+    def _count_processing_error(self, error: Exception) -> None:
+        name = type(error).__name__
+        self.processing_error_counts[name] = self.processing_error_counts.get(name, 0) + 1
 
     def roi_backup_callback(self, pvname, value, **kwargs) -> None:
         # PV format: {pva_prefix}:{roi}:{dimension}
@@ -1009,4 +1043,3 @@ class PVAReader(QObject):
 
     def get_shape(self) -> tuple[int]:
         return self.shape
-

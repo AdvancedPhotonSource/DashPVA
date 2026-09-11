@@ -30,9 +30,11 @@ from dashpva.utils.frame_delivery import FramePacket, LatestFrame
 def packet(sequence=1, epoch=0, image=None, **overrides):
     values = dict(
         stream_epoch=epoch, sequence=sequence, unique_id=7,
-        dequeued_monotonic=1., image=np.arange(6).reshape(2, 3) if image is None else image,
+        source_timestamp=42.25, dequeued_monotonic=1., published_monotonic=1.5,
+        image=np.arange(6).reshape(2, 3) if image is None else image, shape=(2, 3),
         pixel_ordering='F', attributes={'timeStamp-secondsPastEpoch': 42},
-        rsm_attributes={}, fallback_channels=(), max_array_bytes=1024,
+        rsm_attributes={}, fallback_channels=(), geometry_revision=None,
+        max_array_bytes=1024,
     )
     values.update(overrides)
     return FramePacket.capture(**values)
@@ -55,6 +57,14 @@ def test_packet_owns_writable_input_and_nested_metadata():
         result.attributes['motor']['values'][0] = 5
     with pytest.raises(TypeError):
         result.attributes['motor']['new'] = 5
+
+
+def test_packet_records_source_and_local_time_domains():
+    result = packet()
+    assert result.source_timestamp == 42.25
+    assert result.dequeued_monotonic == 1.
+    assert result.published_monotonic == 1.5
+    assert result.shape == (2, 3)
 
 
 def test_immutable_decode_buffer_can_be_retained_without_another_copy():
