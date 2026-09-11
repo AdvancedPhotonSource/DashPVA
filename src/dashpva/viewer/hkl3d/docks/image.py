@@ -69,8 +69,6 @@ class ImageDock(BaseDock):
         layout.addLayout(tools_row)
 
         # Action buttons
-        self.btn_3d_slice_window = QPushButton("Open Slice 3D Window")
-
         self.btn_plot_cache = QPushButton("Plot Cache")
         self.btn_plot_cache.setProperty("role", "success")
 
@@ -78,7 +76,6 @@ class ImageDock(BaseDock):
         self.btn_save_h5.setProperty("role", "info")
         self.btn_save_h5.setMinimumHeight(50)
 
-        layout.addWidget(self.btn_3d_slice_window)
         layout.addWidget(self.btn_plot_cache)
         layout.addWidget(self.btn_save_h5)
         layout.addStretch()
