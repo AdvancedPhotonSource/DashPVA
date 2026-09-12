@@ -312,10 +312,10 @@ class PVAReader(QObject):
             self.pv_attributes = frame_attributes.copy()
 
             # Preserve legacy CA fallback, but label it separately in the preview packet.
-            fallback_channels = []
+            fallback_attributes = {}
             for pv_name, pv_value in list(self.hkl_values.items()):
                 if pv_value is not None and pv_name not in frame_attributes:
-                    fallback_channels.append(pv_name)
+                    fallback_attributes[pv_name] = pv_value
                     frame_attributes[pv_name] = pv_value
                     self.pv_attributes[pv_name] = pv_value
 
@@ -350,6 +350,22 @@ class PVAReader(QObject):
                 source_timestamp = None
                 if seconds is not None and nanoseconds is not None:
                     source_timestamp = float(seconds) + float(nanoseconds) * 1e-9
+                packet_attributes = {
+                    key: value for key, value in frame_attributes.items() if key != 'RSM'
+                }
+                frame_only_attributes = {
+                    key: value
+                    for key, value in packet_attributes.items()
+                    if key not in fallback_attributes
+                }
+                geometry_revision = next(
+                    (
+                        str(packet_attributes[name])
+                        for name in ('geometry_revision', 'geometry_fingerprint')
+                        if packet_attributes.get(name) not in (None, '')
+                    ),
+                    None,
+                )
                 packet = FramePacket.capture(
                     max_array_bytes=self._preview_policy['MAX_ARRAY_BYTES'],
                     stream_epoch=epoch,
@@ -361,10 +377,12 @@ class PVAReader(QObject):
                     image=self.image,
                     shape=tuple(self.shape),
                     pixel_ordering=self.pixel_ordering,
-                    attributes={key: value for key, value in frame_attributes.items() if key != 'RSM'},
+                    attributes=packet_attributes,
+                    frame_attributes=frame_only_attributes,
+                    fallback_attributes=fallback_attributes,
                     rsm_attributes=self.rsm_attributes,
-                    fallback_channels=tuple(fallback_channels),
-                    geometry_revision=None,
+                    fallback_channels=tuple(fallback_attributes),
+                    geometry_revision=geometry_revision,
                 )
             except ValueError as exc:
                 self.preview_frames_rejected += 1
