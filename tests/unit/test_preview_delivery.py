@@ -91,9 +91,20 @@ def test_static_ca_fallback_is_labelled_in_owned_packet(reader):
     snapshot = reader.take_latest_frame()
     assert snapshot.attributes['motor'] == 5.
     assert snapshot.fallback_channels == ('energy',)
+    assert snapshot.frame_attributes['motor'] == 5.
+    assert 'energy' not in snapshot.frame_attributes
+    assert snapshot.fallback_attributes == {'energy': 12.}
     assert 'timeStamp-secondsPastEpoch' in snapshot.attributes
     reader.hkl_values['energy'] = 20.
     assert snapshot.attributes['energy'] == 12.
+
+
+@pytest.mark.parametrize('name', ['geometry_revision', 'geometry_fingerprint'])
+def test_explicit_geometry_revision_is_published_without_hashing_coordinates(reader, name):
+    reader.pva_callbackSuccess(frame(attrs=[(name, 'geometry-7')]))
+    snapshot = reader.take_latest_frame()
+    assert snapshot.geometry_revision == 'geometry-7'
+    assert snapshot.frame_attributes[name] == 'geometry-7'
 
 
 def test_packet_records_source_timestamp_shape_and_bounded_error_categories(reader):
