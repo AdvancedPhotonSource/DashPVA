@@ -65,6 +65,8 @@ class FramePacket:
     shape: tuple[int, ...]
     pixel_ordering: str
     attributes: Mapping
+    frame_attributes: Mapping
+    fallback_attributes: Mapping
     rsm_attributes: Mapping
     fallback_channels: tuple[str, ...]
     geometry_revision: str | None

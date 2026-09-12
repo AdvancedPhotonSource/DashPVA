@@ -33,6 +33,7 @@ def packet(sequence=1, epoch=0, image=None, **overrides):
         source_timestamp=42.25, dequeued_monotonic=1., published_monotonic=1.5,
         image=np.arange(6).reshape(2, 3) if image is None else image, shape=(2, 3),
         pixel_ordering='F', attributes={'timeStamp-secondsPastEpoch': 42},
+        frame_attributes={'timeStamp-secondsPastEpoch': 42}, fallback_attributes={},
         rsm_attributes={}, fallback_channels=(), geometry_revision=None,
         max_array_bytes=1024,
     )
