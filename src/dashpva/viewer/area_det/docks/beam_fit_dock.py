@@ -63,6 +63,7 @@ from PyQt5.QtWidgets import (
 from dashpva.gui.theme_colors import ROI_COLORS, status_style
 from dashpva.utils.peak_fit import MODELS, fit_profile
 from dashpva.utils.roi_ops import _extract_roi_subarray
+from dashpva.viewer.area_det.count_format import format_count
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "other"
@@ -542,8 +543,10 @@ class BeamFitDock(BaseDock):
         else:
             self._render_fit(self.curve_x_fit, self.marker_x, self.val_x, fit_r)
             self._render_fit(self.curve_y_fit, self.marker_y, self.val_y, fit_b)
-            self.lbl_status.setText(f"frame {frame_id} · fit {elapsed * 1000:.1f} ms "
-                                    f"· bin {len(self._bin)}")
+            self.lbl_status.setText(
+                f"frame {format_count(frame_id)} · fit {elapsed * 1000:.1f} ms "
+                f"· bin {format_count(len(self._bin))}"
+            )
             self._publish_fit(fit_r, fit_b, frame_id)
         if self._pending is not None:
             self._start_fit(self._pending)

@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from dashpva.viewer.area_det.count_format import format_count
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
 _SEGMENT = "info"
@@ -106,8 +107,11 @@ class StatsDock(BaseDock):
         if reader is None:
             return
         metrics = reader.performance_snapshot()
-        skipped = f"{metrics['preview_frames_superseded_before_decode']} / {metrics['preview_frames_superseded_before_gui']}"
-        rejected = str(metrics['preview_frames_rejected'])
+        skipped = (
+            f"{format_count(metrics['preview_frames_superseded_before_decode'])} / "
+            f"{format_count(metrics['preview_frames_superseded_before_gui'])}"
+        )
+        rejected = format_count(metrics['preview_frames_rejected'])
         for label, text in ((self.preview_skipped_val, skipped), (self.preview_rejected_val, rejected)):
             if label.text() != text:
                 label.setText(text)

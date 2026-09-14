@@ -78,6 +78,7 @@ from dashpva.utils.rsm_geometry import (
     validate_sample_orientation,
 )
 from dashpva.utils.units import to_eV
+from dashpva.viewer.area_det.count_format import format_count
 from dashpva.viewer.area_det.docks import (
     AnalysisDock,
     BeamFitDock,
@@ -837,7 +838,9 @@ class DiffractionImageWindow(BaseWindow):
         self._dead_px_frames = []
         self._dead_px_collecting = True
         self._dead_px_last_frame = getattr(self.reader, 'frames_received', 0)
-        self.btn_detect_dead.setText(f'Collecting 0/{self._dead_px_target}...')
+        self.btn_detect_dead.setText(
+            f'Collecting 0/{format_count(self._dead_px_target)}...'
+        )
         self.btn_detect_dead.setEnabled(False)
 
     def _collect_dead_pixel_frame(self):
@@ -855,7 +858,9 @@ class DiffractionImageWindow(BaseWindow):
 
         self._dead_px_frames.append(self.reader.image.copy())
         self.btn_detect_dead.setText(
-            f'Collecting {len(self._dead_px_frames)}/{self._dead_px_target}...')
+            f'Collecting {format_count(len(self._dead_px_frames))}/'
+            f'{format_count(self._dead_px_target)}...'
+        )
 
         if len(self._dead_px_frames) >= self._dead_px_target:
             self._dead_px_collecting = False
@@ -879,7 +884,7 @@ class DiffractionImageWindow(BaseWindow):
                 if num_flagged == result_mask.size:
                     QMessageBox.warning(
                         self, 'Dead Pixel Detection',
-                        f'All {num_flagged} pixels flagged.\n'
+                        f'All {format_count(num_flagged)} pixels flagged.\n'
                         f'This usually means the detection mode does not match '
                         f'the current imaging conditions.\n'
                         f'Mask NOT updated.')
@@ -894,9 +899,10 @@ class DiffractionImageWindow(BaseWindow):
                     self.mask_viewer._refresh_display()
                 QMessageBox.information(
                     self, 'Dead Pixel Detection',
-                    f'Detected {num_flagged} {label} pixels '
-                    f'({mode} mode, {self._dead_px_target} frames).\n'
-                    f'Added to mask. Total masked: {self.mask_manager.num_masked_pixels}')
+                    f'Detected {format_count(num_flagged)} {label} pixels '
+                    f'({mode} mode, {format_count(self._dead_px_target)} frames).\n'
+                    f'Added to mask. Total masked: '
+                    f'{format_count(self.mask_manager.num_masked_pixels)}')
 
     def export_json_clicked(self):
         if self.mask_manager.mask is None:
@@ -940,7 +946,9 @@ class DiffractionImageWindow(BaseWindow):
             self.lbl_mask_info.setToolTip(path)
             count = self.mask_manager.num_masked_pixels
             pct = self.mask_manager.mask_fraction * 100
-            self.lbl_mask_pixel_count.setText(f'{count:,} ({pct:.1f}%)')
+            self.lbl_mask_pixel_count.setText(
+                f'{format_count(count)} ({pct:.1f}%)'
+            )
         else:
             self.lbl_mask_info.setText('No mask loaded')
             self.lbl_mask_info.setToolTip('')
@@ -2385,7 +2393,9 @@ class DiffractionImageWindow(BaseWindow):
                     if 0 <= self.mouse_x < self.image.shape[0] and 0 <= self.mouse_y < self.image.shape[1]:
                         self.mouse_x_val.setText(f"{self.mouse_x}")
                         self.mouse_y_val.setText(f"{self.mouse_y}")
-                        self.mouse_px_val.setText(f'{self.image[self.mouse_x][self.mouse_y]:.2f}')
+                        self.mouse_px_val.setText(
+                            format_count(self.image[self.mouse_x][self.mouse_y], 2)
+                        )
                         # Stop HKL is meant to freeze the visible HKL output, not
                         # just halt the qx/qy/qz recompute. Without this gate the
                         # mouse H/K/L labels keep changing on every mouse move
@@ -2411,19 +2421,19 @@ class DiffractionImageWindow(BaseWindow):
                 self._last_connected = connected
                 self._update_title()
             self._set_text_if_changed(
-                self.missed_frames_val, f'{self.reader.frames_missed:d}'
+                self.missed_frames_val, format_count(self.reader.frames_missed)
             )
             self._set_text_if_changed(
-                self.frames_received_val, f'{self.reader.frames_received:d}'
+                self.frames_received_val, format_count(self.reader.frames_received)
             )
-            self._set_text_if_changed(self.plot_call_id, f'{self.call_id_plot:d}')
+            self._set_text_if_changed(self.plot_call_id, format_count(self.call_id_plot))
             self.update_mouse_labels()
             if len(self.reader.shape):
                 self._set_text_if_changed(
-                    self.size_x_val, f'{self.reader.shape[0]:d}'
+                    self.size_x_val, format_count(self.reader.shape[0])
                 )
                 self._set_text_if_changed(
-                    self.size_y_val, f'{self.reader.shape[1]:d}'
+                    self.size_y_val, format_count(self.reader.shape[1])
                 )
             self._set_text_if_changed(self.data_type_val, self.reader.display_dtype)
             self.update_threshold_label()
@@ -2431,7 +2441,12 @@ class DiffractionImageWindow(BaseWindow):
                 label = getattr(self, f"roi{i}_total_value")
                 self._set_text_if_changed(
                     label,
-                    f"{float(self.stats_data.get(f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0)):.2f}",
+                    format_count(
+                        self.stats_data.get(
+                            f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0
+                        ),
+                        2,
+                    ),
                 )
 
     def update_rsm(self) -> None:
@@ -2557,8 +2572,8 @@ class DiffractionImageWindow(BaseWindow):
                     )
                     self._sync_bottom_margins()
 
-                self.min_px_val.setText(f"{min_level:.2f}")
-                self.max_px_val.setText(f"{max_level:.2f}")
+                self.min_px_val.setText(format_count(min_level, 2))
+                self.max_px_val.setText(format_count(max_level, 2))
                 self._last_display_key = display_key
     
     def update_min_max_setting(self) -> None:
@@ -2637,7 +2652,9 @@ class DiffractionImageWindow(BaseWindow):
         Updates the threshold range label based on current data type.
         """
         min_thresh, max_thresh = self.get_threshold_range()
-        self.lbl_threshold_range.setText(f"{min_thresh} to {max_thresh}")
+        self.lbl_threshold_range.setText(
+            f"{format_count(min_thresh)} to {format_count(max_thresh)}"
+        )
     
     def threshold_checked(self) -> None:
         """
