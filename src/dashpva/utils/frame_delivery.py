@@ -17,6 +17,7 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # ******************************************************************************************************
 
+from collections import ChainMap
 from collections.abc import Mapping
 from dataclasses import dataclass
 from threading import Lock
@@ -64,7 +65,6 @@ class FramePacket:
     image: np.ndarray
     shape: tuple[int, ...]
     pixel_ordering: str
-    attributes: Mapping
     frame_attributes: Mapping
     fallback_attributes: Mapping
     rsm_attributes: Mapping
@@ -74,6 +74,10 @@ class FramePacket:
     @property
     def identity(self):
         return self.stream_epoch, self.sequence
+
+    @property
+    def attributes(self):
+        return MappingProxyType(ChainMap(self.frame_attributes, self.fallback_attributes))
 
     @classmethod
     def capture(cls, *, max_array_bytes, **values):

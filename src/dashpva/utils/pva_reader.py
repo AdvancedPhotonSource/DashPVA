@@ -350,19 +350,16 @@ class PVAReader(QObject):
                 source_timestamp = None
                 if seconds is not None and nanoseconds is not None:
                     source_timestamp = float(seconds) + float(nanoseconds) * 1e-9
-                packet_attributes = {
-                    key: value for key, value in frame_attributes.items() if key != 'RSM'
-                }
                 frame_only_attributes = {
                     key: value
-                    for key, value in packet_attributes.items()
-                    if key not in fallback_attributes
+                    for key, value in frame_attributes.items()
+                    if key != 'RSM' and key not in fallback_attributes
                 }
                 geometry_revision = next(
                     (
-                        str(packet_attributes[name])
+                        str(frame_attributes[name])
                         for name in ('geometry_revision', 'geometry_fingerprint')
-                        if packet_attributes.get(name) not in (None, '')
+                        if frame_attributes.get(name) not in (None, '')
                     ),
                     None,
                 )
@@ -377,7 +374,6 @@ class PVAReader(QObject):
                     image=self.image,
                     shape=tuple(self.shape),
                     pixel_ordering=self.pixel_ordering,
-                    attributes=packet_attributes,
                     frame_attributes=frame_only_attributes,
                     fallback_attributes=fallback_attributes,
                     rsm_attributes=self.rsm_attributes,

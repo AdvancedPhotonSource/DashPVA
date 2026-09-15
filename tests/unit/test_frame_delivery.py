@@ -32,8 +32,8 @@ def packet(sequence=1, epoch=0, image=None, **overrides):
         stream_epoch=epoch, sequence=sequence, unique_id=7,
         source_timestamp=42.25, dequeued_monotonic=1., published_monotonic=1.5,
         image=np.arange(6).reshape(2, 3) if image is None else image, shape=(2, 3),
-        pixel_ordering='F', attributes={'timeStamp-secondsPastEpoch': 42},
-        frame_attributes={'timeStamp-secondsPastEpoch': 42}, fallback_attributes={},
+        pixel_ordering='F', frame_attributes={'timeStamp-secondsPastEpoch': 42},
+        fallback_attributes={},
         rsm_attributes={}, fallback_channels=(), geometry_revision=None,
         max_array_bytes=1024,
     )
@@ -44,7 +44,7 @@ def packet(sequence=1, epoch=0, image=None, **overrides):
 def test_packet_owns_writable_input_and_nested_metadata():
     raw = np.asfortranarray(np.arange(6).reshape(2, 3))
     meta = {'motor': {'values': np.arange(2.)}, 'labels': ['H', 'K']}
-    result = packet(image=raw, attributes=meta)
+    result = packet(image=raw, frame_attributes=meta)
     raw[:] = -1
     meta['motor']['values'][:] = -2
     meta['labels'].append('L')
@@ -79,6 +79,20 @@ def test_immutable_decode_buffer_can_be_retained_without_another_copy():
 def test_byte_budget_includes_coordinates_and_nested_arrays():
     with pytest.raises(ValueError, match='budget'):
         packet(max_array_bytes=60, rsm_attributes={'qx': np.arange(3.)})
+
+
+def test_combined_attributes_do_not_duplicate_metadata_array_budget():
+    metadata = np.arange(3.)
+    result = packet(
+        image=np.arange(6),
+        frame_attributes={'motor': metadata},
+        fallback_attributes={'energy': 12.},
+        max_array_bytes=72,
+    )
+    np.testing.assert_array_equal(result.attributes['motor'], metadata)
+    assert result.attributes['energy'] == 12.
+    with pytest.raises(TypeError):
+        result.attributes['energy'] = 13.
 
 
 def test_overload_has_one_wakeup_and_releases_superseded_packets():
