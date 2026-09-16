@@ -36,6 +36,7 @@ from PyQt5 import uic
 from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -45,6 +46,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QProgressDialog,
     QRadioButton,
     QSlider,
     QSpinBox,
@@ -788,14 +790,108 @@ class BaseWindow(QMainWindow):
         if isinstance(values, dict) and values:
             self.apply_session_inputs(values)
 
+    def session_paths(self) -> list:
+        """Open files/folders as ``[[kind, path], ...]``, kind "file"/"folder"."""
+        return []
+
+    def session_view(self) -> dict:
+        """What the window was showing (e.g. file, dataset, tab, frame); {} for nothing."""
+        return {}
+
+    def restore_session_view(self, view: dict) -> None:
+        """Show again what :meth:`session_view` saved, once the session's files are open."""
+
+    def restore_session(self) -> None:
+        """Reopen the files and folders that were open when this window closed.
+
+        Entries that no longer exist are dropped, and files at or above
+        ``app_settings.SESSION_RESTORE_MAX_BYTES`` are skipped so a huge dataset
+        cannot stall startup. Loading runs behind a cancellable progress dialog.
+        """
+        if not self.persist_state:
+            return
+        raw = self._qsettings().value("session")
+        if not raw:
+            return
+        try:
+            entries = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+
+        pending, skipped = [], []
+        for entry in entries or []:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                continue
+            kind, path = entry
+            if not isinstance(path, str) or not os.path.exists(path):
+                continue
+            if kind == "file" and os.path.getsize(path) >= app_settings.SESSION_RESTORE_MAX_BYTES:
+                skipped.append(path)
+                continue
+            pending.append((kind, path))
+
+        if skipped:
+            self.update_status(
+                f"Skipped {len(skipped)} large file(s) from the last session", 'warning')
+        if not pending:
+            return
+        file_count = sum(
+            len([n for n in os.listdir(path) if os.path.isfile(os.path.join(path, n))])
+            if kind == "folder" else 1
+            for kind, path in pending)
+        if file_count > app_settings.SESSION_RESTORE_PROMPT_COUNT:
+            answer = QMessageBox.question(
+                self, "Restore previous session",
+                f"Reopen {len(pending)} items ({file_count} files) from your last session?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                return
+
+        progress = QProgressDialog(
+            "Restoring previous session...", "Cancel", 0, len(pending), self)
+        progress.setWindowTitle("Restoring session")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        canceled = True
+        try:
+            for n, (kind, path) in enumerate(pending):
+                QApplication.processEvents()   # repaint the window and dialog, and let Cancel through
+                if progress.wasCanceled():
+                    break
+                progress.setLabelText(f"Opening {os.path.basename(path)}...")
+                progress.setValue(n)
+                try:
+                    if kind == "folder":
+                        self.load_folder_content(path)
+                    else:
+                        self.load_file_content(path)
+                except Exception as exc:
+                    self.update_status(
+                        f"Could not reopen {os.path.basename(path)}: {exc}", 'warning')
+            progress.setValue(len(pending))
+            canceled = progress.wasCanceled()
+        finally:
+            progress.close()
+        if canceled:
+            return
+        try:
+            view = json.loads(self._qsettings().value("session_view") or "{}")
+        except (TypeError, ValueError):
+            return
+        if isinstance(view, dict) and view:
+            self.restore_session_view(view)
+
     def save_layout(self) -> None:
-        """Persist window geometry, dock layout and the named inputs."""
+        """Persist geometry, dock layout, inputs, the open files and the current view."""
         if not self.persist_state:
             return
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
         s.setValue("dock_state", self.saveState(self.dock_state_version))
         self.save_inputs()
+        s.setValue("session", json.dumps(self.session_paths()))
+        s.setValue("session_view", json.dumps(self.session_view()))
 
     def restore_geometry(self) -> None:
         """Restore window geometry, clamped to the current screen.
@@ -845,6 +941,8 @@ class BaseWindow(QMainWindow):
             return
         self.restore_layout()
         self.restore_inputs()
+        # after the window has painted, so loading files never leaves it black
+        QTimer.singleShot(app_settings.SESSION_RESTORE_DELAY_MS, self.restore_session)
 
     def restore_layout(self) -> None:
         """Geometry and docks together, for windows whose docks already exist."""

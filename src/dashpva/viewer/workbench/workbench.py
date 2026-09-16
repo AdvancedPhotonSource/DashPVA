@@ -47,6 +47,7 @@ from PyQt5.QtWidgets import (
     QSlider,
     QTableWidgetItem,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QVBoxLayout,
     QWidget,
 )
@@ -816,6 +817,76 @@ class WorkbenchWindow(BaseWindow):
             except Exception:
                 pass
         super().closeEvent(event)
+
+    def session_paths(self) -> list:
+        """The data tree's loaded files and folders, top to bottom."""
+        kinds = {"folder_section": "folder", "file_root": "file"}
+        entries = []
+        for i in range(self.tree_data.topLevelItemCount()):
+            item = self.tree_data.topLevelItem(i)
+            kind = kinds.get(item.data(0, Qt.UserRole + 2))
+            path = item.data(0, Qt.UserRole + 1)
+            if kind and path:
+                entries.append([kind, path])
+        return entries
+
+    def session_view(self) -> dict:
+        """The open file and dataset, the analysis tab and the 2D frame being shown."""
+        tabs = self.tabWidget_analysis
+        spin = self.frame_spinbox
+        return {
+            "file": self.current_file_path,
+            "dataset": self.selected_dataset_path,
+            "tab": tabs.tabText(tabs.currentIndex()),
+            "frame": spin.value() if spin is not None else None,
+        }
+
+    def restore_session_view(self, view: dict) -> None:
+        """Reload the saved dataset like a double-click, then show its tab and frame once loaded."""
+        item = self._find_dataset_item(view.get("file"), view.get("dataset"))
+        if item is None:
+            self._show_session_tab_and_frame(view)
+            return
+        self.tree_data.setCurrentItem(item)
+        self._pending_session_view = view
+        self.on_tree_item_double_clicked(item, 0)
+        worker = getattr(self, "_dataset_worker", None)
+        if worker is not None:
+            # A bound slot is queued onto the GUI thread, after on_dataset_loaded.
+            worker.loaded.connect(self._apply_pending_session_view)
+
+    @pyqtSlot(object)
+    def _apply_pending_session_view(self, _data) -> None:
+        view = getattr(self, "_pending_session_view", None)
+        self._pending_session_view = None
+        if view:
+            self._show_session_tab_and_frame(view)
+
+    def _find_dataset_item(self, file_path, dataset_path):
+        """The tree item for ``dataset_path`` inside the file root for ``file_path``, or None."""
+        if not file_path or not dataset_path:
+            return None
+        it = QTreeWidgetItemIterator(self.tree_data)
+        while it.value():
+            item = it.value()
+            if item.data(0, 32) == dataset_path:  # the tree keeps dataset paths in role 32
+                root = item
+                while root is not None and root.data(0, Qt.UserRole + 2) != "file_root":
+                    root = root.parent()
+                if root is not None and root.data(0, Qt.UserRole + 1) == file_path:
+                    return item
+            it += 1
+        return None
+
+    def _show_session_tab_and_frame(self, view: dict) -> None:
+        tabs = self.tabWidget_analysis
+        for i in range(tabs.count()):
+            if tabs.tabText(i) == view.get("tab"):
+                tabs.setCurrentIndex(i)
+                break
+        spin = self.frame_spinbox
+        if spin is not None and view.get("frame") is not None:
+            spin.setValue(int(view["frame"]))
 
     def setup_workbench_connections(self):
         """Set up connections specific to the workbench."""
