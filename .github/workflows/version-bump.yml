@@ -1,0 +1,58 @@
+name: Version bump
+
+# Patch-bumps pyproject on every merge to main. A merge that already changed the
+# version is left alone, so an explicit major/minor in a PR stands as written.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags, and HEAD^ for the "did this merge set it" check
+
+      - name: Bump patch version
+        run: |
+          set -euo pipefail
+
+          # An explicit bump in the merged PR wins. This also stops the job
+          # acting on its own bump commit, which changes the same line.
+          if git diff HEAD^ HEAD -- pyproject.toml | grep -qE '^[+-]version = '; then
+            echo "This merge set the version already — leaving it untouched."
+            exit 0
+          fi
+
+          cur=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          IFS=. read -r MA MI PA <<< "$cur"
+
+          # Floor at the newest release tag, so a pyproject left behind a
+          # release catches up instead of bumping along a stale line.
+          tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          tag=${tag#v}
+          if [ -n "$tag" ]; then
+            lowest=$(printf '%s\n%s\n' "$cur" "$tag" | sort -V | head -1)
+            if [ "$lowest" = "$cur" ] && [ "$cur" != "$tag" ]; then
+              IFS=. read -r MA MI PA <<< "$tag"
+            fi
+          fi
+
+          new="$MA.$MI.$((PA+1))"
+          echo "current $cur | last release ${tag:-none} | new $new"
+
+          sed -i -E "0,/^version = \".*\"/s//version = \"$new\"/" pyproject.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "change: bump version to $new"
+          git push
