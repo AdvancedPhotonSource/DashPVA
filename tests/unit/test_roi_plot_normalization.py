@@ -34,6 +34,8 @@ import pytest
 from dashpva.viewer.workbench.rois.roi_plot_dock import (
     CA_METADATA_PATH,
     load_ca_channels,
+    norm_array,
+    norm_key,
     normalize_series,
 )
 
@@ -99,3 +101,21 @@ def test_a_missing_file_or_group_yields_no_divisors(tmp_path):
     scan = tmp_path / 'bare.h5'
     _write(scan, {'entry/data': {}})
     assert load_ca_channels(str(scan)) == {}
+
+
+def test_a_combo_with_no_selection_means_no_normalization():
+    class _Combo:
+        def currentData(self):
+            return ''
+    assert norm_key(_Combo()) == ''
+    assert norm_array(_Combo(), {'I0': np.array([1.0, 2.0])}) is None
+    assert norm_key(None) == ''
+
+
+def test_a_selected_channel_resolves_to_its_readings():
+    class _Combo:
+        def currentData(self):
+            return 'I0'
+    out = norm_array(_Combo(), {'I0': [1.0, 2.0, 3.0]})
+    assert list(out) == [1.0, 2.0, 3.0]
+    assert norm_array(_Combo(), {}) is None
