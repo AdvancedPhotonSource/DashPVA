@@ -118,6 +118,28 @@ def normalize_series(y_data, norm):
 CA_METADATA_PATH = 'entry/data/metadata/ca'
 
 
+def norm_key(combo) -> str:
+    """Key of the divisor selected in a Norm combo, '' when normalization is off."""
+    if combo is None:
+        return ''
+    data = combo.currentData()
+    return '' if data is None else str(data)
+
+
+def norm_array(combo, channels: dict):
+    """The selected divisor's readings, or None when normalization is off.
+
+    Example:
+        >>> norm_array(dock.norm_select, {'I0': np.array([1.0, 2.0])})  # doctest: +SKIP
+        array([1., 2.])
+    """
+    key = norm_key(combo)
+    if not key:
+        return None
+    arr = channels.get(key)
+    return None if arr is None else np.asarray(arr, dtype=float).ravel()
+
+
 def load_ca_channels(file_path) -> dict:
     """Read the per-frame CA channels a divisor may be chosen from.
 
@@ -500,20 +522,11 @@ class ROIPlotDock(QDockWidget):
         self._update_plot()
 
     def _norm_key(self) -> str:
-        """Key of the selected normalization channel, '' for None."""
-        combo = getattr(self, 'norm_select', None)
-        if combo is None:
-            return ''
-        data = combo.currentData()
-        return '' if data is None else str(data)
+        return norm_key(getattr(self, 'norm_select', None))
 
     def _norm_array(self):
-        """The selected channel's array, or None when normalization is off."""
-        key = self._norm_key()
-        if not key:
-            return None
-        arr = self._last_custom_ca_dict.get(key)
-        return None if arr is None else np.asarray(arr, dtype=float).ravel()
+        return norm_array(getattr(self, 'norm_select', None),
+                          self._last_custom_ca_dict)
 
     def _normalize_series(self, y_data):
         """Time-series mode: one Y point per frame, one reading per frame."""

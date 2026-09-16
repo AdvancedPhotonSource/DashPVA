@@ -55,6 +55,8 @@ from dashpva.viewer.workbench.rois.roi_plot_dock import (
     _combo_key,
     _set_combo_key,
     load_ca_channels,
+    norm_array,
+    norm_key,
     normalize_series,
 )
 
@@ -439,20 +441,11 @@ class ROI2DPlotDock(QDockWidget):
     # ------------------------------------------------------------------
 
     def _norm_key(self) -> str:
-        """Key of the selected normalization channel, '' for None."""
-        combo = getattr(self, 'norm_select', None)
-        if combo is None:
-            return ''
-        data = combo.currentData()
-        return '' if data is None else str(data)
+        return norm_key(getattr(self, 'norm_select', None))
 
     def _norm_array(self):
-        """The selected channel's array, or None when normalization is off."""
-        key = self._norm_key()
-        if not key:
-            return None
-        arr = self._norm_channels.get(key)
-        return None if arr is None else np.asarray(arr, dtype=float).ravel()
+        return norm_array(getattr(self, 'norm_select', None),
+                          self._norm_channels)
 
     @staticmethod
     def _finite_range(z_data: np.ndarray, default=(0.0, 1.0)):
