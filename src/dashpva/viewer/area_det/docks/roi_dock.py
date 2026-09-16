@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -37,9 +38,11 @@ _COLORED_ROIS = (1, 2, 3, 4)
 
 
 def _total_label(object_name: str) -> QLabel:
-    lbl = QLabel("0.0")
+    lbl = QLabel("0")
     lbl.setObjectName(object_name)
     lbl.setAlignment(Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter)
+    lbl.setMinimumWidth(110)
+    lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     lbl.setProperty("valueLabel", True)
     return lbl
 
