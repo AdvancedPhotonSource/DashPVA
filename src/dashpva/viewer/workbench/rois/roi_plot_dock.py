@@ -76,6 +76,104 @@ def _add_metric_item(combo, key: str):
     combo.addItem(DISPLAY_NAMES.get(key, key), key)
 
 
+def normalize_series(y_data, norm):
+    """Divide y_data by norm point for point, offline, from values already in the file.
+
+    This is Workbench normalization by CA readings recorded in the scan HDF5 --
+    not live Area Detector CA normalization. Both series come off disk and are
+    expected to hold one reading per frame.
+
+    A length mismatch is rejected rather than trimmed: a dropped CA sample
+    shifts every later reading onto the wrong frame, and a silently truncated
+    curve looks correct. The whole series comes back NaN instead, so the plot is
+    visibly empty rather than quietly misaligned.
+
+    A divisor must be finite and strictly positive. Zero, negative and non-finite
+    readings give NaN at that frame, so the curve gaps instead of spiking or
+    flipping sign.
+
+    Example:
+        >>> normalize_series([10.0, 20.0], [2.0, 4.0])
+        array([5., 5.])
+        >>> normalize_series([10.0, 20.0], [2.0])   # one reading missing
+        array([nan, nan])
+    """
+    y = np.asarray(y_data, dtype=float).ravel()
+    if norm is None:
+        return y
+    d = np.asarray(norm, dtype=float).ravel()
+    if len(y) == 0:
+        return y
+    if len(d) != len(y):
+        return np.full(len(y), np.nan, dtype=float)
+    out = np.full(len(y), np.nan, dtype=float)
+    good = np.isfinite(d) & (d > 0.0)
+    out[good] = y[good] / d[good]
+    return out
+
+
+#: The only group a normalization divisor may come from. Motor positions and
+#: other metadata are selectable as plot axes but are not per-frame flux
+#: readings, so they must never divide a curve.
+CA_METADATA_PATH = 'entry/data/metadata/ca'
+
+
+def norm_key(combo) -> str:
+    """Key of the divisor selected in a Norm combo, '' when normalization is off."""
+    if combo is None:
+        return ''
+    data = combo.currentData()
+    return '' if data is None else str(data)
+
+
+def norm_array(combo, channels: dict):
+    """The selected divisor's readings, or None when normalization is off.
+
+    Example:
+        >>> norm_array(dock.norm_select, {'I0': np.array([1.0, 2.0])})  # doctest: +SKIP
+        array([1., 2.])
+    """
+    key = norm_key(combo)
+    if not key:
+        return None
+    arr = channels.get(key)
+    return None if arr is None else np.asarray(arr, dtype=float).ravel()
+
+
+def load_ca_channels(file_path) -> dict:
+    """Read the per-frame CA channels a divisor may be chosen from.
+
+    Restricted to ``CA_METADATA_PATH`` so the Norm dropdown cannot offer a
+    motor position or another metadata array. Shared by both ROI plot docks so
+    the same channel means the same divisor in each.
+
+    Example:
+        >>> load_ca_channels('/data/scan_0007.h5')   # doctest: +SKIP
+        {'I0': array([...]), 'I1': array([...])}
+    """
+    channels: dict = {}
+    if not file_path or not os.path.exists(file_path):
+        return channels
+    try:
+        with h5py.File(file_path, 'r') as h5f:
+            group = h5f.get(CA_METADATA_PATH)
+            if group is None:
+                return channels
+            for key in group.keys():
+                item = group[key]
+                if not isinstance(item, h5py.Dataset):
+                    continue
+                try:
+                    arr = np.asarray(item, dtype=float).ravel()
+                except Exception:
+                    continue
+                if arr.size > 1:
+                    channels[key] = arr
+    except Exception:
+        pass
+    return channels
+
+
 def _combo_key(combo, default: str = 'time') -> str:
     """Return the internal key for the combo's current selection (userData if set, else text)."""
     data = combo.currentData()
@@ -153,6 +251,12 @@ class ROIPlotDock(QDockWidget):
         controls_row.addSpacing(12)
         controls_row.addWidget(lbl_y)
         controls_row.addWidget(self.y_select)
+        controls_row.addSpacing(12)
+        self._lbl_norm = QLabel("Norm:")
+        self.norm_select = QComboBox()
+        self.norm_select.addItem("None", "")
+        controls_row.addWidget(self._lbl_norm)
+        controls_row.addWidget(self.norm_select)
         layout.addLayout(controls_row)
 
         # Plot setup
@@ -320,33 +424,26 @@ class ROIPlotDock(QDockWidget):
         self._update_plot()
 
     def _load_custom_ca_metadata(self) -> dict:
-        """Read custom CA metadata arrays from entry/data/metadata/ca_custom/ in the HDF5 file.
-
-        Returns {friendly_name: np.ndarray} for each dataset found in that group.
-        """
-        result = {}
-        try:
-            fp = getattr(self.main, 'current_file_path', None)
-            if not fp or not os.path.exists(fp):
-                return result
-            ca_custom_path = 'entry/data/metadata/ca'
-            with h5py.File(fp, 'r') as h5f:
-                if ca_custom_path not in h5f:
-                    return result
-                grp = h5f[ca_custom_path]
-                for key in grp.keys():
-                    try:
-                        arr = np.asarray(grp[key], dtype=float).ravel()
-                        if arr.size > 1:
-                            result[key] = arr
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return result
+        """Read the scan's CA channels; see :func:`load_ca_channels`."""
+        return load_ca_channels(getattr(self.main, 'current_file_path', None))
 
     def _refresh_extra_options(self, custom_ca_dict: dict):
         """Sync X/Y combo boxes: keep base metrics, then custom CA metadata names."""
+        # Normalization list is "None" plus every CA channel, and applies in both
+        # modes, so it is refreshed before the single-frame early return below.
+        norm_combo = getattr(self, 'norm_select', None)
+        if norm_combo is not None:
+            cur_norm = self._norm_key()
+            norm_combo.blockSignals(True)
+            norm_combo.clear()
+            norm_combo.addItem("None", "")
+            for name in sorted(custom_ca_dict.keys()):
+                norm_combo.addItem(name, name)
+            # By key, not index: a reload that adds or drops channels must not
+            # silently repoint the user's normalizer at a different one.
+            idx = norm_combo.findData(cur_norm)
+            norm_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            norm_combo.blockSignals(False)
         # Don't touch Y combo in single-frame mode — it uses proj options only
         if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
             return
@@ -424,6 +521,41 @@ class ROIPlotDock(QDockWidget):
             self.proj_y = np.array([0.0])
         self._update_plot()
 
+    def _norm_key(self) -> str:
+        return norm_key(getattr(self, 'norm_select', None))
+
+    def _norm_array(self):
+        return norm_array(getattr(self, 'norm_select', None),
+                          self._last_custom_ca_dict)
+
+    def _normalize_series(self, y_data):
+        """Time-series mode: one Y point per frame, one reading per frame."""
+        return normalize_series(y_data, self._norm_array())
+
+    def _normalize_frame(self, y_data):
+        """Single-frame mode: divide the whole projection by this frame's reading.
+
+        Returns (values, note). A missing, out-of-range, zero or non-finite
+        reading returns the projection undivided with a note for the label,
+        rather than plotting raw data under a "/ monitor" heading.
+        """
+        y = np.asarray(y_data, dtype=float).ravel()
+        arr = self._norm_array()
+        if arr is None:
+            return y, ''
+        idx = 0
+        if hasattr(self.main, 'frame_spinbox'):
+            try:
+                idx = int(self.main.frame_spinbox.value())
+            except Exception:
+                idx = 0
+        if idx < 0 or idx >= len(arr):
+            return y, ' (unavailable)'
+        d = float(arr[idx])
+        if not np.isfinite(d) or d == 0.0:
+            return y, ' (unavailable)'
+        return y / d, ''
+
     def _update_axis_labels(self):
         try:
             x_name = _combo_key(self.x_select, 'time')
@@ -438,7 +570,11 @@ class ROIPlotDock(QDockWidget):
         except Exception:
             pass
         try:
-            self.plot_item.setLabel('left', AXIS_LABELS.get(y_name, y_name))
+            y_label = AXIS_LABELS.get(y_name, y_name)
+            norm_key = self._norm_key()
+            if norm_key:
+                y_label = f"{y_label} / {norm_key}"
+            self.plot_item.setLabel('left', y_label)
         except Exception:
             pass
 
@@ -490,6 +626,10 @@ class ROIPlotDock(QDockWidget):
                     y_data = self.proj_y
                     x_label = "Row (Y Pixel)"
                     y_label = AXIS_LABELS['proj_y']
+                y_data, note = self._normalize_frame(y_data)
+                norm_key = self._norm_key()
+                if norm_key:
+                    y_label = f"{y_label} / {norm_key}{note}"
                 x_data = np.arange(len(y_data), dtype=float)
                 self.plot_item.setLabel('bottom', x_label)
                 self.plot_item.setLabel('left', y_label)
@@ -515,6 +655,10 @@ class ROIPlotDock(QDockWidget):
         try:
             x_data = np.asarray(self.series.get(x_sel, self.series.get('time')), dtype=float)
             y_data = np.asarray(self.series.get(y_sel, self.series.get('sum')), dtype=float)
+
+            # Normalize before the trim: dividing by a shorter channel shortens Y,
+            # and X has to be cut to match it.
+            y_data = self._normalize_series(y_data)
 
             # Trim to matching length so mismatched motor/metric arrays never crash plot()
             min_len = min(len(x_data), len(y_data))
@@ -602,6 +746,7 @@ class ROIPlotDock(QDockWidget):
         try:
             self.x_select.currentIndexChanged.connect(lambda _: self._update_plot())
             self.y_select.currentIndexChanged.connect(lambda _: self._update_plot())
+            self.norm_select.currentIndexChanged.connect(lambda _: self._update_plot())
         except Exception:
             pass
 
@@ -611,6 +756,11 @@ class ROIPlotDock(QDockWidget):
         """
         try:
             if getattr(self, 'radio_single', None) and self.radio_single.isChecked():
+                # _compute_time_series is the only other place that loads the CA
+                # metadata, and single-frame mode never calls it.
+                custom_ca_dict = self._load_custom_ca_metadata()
+                self._last_custom_ca_dict = custom_ca_dict
+                self._refresh_extra_options(custom_ca_dict)
                 self._compute_and_plot_single_frame()
             else:
                 self._compute_time_series()
