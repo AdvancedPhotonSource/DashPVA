@@ -18,10 +18,18 @@
 # ******************************************************************************************************
 
 
+import math
+
+_GROUPED_LIMIT = 9_999_999_999
+
+
 def format_count(value, decimals: int = 0) -> str:
-    """Format a detector count with grouped thousands and fixed precision."""
+    """Group readable counts, reserving scientific notation for very large values."""
     if decimals < 0:
         raise ValueError("decimals must be non-negative")
-    if decimals:
-        return f"{float(value):,.{decimals}f}"
-    return f"{int(value):,}"
+    number = float(value)
+    if not math.isfinite(number):
+        return str(number)
+    if abs(number) > _GROUPED_LIMIT:
+        return f"{number:.2e}"
+    return f"{number:,.{decimals}f}"

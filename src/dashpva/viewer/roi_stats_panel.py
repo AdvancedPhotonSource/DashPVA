@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -50,6 +51,7 @@ from PyQt5.QtWidgets import (
 
 from dashpva.gui.theme_colors import ROI_COLORS
 from dashpva.utils.stats_analysis import calculate_1d_analysis
+from dashpva.viewer.area_det.count_format import format_count
 
 # Display name -> stats_data field suffix.
 _STATS = [('Total', 'Total_RBV'), ('Min', 'MinValue_RBV'), ('Max', 'MaxValue_RBV'),
@@ -69,6 +71,10 @@ _MANUAL_SYMBOLS = ['star', 'o', 't', 's', 'd']
 _ANALYSIS = [('Peak', 'peak_intensity', 4), ('Peak frame', 'peak_pos', 0),
              ('COM frame', 'com_pos', 0), ('COM val', 'com_intensity', 4),
              ('FWHM', 'fwhm_value', 2), ('FWHM ctr', 'fwhm_center', 0)]
+
+
+def _format_stat_value(field: str, value) -> str:
+    return format_count(value, 0 if field == 'Total_RBV' else 2)
 
 
 class RoiStatsPanel(QWidget):
@@ -197,6 +203,7 @@ class RoiStatsPanel(QWidget):
         self.table = QTableWidget(0, 1 + len(_STATS) + len(_COM))
         self.table.setHorizontalHeaderLabels(['ROI'] + _STAT_NAMES + _COM_NAMES)
         self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.table, stretch=1)
 
@@ -350,7 +357,8 @@ class RoiStatsPanel(QWidget):
                 val = self.viewer.stats_data.get(f"{prefix}:{r['key']}:{field}")
                 item = self.table.item(row, c + 1)
                 if item is not None:
-                    item.setText('--' if val is None else f'{float(val):.3g}')
+                    item.setText('--' if val is None else _format_stat_value(field, val))
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             # COM columns: manual ROIs (M1-M5) only; EPICS ROIs 1-4 show an em-dash.
             is_manual = r['key'].startswith('Manual')
             for c, field in enumerate(_COM_FIELDS):
@@ -364,10 +372,8 @@ class RoiStatsPanel(QWidget):
                 if val is None:
                     item.setText('--')
                 else:
-                    # Pixel COM: fixed-point (0000.00), no scientific notation up to a
-                    # 10k x 10k detector; only larger values fall back to scientific.
-                    v = float(val)
-                    item.setText(f'{v:.2f}' if abs(v) < 10000 else f'{v:.3g}')
+                    item.setText(format_count(val, 2))
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
     def _update_analysis(self):
         key = self.cmb_roi.currentData()

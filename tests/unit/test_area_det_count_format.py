@@ -24,7 +24,14 @@ from dashpva.viewer.area_det.count_format import format_count
 
 @pytest.mark.parametrize(
     "value, expected",
-    [(0, "0"), (999, "999"), (1000, "1,000"), (123456789, "123,456,789")],
+    [
+        (0, "0"),
+        (999, "999"),
+        (1000, "1,000"),
+        (123456789, "123,456,789"),
+        (1234567890, "1,234,567,890"),
+        (12.6, "13"),
+    ],
 )
 def test_format_integer_counts(value, expected):
     assert format_count(value) == expected
@@ -35,6 +42,20 @@ def test_format_fractional_detector_counts():
     assert format_count(-1234.25, 2) == "-1,234.25"
 
 
+def test_format_count_uses_scientific_notation_only_above_grouped_limit():
+    assert format_count(9_999_999_999) == "9,999,999,999"
+    assert format_count(10_000_000_000) == "1.00e+10"
+
+
 def test_format_count_rejects_negative_precision():
     with pytest.raises(ValueError):
         format_count(1, -1)
+
+
+def test_roi_table_formats_totals_as_counts_and_statistics_as_values():
+    pytest.importorskip("PyQt5")
+    pytest.importorskip("pyqtgraph")
+    from dashpva.viewer.roi_stats_panel import _format_stat_value
+
+    assert _format_stat_value("Total_RBV", 1080.0) == "1,080"
+    assert _format_stat_value("MeanValue_RBV", 1080.0) == "1,080.00"

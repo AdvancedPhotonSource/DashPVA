@@ -230,7 +230,8 @@ class BeamFitDock(BaseDock):
     def _format_readout(fit) -> str:
         # Fixed-width fields (monospace) keep columns stable as values change.
         return (f"FWHM {fit.fwhm:8.2f} px   pos {fit.center:+8.2f} px\n"
-                f"amp  {fit.amplitude:10.3e}   χ²ᵣ {fit.redchi:6.2f}   R² {fit.r_squared:6.3f}")
+                f"amp  {format_count(fit.amplitude, 2)}   "
+                f"χ²ᵣ {fit.redchi:6.2f}   R² {fit.r_squared:6.3f}")
 
     # ---------------------------------------------------------------- helpers
     def _current_model(self) -> str:

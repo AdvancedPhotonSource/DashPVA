@@ -2444,8 +2444,7 @@ class DiffractionImageWindow(BaseWindow):
                     format_count(
                         self.stats_data.get(
                             f'{self.reader.pva_prefix}:Stats{i}:Total_RBV', 0.0
-                        ),
-                        2,
+                        )
                     ),
                 )
 
