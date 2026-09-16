@@ -54,6 +54,7 @@ from dashpva.viewer.workbench.rois.roi_plot_dock import (
     _add_metric_item,
     _combo_key,
     _set_combo_key,
+    load_ca_channels,
     normalize_series,
 )
 
@@ -234,6 +235,9 @@ class ROI2DPlotDock(QDockWidget):
         self.series = {m: np.array([0.0], dtype=float) for m in METRIC_OPTIONS}
         self.series['time'] = np.array([0], dtype=int)
         self._last_custom_ca_dict: dict = {}
+        #: Divisor candidates only -- the axis dict also carries motor
+        #: positions and loose metadata, which are not per-frame flux.
+        self._norm_channels: dict = {}
 
         self._compute_series()
         self._wire_interactions()
@@ -336,7 +340,9 @@ class ROI2DPlotDock(QDockWidget):
             norm_combo.blockSignals(True)
             norm_combo.clear()
             norm_combo.addItem("None", "")
-            for name in sorted(custom_ca_dict.keys()):
+            # From the CA channels only -- custom_ca_dict also holds motor
+            # positions and loose metadata, which are not per-frame flux.
+            for name in sorted(self._norm_channels.keys()):
                 norm_combo.addItem(name, name)
             idx = norm_combo.findData(cur_norm)
             norm_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -421,6 +427,9 @@ class ROI2DPlotDock(QDockWidget):
 
         custom_ca_dict = self._load_custom_ca_metadata()
         self._last_custom_ca_dict = custom_ca_dict
+        self._norm_channels = load_ca_channels(
+            getattr(self.main, 'current_file_path', None)
+        )
         self.series.update(custom_ca_dict)
         self._refresh_extra_options(custom_ca_dict)
         self._update_plot()
@@ -442,7 +451,7 @@ class ROI2DPlotDock(QDockWidget):
         key = self._norm_key()
         if not key:
             return None
-        arr = self._last_custom_ca_dict.get(key)
+        arr = self._norm_channels.get(key)
         return None if arr is None else np.asarray(arr, dtype=float).ravel()
 
     @staticmethod

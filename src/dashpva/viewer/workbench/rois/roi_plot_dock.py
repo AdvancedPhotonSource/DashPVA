@@ -77,24 +77,79 @@ def _add_metric_item(combo, key: str):
 
 
 def normalize_series(y_data, norm):
-    """Divide y_data by norm point for point, trimmed to the shorter of the two.
+    """Divide y_data by norm point for point, offline, from values already in the file.
 
-    Zero and non-finite divisors give NaN, so the curve shows a gap at that
-    frame instead of a spike. Module level because the same divisor has to mean
-    the same curve in both ROI plot docks.
+    This is Workbench normalization by CA readings recorded in the scan HDF5 --
+    not live Area Detector CA normalization. Both series come off disk and are
+    expected to hold one reading per frame.
+
+    A length mismatch is rejected rather than trimmed: a dropped CA sample
+    shifts every later reading onto the wrong frame, and a silently truncated
+    curve looks correct. The whole series comes back NaN instead, so the plot is
+    visibly empty rather than quietly misaligned.
+
+    A divisor must be finite and strictly positive. Zero, negative and non-finite
+    readings give NaN at that frame, so the curve gaps instead of spiking or
+    flipping sign.
+
+    Example:
+        >>> normalize_series([10.0, 20.0], [2.0, 4.0])
+        array([5., 5.])
+        >>> normalize_series([10.0, 20.0], [2.0])   # one reading missing
+        array([nan, nan])
     """
     y = np.asarray(y_data, dtype=float).ravel()
     if norm is None:
         return y
     d = np.asarray(norm, dtype=float).ravel()
-    n = min(len(y), len(d))
-    if n == 0:
-        return y[:0]
-    y, d = y[:n], d[:n]
-    out = np.full(n, np.nan, dtype=float)
-    good = np.isfinite(d) & (d != 0.0)
+    if len(y) == 0:
+        return y
+    if len(d) != len(y):
+        return np.full(len(y), np.nan, dtype=float)
+    out = np.full(len(y), np.nan, dtype=float)
+    good = np.isfinite(d) & (d > 0.0)
     out[good] = y[good] / d[good]
     return out
+
+
+#: The only group a normalization divisor may come from. Motor positions and
+#: other metadata are selectable as plot axes but are not per-frame flux
+#: readings, so they must never divide a curve.
+CA_METADATA_PATH = 'entry/data/metadata/ca'
+
+
+def load_ca_channels(file_path) -> dict:
+    """Read the per-frame CA channels a divisor may be chosen from.
+
+    Restricted to ``CA_METADATA_PATH`` so the Norm dropdown cannot offer a
+    motor position or another metadata array. Shared by both ROI plot docks so
+    the same channel means the same divisor in each.
+
+    Example:
+        >>> load_ca_channels('/data/scan_0007.h5')   # doctest: +SKIP
+        {'I0': array([...]), 'I1': array([...])}
+    """
+    channels: dict = {}
+    if not file_path or not os.path.exists(file_path):
+        return channels
+    try:
+        with h5py.File(file_path, 'r') as h5f:
+            group = h5f.get(CA_METADATA_PATH)
+            if group is None:
+                return channels
+            for key in group.keys():
+                item = group[key]
+                if not isinstance(item, h5py.Dataset):
+                    continue
+                try:
+                    arr = np.asarray(item, dtype=float).ravel()
+                except Exception:
+                    continue
+                if arr.size > 1:
+                    channels[key] = arr
+    except Exception:
+        pass
+    return channels
 
 
 def _combo_key(combo, default: str = 'time') -> str:
@@ -347,30 +402,8 @@ class ROIPlotDock(QDockWidget):
         self._update_plot()
 
     def _load_custom_ca_metadata(self) -> dict:
-        """Read custom CA metadata arrays from entry/data/metadata/ca in the HDF5 file.
-
-        Returns {friendly_name: np.ndarray} for each dataset found in that group.
-        """
-        result = {}
-        try:
-            fp = getattr(self.main, 'current_file_path', None)
-            if not fp or not os.path.exists(fp):
-                return result
-            ca_custom_path = 'entry/data/metadata/ca'
-            with h5py.File(fp, 'r') as h5f:
-                if ca_custom_path not in h5f:
-                    return result
-                grp = h5f[ca_custom_path]
-                for key in grp.keys():
-                    try:
-                        arr = np.asarray(grp[key], dtype=float).ravel()
-                        if arr.size > 1:
-                            result[key] = arr
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return result
+        """Read the scan's CA channels; see :func:`load_ca_channels`."""
+        return load_ca_channels(getattr(self.main, 'current_file_path', None))
 
     def _refresh_extra_options(self, custom_ca_dict: dict):
         """Sync X/Y combo boxes: keep base metrics, then custom CA metadata names."""
