@@ -74,7 +74,7 @@ _ANALYSIS = [('Peak', 'peak_intensity', 4), ('Peak frame', 'peak_pos', 0),
 
 
 def _format_stat_value(field: str, value) -> str:
-    return format_count(value, 0 if field == 'Total_RBV' else 2)
+    return format_count(value, 2)
 
 
 class RoiStatsPanel(QWidget):

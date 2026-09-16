@@ -52,10 +52,10 @@ def test_format_count_rejects_negative_precision():
         format_count(1, -1)
 
 
-def test_roi_table_formats_totals_as_counts_and_statistics_as_values():
+def test_roi_table_preserves_fractional_statistics():
     pytest.importorskip("PyQt5")
     pytest.importorskip("pyqtgraph")
     from dashpva.viewer.roi_stats_panel import _format_stat_value
 
-    assert _format_stat_value("Total_RBV", 1080.0) == "1,080"
+    assert _format_stat_value("Total_RBV", 1080.25) == "1,080.25"
     assert _format_stat_value("MeanValue_RBV", 1080.0) == "1,080.00"
