@@ -45,6 +45,7 @@ try:
 except Exception:
     PYVISTA_AVAILABLE = False
 
+import dashpva.settings as app_settings
 from dashpva.utils.hdf5_loader import HDF5Loader
 
 
@@ -143,6 +144,7 @@ class HKL3DPlotDock(QDockWidget):
                 mesh=self.cloud_mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.cloud_mesh.bounds,
+                fmt=app_settings.AXIS_TICK_LABEL_FMT,
             )
             try:
                 ca = getattr(self.plotter.renderer, 'cube_axes_actor', None)
@@ -202,6 +204,7 @@ class HKL3DPlotDock(QDockWidget):
                 mesh=self.volume_grid,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.volume_grid.bounds,
+                fmt=app_settings.AXIS_TICK_LABEL_FMT,
             )
             # Color cube axes H/K/L
             try:

@@ -32,6 +32,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+import dashpva.settings as app_settings
+
 # Import BaseTab using existing tabs package alias
 from dashpva.gui import ui_path
 from dashpva.utils.hdf5_loader import HDF5Loader
@@ -693,6 +695,7 @@ class Workspace3D(BaseTab):
             mesh=grid,
             xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
             bounds=grid.bounds,
+            fmt=app_settings.AXIS_TICK_LABEL_FMT,
         )
         self._set_data_mode('volume')
         self.on_3d_colormap_changed()
@@ -819,7 +822,8 @@ class Workspace3D(BaseTab):
                             ticks='inside', minor_ticks=True,
                             n_xlabels=7, n_ylabels=7, n_zlabels=7,
                             x_color='red', y_color='green', z_color='blue',
-                            font_size=20
+                            font_size=20,
+                            fmt=app_settings.AXIS_TICK_LABEL_FMT,
                         )
                     except Exception:
                         pass
@@ -1151,6 +1155,7 @@ class Workspace3D(BaseTab):
                 mesh=mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=mesh.bounds,
+                fmt=app_settings.AXIS_TICK_LABEL_FMT,
             )
             self.plotter.reset_camera()
 

@@ -20,6 +20,8 @@
 import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
+import dashpva.settings as app_settings
+
 
 class Render3D(QObject):
     finished = pyqtSignal()
@@ -105,6 +107,7 @@ class Render3D(QObject):
                 mesh=mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=mesh.bounds,
+                fmt=app_settings.AXIS_TICK_LABEL_FMT,
             )
             plotter.reset_camera()
 
