@@ -311,7 +311,6 @@ class HKLImageWindow(BaseWindow):
             self._cum_pts_raw       = None
             self._cum_int_raw       = None
             self.reader.start_channel_monitor()
-            self.reader.start_scan_monitor()
             self.start_timers()
             if not self.plot_mode_dock.is_post_scan:
                 self.plot_mode_dock.start_plot_timer()
@@ -550,7 +549,8 @@ class HKLImageWindow(BaseWindow):
                 point_size=3
             )
             self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+            self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+                                     fmt=app_settings.AXIS_TICK_LABEL_FMT)
 
         self.plotter.render()
 

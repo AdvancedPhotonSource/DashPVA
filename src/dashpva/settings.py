@@ -293,6 +293,9 @@ RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
 RSM_IOC_SNAPSHOT_EVERY: int = 5
 METADATA_ASSOCIATOR_STALENESS_CHECK_MS: int = 2_000
 
+# Tick-label format for the H/K/L cube axes in the 3D views.
+AXIS_TICK_LABEL_FMT: str = '%.3f'
+
 ANALYSIS_PROCESSOR_CLASSES: dict[str, str] = {
     "hpc_rsm_consumer.py": "HpcRsmProcessor",
     "hpc_rsm_grid_consumer.py": "HpcRsmGridProcessor",

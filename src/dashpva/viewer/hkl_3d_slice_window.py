@@ -32,6 +32,7 @@ from PyQt5.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app, ui_path
 from dashpva.utils import RSMConverter, SizeManager
 from dashpva.utils.hdf5_loader import HDF5Loader
@@ -304,10 +305,12 @@ class HKL3DSliceWindow(QMainWindow):
                 n_xlabels=7, n_ylabels=7, n_zlabels=7,
                 x_color='red', y_color='green', z_color='blue',
                 font_size=20,
+                fmt=app_settings.AXIS_TICK_LABEL_FMT,
             )
         except Exception:
             try:
-                self.plotter.show_bounds(mesh=self.cloud_mesh, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+                self.plotter.show_bounds(mesh=self.cloud_mesh, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+                                         fmt=app_settings.AXIS_TICK_LABEL_FMT)
             except Exception:
                 pass
 
