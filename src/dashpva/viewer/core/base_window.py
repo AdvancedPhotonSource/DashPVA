@@ -65,6 +65,11 @@ class BaseWindow(QMainWindow):
     file_opened = pyqtSignal(str)  # Emitted when a file is opened
     file_saved = pyqtSignal(str)   # Emitted when a file is saved
 
+    #: True once this window has begun closing. A plain Python attribute, not a
+    #: Qt property, on purpose: a background thread can read it after the C++
+    #: side of the window is gone, which is when it most needs to know.
+    _closing = False
+
     def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
                  visible_actions=_SHOW_ALL, size_policy: dict = None):
         """
@@ -425,8 +430,13 @@ class BaseWindow(QMainWindow):
             try:
                 self.label_status.setText(full_msg)
             except Exception:
-                # Fallback to plain message if label does not accept complex types
-                self.label_status.setText(str(message))
+                # Fallback to plain message if label does not accept complex types.
+                # On a closing window the label itself is gone and this raises too,
+                # so the message only reaches the log below.
+                try:
+                    self.label_status.setText(str(message))
+                except Exception:
+                    pass
 
         # Log via LogManager at the requested level. If source override differs from logger name,
         # include the source prefix to disambiguate in the log message.
@@ -633,6 +643,27 @@ class BaseWindow(QMainWindow):
         self._close_confirmed = True
         return True
 
+    @property
+    def is_closing(self) -> bool:
+        """True once :meth:`begin_close` has run. Safe to read from any thread."""
+        return bool(self._closing)
+
+    def begin_close(self) -> None:
+        """Mark the window as closing. Idempotent; call at the top of closeEvent."""
+        self._closing = True
+
+    def stop_child_timers(self) -> None:
+        """Stop every QTimer parented to this window.
+
+        Only reaches parented timers, so any timer driving this window's widgets
+        must be created as ``QTimer(self)``.
+        """
+        for timer in self.findChildren(QTimer):
+            try:
+                timer.stop()
+            except Exception:
+                pass
+
     def closeEvent(self, event):
         """Close only once any unsaved edits have been saved or discarded.
 
@@ -641,6 +672,8 @@ class BaseWindow(QMainWindow):
         """
         if not self.confirm_close(event):
             return
+        self.begin_close()
+        self.stop_child_timers()
         event.accept()
 
     def save_checkable_state(self, settings, widget, key: str) -> None:
