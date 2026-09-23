@@ -7,7 +7,7 @@ what is under test is only *what gets stopped*.
 
 import pytest
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMainWindow
 
 from dashpva.viewer.area_det.area_det_viewer import DiffractionImageWindow
 from dashpva.viewer.core.base_window import BaseWindow
@@ -63,6 +63,10 @@ class _FakeReader:
     def __init__(self):
         self.channel = _FakeChannel()
         self.stopped = False
+        self.roi_monitors_cleared = False
+
+    def _clear_roi_backup_monitor(self):
+        self.roi_monitors_cleared = True
 
     def stop_channel_monitor(self):
         self.stopped = True
@@ -126,6 +130,7 @@ def test_teardown_clears_monitors_and_reader(monkeypatch):
     assert sorted(cleared) == sorted(stub.stats_data)
     assert pv.cleared and pv.disconnected
     assert stub.hkl_pvs == {}
+    assert stub.reader.roi_monitors_cleared
     assert stub.reader.stopped
 
 
@@ -178,3 +183,53 @@ def test_stop_child_timers_only_reaches_parented_timers(qapp):
     assert not parented.isActive()
     assert orphan.isActive()
     orphan.stop()
+
+
+def test_teardown_clears_roi_monitors_even_when_pva_monitor_idle(monkeypatch):
+    """The ROI camonitors come from the poller sweep, not the PVA monitor, so
+    they have to be cleared whether or not the channel is still streaming."""
+    monkeypatch.setattr(
+        "dashpva.viewer.area_det.area_det_viewer.camonitor_clear", lambda pv: None
+    )
+    stub = _Stub()
+    stub.reader.channel.active = False
+
+    stub._teardown_live_view()
+
+    assert stub.reader.roi_monitors_cleared
+    assert not stub.reader.stopped
+
+
+def test_close_event_gates_before_tearing_the_live_view_down(qapp):
+    """A cancelled close must leave a working window, not a gutted one."""
+    order = []
+
+    class _Probe(DiffractionImageWindow):
+        def __init__(self):
+            QMainWindow.__init__(self)  # skip the full viewer build
+            self.mask_viewer = None
+            self._closing = False
+
+        def confirm_close(self, event):
+            order.append("confirm_close")
+            event.ignore()
+            return False
+
+        def _teardown_live_view(self):
+            order.append("teardown")
+
+    class _Event:
+        accepted = True
+
+        def ignore(self):
+            self.accepted = False
+
+        def accept(self):
+            self.accepted = True
+
+    probe, event = _Probe(), _Event()
+    probe.closeEvent(event)
+
+    assert order == ["confirm_close"]
+    assert not event.accepted
+    assert not probe.is_closing
