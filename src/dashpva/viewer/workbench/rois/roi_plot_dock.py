@@ -535,9 +535,11 @@ class ROIPlotDock(QDockWidget):
     def _normalize_frame(self, y_data):
         """Single-frame mode: divide the whole projection by this frame's reading.
 
-        Returns (values, note). A missing, out-of-range, zero or non-finite
-        reading returns the projection undivided with a note for the label,
-        rather than plotting raw data under a "/ monitor" heading.
+        Returns (values, note). A missing, out-of-range, non-positive or
+        non-finite reading returns the projection undivided with a note for the
+        label, rather than plotting raw data under a "/ monitor" heading. Same
+        rule as :func:`normalize_series`, so a frame that gaps in time-series
+        mode is not quietly divided here.
         """
         y = np.asarray(y_data, dtype=float).ravel()
         arr = self._norm_array()
@@ -552,7 +554,7 @@ class ROIPlotDock(QDockWidget):
         if idx < 0 or idx >= len(arr):
             return y, ' (unavailable)'
         d = float(arr[idx])
-        if not np.isfinite(d) or d == 0.0:
+        if not np.isfinite(d) or d <= 0.0:
             return y, ' (unavailable)'
         return y / d, ''
 

@@ -33,6 +33,7 @@ import pytest
 
 from dashpva.viewer.workbench.rois.roi_plot_dock import (
     CA_METADATA_PATH,
+    ROIPlotDock,
     load_ca_channels,
     norm_array,
     norm_key,
@@ -119,3 +120,48 @@ def test_a_selected_channel_resolves_to_its_readings():
     out = norm_array(_Combo(), {'I0': [1.0, 2.0, 3.0]})
     assert list(out) == [1.0, 2.0, 3.0]
     assert norm_array(_Combo(), {}) is None
+
+
+class _Spinbox:
+    def __init__(self, frame):
+        self._frame = frame
+
+    def value(self):
+        return self._frame
+
+
+class _Dock:
+    """Stand-in carrying only what ``_normalize_frame`` reads."""
+
+    _normalize_frame = ROIPlotDock._normalize_frame
+
+    def __init__(self, readings, frame):
+        self._readings = np.asarray(readings, dtype=float)
+        self.main = type('M', (), {'frame_spinbox': _Spinbox(frame)})()
+
+    def _norm_array(self):
+        return self._readings
+
+
+@pytest.mark.parametrize('divisor', [0.0, -4.0, np.nan, np.inf])
+def test_single_frame_leaves_an_invalid_divisor_undivided(divisor):
+    """Same rule as the time-series path: a frame that gaps there cannot divide here.
+
+    A negative reading would otherwise invert the whole projection and plot it
+    under a "/ channel" label as though it were real.
+    """
+    values, note = _Dock([2.0, divisor], frame=1)._normalize_frame([10.0, 20.0])
+    assert list(values) == [10.0, 20.0]
+    assert note == ' (unavailable)'
+
+
+def test_single_frame_divides_by_a_positive_reading():
+    values, note = _Dock([2.0, 4.0], frame=1)._normalize_frame([10.0, 20.0])
+    assert list(values) == [2.5, 5.0]
+    assert note == ''
+
+
+def test_single_frame_without_a_reading_for_that_frame():
+    values, note = _Dock([2.0], frame=7)._normalize_frame([10.0])
+    assert list(values) == [10.0]
+    assert note == ' (unavailable)'
