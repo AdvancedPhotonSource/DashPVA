@@ -2710,7 +2710,8 @@ class DiffractionImageWindow(BaseWindow):
     
     def _teardown_live_view(self) -> None:
         """Stop everything that could outlive the window: timers, the Stats
-        camonitors, the HKL PV callbacks and the PVA channel monitor.
+        camonitors, the HKL PV callbacks, the ROI backup camonitors and the
+        PVA channel monitor.
 
         Each step is guarded separately — a teardown that raises part way
         through would leave the rest running, which is the bug it exists for.
@@ -2730,6 +2731,10 @@ class DiffractionImageWindow(BaseWindow):
         self.hkl_pvs = {}
         if self.reader is not None:
             try:
+                self.reader._clear_roi_backup_monitor()
+            except Exception:
+                pass
+            try:
                 if self.reader.channel.isMonitorActive():
                     self.reader.stop_channel_monitor()
             except Exception:
@@ -2744,6 +2749,8 @@ class DiffractionImageWindow(BaseWindow):
         """
         if self.mask_viewer is not None and not self.mask_viewer.close():
             event.ignore()
+            return
+        if not self.confirm_close(event):
             return
         self.begin_close()
         self._teardown_live_view()
