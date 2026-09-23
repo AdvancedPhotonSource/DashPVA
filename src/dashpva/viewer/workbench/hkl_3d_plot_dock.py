@@ -143,6 +143,7 @@ class HKL3DPlotDock(QDockWidget):
                 mesh=self.cloud_mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.cloud_mesh.bounds,
+                fmt='%.3f',
             )
             try:
                 ca = getattr(self.plotter.renderer, 'cube_axes_actor', None)
@@ -202,6 +203,7 @@ class HKL3DPlotDock(QDockWidget):
                 mesh=self.volume_grid,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=self.volume_grid.bounds,
+                fmt='%.3f',
             )
             # Color cube axes H/K/L
             try:
