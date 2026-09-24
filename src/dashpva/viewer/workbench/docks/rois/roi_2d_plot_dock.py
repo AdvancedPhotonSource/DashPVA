@@ -54,6 +54,10 @@ from dashpva.viewer.workbench.rois.roi_plot_dock import (
     _add_metric_item,
     _combo_key,
     _set_combo_key,
+    load_ca_channels,
+    norm_array,
+    norm_key,
+    normalize_series,
 )
 
 # ---------------------------------------------------------------------------
@@ -144,6 +148,11 @@ class ROI2DPlotDock(QDockWidget):
             axis_row.addWidget(lbl)
             axis_row.addWidget(combo)
             axis_row.addSpacing(8)
+        self._lbl_norm = QLabel("Norm (Z):")
+        self.norm_select = QComboBox()
+        self.norm_select.addItem("None", "")
+        axis_row.addWidget(self._lbl_norm)
+        axis_row.addWidget(self.norm_select)
         axis_row.addStretch()
 
         try:
@@ -228,6 +237,9 @@ class ROI2DPlotDock(QDockWidget):
         self.series = {m: np.array([0.0], dtype=float) for m in METRIC_OPTIONS}
         self.series['time'] = np.array([0], dtype=int)
         self._last_custom_ca_dict: dict = {}
+        #: Divisor candidates only -- the axis dict also carries motor
+        #: positions and loose metadata, which are not per-frame flux.
+        self._norm_channels: dict = {}
 
         self._compute_series()
         self._wire_interactions()
@@ -324,6 +336,19 @@ class ROI2DPlotDock(QDockWidget):
         return result
 
     def _refresh_extra_options(self, custom_ca_dict: dict):
+        norm_combo = getattr(self, 'norm_select', None)
+        if norm_combo is not None:
+            cur_norm = self._norm_key()
+            norm_combo.blockSignals(True)
+            norm_combo.clear()
+            norm_combo.addItem("None", "")
+            # From the CA channels only -- custom_ca_dict also holds motor
+            # positions and loose metadata, which are not per-frame flux.
+            for name in sorted(self._norm_channels.keys()):
+                norm_combo.addItem(name, name)
+            idx = norm_combo.findData(cur_norm)
+            norm_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            norm_combo.blockSignals(False)
         for combo in (self.x_select, self.y_select, self.z_select):
             cur_key = _combo_key(combo)
             combo.blockSignals(True)
@@ -404,6 +429,9 @@ class ROI2DPlotDock(QDockWidget):
 
         custom_ca_dict = self._load_custom_ca_metadata()
         self._last_custom_ca_dict = custom_ca_dict
+        self._norm_channels = load_ca_channels(
+            getattr(self.main, 'current_file_path', None)
+        )
         self.series.update(custom_ca_dict)
         self._refresh_extra_options(custom_ca_dict)
         self._update_plot()
@@ -412,10 +440,30 @@ class ROI2DPlotDock(QDockWidget):
     # Z range helpers
     # ------------------------------------------------------------------
 
+    def _norm_key(self) -> str:
+        return norm_key(getattr(self, 'norm_select', None))
+
+    def _norm_array(self):
+        return norm_array(getattr(self, 'norm_select', None),
+                          self._norm_channels)
+
+    @staticmethod
+    def _finite_range(z_data: np.ndarray, default=(0.0, 1.0)):
+        """min/max over the finite points only.
+
+        A normalized Z can carry NaN where the divisor read zero. Plain
+        np.min/np.max propagate it, which makes the auto range nan…nan and
+        paints every point the same invalid colour.
+        """
+        z = np.asarray(z_data, dtype=float).ravel()
+        finite = z[np.isfinite(z)]
+        if finite.size == 0:
+            return default
+        return float(np.min(finite)), float(np.max(finite))
+
     def _get_z_range(self, z_data: np.ndarray):
         """Return (z_min, z_max) from data (auto) or from spinboxes (manual)."""
-        data_min = float(np.min(z_data)) if len(z_data) > 0 else 0.0
-        data_max = float(np.max(z_data)) if len(z_data) > 0 else 1.0
+        data_min, data_max = self._finite_range(z_data)
 
         if self._z_auto:
             return data_min, data_max
@@ -436,8 +484,9 @@ class ROI2DPlotDock(QDockWidget):
         try:
             self.z_min_spin.blockSignals(True)
             self.z_max_spin.blockSignals(True)
-            self.z_min_spin.setValue(float(np.min(z_data)))
-            self.z_max_spin.setValue(float(np.max(z_data)))
+            lo, hi = self._finite_range(z_data)
+            self.z_min_spin.setValue(lo)
+            self.z_max_spin.setValue(hi)
         except Exception:
             pass
         finally:
@@ -453,8 +502,19 @@ class ROI2DPlotDock(QDockWidget):
             return []
         if z_max == z_min:
             return [pg.mkBrush(128, 128, 255, 200)] * len(z_data)
-        norm = np.clip((z_data - z_min) / (z_max - z_min), 0.0, 1.0)
-        return self._colormap_fn(norm)
+        z = np.asarray(z_data, dtype=float).ravel()
+        bad = ~np.isfinite(z)
+        # Substitute so the colormap has a number to cast, then grey those points
+        # over the top -- left at z_min they would read as genuine low readings.
+        safe = np.where(bad, z_min, z)
+        norm = np.clip((safe - z_min) / (z_max - z_min), 0.0, 1.0)
+        brushes = self._colormap_fn(norm)
+        if bad.any():
+            brushes = list(brushes)
+            grey = pg.mkBrush(128, 128, 128, 200)
+            for i in np.flatnonzero(bad):
+                brushes[i] = grey
+        return brushes
 
     # ------------------------------------------------------------------
     # Plot update
@@ -472,6 +532,11 @@ class ROI2DPlotDock(QDockWidget):
             x_data = np.asarray(self.series.get(x_sel, self.series.get('time')), dtype=float)
             y_data = np.asarray(self.series.get(y_sel, self.series.get('sum')),  dtype=float)
             z_data = np.asarray(self.series.get(z_sel, self.series.get('sum')),  dtype=float)
+
+            # Before the trim: dividing by a shorter channel shortens Z, and all
+            # three must leave _update_plot the same length or the scatter is
+            # misaligned against its own colours.
+            z_data = normalize_series(z_data, self._norm_array())
 
             min_len = min(len(x_data), len(y_data), len(z_data))
             if min_len == 0:
@@ -509,8 +574,10 @@ class ROI2DPlotDock(QDockWidget):
             # Z range info label
             try:
                 mode = "auto" if self._z_auto else "manual"
+                norm_key = self._norm_key()
+                z_name = f"{z_sel} / {norm_key}" if norm_key else z_sel
                 self.z_range_label.setText(
-                    f"Z ({z_sel}): {z_min:.4g} … {z_max:.4g}  [{mode}]"
+                    f"Z ({z_name}): {z_min:.4g} … {z_max:.4g}  [{mode}]"
                 )
             except Exception:
                 pass
@@ -573,6 +640,7 @@ class ROI2DPlotDock(QDockWidget):
             self.x_select.currentIndexChanged.connect(lambda _: self._update_plot())
             self.y_select.currentIndexChanged.connect(lambda _: self._update_plot())
             self.z_select.currentIndexChanged.connect(lambda _: self._update_plot())
+            self.norm_select.currentIndexChanged.connect(lambda _: self._update_plot())
         except Exception:
             pass
         try:
