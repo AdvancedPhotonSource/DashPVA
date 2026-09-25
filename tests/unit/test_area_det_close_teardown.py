@@ -5,6 +5,9 @@ The teardown methods are driven with a stand-in ``self``: building the real
 what is under test is only *what gets stopped*.
 """
 
+import threading
+import time
+
 import pytest
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow
@@ -80,12 +83,14 @@ class _Stub:
     begin_close = DiffractionImageWindow.begin_close
     _emit_poller_status = DiffractionImageWindow._emit_poller_status
     _teardown_live_view = DiffractionImageWindow._teardown_live_view
+    _join_pv_poller = DiffractionImageWindow._join_pv_poller
 
     def __init__(self):
         self.stats_data = {}
         self.hkl_pvs = {}
         self.reader = _FakeReader()
         self.timers_stopped = False
+        self._pv_poller_thread = None
 
     def stop_child_timers(self):
         self.timers_stopped = True
@@ -185,9 +190,13 @@ def test_stop_child_timers_only_reaches_parented_timers(qapp):
     orphan.stop()
 
 
-def test_teardown_clears_roi_monitors_even_when_pva_monitor_idle(monkeypatch):
-    """The ROI camonitors come from the poller sweep, not the PVA monitor, so
-    they have to be cleared whether or not the channel is still streaming."""
+def test_teardown_cleans_the_reader_even_when_the_pva_monitor_is_idle(monkeypatch):
+    """Neither cleanup depends on the channel still streaming.
+
+    The ROI camonitors come from the poller sweep, and stop_channel_monitor also
+    clears the FLAG_PV camonitor, cancels the queue and joins the consumer
+    thread -- so both run whether or not the monitor is active.
+    """
     monkeypatch.setattr(
         "dashpva.viewer.area_det.area_det_viewer.camonitor_clear", lambda pv: None
     )
@@ -197,7 +206,7 @@ def test_teardown_clears_roi_monitors_even_when_pva_monitor_idle(monkeypatch):
     stub._teardown_live_view()
 
     assert stub.reader.roi_monitors_cleared
-    assert not stub.reader.stopped
+    assert stub.reader.stopped
 
 
 def test_close_event_gates_before_tearing_the_live_view_down(qapp):
@@ -233,3 +242,31 @@ def test_close_event_gates_before_tearing_the_live_view_down(qapp):
     assert order == ["confirm_close"]
     assert not event.accepted
     assert not probe.is_closing
+
+
+def test_teardown_waits_for_the_poller_before_clearing_monitors(monkeypatch):
+    """Closing mid-sweep must not leave a monitor the sweep registered afterwards.
+
+    Without the join the sweep registers its HKL PV *after* teardown has emptied
+    ``hkl_pvs``, so the callback stays attached to a window that is already gone
+    -- which is what surfaces later as the EPICS thread teardown error.
+    """
+    monkeypatch.setattr(
+        "dashpva.viewer.area_det.area_det_viewer.camonitor_clear", lambda pv: None
+    )
+    stub = _Stub()
+    late = _FakePV()
+
+    def sweep():
+        time.sleep(0.05)              # still connecting when the window closes
+        stub.hkl_pvs["hkl:h"] = late
+
+    stub._pv_poller_thread = threading.Thread(target=sweep)
+    stub._pv_poller_thread.start()
+
+    stub.begin_close()
+    stub._teardown_live_view()
+
+    assert stub.hkl_pvs == {}, "a monitor registered mid-close survived teardown"
+    assert late.cleared and late.disconnected
+    assert stub._pv_poller_thread is None
