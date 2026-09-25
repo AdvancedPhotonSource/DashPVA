@@ -228,6 +228,9 @@ class DiffractionImageWindow(BaseWindow):
         # background thread. Read-only flag for any code that wants to know if
         # the initial PV connection sweep has finished.
         self._pv_pollers_loading = False
+        #: The sweep's thread, kept so closeEvent can wait for it -- clearing
+        #: monitors while it still runs lets it register one afterwards.
+        self._pv_poller_thread = None
         # Indeterminate spinner + label in the status bar, only visible while
         # the PV poller thread is running. Driven by _on_pv_pollers_status.
         self._build_pv_pollers_indicator()
@@ -1157,7 +1160,9 @@ class DiffractionImageWindow(BaseWindow):
                 # several seconds when any PV was dead (caget × 0.5s timeout
                 # × N dead PVs).
                 import threading
-                threading.Thread(target=self._connect_pv_pollers, daemon=True).start()
+                self._pv_poller_thread = threading.Thread(
+                    target=self._connect_pv_pollers, daemon=True)
+                self._pv_poller_thread.start()
                 # add_rois() runs from the rois_ready signal once the background
                 # sweep populates reader.rois — calling it here would race the
                 # async caget and find an empty dict.
@@ -2708,14 +2713,32 @@ class DiffractionImageWindow(BaseWindow):
         result[result > max_thresh] = 0
         return result
     
-    def _teardown_live_view(self) -> None:
-        """Stop everything that could outlive the window: timers, the Stats
-        camonitors, the HKL PV callbacks, the ROI backup camonitors and the
-        PVA channel monitor.
+    def _join_pv_poller(self) -> None:
+        """Wait for the PV poller sweep to finish before its monitors are cleared.
 
-        Each step is guarded separately — a teardown that raises part way
-        through would leave the rest running, which is the bug it exists for.
+        ``begin_close`` has already set ``is_closing``, so the sweep returns at
+        its next checkpoint. The wait is what makes that reliable: the checks sit
+        between steps and ``start_hkl_monitors`` is not atomic, so without it the
+        sweep can register an HKL callback *after* teardown cleared them and
+        leave it attached to a dead window.
         """
+        thread = self._pv_poller_thread
+        self._pv_poller_thread = None
+        if thread is None or not thread.is_alive():
+            return
+        thread.join(timeout=app_settings.PV_POLLER_JOIN_TIMEOUT_S)
+
+    def _teardown_live_view(self) -> None:
+        """Stop everything that could outlive the window: the poller sweep, the
+        timers, the Stats camonitors, the HKL PV callbacks, the ROI backup
+        camonitors and the PVA channel monitor.
+
+        The sweep is joined first so nothing it registers survives the clearing
+        that follows. Each step after that is guarded separately — a teardown
+        that raises part way through would leave the rest running, which is the
+        bug it exists for.
+        """
+        self._join_pv_poller()
         self.stop_child_timers()
         for pv_name in list(self.stats_data):
             try:
@@ -2734,9 +2757,11 @@ class DiffractionImageWindow(BaseWindow):
                 self.reader._clear_roi_backup_monitor()
             except Exception:
                 pass
+            # Unconditional: stop_channel_monitor also clears the FLAG_PV
+            # camonitor, cancels the queue and joins the consumer thread, none
+            # of which depend on the PVA monitor still being active.
             try:
-                if self.reader.channel.isMonitorActive():
-                    self.reader.stop_channel_monitor()
+                self.reader.stop_channel_monitor()
             except Exception:
                 pass
 
