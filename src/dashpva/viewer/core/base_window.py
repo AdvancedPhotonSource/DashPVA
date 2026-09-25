@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
@@ -47,6 +47,7 @@ from dashpva.gui.change_review_dialog import ChangeReviewDialog
 from dashpva.utils.log_manager import LogManager, get_default_manager
 
 #from dashpva.database import DatabaseInterface
+from dashpva.viewer.core.ui_state import UiStateMixin
 from dashpva.viewer.documentation.dialog import DocumentationDialog
 
 #di = DatabaseInterface()
@@ -55,7 +56,7 @@ project_root = Path(__file__).parent.parent.parent
 
 _SHOW_ALL = object()  # sentinel: visible_actions not passed → show all menus
 
-class BaseWindow(QMainWindow):
+class BaseWindow(UiStateMixin, QMainWindow):
     """
     Base class for all main windows in the DashPVA application.
     Provides common functionality like file operations, UI loading, and standard menu actions.
@@ -690,17 +691,14 @@ class BaseWindow(QMainWindow):
 
     # ---- Machine-local UI persistence (QSettings, per viewer type) ----
 
-    def _qsettings(self) -> QSettings:
-        """QSettings scoped to this viewer type (org "DashPVA")."""
-        return QSettings("DashPVA", type(self).__name__)
-
     def save_layout(self) -> None:
-        """Persist window geometry and dock layout."""
+        """Persist window geometry, dock layout and the named inputs."""
         if not self.persist_state:
             return
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
         s.setValue("dock_state", self.saveState(self.dock_state_version))
+        self.save_inputs()
 
     def restore_geometry(self) -> None:
         """Restore window geometry, clamped to the current screen.
@@ -749,6 +747,7 @@ class BaseWindow(QMainWindow):
         if not self.persist_state:
             return
         self.restore_layout()
+        self.restore_inputs()
 
     def restore_layout(self) -> None:
         """Geometry and docks together, for windows whose docks already exist."""
