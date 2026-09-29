@@ -292,9 +292,6 @@ RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
 RSM_IOC_SNAPSHOT_EVERY: int = 5
 METADATA_ASSOCIATOR_STALENESS_CHECK_MS: int = 2_000
-# How long a closing area-detector window waits for the PV poller sweep to
-# finish before it clears the monitors that sweep registers.
-PV_POLLER_JOIN_TIMEOUT_S: float = 2.0
 
 ANALYSIS_PROCESSOR_CLASSES: dict[str, str] = {
     "hpc_rsm_consumer.py": "HpcRsmProcessor",

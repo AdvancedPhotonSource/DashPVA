@@ -2728,10 +2728,11 @@ class DiffractionImageWindow(BaseWindow):
         leave it attached to a dead window.
         """
         thread = self._pv_poller_thread
-        self._pv_poller_thread = None
         if thread is None or not thread.is_alive():
+            self._pv_poller_thread = None
             return
-        thread.join(timeout=app_settings.PV_POLLER_JOIN_TIMEOUT_S)
+        thread.join()
+        self._pv_poller_thread = None
 
     def _teardown_live_view(self) -> None:
         """Stop everything that could outlive the window: the poller sweep, the
