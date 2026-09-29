@@ -75,6 +75,17 @@ class _FakeReader:
         self.stopped = True
 
 
+class _FakeThread:
+    def __init__(self):
+        self.join_timeout = object()
+
+    def is_alive(self):
+        return True
+
+    def join(self, timeout=None):
+        self.join_timeout = timeout
+
+
 class _Stub:
     """Minimal stand-in for the viewer, carrying only what teardown touches."""
 
@@ -269,4 +280,15 @@ def test_teardown_waits_for_the_poller_before_clearing_monitors(monkeypatch):
 
     assert stub.hkl_pvs == {}, "a monitor registered mid-close survived teardown"
     assert late.cleared and late.disconnected
+    assert stub._pv_poller_thread is None
+
+
+def test_poller_join_has_no_timeout():
+    stub = _Stub()
+    thread = _FakeThread()
+    stub._pv_poller_thread = thread
+
+    stub._join_pv_poller()
+
+    assert thread.join_timeout is None
     assert stub._pv_poller_thread is None
