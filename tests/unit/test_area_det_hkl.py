@@ -46,6 +46,15 @@ def test_hkl_setup_does_not_request_removed_motor_name_fields():
     assert "det_circle_names" not in setup
 
 
+def test_hkl_updates_use_the_configured_preview_throttle():
+    source = _code(VIEWER.__init__)
+    assert "app_settings.PREVIEW['HKL_UPDATE_INTERVAL_MS']" in source
+    assert mod.app_settings.PREVIEW_DEFAULTS['HKL_UPDATE_INTERVAL_MS'] == 500
+    assert mod.app_settings.preview_settings({
+        'PREVIEW': {'HKL_UPDATE_INTERVAL_MS': 250},
+    })['HKL_UPDATE_INTERVAL_MS'] == 250
+
+
 def test_successful_update_and_calculation_clear_previous_errors():
     update_source = _code(VIEWER.handle_hkl_data_update)
     calculation_source = _code(VIEWER.create_rsm)

@@ -293,7 +293,9 @@ class DiffractionImageWindow(BaseWindow):
         self.rsm_geometry_ready = False
         self._hkl_update_timer = QTimer(self)
         self._hkl_update_timer.setSingleShot(True)
-        self._hkl_update_timer.setInterval(100)
+        self._hkl_update_timer.setInterval(
+            app_settings.PREVIEW['HKL_UPDATE_INTERVAL_MS']
+        )
         self._hkl_update_timer.timeout.connect(self.handle_hkl_data_update)
         self._rsm_geometry_cache = None
         self._rsm_geometry_cache_key = None
@@ -1995,7 +1997,8 @@ class DiffractionImageWindow(BaseWindow):
 
     def _schedule_hkl_update(self, _value=True) -> None:
         """Coalesce bursts of hkl_data_updated emits (one per HKL axis PV
-        tick) into a single handle_hkl_data_update() call at ~10 fps."""
+        tick) and cap expensive full-frame HKL recalculation at the configured
+        preview interval."""
         if not self._hkl_update_timer.isActive():
             self._hkl_update_timer.start()
 
