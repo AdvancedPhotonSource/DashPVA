@@ -65,6 +65,9 @@ class ImageDock(BaseDock):
         self.log_image = QCheckBox("Log Image")
         self.log_image.setChecked(True)
         self.btn_reset_camera = QPushButton("Reset Camera")
+        self.btn_reset_camera.setToolTip(
+            "Return to the default isometric view and zoom to fit everything shown."
+        )
         tools_row.addWidget(self.log_image)
         tools_row.addWidget(self.btn_reset_camera)
         layout.addLayout(tools_row)
