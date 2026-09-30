@@ -340,6 +340,9 @@ ANALYSIS: Dict[str, Any] = {}
 
 # AppSettings
 LOG_PATH: Optional[str] = str(PROJECT_ROOT / "logs")
+# Per-consumer output files written next to general.log by the Workflow.
+CONSUMER_LOG_MAX_BYTES: int = 10 * 1024 * 1024
+CONSUMER_LOG_BACKUP_COUNT: int = 5
 OUTPUT_PATH: Optional[str] = str(PROJECT_ROOT / "outputs")
 CONFIG_PATH: Optional[str] = str(PROJECT_ROOT / "pv_configs")
 CONSUMERS_PATH: Optional[str] = None
