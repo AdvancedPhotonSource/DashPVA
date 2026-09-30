@@ -27,7 +27,7 @@ import pyvista as pyv
 from PyQt5 import uic
 
 # from epics import caget
-from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QByteArray, QSettings, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QDialog, QInputDialog, QMessageBox
 from pyvistaqt import QtInteractor
 
@@ -52,6 +52,14 @@ from dashpva.viewer.hkl3d.docks.plot_mode import PlotModeDock
 from dashpva.viewer.hkl3d.docks.stats import StatsDock
 from dashpva.viewer.hkl3d.live_grid_volume import LiveGridVolume
 from dashpva.viewer.hkl_3d_slice_window import HKL3DSliceWindow
+
+# Bump when the dock set changes — restoreState rejects mismatched versions,
+# so a stale saved layout falls back to the default arrangement.
+_DOCK_STATE_VERSION = 1
+
+
+def _settings() -> QSettings:
+    return QSettings("DashPVA", "Viewer")
 
 
 class ConfigDialog(QDialog, LogMixin):
@@ -153,6 +161,18 @@ class HKLImageWindow(BaseWindow):
 
         self.stats_dock = StatsDock(main_window=self)
         self.image_dock = ImageDock(main_window=self)
+        # One right-hand column: Plot Mode, Live Grid, then Stats/Image as tabs.
+        self.splitDockWidget(self.plot_mode_dock, self.grid_dock, Qt.Vertical)
+        self.splitDockWidget(self.grid_dock, self.stats_dock, Qt.Vertical)
+        self.tabifyDockWidget(self.stats_dock, self.image_dock)
+        self.stats_dock.raise_()
+        self.resizeDocks(
+            [self.plot_mode_dock, self.grid_dock, self.stats_dock],
+            [150, 430, 320],
+            Qt.Vertical,
+        )
+        self.resizeDocks([self.grid_dock], [480], Qt.Horizontal)
+        self._restore_layout()
 
         # Aliases so the rest of the file can use self.widget_name unchanged
         self.frames_received_val = self.stats_dock.frames_received_val
@@ -208,8 +228,19 @@ class HKLImageWindow(BaseWindow):
         # Connecting the signals to the code that will be executed
         self.pv_prefix.returnPressed.connect(self.start_live_view_clicked)
         self.pv_prefix.textChanged.connect(self.update_pv_prefix)
-        self.start_live_view.clicked.connect(self.start_live_view_clicked)
-        self.stop_live_view.clicked.connect(self.stop_live_view_clicked)
+        # One Start/Stop toggle, as in the Area Detector viewer.
+        self._live_running = False
+        self.stop_live_view.hide()
+        self.start_live_view.setText("Connect")
+        self.start_live_view.clicked.connect(self._toggle_live_view)
+        for widget in (self.start_live_view, self.pv_prefix):
+            widget.setProperty("compact", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        metrics = self.start_live_view.fontMetrics()
+        self.start_live_view.setFixedWidth(
+            max(metrics.horizontalAdvance(text) for text in ("Connect", "Disconnect")) + 40
+        )
         # self.plotting_frequency.valueChanged.connect(self.start_timers)
         # self.log_image.clicked.connect(self.update_image)
         self.sbox_min_intensity.editingFinished.connect(self.update_intensity)
@@ -217,6 +248,7 @@ class HKLImageWindow(BaseWindow):
         self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
         self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
+        self.btn_reset_camera.clicked.connect(self.reset_camera)
         self.log_image.toggled.connect(self._on_log_toggled)
 
         self.show()
@@ -324,6 +356,17 @@ class HKLImageWindow(BaseWindow):
             self.start_timers()
             if not self.plot_mode_dock.is_post_scan:
                 self.plot_mode_dock.start_plot_timer()
+        self._set_live_running(self.reader is not None)
+
+    def _toggle_live_view(self) -> None:
+        if self._live_running:
+            self.stop_live_view_clicked()
+        else:
+            self.start_live_view_clicked()
+
+    def _set_live_running(self, running: bool) -> None:
+        self._live_running = running
+        self.start_live_view.setText("Disconnect" if running else "Connect")
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -335,6 +378,7 @@ class HKLImageWindow(BaseWindow):
         self.stop_timers()
         self.provider_name.setText('N/A')
         self._set_connection_label(False)
+        self._set_live_running(False)
 
     def trigger_save_caches(self, clear_caches:bool=True) -> None:
         if not self.file_writer_thread.isRunning():
@@ -866,7 +910,27 @@ class HKLImageWindow(BaseWindow):
         self._grid_timer.stop()
         if self._owns_grid_executor:
             self._grid_executor.shutdown(wait=False, cancel_futures=True)
+        s = _settings()
+        s.setValue("hkl3d_dock_state", self.saveState(_DOCK_STATE_VERSION))
+        s.setValue("hkl3d_window_geom", self.saveGeometry())
         super().closeEvent(event)
+
+    def _restore_layout(self) -> None:
+        """Last window size and dock arrangement; the defaults above stay on failure."""
+        s = _settings()
+        geom = s.value("hkl3d_window_geom", QByteArray(), type=QByteArray)
+        if not geom.isEmpty() and self.restoreGeometry(geom):
+            avail = self.screen().availableGeometry()
+            if self.width() > avail.width() or self.height() > avail.height():
+                self.resize(min(self.width(), avail.width()), min(self.height(), avail.height()))
+        state = s.value("hkl3d_dock_state", QByteArray(), type=QByteArray)
+        if not state.isEmpty():
+            self.restoreState(state, _DOCK_STATE_VERSION)
+
+    def reset_camera(self) -> None:
+        self.plotter.view_isometric()
+        self.plotter.reset_camera()
+        self.plotter.render()
 
     def open_3d_slice_window(self) -> None:
         try:
