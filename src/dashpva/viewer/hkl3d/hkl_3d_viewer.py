@@ -19,6 +19,7 @@
 
 import gc
 import sys
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -49,6 +50,7 @@ from dashpva.viewer.hkl3d.docks.grid_control import GridControlDock
 from dashpva.viewer.hkl3d.docks.image import ImageDock
 from dashpva.viewer.hkl3d.docks.plot_mode import PlotModeDock
 from dashpva.viewer.hkl3d.docks.stats import StatsDock
+from dashpva.viewer.hkl3d.live_grid_volume import LiveGridVolume
 from dashpva.viewer.hkl_3d_slice_window import HKL3DSliceWindow
 
 
@@ -133,19 +135,21 @@ class HKLImageWindow(BaseWindow):
         self.grid_dock.stop_requested.connect(self._on_grid_stop)
         self.grid_dock.clear_requested.connect(self._on_grid_clear)
         self.grid_dock.save_requested.connect(self._on_grid_save)
-        self.grid_dock.estimate_requested.connect(self._on_grid_estimate)
         self.grid_client = grid_client
         self._grid_executor = grid_executor or ThreadPoolExecutor(
             max_workers=1, thread_name_prefix='DashPVA-grid-control'
         )
         self._owns_grid_executor = grid_executor is None
-        self._grid_command_future = None
-        self._grid_command_callback = None
-        self._grid_status_future = None
-        self._grid_status_callback = None
-        self._grid_status_busy = False
-        self.grid_actor = None
-        self._grid_estimate_started = False
+        self._grid_future = None
+        self._grid_job = (None, None)
+        self._grid_queue = deque()
+        self._grid_preview_key = None
+        self._grid_last_payload = None
+        self._grid_clear_pending = False
+        self._autoscaled_limits = None
+        self._grid_timer = QTimer(self)
+        self._grid_timer.setInterval(app_settings.RSM_GRID_STATUS_POLL_MS)
+        self._grid_timer.timeout.connect(self._grid_tick)
 
         self.stats_dock = StatsDock(main_window=self)
         self.image_dock = ImageDock(main_window=self)
@@ -183,6 +187,7 @@ class HKLImageWindow(BaseWindow):
         self.min_opacity = 0.0
         self.max_opacity = 1.0
         self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
+        self.grid_volume = LiveGridVolume(self.plotter)
 
         # Ring buffer for cumulative mode
         self._CUMULATIVE_MAX = min(app_settings.PREVIEW['HKL_MAX_FRAMES'], app_settings.PREVIEW['HKL_MAX_POINTS'])
@@ -212,8 +217,12 @@ class HKLImageWindow(BaseWindow):
         self.sbox_min_opacity.editingFinished.connect(self.update_opacity)
         self.sbox_max_opacity.editingFinished.connect(self.update_opacity)
         self.btn_3d_slice_window.clicked.connect(self.open_3d_slice_window)
+        self.log_image.toggled.connect(self._on_log_toggled)
 
         self.show()
+        self._show_cache_controls(not self.plot_mode_dock.is_gridded)
+        if self.plot_mode_dock.is_gridded:
+            self._start_grid_polling()
 
     def _teardown_reader(self) -> None:
         """Fully disconnect and release the current reader, its signals, and all resources."""
@@ -315,8 +324,6 @@ class HKLImageWindow(BaseWindow):
             self.start_timers()
             if not self.plot_mode_dock.is_post_scan:
                 self.plot_mode_dock.start_plot_timer()
-            if self.plot_mode_dock.is_gridded:
-                self._begin_grid_estimate()
 
     def stop_live_view_clicked(self) -> None:
         """
@@ -481,12 +488,14 @@ class HKLImageWindow(BaseWindow):
             self.update_image_cumulative()
         elif mode == 'per_frame':
             self.update_image_current_frame()
-        elif mode == 'gridded':
-            self.update_gridded_volume()
 
     def _on_mode_changed(self, mode: str) -> None:
+        self._show_cache_controls(mode != 'gridded')
         if mode == 'gridded':
-            self._begin_grid_estimate()
+            self._start_grid_polling()
+        else:
+            self._stop_grid_polling()
+            self._reset_grid_view()
         if self.reader is None or not self.reader.channel.isMonitorActive():
             return
         if self.actor is not None:
@@ -556,6 +565,8 @@ class HKLImageWindow(BaseWindow):
 
 
     # ---- Gridded volume mode --------------------------------------------
+    # One timer, one in-flight job, a FIFO of commands: nothing is dropped, and
+    # every result (status or command reply) goes through _on_grid_status.
 
     def _ensure_grid_client(self):
         if self.grid_client is None:
@@ -563,130 +574,138 @@ class HKLImageWindow(BaseWindow):
             self.grid_client = GridControlClient(control, status)
         return self.grid_client
 
-    def _grid_error(self, error: Exception) -> None:
-        self.grid_dock.set_busy(False)
-        self.grid_dock.update_status({'last_error': str(error)})
+    def _start_grid_polling(self) -> None:
+        if not self._grid_timer.isActive():
+            self._grid_timer.start()
+        self._grid_tick()
 
-    def _submit_grid_command(self, command, payload=None, on_success=None) -> None:
-        if (
-            self._grid_command_future is not None
-            and not self._grid_command_future.done()
-        ):
-            self._grid_error(RuntimeError('Another live-grid command is still running.'))
+    def _stop_grid_polling(self) -> None:
+        self._grid_timer.stop()
+
+    def _queue_grid_command(self, command, payload=None, on_success=None) -> None:
+        self._grid_queue.append((command, payload or {}, on_success))
+        self.grid_dock.set_command_pending(True)
+        self._grid_tick()
+
+    def _grid_tick(self) -> None:
+        if self._grid_future is not None:
             return
         try:
             client = self._ensure_grid_client()
         except (GridTransportError, RuntimeError) as exc:
-            self._grid_error(exc)
+            self._grid_queue.clear()
+            self.grid_dock.set_command_pending(False)
+            self.grid_dock.mark_unreachable(str(exc))
             return
-        self.grid_dock.set_busy(True)
-        self._grid_command_callback = on_success
-        self._grid_command_future = self._grid_executor.submit(
-            client.command, command, payload or {}
-        )
-        QTimer.singleShot(50, self._poll_grid_command)
-
-    def _poll_grid_command(self) -> None:
-        if self._grid_command_future is None:
-            return
-        if not self._grid_command_future.done():
-            QTimer.singleShot(50, self._poll_grid_command)
-            return
-        future = self._grid_command_future
-        callback = self._grid_command_callback
-        self._grid_command_future = None
-        self._grid_command_callback = None
-        self.grid_dock.set_busy(False)
-        try:
-            state = future.result()
-        except Exception as exc:
-            self._grid_error(exc)
-            return
-        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
-        if callback is not None:
-            callback(state)
+        if self._grid_queue:
+            command, payload, on_success = self._grid_queue.popleft()
+            self._grid_job = (command, on_success)
+            self._grid_future = self._grid_executor.submit(
+                client.command, command, payload
+            )
         else:
-            self.grid_dock.update_status(state)
+            self._grid_job = (None, None)
+            self._grid_future = self._grid_executor.submit(client.refresh_status)
+        QTimer.singleShot(50, self._grid_poll_future)
 
-    def _submit_grid_status(self, on_success, *, busy=False) -> None:
-        if self._grid_status_future is not None:
+    def _grid_poll_future(self) -> None:
+        future = self._grid_future
+        if future is None:
             return
-        try:
-            client = self._ensure_grid_client()
-        except (GridTransportError, RuntimeError) as exc:
-            self._grid_error(exc)
+        if not future.done():
+            QTimer.singleShot(50, self._grid_poll_future)
             return
-        self._grid_status_callback = on_success
-        self._grid_status_busy = busy
-        if busy:
-            self.grid_dock.set_busy(True)
-        self._grid_status_future = self._grid_executor.submit(client.refresh_status)
-        QTimer.singleShot(50, self._poll_grid_status)
-
-    def _poll_grid_status(self) -> None:
-        if self._grid_status_future is None:
-            return
-        if not self._grid_status_future.done():
-            QTimer.singleShot(50, self._poll_grid_status)
-            return
-        future = self._grid_status_future
-        callback = self._grid_status_callback
-        was_busy = self._grid_status_busy
-        self._grid_status_future = None
-        self._grid_status_callback = None
-        self._grid_status_busy = False
-        if was_busy:
-            self.grid_dock.set_busy(False)
+        command, on_success = self._grid_job
+        self._grid_future = None
+        self._grid_job = (None, None)
+        if not self._grid_queue:
+            self.grid_dock.set_command_pending(False)
         try:
             state = future.result()
         except Exception as exc:
-            self._grid_error(exc)
-            return
-        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
-        callback(state)
+            if command is None:
+                self.grid_dock.mark_unreachable(f'Live grid status unavailable: {exc}')
+            else:
+                if command == 'clear':
+                    self._grid_clear_pending = False
+                self.grid_dock.show_error(f'{command} failed: {exc}')
+        else:
+            if command is not None or self.grid_dock._local_error:
+                self.grid_dock.show_error('')
+            self._on_grid_status(state)
+            if on_success is not None:
+                on_success(state)
+        if self._grid_queue:
+            self._grid_tick()
 
-    def _begin_grid_estimate(self) -> None:
-        if self._grid_estimate_started:
-            return
-        self._submit_grid_status(self._continue_grid_estimate, busy=True)
-
-    def _continue_grid_estimate(self, state) -> None:
-        if state.get('estimate_state') == 'collecting':
-            self._grid_estimate_started = True
-            self.grid_dock.update_status(state)
-            return
-        if state.get('state') == 'idle':
-            self._submit_grid_command('estimate_start')
-            return
+    def _on_grid_status(self, state) -> None:
         self.grid_dock.update_status(state)
-
-    def _on_grid_estimate(self) -> None:
-        if not self._grid_estimate_started:
-            self._begin_grid_estimate()
+        try:
+            payload = preview_from_status(state)
+        except (GridTransportError, RuntimeError, ValueError) as exc:
+            self.grid_dock.show_error(str(exc))
             return
-        self._submit_grid_command('estimate_finish', on_success=self._finish_estimate)
+        if payload is None or self._grid_clear_pending:
+            if self.grid_volume.actor is not None:
+                self._reset_grid_view()
+            return
+        key = (int(state.get('preview_publishes', 0)), int(state.get('frames_accepted', 0)))
+        if key == self._grid_preview_key:
+            return
+        self._grid_preview_key = key
+        self._render_grid_preview(payload)
 
-    def _finish_estimate(self, state) -> None:
-        bounds = state.get('estimated_bounds', [])
-        if len(bounds) == 6:
-            self.grid_dock.set_bounds({
-                'HMIN': bounds[0], 'HMAX': bounds[1],
-                'KMIN': bounds[2], 'KMAX': bounds[3],
-                'LMIN': bounds[4], 'LMAX': bounds[5],
-            })
-        self.grid_dock.update_status(state)
+    def _render_grid_preview(self, payload) -> None:
+        self._grid_last_payload = payload
+        autoscale = self.stats_dock.autoscale.isChecked()
+        clim = None if autoscale else self._intensity_limits()
+        try:
+            low, high = self.grid_volume.update(
+                payload,
+                log=self.log_image.isChecked(),
+                clim=clim,
+                opacity=(self.sbox_min_opacity.value(), self.sbox_max_opacity.value()),
+            )
+        except Exception as exc:
+            if hasattr(self, 'logger'):
+                self.logger.exception(f'[HKL Viewer] Gridded render failed: {exc}')
+            self.grid_dock.show_error(f'Could not render live-grid preview: {exc}')
+            return
+        if autoscale:
+            self.sbox_min_intensity.setValue(low)
+            self.sbox_max_intensity.setValue(high)
+            self._autoscaled_limits = (self.sbox_min_intensity.value(),
+                                       self.sbox_max_intensity.value())
+
+    def _intensity_limits(self) -> tuple:
+        low, high = self.sbox_min_intensity.value(), self.sbox_max_intensity.value()
+        return (min(low, high), max(low, high))
+
+    def _show_cache_controls(self, show: bool) -> None:
+        # Legacy point-cloud cache workflow; the grid renders from its own preview.
+        self.btn_plot_cache.setVisible(show)
+        self.btn_save_h5.setVisible(show)
+
+    def _reset_grid_view(self) -> None:
+        self.grid_volume.clear()
+        self._grid_preview_key = None
+        self._grid_last_payload = None
 
     def _on_grid_start(self, payload: dict) -> None:
-        self._submit_grid_command('start', payload)
+        self._queue_grid_command('start', payload)
 
     def _on_grid_stop(self) -> None:
-        self._submit_grid_command('stop')
+        self._queue_grid_command('stop')
 
     def _on_grid_clear(self) -> None:
-        if self.grid_actor is not None:
-            self.plotter.remove_actor(self.grid_actor)
-            self.grid_actor = None
-        self._submit_grid_command('clear')
+        # Status polls already in flight still carry the old preview; ignore
+        # them until the clear itself is acknowledged.
+        self._grid_clear_pending = True
+        self._reset_grid_view()
+        self._queue_grid_command('clear', on_success=self._grid_clear_done)
+
+    def _grid_clear_done(self, _state) -> None:
+        self._grid_clear_pending = False
 
     def _on_grid_save(self) -> None:
         name, accepted = QInputDialog.getText(
@@ -694,7 +713,7 @@ class HKLImageWindow(BaseWindow):
         )
         if not accepted or not name.strip():
             return
-        self._submit_grid_command(
+        self._queue_grid_command(
             'save',
             {'filename': name.strip()},
             on_success=self._grid_save_finished,
@@ -704,53 +723,6 @@ class HKLImageWindow(BaseWindow):
         QMessageBox.information(
             self, 'Volume saved', f"Saved to {result['saved_path']}"
         )
-        self.grid_dock.update_status(result)
-
-    def update_gridded_volume(self) -> None:
-        """Render the consumer's bounded preview; the full volume stays remote."""
-        self._submit_grid_status(self._render_gridded_volume)
-
-    def _render_gridded_volume(self, state) -> None:
-        try:
-            payload = preview_from_status(state)
-        except (GridTransportError, RuntimeError) as exc:
-            self._grid_error(exc)
-            return
-        self._grid_estimate_started = state.get('estimate_state') == 'collecting'
-        if payload is None:
-            self.grid_dock.update_status(state)
-            return
-        try:
-            grid = pyv.ImageData()
-            # +1 because the array holds cell values, not point values.
-            grid.dimensions = tuple(value + 1 for value in payload.shape)
-            grid.origin = payload.origin
-            grid.spacing = payload.spacing
-            grid.cell_data['intensity'] = payload.mean.flatten(order='F')
-
-            low, high = payload.intensity_range
-            if self.grid_actor is not None:
-                self.plotter.remove_actor(self.grid_actor)
-            lut = pyv.LookupTable(cmap='viridis')
-            lut.scalar_range = (low, high)
-            # Voxels nothing scattered into are NaN, and must read as empty
-            # space rather than as a confident measurement of zero.
-            lut.nan_color = (0.0, 0.0, 0.0, 0.0)
-            self.grid_actor = self.plotter.add_volume(
-                grid, scalars='intensity', cmap=lut, opacity='linear',
-                show_scalar_bar=True,
-            )
-            self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            self.plotter.render()
-        except Exception as e:
-            try:
-                if hasattr(self, 'logger'):
-                    self.logger.exception(f'[HKL Viewer] Gridded render failed: {e}')
-            except Exception:
-                pass
-            self._grid_error(RuntimeError(f'Could not render live-grid preview: {e}'))
-            return
-        self.grid_dock.update_status(state)
 
     def update_image_cumulative(self) -> None:
         """Realtime mode: pass the bounded sampled ring to _plot_point_cloud.
@@ -837,12 +809,7 @@ class HKLImageWindow(BaseWindow):
                 pass
 
     def update_opacity(self) -> None:
-        """
-        Updates the min/max intensity levels in the HKL Viewer based on UI settings.
-        """
-        """
-        Updates the min/max intensity levels in the HKL Viewer based on UI settings.
-        """
+        """Apply the min/max opacity boxes to the point cloud and live grid volume."""
         self.min_opacity = self.sbox_min_opacity.value()
         self.max_opacity = self.sbox_max_opacity.value()
         if self.min_opacity > self.max_opacity:
@@ -851,6 +818,7 @@ class HKLImageWindow(BaseWindow):
             self.sbox_max_opacity.setValue(self.max_opacity)
         if self.lut is not None:
             self.lut.apply_opacity([self.min_opacity,self.max_opacity])
+        self._apply_grid_display()
 
     def update_intensity(self) -> None:
         """
@@ -867,6 +835,23 @@ class HKLImageWindow(BaseWindow):
         if self.actor is not None:
             self.actor.mapper.scalar_range = (self.min_intensity, self.max_intensity)
             self.plotter.render()
+        if self._autoscaled_limits is not None and self._intensity_limits() != self._autoscaled_limits:
+            self.stats_dock.autoscale.setChecked(False)
+        self._apply_grid_display()
+
+    def _apply_grid_display(self) -> None:
+        if self.grid_volume.actor is None:
+            return
+        clim = (self.grid_volume.auto_range
+                if self.stats_dock.autoscale.isChecked() else self._intensity_limits())
+        self.grid_volume.set_display(
+            clim, (self.sbox_min_opacity.value(), self.sbox_max_opacity.value())
+        )
+
+    def _on_log_toggled(self, _checked: bool) -> None:
+        if self._grid_last_payload is not None:
+            self.stats_dock.autoscale.setChecked(True)
+            self._render_grid_preview(self._grid_last_payload)
     
     def closeEvent(self, event):
         """Custom close event to clean up resources, including stat dialogs.
@@ -878,6 +863,7 @@ class HKLImageWindow(BaseWindow):
         if self.file_writer_thread.isRunning():
             self.file_writer_thread.quit()
             self.file_writer_thread.wait()
+        self._grid_timer.stop()
         if self._owns_grid_executor:
             self._grid_executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

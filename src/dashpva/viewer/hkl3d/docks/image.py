@@ -63,6 +63,7 @@ class ImageDock(BaseDock):
         # Log image + reset camera row
         tools_row = QHBoxLayout()
         self.log_image = QCheckBox("Log Image")
+        self.log_image.setChecked(True)
         self.btn_reset_camera = QPushButton("Reset Camera")
         tools_row.addWidget(self.log_image)
         tools_row.addWidget(self.btn_reset_camera)
@@ -83,4 +84,4 @@ class ImageDock(BaseDock):
         layout.addWidget(self.btn_save_h5)
         layout.addStretch()
 
-        self.setWidget(container)
+        self.set_scrollable_widget(container)

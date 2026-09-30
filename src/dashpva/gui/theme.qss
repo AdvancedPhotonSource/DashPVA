@@ -36,6 +36,7 @@ QMessageBox QLabel { color: palette(text); }
 QLabel[messageLevel="info"] { color: palette(text); }
 QLabel[messageLevel="warning"] { color: $WARNING; font-weight: bold; }
 QLabel[messageLevel="error"] { color: $ERROR; font-weight: bold; }
+QLabel[messageLevel="success"] { color: $SUCCESS; font-weight: bold; }
 
 /* -- Dock widget borders + title bar --------------------------------- */
 QDockWidget::pane {

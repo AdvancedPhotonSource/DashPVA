@@ -363,3 +363,23 @@ def test_motor_readback_jitter_reuses_q_but_real_moves_recompute():
     assert not processor.attributes_diff({"angle": 10.00001, "energy": 14.8}, old)
     assert processor.attributes_diff({"angle": 10.01, "energy": 14.8}, old)
     assert processor.attributes_diff({"angle": 10.0, "energy": 14.80001}, old)
+
+
+def test_observed_bounds_track_idle_frames_and_reset_on_clear(tmp_path):
+    processor = _processor(tmp_path)
+    processor.hkl_pv_channels = {"angle", "energy"}
+    controller, harness = _pipeline(processor)
+
+    for frame_id, angle in ((1, 1.0), (2, 2.0)):
+        frame = _frame(frame_id, angle=angle, energy=10.0)
+        frame["codec"] = {"name": ""}
+        controller.process(frame)
+
+    status = controller.getUserStats()[RSM_GRID_NAMESPACE]
+    assert processor.session.state is GridSessionState.IDLE
+    np.testing.assert_allclose(
+        status["observed_bounds"], [0.17, 0.83, 0.17, 0.83, 0.17, 0.83]
+    )
+
+    _configure(harness, "clear", request_id="clear-1")
+    assert controller.getUserStats()[RSM_GRID_NAMESPACE]["observed_bounds"] == []

@@ -19,6 +19,7 @@
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QLabel,
@@ -89,12 +90,19 @@ class StatsDock(BaseDock):
         self.sbox_max_opacity.setValue(1.0)
         self.sbox_max_opacity.setMaximumWidth(150)
 
+        self.autoscale = QCheckBox("Autoscale (1% – 99.9%)")
+        self.autoscale.setChecked(True)
+        self.autoscale.setToolTip(
+            "Live grid colour range follows each preview. Editing min/max turns it off."
+        )
+
+        layout.addRow(self.autoscale)
         layout.addRow(QLabel("Set Min Intensity:"), self.sbox_min_intensity)
         layout.addRow(QLabel("Set Max Intensity:"), self.sbox_max_intensity)
         layout.addRow(QLabel("Set Min Opacity:"),   self.sbox_min_opacity)
         layout.addRow(QLabel("Set Max Opacity:"),   self.sbox_max_opacity)
 
-        self.setWidget(container)
+        self.set_scrollable_widget(container)
 
     def update_preview_metrics(self):
         reader = self.main_window.reader

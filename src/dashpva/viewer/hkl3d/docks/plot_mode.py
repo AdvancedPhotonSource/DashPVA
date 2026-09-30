@@ -17,8 +17,8 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # ******************************************************************************************************
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QRadioButton, QVBoxLayout, QWidget
+from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from PyQt5.QtWidgets import QCheckBox, QRadioButton, QVBoxLayout, QWidget
 
 from dashpva.viewer.core.docks.base_dock import BaseDock
 
@@ -40,21 +40,41 @@ class PlotModeDock(BaseDock):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
-        self.rb_post_scan = QRadioButton("Post-scan (on complete)")
-        self.rb_realtime  = QRadioButton("Realtime (sampled preview)")
-        self.rb_realtime.setToolTip("Rolling display sample; skipped preview frames are counted in Stats. Use scientific recording or gridded accumulation for scan results.")
-        self.rb_per_frame = QRadioButton("Per-frame (single frame)")
         # Gridded accumulates into a fixed volume instead of a ring buffer, so
         # a repeated pass over the same region reinforces it rather than
         # evicting the earlier one.
         self.rb_gridded   = QRadioButton("Gridded volume (accumulate)")
-        self.rb_post_scan.setChecked(True)
-        for rb in (self.rb_post_scan, self.rb_realtime, self.rb_per_frame,
-                   self.rb_gridded):
+        self.rb_realtime  = QRadioButton("Realtime preview (sampled)")
+        self.rb_realtime.setToolTip("Rolling display sample; skipped preview frames are counted in Stats. Use scientific recording or gridded accumulation for scan results.")
+        self.chk_advanced = QCheckBox("Show advanced modes")
+        self.chk_advanced.setToolTip("Diagnostic per-frame view and the legacy post-scan cache plot.")
+        self.rb_per_frame = QRadioButton("Per-frame (single frame, diagnostic)")
+        self.rb_post_scan = QRadioButton("Post-scan (plot cached scan)")
+        self.rb_gridded.setChecked(True)
+        for rb in (self.rb_gridded, self.rb_realtime):
             layout.addWidget(rb)
+        layout.addWidget(self.chk_advanced)
+        for rb in (self.rb_per_frame, self.rb_post_scan):
+            layout.addWidget(rb)
+        for rb in (self.rb_gridded, self.rb_realtime, self.rb_per_frame, self.rb_post_scan):
             rb.toggled.connect(self._on_radio_toggled)
+        self.chk_advanced.setChecked(
+            QSettings("DashPVA", "Viewer").value("hkl3d_plot_advanced", False, type=bool)
+        )
+        self._show_advanced(self.chk_advanced.isChecked())
+        self.chk_advanced.toggled.connect(self._on_advanced_toggled)
         layout.addStretch()
         self.setWidget(container)
+
+    def _show_advanced(self, show: bool) -> None:
+        self.rb_per_frame.setVisible(show)
+        self.rb_post_scan.setVisible(show)
+
+    def _on_advanced_toggled(self, show: bool) -> None:
+        QSettings("DashPVA", "Viewer").setValue("hkl3d_plot_advanced", show)
+        if not show and (self.rb_per_frame.isChecked() or self.rb_post_scan.isChecked()):
+            self.rb_gridded.setChecked(True)
+        self._show_advanced(show)
 
     def _setup_timer(self):
         self.timer_plot = QTimer()
