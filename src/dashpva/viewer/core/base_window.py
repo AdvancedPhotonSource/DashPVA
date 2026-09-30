@@ -462,6 +462,13 @@ class BaseWindow(QMainWindow):
         self._cpu_label = QLabel("CPU: -%")
         self._gpu_label = QLabel("GPU: N/A")
         self._runtime_label = QLabel("Runtime: 0s")
+        self._mem_label = QLabel("RAM: -")
+        self._mem_label.setObjectName("perfMemory")
+        self._mem_label.setToolTip(
+            "Memory used by this window's process, and its share of the machine's RAM. "
+            "Orange/red means frame caches are large — lower the cache size or clear caches."
+        )
+        sb.addPermanentWidget(self._mem_label)
         sb.addPermanentWidget(self._cpu_label)
         sb.addPermanentWidget(self._gpu_label)
         sb.addPermanentWidget(self._runtime_label)
@@ -503,9 +510,43 @@ class BaseWindow(QMainWindow):
                     gpu_text = f"GPU: {int(val)}%"
         self._gpu_label.setText(gpu_text)
 
+        self._update_memory_label()
+
         # Runtime
         elapsed = int(time.monotonic() - self._start_time)
         self._runtime_label.setText(f"Runtime: {elapsed}s")
+
+    def _update_memory_label(self):
+        """Resident memory of this process from /proc (Linux); hidden elsewhere."""
+        try:
+            rss_kb = total_kb = None
+            with open("/proc/self/status", "r") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                        break
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        total_kb = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            self._mem_label.hide()
+            return
+        if not rss_kb or not total_kb:
+            self._mem_label.hide()
+            return
+        fraction = rss_kb / total_kb
+        level = (
+            "error" if fraction >= app_settings.MEMORY_ERROR_FRACTION
+            else "warning" if fraction >= app_settings.MEMORY_WARN_FRACTION
+            else "normal"
+        )
+        self._mem_label.setText(f"RAM: {rss_kb / 1048576:.1f} GB ({fraction:.0%})")
+        if self._mem_label.property("memoryLevel") != level:
+            self._mem_label.setProperty("memoryLevel", level)
+            self._mem_label.style().unpolish(self._mem_label)
+            self._mem_label.style().polish(self._mem_label)
 
     def setup_window_properties(self, title, width=800, height=600):
         """
