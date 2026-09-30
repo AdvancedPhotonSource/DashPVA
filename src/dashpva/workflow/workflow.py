@@ -376,8 +376,7 @@ class Workflow(QDialog, LogMixin):
         super(Workflow, self).__init__(parent)
         uic.loadUi(str(pathlib.Path(__file__).parent / 'workflow.ui'), self)
         self.viewModeLayout.setAlignment(Qt.AlignTop)
-        # Pre-set sectionActive so QSS property selectors fire on first _on_config_source_changed
-        self.labelTomlHeader.setProperty("sectionActive", "true")
+        # Pre-set sectionActive so QSS property selectors fire on first update
         self.labelDatabaseHeader.setProperty("sectionActive", "true")
         self.treeWidgetConfig.setProperty("sectionActive", "true")
         self.buttonApplySave.setProperty("role", "info")
@@ -402,13 +401,6 @@ class Workflow(QDialog, LogMixin):
         self.buttonRunSimServer.clicked.connect(self.run_sim_server)
         self.buttonStopSimServer.clicked.connect(self.stop_sim_server)
 
-        # Config Tab — source radio (explicit group ensures mutual exclusivity)
-        self._config_source_group = QButtonGroup(self)
-        self._config_source_group.addButton(self.radioLegacyToml)
-        self._config_source_group.addButton(self.radioDatabase)
-        self.radioLegacyToml.toggled.connect(self._on_config_source_changed)
-        self.radioDatabase.toggled.connect(self._on_config_source_changed)
-
         # Config Tab — view mode toggle (Profile vs Settings)
         self._view_mode_group = QButtonGroup(self)
         self._view_mode_group.addButton(self.radioViewProfile)
@@ -416,8 +408,7 @@ class Workflow(QDialog, LogMixin):
         self.radioViewProfile.toggled.connect(self._on_view_mode_changed)
         self.radioViewSettings.toggled.connect(self._on_view_mode_changed)
 
-        # Config Tab — file-based
-        self.buttonBrowseConfigUpload.clicked.connect(self.browse_config_upload)
+        # Config Tab — TOML import/export for database profiles
         self.buttonImportToml.clicked.connect(self.import_toml_to_tree)
 
         # Config Tab — db-based
@@ -426,8 +417,6 @@ class Workflow(QDialog, LogMixin):
         self.buttonDuplicateProfile.clicked.connect(self.duplicate_profile)
         self.comboBoxProfile.currentIndexChanged.connect(self._on_profile_selected)
         self.buttonRenameProfile.clicked.connect(self.edit_profile)
-        self.checkBoxDefaultProfile.toggled.connect(self._on_default_toggled)
-        self.checkBoxSelectedProfile.toggled.connect(self._on_selected_toggled)
 
         # Config Tab — always available
         self.buttonExportConfigToFile.clicked.connect(self.export_config_to_file)
@@ -494,12 +483,10 @@ class Workflow(QDialog, LogMixin):
         )
         self.buttonClearOutputAnalysis.clicked.connect(self.textEditAnalysisConsumerOutput.clear)
 
-        # Check DB availability, populate combo, then switch to DB mode if possible
+        # Check DB availability and populate profiles
         self._check_db_availability()
-        self._on_config_source_changed()   # sets Legacy mode UI state
-        self._refresh_profile_combo()      # populate combo, pre-select right profile
-        if self._db_available:
-            self.radioDatabase.setChecked(True)  # triggers _on_config_source_changed → load
+        self._refresh_profile_combo()
+        self._update_database_controls()
         self._populate_processor_file_combos()
         self._load_meta_assoc_last()
         self._load_collector_last()
@@ -527,17 +514,15 @@ class Workflow(QDialog, LogMixin):
             self.labelDbStatus.setText('● DB Available')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {SUCCESS}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip('')
-            self.radioDatabase.setEnabled(True)
             self.buttonInitDb.setVisible(False)
         except Exception as e:
             self._db_available = False
             self.labelDbStatus.setText('● DB Unavailable')
             self.labelDbStatus.setStyleSheet(f'QLabel {{ color: {ERROR}; font-size: {FONT_CAPTION}; margin-left: 4px; }}')
             self.labelDbStatus.setToolTip(f'Error: {e}')
-            self.radioDatabase.setEnabled(False)
             self.buttonInitDb.setVisible(True)
-            # Fall back to legacy TOML if database radio was selected
-            self.radioLegacyToml.setChecked(True)
+        if hasattr(self, 'buttonImportToml'):
+            self._update_database_controls()
 
     def _init_db_and_recheck(self):
         from dashpva.database.db import create_tables, init_database
@@ -557,13 +542,14 @@ class Workflow(QDialog, LogMixin):
 
     def _refresh_db(self):
         """Re-check DB, reload the active view, and re-populate meta assoc fields."""
+        active_profile_id = self.comboBoxProfile.currentData()
         self._check_db_availability()
         if self._db_available:
-            self._refresh_profile_combo()
+            self._refresh_profile_combo(preferred_profile_id=active_profile_id)
             if self.radioViewSettings.isChecked():
                 self._load_settings_tree()
             else:
-                self.load_profile_to_tree()
+                self._activate_current_profile()
             self._populate_processor_file_combos()
             self._load_meta_assoc_last()
             self._load_collector_last()
@@ -641,28 +627,18 @@ class Workflow(QDialog, LogMixin):
             self.spinBoxNConsumersAnalysis.setToolTip("")
 
     # ------------------------------------------------------------------ #
-    # Config source toggle
+    # Database controls
     # ------------------------------------------------------------------ #
 
-    def _on_config_source_changed(self):
-        legacy = self.radioLegacyToml.isChecked()
+    def _update_database_controls(self):
+        db_active = self._db_available
 
-        # Legacy TOML controls
-        self.lineEditConfigUploadPath.setEnabled(legacy)
-        self.buttonBrowseConfigUpload.setEnabled(legacy)
-
-        # Database controls (only enable if DB is also available)
-        db_active = not legacy and self._db_available
-
-        # TOML import/export operate on the database — only active in DB mode
         self.buttonImportToml.setEnabled(db_active)
         self.buttonExportConfigToFile.setEnabled(db_active)
         self.labelProfile.setEnabled(db_active)
         self.comboBoxProfile.setEnabled(db_active)
         self.labelProfileDescription.setEnabled(db_active)
         self.lineEditProfileDescription.setEnabled(db_active)
-        self.checkBoxDefaultProfile.setEnabled(db_active)
-        self.checkBoxSelectedProfile.setEnabled(db_active)
         self.radioViewProfile.setEnabled(db_active)
         self.radioViewSettings.setEnabled(db_active)
         self.buttonReseed.setEnabled(db_active)
@@ -672,11 +648,9 @@ class Workflow(QDialog, LogMixin):
         self.buttonDeleteProfile.setEnabled(db_active)
         self.buttonDuplicateProfile.setEnabled(db_active)
 
-        # Grey overlay on inactive section headers and config tree
-        state_toml = "true" if legacy else "false"
+        # Grey overlay when the database is unavailable
         state_db = "true" if db_active else "false"
         for widget, state in (
-            (self.labelTomlHeader, state_toml),
             (self.labelDatabaseHeader, state_db),
             (self.treeWidgetConfig, state_db),
         ):
@@ -685,51 +659,14 @@ class Workflow(QDialog, LogMixin):
             widget.style().polish(widget)
             widget.update()
 
-        # When first activating DB mode, auto-select the first profile as default+selected
-        if db_active:
-            self._auto_select_first_profile()
         if db_active and self.comboBoxProfile.currentIndex() >= 0:
-            self.load_profile_to_tree()
+            self._activate_current_profile()
 
     # ------------------------------------------------------------------ #
     # Config tab — profile combo
     # ------------------------------------------------------------------ #
 
-    def _auto_select_first_profile(self):
-        """When the DB is first activated, ensure a profile is marked default+selected.
-        If exactly one profile exists, always ensure it is default+selected."""
-        if not self._db_available:
-            return
-        try:
-            profiles = self._db.get_all_profiles()
-            if not profiles:
-                return
-            if len(profiles) == 1:
-                first = profiles[0]
-                # Always ensure the sole profile is default and selected
-                needs_update = (
-                    not getattr(first, 'is_default', False)
-                    or not getattr(first, 'is_selected', False)
-                )
-                if needs_update:
-                    self._db.set_default_profile(first.id)
-                    self._db.set_selected_profile(first.id)
-                    self._refresh_profile_combo()
-                    idx = self.comboBoxProfile.findData(first.id)
-                    if idx >= 0:
-                        self.comboBoxProfile.setCurrentIndex(idx)
-            elif not self._db.any_default_exists():
-                first = profiles[0]
-                self._db.set_default_profile(first.id)
-                self._db.set_selected_profile(first.id)
-                self._refresh_profile_combo()
-                idx = self.comboBoxProfile.findData(first.id)
-                if idx >= 0:
-                    self.comboBoxProfile.setCurrentIndex(idx)
-        except Exception:
-            pass
-
-    def _refresh_profile_combo(self):
+    def _refresh_profile_combo(self, preferred_profile_id=None):
         self.comboBoxProfile.blockSignals(True)
         self.comboBoxProfile.clear()
         if not self._db_available:
@@ -747,11 +684,9 @@ class Workflow(QDialog, LogMixin):
                 target_idx = 0
                 for i, p in enumerate(profiles):
                     self.comboBoxProfile.addItem(p.name, userData=p.id)
-                    if getattr(p, 'is_selected', False):
+                    if p.id == preferred_profile_id:
                         target_idx = i
-                    elif getattr(p, 'is_default', False) and not any(
-                        getattr(profiles[j], 'is_selected', False) for j in range(i + 1)
-                    ):
+                    elif preferred_profile_id is None and getattr(p, 'is_selected', False):
                         target_idx = i
                 self.comboBoxProfile.setCurrentIndex(target_idx)
         except Exception:
@@ -760,90 +695,66 @@ class Workflow(QDialog, LogMixin):
             self.comboBoxProfile.blockSignals(False)
 
     # ------------------------------------------------------------------ #
-    # Config tab — legacy TOML
+    # Config tab — TOML profile import
     # ------------------------------------------------------------------ #
 
-    def browse_config_upload(self):
-        file_name, _ = QFileDialog.getOpenFileName(
-            self, 'Select Config File', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
-        )
-        if file_name:
-            app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
-            self.lineEditConfigUploadPath.setText(file_name)
-            self.update_current_mode_label(file_name)
-            self._load_toml_into_tree(file_name)
-
     def import_toml_to_tree(self):
+        if not self._db_available:
+            QMessageBox.warning(self, 'Database Unavailable', 'TOML files can only be imported into a database profile.')
+            return
         file_name, _ = QFileDialog.getOpenFileName(
             self, 'Import TOML Config', app_settings.LAST_TOML_DIR, 'TOML Files (*.toml)'
         )
         if not file_name:
             return
         app_settings.LAST_TOML_DIR = str(pathlib.Path(file_name).parent)
-        self.lineEditConfigUploadPath.setText(file_name)
-        self.update_current_mode_label(file_name)
-
-        # Always save to DB (if available) under the filename as profile name
-        if self._db_available:
-            profile_name = pathlib.Path(file_name).stem
-            try:
-                data = self.parse_toml(file_name)
-                # Always create a new profile with a unique name
-                candidate = profile_name
-                n = 1
-                while self._db.get_profile_by_name(candidate) is not None:
-                    candidate = f'{profile_name}-({n})'
-                    n += 1
-                profile = self._db.create_profile(candidate)
-                profile_name = candidate
-                self._db.import_toml_to_profile(profile.id, data)
-                # If this is the only profile, auto-mark it default+selected
-                if profile is not None and len(self._db.get_all_profiles()) == 1:
-                    self._db.set_default_profile(profile.id)
-                    self._db.set_selected_profile(profile.id)
-                self._refresh_profile_combo()
-                idx = self.comboBoxProfile.findText(profile_name)
-                if idx >= 0:
-                    self.comboBoxProfile.setCurrentIndex(idx)
-                # Switch to DB mode so the tree loads from the saved profile
-                self.radioDatabase.setChecked(True)
-                # Explicitly populate tree — setChecked is a no-op if already checked,
-                # and setCurrentIndex won't fire if index didn't change (first import case)
-                if self.comboBoxProfile.currentIndex() >= 0:
-                    self.load_profile_to_tree()
-                return
-            except Exception as e:
-                QMessageBox.critical(self, 'Error', f'Failed to save TOML to database:\n{e}')
-                # Fall through to load into tree without DB save
-
-        # DB unavailable — just display in tree
-        self._load_toml_into_tree(file_name)
-
-    def _load_toml_into_tree(self, path: str):
+        profile_name = pathlib.Path(file_name).stem
         try:
-            data = self.parse_toml(path)
+            data = self.parse_toml(file_name)
+            candidate = profile_name
+            suffix = 1
+            while self._db.get_profile_by_name(candidate) is not None:
+                candidate = f'{profile_name}-({suffix})'
+                suffix += 1
+            profile = self._db.create_profile(candidate)
+            self._db.import_toml_to_profile(profile.id, data)
+            self._refresh_profile_combo()
+            idx = self.comboBoxProfile.findData(profile.id)
+            if idx >= 0:
+                self.comboBoxProfile.blockSignals(True)
+                self.comboBoxProfile.setCurrentIndex(idx)
+                self.comboBoxProfile.blockSignals(False)
+            self._activate_current_profile()
         except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to parse TOML:\n{e}')
-            return
-        self.treeWidgetConfig.clear()
-        self._populate_tree_node(data, parent=None)
-        self._store_snapshot()
-        # Update settings module so the rest of the app uses this TOML
-        try:
-            app_settings.set_locator(path)
-            app_settings.reload()
-        except Exception:
-            pass
+            QMessageBox.critical(self, 'Error', f'Failed to import TOML into the database:\n{e}')
 
     # ------------------------------------------------------------------ #
     # Config tab — database profile
     # ------------------------------------------------------------------ #
 
     def _on_profile_selected(self, index):
-        """Auto-load the selected profile into the tree when DB mode is active."""
-        if not self.radioDatabase.isChecked() or not self._db_available:
+        """Make the dropdown profile active and load it into the editor."""
+        if not self._db_available:
             return
         if index < 0:
+            return
+        self._activate_current_profile()
+
+    def _activate_current_profile(self):
+        idx = self.comboBoxProfile.currentIndex()
+        if idx < 0 or not self._db_available:
+            return
+        profile_id = self.comboBoxProfile.itemData(idx)
+        if profile_id is None:
+            return
+        try:
+            if not self._db.set_selected_profile(profile_id):
+                raise RuntimeError('profile could not be selected')
+            app_settings.set_locator(profile_id)
+            app_settings.reload()
+            self._sync_associator_metadata()
+        except Exception as e:
+            QMessageBox.critical(self, 'Profile Error', f'Failed to activate profile:\n{e}')
             return
         self.load_profile_to_tree()
 
@@ -857,25 +768,6 @@ class Workflow(QDialog, LogMixin):
             profile = self._db.get_profile_by_id(profile_id)
             desc = getattr(profile, 'description', '') or ''
             self.lineEditProfileDescription.setText(desc)
-            # Update checkboxes without triggering their toggle slots
-            self.checkBoxDefaultProfile.blockSignals(True)
-            self.checkBoxSelectedProfile.blockSignals(True)
-            self.checkBoxDefaultProfile.setChecked(bool(getattr(profile, 'is_default', False)))
-            self.checkBoxSelectedProfile.setChecked(bool(getattr(profile, 'is_selected', False)))
-            self.checkBoxDefaultProfile.blockSignals(False)
-            self.checkBoxSelectedProfile.blockSignals(False)
-            # Show tooltips when this is the only profile
-            is_sole = len(self._db.get_all_profiles()) == 1
-            if is_sole:
-                self.checkBoxDefaultProfile.setToolTip(
-                    'Only profile — automatically set as default'
-                )
-                self.checkBoxSelectedProfile.setToolTip(
-                    'Only profile — automatically set as selected'
-                )
-            else:
-                self.checkBoxDefaultProfile.setToolTip('')
-                self.checkBoxSelectedProfile.setToolTip('')
             data = self._db.export_profile_to_toml(profile_id)
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to load profile:\n{e}')
@@ -885,38 +777,6 @@ class Workflow(QDialog, LogMixin):
         self._populate_tree_node(data, parent=None)
         self._store_snapshot()
         self.treeWidgetConfig.blockSignals(False)
-        # Viewing a profile must not activate it. The active profile is whatever
-        # is marked selected in the database (checkBoxSelectedProfile); setting
-        # the locator here made merely browsing the combo box retarget the rest
-        # of the app -- HKL Setup then opened the profile being looked at
-        # instead of the selected one.
-
-    def _on_default_toggled(self, checked: bool):
-        idx = self.comboBoxProfile.currentIndex()
-        if idx < 0 or not self._db_available:
-            return
-        profile_id = self.comboBoxProfile.itemData(idx)
-        try:
-            if checked:
-                self._db.set_default_profile(profile_id)
-            else:
-                self._db.unset_default_profile(profile_id)
-        except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to update default:\n{e}')
-
-    def _on_selected_toggled(self, checked: bool):
-        idx = self.comboBoxProfile.currentIndex()
-        if idx < 0 or not self._db_available:
-            return
-        profile_id = self.comboBoxProfile.itemData(idx)
-        try:
-            if checked:
-                self._db.set_selected_profile(profile_id)
-            else:
-                self._db.clear_selected_profiles()
-        except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to update selected:\n{e}')
-
     # ------------------------------------------------------------------ #
     # View mode toggle (Profile / Settings)
     # ------------------------------------------------------------------ #
@@ -924,7 +784,6 @@ class Workflow(QDialog, LogMixin):
     def _set_profile_widgets_visible(self, visible: bool):
         for w in (
             self.labelProfile, self.comboBoxProfile,
-            self.checkBoxDefaultProfile, self.checkBoxSelectedProfile,
             self.labelProfileDescription, self.lineEditProfileDescription,
             self.buttonAddProfile, self.buttonDeleteProfile,
             self.buttonRenameProfile, self.buttonDuplicateProfile,
@@ -937,7 +796,7 @@ class Workflow(QDialog, LogMixin):
         self._set_profile_widgets_visible(not settings_mode)
         if settings_mode:
             self._load_settings_tree()
-        elif self.radioDatabase.isChecked() and self._db_available:
+        elif self._db_available:
             self._restore_two_column_tree()
             self.treeWidgetConfig.setEditTriggers(QAbstractItemView.DoubleClicked)
             self.load_profile_to_tree()
@@ -1046,18 +905,13 @@ class Workflow(QDialog, LogMixin):
                     self._db.import_toml_to_profile(profile.id, defaults)
                 except Exception:
                     pass  # don't block profile creation if seeding fails
-            # If this is the only profile, auto-mark it default+selected before refreshing
-            if profile is not None and len(self._db.get_all_profiles()) == 1:
-                self._db.set_default_profile(profile.id)
-                self._db.set_selected_profile(profile.id)
             self._refresh_profile_combo()
             idx = self.comboBoxProfile.findText(name)
             if idx >= 0:
+                self.comboBoxProfile.blockSignals(True)
                 self.comboBoxProfile.setCurrentIndex(idx)
-            # setCurrentIndex won't fire if index didn't change (first-profile case),
-            # so explicitly load the tree here
-            if self.comboBoxProfile.currentIndex() >= 0:
-                self.load_profile_to_tree()
+                self.comboBoxProfile.blockSignals(False)
+            self._activate_current_profile()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to create profile:\n{e}')
 
@@ -1080,7 +934,11 @@ class Workflow(QDialog, LogMixin):
             self.treeWidgetConfig.clear()
             self.lineEditProfileDescription.clear()
             self._refresh_profile_combo()
-            self.load_profile_to_tree()
+            if self.comboBoxProfile.currentIndex() >= 0:
+                self._activate_current_profile()
+            else:
+                app_settings.set_locator(None)
+                app_settings.reload()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to delete profile:\n{e}')
 
@@ -1105,7 +963,10 @@ class Workflow(QDialog, LogMixin):
             self._refresh_profile_combo()
             new_idx = self.comboBoxProfile.findText(new_name)
             if new_idx >= 0:
+                self.comboBoxProfile.blockSignals(True)
                 self.comboBoxProfile.setCurrentIndex(new_idx)
+                self.comboBoxProfile.blockSignals(False)
+                self._activate_current_profile()
         except Exception as e:
             QMessageBox.critical(self, 'Error', f'Failed to duplicate profile:\n{e}')
 
@@ -1685,10 +1546,8 @@ class Workflow(QDialog, LogMixin):
     def _on_clear_changes(self):
         if self.radioViewSettings.isChecked():
             self._load_settings_tree()
-        elif self.radioDatabase.isChecked() and self._db_available:
+        elif self._db_available:
             self.load_profile_to_tree()
-        elif app_settings.TOML_FILE:
-            self._load_toml_into_tree(app_settings.TOML_FILE)
         self._structural_changed = False
         self._update_config_action_state()
 
@@ -1882,33 +1741,6 @@ class Workflow(QDialog, LogMixin):
     # Apply / Save
     # ------------------------------------------------------------------ #
 
-    def _save_toml_from_tree(self) -> bool:
-        path = app_settings.TOML_FILE
-        if not path:
-            QMessageBox.critical(self, 'Save Error', 'No TOML file loaded. Load a config file first.')
-            return False
-        data = self._extract_tree_to_dict()
-        try:
-            resolve_profile_config(data)
-        except Exception as e:
-            QMessageBox.critical(
-                self, 'Save Error', f'Refusing to save an unloadable profile:\n{e}'
-            )
-            return False
-        try:
-            with open(path, 'w') as f:
-                toml.dump(data, f)
-        except Exception as e:
-            QMessageBox.critical(self, 'Save Error', f'Failed to write TOML:\n{e}')
-            return False
-        try:
-            app_settings.set_locator(path)
-            app_settings.reload()
-            self._sync_associator_metadata()
-        except Exception:
-            pass
-        return True
-
     def _on_apply_save(self):
         before = dict(self._tree_snapshot)
         after = self._snapshot_tree()
@@ -1921,9 +1753,6 @@ class Workflow(QDialog, LogMixin):
             self._apply_dialog_decisions(kept, dropped)
         if self.radioViewSettings.isChecked():
             self._save_settings_from_tree()
-        elif self.radioLegacyToml.isChecked():
-            if not self._save_toml_from_tree():
-                return
         else:
             self._save_tree_to_active_profile()
         self._structural_changed = False
@@ -1943,7 +1772,7 @@ class Workflow(QDialog, LogMixin):
         except Exception as e:
             QMessageBox.critical(self, 'Reseed', f'Settings reseed failed:\n{e}')
             return
-        if self.radioDatabase.isChecked() and self._db_available and not self.radioViewSettings.isChecked():
+        if self._db_available and not self.radioViewSettings.isChecked():
             _sample = pathlib.Path(__file__).resolve().parents[3] / 'pv_configs' / 'sample_config.toml'
             if _sample.exists():
                 try:
@@ -2080,7 +1909,7 @@ class Workflow(QDialog, LogMixin):
 
     def _save_tree_to_active_profile(self):
         """Persist current tree contents to the active DB profile. No-op in TOML mode or Settings view."""
-        if not (self.radioDatabase.isChecked() and self._db_available):
+        if not self._db_available:
             return
         if self.radioViewSettings.isChecked():
             return
@@ -2263,19 +2092,6 @@ class Workflow(QDialog, LogMixin):
     def parse_toml(self, path) -> dict:
         with open(path, 'r') as f:
             return toml.load(f)
-
-    def update_current_mode_label(self, path: str) -> None:
-        text = '(none)'
-        try:
-            toml_data = self.parse_toml(path)
-            mode = toml_data.get('CACHE_OPTIONS', {}).get('CACHING_MODE', '')
-            text = mode if mode else '(none)'
-        except Exception:
-            text = '(error)'
-        try:
-            self.labelCurrentModeValue.setText(text)
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------ #
     # Sim Server
