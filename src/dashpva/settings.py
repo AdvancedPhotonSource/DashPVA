@@ -287,6 +287,8 @@ RSM_GRID_DEFAULT_RESOLUTION: int = 200
 # Grid lines the box preview will draw per axis before it stops subdividing --
 # past this the lines merge into a solid block and stop conveying anything.
 RSM_GRID_PREVIEW_MAX_DIVISIONS: int = 24
+# Factor per click of the zoom +/- buttons on DashAnalysis 3D views.
+ANALYSIS_CAMERA_ZOOM_STEP: float = 1.25
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
