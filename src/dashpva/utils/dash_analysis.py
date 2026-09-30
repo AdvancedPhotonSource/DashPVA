@@ -228,6 +228,7 @@ class DashAnalysis:
         self._last_extent = None  # [U_min, U_max, V_min, V_max]
         self._last_orientation = None
         self.last_slice = None
+        self.slice_orientation = None
 
 
 # ============================================================================
@@ -236,7 +237,7 @@ class DashAnalysis:
 
     def slice_data(self, data, hkl=None, normal=None, shape=(512,512), slab_thickness=None, 
                    clamp_to_bounds=True, spacing=(0.5, 0.5, 0.5), grid_origin=(0.0, 0.0, 0.0), 
-                   show=True, axes=None, intensity_range=None, **kwargs):
+                   show=True, axes=None, intensity_range=None, orientation=None, **kwargs):
         """
         Create a slice from either a volume or a point cloud with advanced processing options.
 
@@ -267,6 +268,8 @@ class DashAnalysis:
             shape (tuple): Resolution (rows, cols) for sampling the plane when slicing points
             slab_thickness (float): Thickness of selection slab around plane for point slicing
             clamp_to_bounds (bool): Clamp origin to dataset bounds
+            orientation (dict): {'hkl': (H, K, L), 'normal': (h, k, l)}, e.g. da.slice_orientation
+                saved from a 3D slice_plane; overrides hkl and normal
             spacing (tuple): Voxel spacing (ΔH, ΔK, ΔL) for grid construction from NumPy volumes
             grid_origin (tuple): Grid origin (H0, K0, L0) for grid construction from NumPy volumes
             show (bool): If True, displays the slice using show_slice
@@ -324,6 +327,8 @@ class DashAnalysis:
         """
         if pv is None:
             raise ImportError("PyVista is required for slice_data()")
+        if orientation is not None:
+            hkl, normal = tuple(orientation['hkl']), orientation['normal']
 
         import numpy as _np
 
@@ -1940,9 +1945,11 @@ class DashAnalysis:
                 Points outside it are hidden.
             show_bounds (bool): Whether to show coordinate bounds with labels
             opacity_range (tuple): Optional (min_opacity, max_opacity) ramped linearly across clim
-            slice_plane: True, or a mesh from slice_data to start from, adds a draggable slice
-                plane with an on/off checkbox (renders with the trame backend). The latest
-                slice is kept in da.last_slice.
+            slice_plane: True, an orientation dict ({'hkl': ..., 'normal': ...}), or a mesh from
+                slice_data to start from, adds a draggable slice plane with an on/off checkbox,
+                front/back, tilt and reset toolbar buttons and an H/K/L readout (renders with the
+                trame backend). The latest slice is kept in da.last_slice and its position in
+                da.slice_orientation, which slice_data(..., orientation=...) accepts.
             slice_shape (tuple): Raster resolution of the interactive slice
             camera: Starting view: 'iso' (default), 'hk', 'hl', 'kl'; an (azimuth, elevation)
                 pair in degrees from the HL view (L up); or a PyVista camera_position.
@@ -2083,34 +2090,18 @@ class DashAnalysis:
                               xtitle=str(axes_labels[0]),
                               ytitle=str(axes_labels[1]),
                               ztitle=str(axes_labels[2]),
-                              bounds=poly.bounds)
+                              bounds=poly.bounds,
+                              fmt=app_settings.ANALYSIS_AXIS_NUMBER_FORMAT)
             except Exception:
                 pass
 
+        slice_buttons = None
         if slice_plane is not None:
-            pts_arr = np.asarray(poly.points)
-            if slice_plane is True:
-                origin, normal = poly.center, (0.0, 1.0, 0.0)
-            else:
-                origin, normal = slice_plane.field_data['slice_origin'], slice_plane.field_data['slice_normal']
-
-            def update_slice(normal, origin):
-                self.last_slice = self.slice_data(data=(pts_arr, ints_arr), hkl=tuple(origin), normal=tuple(normal),
-                                                  shape=slice_shape, show=False)
-                p.add_mesh(self.last_slice, scalars='intensity', cmap=cmap, clim=lut.scalar_range,
-                           show_scalar_bar=False, name='slice')
-
-            plane_widget = p.add_plane_widget(update_slice, normal=normal, origin=origin, bounds=poly.bounds,
-                                              interaction_event='end')
-
-            def toggle_slice(on):
-                p.actors['slice'].SetVisibility(on)
-                plane_widget.SetEnabled(on)
-
-            p.add_checkbox_button_widget(toggle_slice, value=True)
+            slice_buttons = self._add_slice_plane(p, (np.asarray(poly.points), ints_arr), slice_plane, poly.bounds,
+                                                  cmap, lut.scalar_range, slice_shape)
             controls = True
 
-        return _show_with_camera(p, camera, zoom, controls)
+        return _show_with_camera(p, camera, zoom, controls, slice_buttons)
 
     def show_vol(self, vol, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0), cmap='jet', slice_plane=None,
                  camera='iso', zoom=1.0, controls=True):
@@ -2134,9 +2125,11 @@ class DashAnalysis:
             spacing (tuple): Voxel spacing (ΔH, ΔK, ΔL) for NumPy arrays
             origin (tuple): Grid origin (H0, K0, L0) for NumPy arrays
             cmap (str): Colormap name for volume rendering
-            slice_plane: True, or a mesh from slice_data to start from, adds a draggable slice
-                plane with an on/off checkbox (renders with the trame backend). The latest
-                slice is kept in da.last_slice.
+            slice_plane: True, an orientation dict ({'hkl': ..., 'normal': ...}), or a mesh from
+                slice_data to start from, adds a draggable slice plane with an on/off checkbox,
+                front/back, tilt and reset toolbar buttons and an H/K/L readout (renders with the
+                trame backend). The latest slice is kept in da.last_slice and its position in
+                da.slice_orientation, which slice_data(..., orientation=...) accepts.
             camera: Starting view: 'iso' (default), 'hk', 'hl', 'kl'; an (azimuth, elevation)
                 pair in degrees from the HL view (L up); or a PyVista camera_position.
             zoom (float): Starting zoom factor (>1 zooms in)
@@ -2195,32 +2188,88 @@ class DashAnalysis:
         plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
         plotter.add_volume(grid, scalars='intensity', cmap=cmap, clim=clim, name='cloud_volume', show_scalar_bar=True)
         try:
-            plotter.show_bounds(mesh=grid, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis', bounds=grid.bounds)
+            plotter.show_bounds(mesh=grid, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis', bounds=grid.bounds,
+                                fmt=app_settings.ANALYSIS_AXIS_NUMBER_FORMAT)
         except Exception:
             pass
 
+        slice_buttons = None
         if slice_plane is not None:
-            if slice_plane is True:
-                start_origin, start_normal = grid.center, (0.0, 1.0, 0.0)
-            else:
-                start_origin, start_normal = slice_plane.field_data['slice_origin'], slice_plane.field_data['slice_normal']
-
-            def update_slice(normal, origin):
-                self.last_slice = self.slice_data(data=grid, hkl=tuple(origin), normal=tuple(normal), show=False)
-                plotter.add_mesh(self.last_slice, scalars='intensity', cmap=cmap, clim=clim,
-                                 show_scalar_bar=False, name='slice')
-
-            plane_widget = plotter.add_plane_widget(update_slice, normal=start_normal, origin=start_origin,
-                                                    bounds=grid.bounds, interaction_event='end')
-
-            def toggle_slice(on):
-                plotter.actors['slice'].SetVisibility(on)
-                plane_widget.SetEnabled(on)
-
-            plotter.add_checkbox_button_widget(toggle_slice, value=True)
+            slice_buttons = self._add_slice_plane(plotter, grid, slice_plane, grid.bounds, cmap, clim, None)
             controls = True
 
-        return _show_with_camera(plotter, camera, zoom, controls)
+        return _show_with_camera(plotter, camera, zoom, controls, slice_buttons)
+
+    def _add_slice_plane(self, p, data, slice_plane, bounds, cmap, clim, shape):
+        """
+        Add a draggable slice plane, an on/off checkbox and an H/K/L readout to a 3D plotter.
+
+        slice_plane is True (start at the data center, HL plane), an orientation dict
+        {'hkl': ..., 'normal': ...}, or a slice mesh to start from. Every move re-slices into
+        self.last_slice and records self.slice_orientation. Returns the toolbar buttons
+        (icon, tooltip, callback) that step, tilt and reset the plane, for _show_with_camera.
+        """
+        bounds = np.reshape(bounds, (3, 2))
+        if slice_plane is True:
+            start = (bounds.mean(axis=1), np.array([0.0, 1.0, 0.0]))
+        elif isinstance(slice_plane, dict):
+            start = (np.asarray(slice_plane['hkl'], dtype=float), np.asarray(slice_plane['normal'], dtype=float))
+        else:
+            start = (np.asarray(slice_plane.field_data['slice_origin'], dtype=float),
+                     np.asarray(slice_plane.field_data['slice_normal'], dtype=float))
+        slice_kwargs = {} if shape is None else {'shape': shape}
+
+        def update_slice(normal, origin):
+            self.last_slice = self.slice_data(data=data, hkl=tuple(origin), normal=tuple(normal), show=False,
+                                              **slice_kwargs)
+            p.add_mesh(self.last_slice, scalars='intensity', cmap=cmap, clim=clim, show_scalar_bar=False, name='slice')
+            self.slice_orientation = {'hkl': tuple(float(x) for x in origin),
+                                      'normal': tuple(float(x) for x in normal)}
+            n = np.round(np.asarray(normal) / np.abs(normal).max(), 3) + 0.0
+            p.add_text(f'Slice  H={origin[0]:.3f}  K={origin[1]:.3f}  L={origin[2]:.3f}\n'
+                       f'normal ({n[0]:.3f}, {n[1]:.3f}, {n[2]:.3f})',
+                       position='upper_left', font_size=10, name='slice_info')
+
+        widget = p.add_plane_widget(update_slice, normal=start[1], origin=start[0], bounds=bounds.ravel(),
+                                    interaction_event='end')
+
+        def toggle_slice(on):
+            p.actors['slice'].SetVisibility(on)
+            p.actors['slice_info'].SetVisibility(on)
+            widget.SetEnabled(on)
+
+        p.add_checkbox_button_widget(toggle_slice, value=True)
+
+        def set_plane(origin, normal):
+            widget.SetNormal(*normal)
+            widget.SetOrigin(*np.clip(origin, bounds[:, 0], bounds[:, 1]))
+            update_slice(np.asarray(widget.GetNormal()), np.asarray(widget.GetOrigin()))
+
+        def move(sign):
+            n = np.asarray(widget.GetNormal())
+            step = app_settings.ANALYSIS_SLICE_MOVE_FRACTION * float(np.abs(n) @ np.ptp(bounds, axis=1))
+            return lambda: set_plane(np.asarray(widget.GetOrigin()) + sign * step * n, n)
+
+        def tilt(about, sign):
+            def run():
+                n = np.asarray(widget.GetNormal())
+                ref = np.eye(3)[int(np.argmin(np.abs(start[1])))]
+                u = np.cross(n, ref)
+                u /= np.linalg.norm(u)
+                axis = u if about == 0 else np.cross(n, u)
+                t = np.radians(sign * app_settings.ANALYSIS_SLICE_TILT_STEP_DEGREES)
+                set_plane(np.asarray(widget.GetOrigin()), n * np.cos(t) + np.cross(axis, n) * np.sin(t))
+            return run
+
+        return [
+            ('mdi-chevron-double-down', 'Slice back', lambda: move(-1)()),
+            ('mdi-chevron-double-up', 'Slice front', lambda: move(1)()),
+            ('mdi-arrow-left-bold', 'Tilt left', tilt(1, -1)),
+            ('mdi-arrow-right-bold', 'Tilt right', tilt(1, 1)),
+            ('mdi-arrow-up-bold', 'Tilt up', tilt(0, 1)),
+            ('mdi-arrow-down-bold', 'Tilt down', tilt(0, -1)),
+            ('mdi-restore', 'Reset slice', lambda: set_plane(*start)),
+        ]
 
     def slice_explorer(self, data, plane='HK', shape=(256, 256), slab_thickness=None, **kwargs):
         """
@@ -2584,14 +2633,14 @@ class DashAnalysis:
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _show_with_camera(p, camera='iso', zoom=1.0, controls=True):
+def _show_with_camera(p, camera='iso', zoom=1.0, controls=True, slice_buttons=None):
     """
     Set the starting view of a PyVista plotter and show it.
 
     camera is 'iso', 'hk', 'hl' or 'kl'; an (azimuth, elevation) pair in degrees measured
     from the HL view (L up, azimuth turns about L); or a full PyVista camera_position.
     controls=True renders with the trame backend and adds HK / HL / KL / ISO and zoom
-    buttons to its toolbar.
+    buttons to its toolbar; slice_buttons adds (icon, tooltip, callback) buttons after them.
 
     Usage:
         p = pv.Plotter(notebook=True)
@@ -2630,6 +2679,9 @@ def _show_with_camera(p, camera='iso', zoom=1.0, controls=True):
                       variant='text', density='comfortable')
         vuetify3.VBtn(icon='mdi-magnify-minus-outline', click=act(lambda: p.camera.zoom(1 / step)),
                       variant='text', density='comfortable')
+        for icon, tip, fn in slice_buttons or ():
+            vuetify3.VBtn(icon=icon, title=tip, click=lambda fn=fn: (fn(), viewer.update()),
+                          variant='text', density='comfortable')
 
     return p.show(jupyter_backend='trame', jupyter_kwargs=dict(add_menu_items=menu_items))
 
