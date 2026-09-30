@@ -338,3 +338,28 @@ def test_save_runs_asynchronously_and_serializes_commands(tmp_path):
     assert status["save_state"] == "complete"
     assert status["save_request_id"] == "save-1"
     assert status["saved_path"].endswith("live.h5")
+
+
+def test_energy_changes_do_not_change_the_static_geometry_fingerprint():
+    processor = HpcRsmGridProcessor({"path": str(PROFILE)})
+    processor.hkl_config = {"SPEC": {"ENERGY_VALUE": "energy", "UB_MATRIX_VALUE": "ub"}}
+    processor.binder = MetadataBinder(
+        (
+            ChannelSpec("energy", ChannelClass.STATIC),
+            ChannelSpec("ub", ChannelClass.STATIC),
+        )
+    )
+    base = processor._frame_geometry_fingerprint({"energy": 14.8131, "ub": 1.0}, (2, 2))
+
+    assert processor._frame_geometry_fingerprint({"energy": 14.8052, "ub": 1.0}, (2, 2)) == base
+    assert processor._frame_geometry_fingerprint({"energy": 14.8131, "ub": 2.0}, (2, 2)) != base
+
+
+def test_motor_readback_jitter_reuses_q_but_real_moves_recompute():
+    processor = HpcRsmGridProcessor({"path": str(PROFILE)})
+    processor.position_channels = {"angle"}
+    old = {"angle": 10.0, "energy": 14.8}
+
+    assert not processor.attributes_diff({"angle": 10.00001, "energy": 14.8}, old)
+    assert processor.attributes_diff({"angle": 10.01, "energy": 14.8}, old)
+    assert processor.attributes_diff({"angle": 10.0, "energy": 14.80001}, old)
