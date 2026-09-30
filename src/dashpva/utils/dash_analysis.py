@@ -43,6 +43,11 @@ try:
 except Exception:
     HDF5Loader = None
 
+try:
+    from dashpva.utils.rsm_converter import RSMConverter
+except Exception:
+    RSMConverter = None
+
 # Fallback reader using h5py for simple cases if HDF5Loader is unavailable or fails
 try:
     import h5py
@@ -66,6 +71,16 @@ except Exception:
 # CLASSES
 # ============================================================================
 
+class Group:
+    """HDF5 group with its members as attributes, so Jupyter can tab-complete them."""
+
+    def __init__(self, members: dict):
+        self.__dict__.update(members)
+
+    def __repr__(self):
+        return f"Group({', '.join(self.__dict__)})"
+
+
 class Data:
     """
     Container class for 3D point data and intensities.
@@ -74,23 +89,31 @@ class Data:
     for HKL crystallographic analysis.
     
     Attributes:
-        points (np.ndarray): 3D point coordinates with shape (N, 3)
+        points (np.ndarray): 3D point coordinates with shape (N, 3); None until load_3d
         intensities (np.ndarray): Intensity values with shape (N,)
+        images (np.ndarray): Raw detector frames from /entry/data/data
+        metadata (dict): Nested /entry/data/metadata tree (HKL, ca, rois)
+        entry: The file's /entry tree with attribute access, e.g. data.entry.data.metadata.ca.eta
     """
     
-    def __init__(self, points: np.ndarray, intensities: np.ndarray, metadata: dict=None, num_images: int=0, shape: tuple=None):
+    def __init__(self, points: np.ndarray=None, intensities: np.ndarray=None, metadata: dict=None, num_images: int=0, shape: tuple=None,
+                 images: np.ndarray=None, entry: Group=None):
         """
         Initialize Data object.
         
         Args:
             points: 3D point coordinates with shape (N, 3)
             intensities: Intensity values with shape (N,)
+            images: Raw detector frames (num_images, H, W)
+            entry: The file's /entry tree as a Group
         """
         self.points = points
         self.intensities = intensities
         self.metadata = metadata
         self.num_images = num_images
         self.shape = shape
+        self.images = images
+        self.entry = entry
 
 
 
@@ -202,6 +225,7 @@ class DashAnalysis:
         self._last_image = None
         self._last_extent = None  # [U_min, U_max, V_min, V_max]
         self._last_orientation = None
+        self.last_slice = None
 
 
 # ============================================================================
@@ -1930,7 +1954,7 @@ class DashAnalysis:
     def show_point_cloud(self, data, intensities=None, *, notebook=True,
                          point_size=1.0, cmap='viridis', opacity=1.0,
                          render_points_as_spheres=False, axes_labels=('H','K','L'),
-                         clim=None, show_bounds=True, opacity_range=None):
+                         clim=None, show_bounds=True, opacity_range=None, slice_plane=None, slice_shape=(256, 256)):
         """
         Render a point cloud in HKL space with advanced visualization options.
 
@@ -1962,13 +1986,17 @@ class DashAnalysis:
             opacity (float): Point opacity [0..1]
             render_points_as_spheres (bool): True for spherical glyphs, False for points
             axes_labels (tuple): Axis labels, default ('H','K','L')
-            clim (tuple): Optional (vmin, vmax) intensity display limits
+            clim (tuple): Optional (vmin, vmax) intensity range; defaults to the data min/max.
+                Points outside it are hidden.
             show_bounds (bool): Whether to show coordinate bounds with labels
-            opacity_range (tuple): Optional (min_opacity, max_opacity) for intensity-based opacity
+            opacity_range (tuple): Optional (min_opacity, max_opacity) ramped linearly across clim
+            slice_plane: True, or a mesh from slice_data to start from, adds a draggable slice
+                plane with an on/off checkbox (renders with the trame backend). The latest
+                slice is kept in da.last_slice.
+            slice_shape (tuple): Raster resolution of the interactive slice
             Note: In notebook mode, rendering caps at 5,000,000 points; if more are provided,
             the top 5,000,000 intensities are used to maintain interactive performance.
-            The optional clim=(vmin, vmax) controls color scaling only and does not affect
-            which points are selected or rendered.
+            clim is applied after that cap.
 
         Returns:
             PyVista rendering result (displays inline in notebooks)
@@ -1981,10 +2009,13 @@ class DashAnalysis:
             da.show_point_cloud(point_data, intensity_data)
             
             # High-contrast visualization with filtering
-            da.show_point_cloud(data, clim=(50, 500), hide_out_of_range=True)
+            da.show_point_cloud(data, clim=(50, 500))
             
             # Opacity-based intensity mapping
             da.show_point_cloud(data, opacity_range=(0.2, 1.0), cmap='plasma')
+
+            # Drag/rotate a slice through the cloud; checkbox toggles it
+            da.show_point_cloud(data, clim=(100, 50000), slice_plane=True)
         """
         # Normalize inputs to pv.PolyData + 'intensity' if available
         pts = None
@@ -2074,14 +2105,16 @@ class DashAnalysis:
         lut.below_range_color = 'white'
         lut.above_range_opacity= 0
         lut.below_range_opacity= 0
-        lut.scalar_range = (opacity_range[0],opacity_range[1])
+        ints_arr = np.asarray(poly['intensity'])
+        lut.scalar_range = clim if clim is not None else (float(ints_arr.min()), float(ints_arr.max()))
+        if opacity_range is not None:
+            lut.apply_opacity(opacity_range, kind='linear')
 
         p.add_mesh(poly,
                    scalars='intensity',
                     cmap=lut,
                     render_points_as_spheres=bool(render_points_as_spheres),
                     point_size=float(point_size),
-                    clim=clim,
                     opacity=float(opacity) if opacity_range is None else 1.0,
                     name='points')
 
@@ -2095,6 +2128,29 @@ class DashAnalysis:
                               bounds=poly.bounds)
             except Exception:
                 pass
+
+        if slice_plane is not None:
+            pts_arr = np.asarray(poly.points)
+            if slice_plane is True:
+                origin, normal = poly.center, (0.0, 1.0, 0.0)
+            else:
+                origin, normal = slice_plane.field_data['slice_origin'], slice_plane.field_data['slice_normal']
+
+            def update_slice(normal, origin):
+                self.last_slice = self.slice_data(data=(pts_arr, ints_arr), hkl=tuple(origin), normal=tuple(normal),
+                                                  shape=slice_shape, show=False)
+                p.add_mesh(self.last_slice, scalars='intensity', cmap=cmap, clim=lut.scalar_range,
+                           show_scalar_bar=False, name='slice')
+
+            plane_widget = p.add_plane_widget(update_slice, normal=normal, origin=origin, bounds=poly.bounds,
+                                              interaction_event='end')
+
+            def toggle_slice(on):
+                p.actors['slice'].SetVisibility(on)
+                plane_widget.SetEnabled(on)
+
+            p.add_checkbox_button_widget(toggle_slice, value=True)
+            return p.show(jupyter_backend='trame')
 
         return p.show()
 
@@ -2237,10 +2293,9 @@ class DashAnalysis:
 
     def load_data(self, file_path: Optional[str] = None):
         """
-        Load 3D point data and intensities from HDF5 file.
+        Load raw detector frames and NeXus metadata from an HDF5 scan file.
 
-        This method uses the project's HDF5Loader for consistent data loading
-        and returns a Data object containing points and intensities.
+        No reciprocal-space calculation happens here; use load_3d for HKL points.
 
         Usage:
             # Load data from file
@@ -2251,7 +2306,7 @@ class DashAnalysis:
             file_path (str, optional): Path to HDF5 file. If None, uses cached path
 
         Returns:
-            Data: Object containing points (N,3) and intensities (N,) arrays
+            Data: Object with images, intensities (N,), metadata and entry; points is None
 
         Raises:
             FileNotFoundError: If no file path provided and none cached
@@ -2266,17 +2321,32 @@ class DashAnalysis:
         if not path:
             raise FileNotFoundError("No file path provided to load_data and none set in DashAnalysis.")
 
-        try:
-            loader = HDF5Loader()
-            points_3d, intensities, num_images, shape = loader.load_h5_to_3d(path)
-            
-            # Load metadata using load_h5_with_coordinates which returns metadata
-            metadata_dict = loader.get_file_info(path, style='dict')
-            
-            # Create Data object with metadata
-            return Data(points_3d, intensities, metadata=metadata_dict)
-        except Exception as e:
-            raise Exception(f"Failed to load data using HDF5Loader: {e}")
+        def read_group(grp):
+            return {k: read_group(v) if isinstance(v, h5py.Group)
+                    else (v.asstr()[()] if h5py.check_string_dtype(v.dtype) else v[()])
+                    for k, v in grp.items()}
+
+        def to_group(tree):
+            return Group({k: to_group(v) if isinstance(v, dict) else v for k, v in tree.items()})
+
+        with h5py.File(path, 'r') as f:
+            tree = read_group(f['entry'])
+        images = tree['data']['data']
+        return Data(intensities=images.ravel(), metadata=tree['data'].get('metadata', {}), num_images=images.shape[0],
+                    shape=images.shape[1:], images=images, entry=to_group(tree))
+
+    def load_3d(self, file_path: Optional[str] = None):
+        """
+        Load a scan like load_data, then compute its (N, 3) HKL points from the
+        NeXus geometry in /entry/data/metadata/HKL.
+
+        Usage:
+            data = da.load_3d('/path/to/file.h5')
+            da.show_point_cloud(data)
+        """
+        data = self.load_data(file_path)
+        data.points = RSMConverter().get_q_points(file_path or getattr(self, 'file_path', None))
+        return data
 
     def show_meta(self, file_path, *, style="text", raw=False, include_unknown=True, 
                   float_precision=6, summarize_datasets=True):
