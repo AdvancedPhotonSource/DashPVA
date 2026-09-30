@@ -364,6 +364,17 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
 
     def process(self, pvObject):
         started = time.time()
+        # Read attributes before attach_rsm rewrites them (it narrows numbers to float32).
+        has_attributes = "attribute" in pvObject
+        current = self._current_attributes(pvObject) if has_attributes else {}
+        # Every frame carries RSM, so per-frame/realtime views work beside the
+        # grid. Done outside _grid_lock so control/status calls are not starved.
+        if self.is_rsm_frame(pvObject):
+            try:
+                self.attach_rsm(pvObject, started)
+            except Exception as exc:
+                self.nFrameErrors += 1
+                self.log_error("RSM attach failed", exc)
         with self._grid_lock:
             assert self.session is not None
             assert self.binder is not None
@@ -371,6 +382,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             active = running or self._estimating
             if not active:
                 self.binder.observe_inactive_frame_id(self._frame_id(pvObject))
+                self.processingTime += time.time() - started
                 self.updateOutputChannel(pvObject)
                 return pvObject
             if running:
@@ -378,10 +390,9 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
 
             try:
                 dims = pvObject["dimension"]
-                if not dims or "attribute" not in pvObject:
+                if not dims or not has_attributes:
                     raise ValueError("Frame is missing dimensions or NDAttributes.")
                 shape = tuple(int(dimension["size"]) for dimension in dims)
-                current = self._current_attributes(pvObject)
                 bound = self.binder.bind(
                     current,
                     frame_id=self._frame_id(pvObject),
@@ -395,7 +406,9 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                     return pvObject
 
                 image = self.decompress_image(pvObject).reshape(shape, order="F")
-                qxyz = self.create_rsm(dict(bound.values), shape)
+                qxyz = self.cached_q_for(bound.values)
+                if qxyz is None:
+                    qxyz = self.create_rsm(dict(bound.values), shape)
                 if qxyz is None or qxyz[0] is None:
                     raise ValueError("Angle-to-Q conversion returned no coordinates.")
                 q_values = (qxyz[0], qxyz[1], qxyz[2])
