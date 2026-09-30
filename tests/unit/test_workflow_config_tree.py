@@ -263,3 +263,17 @@ def test_refresh_profile_combo_preserves_displayed_profile(qapp):
 
     assert workflow.comboBoxProfile.currentData() == 22
     assert workflow.comboBoxProfile.currentText() == "editing"
+
+
+def test_deep_merge_reports_added_profile_paths():
+    additions = []
+    workflow = Workflow.__new__(Workflow)
+
+    merged = workflow._deep_merge(
+        {"HKL": {"SPEC": {"ENERGY": 1}, "DETECTOR": {"DISTANCE": 2}}},
+        {"HKL": {"SPEC": {}, "EXISTING": True}},
+        additions,
+    )
+
+    assert merged["HKL"]["SPEC"]["ENERGY"] == 1
+    assert additions == ["HKL.SPEC.ENERGY", "HKL.DETECTOR"]

@@ -1760,17 +1760,18 @@ class Workflow(QDialog, LogMixin):
 
     def _on_reseed(self):
         reply = QMessageBox.question(
-            self, 'Reseed', 'Add missing default values to settings and the current profile?',
+            self, 'Add Missing Defaults',
+            'Add missing default values to settings and the current profile?',
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
-        added = [0]
+        profile_additions = []
         try:
             from dashpva.scripts.seed_settings_defaults_sql import seed_defaults
-            seed_defaults()
+            settings_additions = seed_defaults()
         except Exception as e:
-            QMessageBox.critical(self, 'Reseed', f'Settings reseed failed:\n{e}')
+            QMessageBox.critical(self, 'Add Missing Defaults', f'Settings update failed:\n{e}')
             return
         if self._db_available and not self.radioViewSettings.isChecked():
             _sample = pathlib.Path(__file__).resolve().parents[3] / 'pv_configs' / 'sample_config.toml'
@@ -1784,7 +1785,7 @@ class Workflow(QDialog, LogMixin):
                         if _pid is not None
                         else self._extract_tree_to_dict()
                     )
-                    merged = self._deep_merge(defaults, current, added)
+                    merged = self._deep_merge(defaults, current, profile_additions)
                     # Save the correctly-typed merged dict directly -- routing
                     # it through the tree first (str() to display, then
                     # re-parsed back) is exactly the round-trip that turns
@@ -1797,21 +1798,33 @@ class Workflow(QDialog, LogMixin):
                     self._populate_tree_node(merged, parent=None)
                     self.treeWidgetConfig.blockSignals(False)
                 except Exception as e:
-                    QMessageBox.critical(self, 'Reseed', f'Profile reseed failed:\n{e}')
+                    QMessageBox.critical(self, 'Add Missing Defaults', f'Profile update failed:\n{e}')
                     return
         elif self.radioViewSettings.isChecked():
             self.load_profile_to_tree()
-        msg = f'{added[0]} missing profile value(s) added.' if added[0] else 'No missing profile values found.'
-        QMessageBox.information(self, 'Reseed', f'Settings defaults restored.\n{msg}')
+        additions = [*(f'Setting: {path}' for path in settings_additions),
+                     *(f'Profile: {path}' for path in profile_additions)]
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle('Add Missing Defaults')
+        if additions:
+            box.setText(f'Added {len(additions)} missing default value(s).')
+            box.setInformativeText('Select Show Details to see every value that was added.')
+            box.setDetailedText('\n'.join(additions))
+        else:
+            box.setText('No missing default values were found.')
+            box.setInformativeText('Existing settings and profile values were left unchanged.')
+        box.exec_()
 
-    def _deep_merge(self, defaults: dict, current: dict, added: list) -> dict:
+    def _deep_merge(self, defaults: dict, current: dict, added: list, prefix: str = '') -> dict:
         result = dict(current)
         for key, val in defaults.items():
+            path = f'{prefix}.{key}' if prefix else key
             if key not in result:
                 result[key] = val
-                added[0] += 1
+                added.append(path)
             elif isinstance(val, dict) and isinstance(result[key], dict):
-                result[key] = self._deep_merge(val, result[key], added)
+                result[key] = self._deep_merge(val, result[key], added, path)
         return result
 
     def _save_settings_from_tree(self):
