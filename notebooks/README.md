@@ -20,8 +20,8 @@ execute as demos.
 
 2. Register the DashPVA environment as a Jupyter kernel:
    ```bash
+   uv sync --extra notebooks   # notebook-only env; skip if you installed the Full or Standalone edition
    source .venv/bin/activate
-   pip install ipykernel ipympl
    python -m ipykernel install --user --name DashPVA --display-name "DashPVA"
    ```
 
@@ -30,7 +30,7 @@ execute as demos.
    jupyter notebook notebooks/DashAnalysis_Quickstart.ipynb
    ```
 
-All dependencies (numpy, h5py, matplotlib, pyvista, etc.) are installed by DashPVA.
+The `notebooks` extra (also part of `standalone` and `full`) installs the notebook dependencies: pyvista, trame, ipykernel, ipywidgets and ipympl.
 `ipympl` is needed only for the interactive line cut, which uses `%matplotlib widget`.
 
 ## Usage

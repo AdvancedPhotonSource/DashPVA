@@ -842,6 +842,7 @@ bayesian = [
 ]
 full = [
     { name = "blop" },
+    { name = "ipykernel" },
     { name = "ipympl" },
     { name = "ipython" },
     { name = "ipywidgets" },
@@ -854,8 +855,25 @@ full = [
     { name = "pyvista", extra = ["jupyter"] },
     { name = "pyvistaqt" },
     { name = "ssrl-xrd-tools" },
+    { name = "trame" },
+    { name = "trame-vtk" },
+    { name = "trame-vuetify" },
+]
+notebooks = [
+    { name = "ipykernel" },
+    { name = "ipympl" },
+    { name = "ipython" },
+    { name = "ipywidgets" },
+    { name = "jupyter" },
+    { name = "jupyter-core" },
+    { name = "jupyterlab-widgets" },
+    { name = "pyvista", extra = ["jupyter"] },
+    { name = "trame" },
+    { name = "trame-vtk" },
+    { name = "trame-vuetify" },
 ]
 standalone = [
+    { name = "ipykernel" },
     { name = "ipympl" },
     { name = "ipython" },
     { name = "ipywidgets" },
@@ -865,6 +883,9 @@ standalone = [
     { name = "pyvista", extra = ["jupyter"] },
     { name = "pyvistaqt" },
     { name = "ssrl-xrd-tools" },
+    { name = "trame" },
+    { name = "trame-vtk" },
+    { name = "trame-vuetify" },
 ]
 
 [package.dev-dependencies]
@@ -882,16 +903,18 @@ requires-dist = [
     { name = "dashpva", extras = ["area-det"], marker = "extra == 'bayesian'" },
     { name = "dashpva", extras = ["area-det"], marker = "extra == 'full'" },
     { name = "dashpva", extras = ["bayesian"], marker = "extra == 'full'" },
+    { name = "dashpva", extras = ["notebooks"], marker = "extra == 'standalone'" },
     { name = "dashpva", extras = ["standalone"], marker = "extra == 'full'" },
     { name = "fabio", specifier = ">=2024.0.0" },
     { name = "h5py", specifier = ">=3.12.0" },
     { name = "hdf5plugin", specifier = ">=4.0.0" },
-    { name = "ipympl", marker = "extra == 'standalone'", specifier = ">=0.9.8" },
-    { name = "ipython", marker = "extra == 'standalone'", specifier = ">=9.0.0" },
-    { name = "ipywidgets", marker = "extra == 'standalone'", specifier = ">=8.1.0" },
-    { name = "jupyter", marker = "extra == 'standalone'", specifier = ">=1.1.1" },
-    { name = "jupyter-core", marker = "extra == 'standalone'", specifier = ">=5.7.0" },
-    { name = "jupyterlab-widgets", marker = "extra == 'standalone'", specifier = ">=3.0.0" },
+    { name = "ipykernel", marker = "extra == 'notebooks'", specifier = ">=6.29.0" },
+    { name = "ipympl", marker = "extra == 'notebooks'", specifier = ">=0.9.8" },
+    { name = "ipython", marker = "extra == 'notebooks'", specifier = ">=9.0.0" },
+    { name = "ipywidgets", marker = "extra == 'notebooks'", specifier = ">=8.1.0" },
+    { name = "jupyter", marker = "extra == 'notebooks'", specifier = ">=1.1.1" },
+    { name = "jupyter-core", marker = "extra == 'notebooks'", specifier = ">=5.7.0" },
+    { name = "jupyterlab-widgets", marker = "extra == 'notebooks'", specifier = ">=3.0.0" },
     { name = "lz4", specifier = ">=4.4.0" },
     { name = "markdown", specifier = ">=3.10" },
     { name = "matplotlib", specifier = ">=3.10.0" },
@@ -906,7 +929,7 @@ requires-dist = [
     { name = "pyfai", specifier = ">=2025.3.0" },
     { name = "pyqt5", specifier = ">=5.15.0" },
     { name = "pyqtgraph", specifier = ">=0.13.0" },
-    { name = "pyvista", extras = ["jupyter"], marker = "extra == 'standalone'", specifier = ">=0.44.0" },
+    { name = "pyvista", extras = ["jupyter"], marker = "extra == 'notebooks'", specifier = ">=0.44.0" },
     { name = "pyvistaqt", marker = "extra == 'standalone'", specifier = ">=0.11.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "qtawesome", specifier = ">=1.4.0" },
@@ -917,9 +940,12 @@ requires-dist = [
     { name = "ssrl-xrd-tools", marker = "extra == 'standalone'", specifier = ">=0.35.0" },
     { name = "toml", specifier = ">=0.10.0" },
     { name = "tqdm", specifier = ">=4.67.0" },
+    { name = "trame", marker = "extra == 'notebooks'", specifier = ">=3.0.0" },
+    { name = "trame-vtk", marker = "extra == 'notebooks'", specifier = ">=2.8.0" },
+    { name = "trame-vuetify", marker = "extra == 'notebooks'", specifier = ">=2.7.0" },
     { name = "xrayutilities", specifier = "==1.7.10" },
 ]
-provides-extras = ["area-det", "standalone", "bayesian", "full"]
+provides-extras = ["area-det", "notebooks", "standalone", "bayesian", "full"]
 
 [package.metadata.requires-dev]
 dev = [
