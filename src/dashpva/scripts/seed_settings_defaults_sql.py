@@ -79,51 +79,64 @@ def get_or_create_setting(cur, name: str, type_: str, desc: str = "", parent_id=
     return int(cur.lastrowid)
 
 
-def add_value_if_missing(cur, setting_id: int, key: str, value: str, value_type: str = "string") -> None:
+def add_value_if_missing(cur, setting_id: int, key: str, value: str, value_type: str = "string") -> bool:
     cur.execute(
         "SELECT id FROM setting_values WHERE setting_id=? AND key=?",
         (setting_id, key),
     )
     if cur.fetchone():
-        return
+        return False
     cur.execute(
         "INSERT INTO setting_values (setting_id, key, value, value_type) VALUES (?, ?, ?, ?)",
         (setting_id, key, value, value_type),
     )
+    return True
 
 
-def seed_defaults() -> None:
+def seed_defaults() -> list[str]:
     if not _DB_FILE.exists():
-        return
+        return []
+    added = []
     conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()
 
         # ── BEAMLINE_NAME ─────────────────────────────────────────────────── #
         beamline_id = get_or_create_setting(cur, "BEAMLINE_NAME", "string", "Beamline identification", None)
-        add_value_if_missing(cur, beamline_id, "BEAMLINE_NAME", "")
+        if add_value_if_missing(cur, beamline_id, "BEAMLINE_NAME", ""):
+            added.append("BEAMLINE_NAME")
 
         # ── PATHS ─────────────────────────────────────────────────────────── #
         paths_id = get_or_create_setting(cur, "PATHS", "root", "Application paths", None)
         log_id = get_or_create_setting(cur, "LOG", "path", "Logs directory", paths_id)
-        add_value_if_missing(cur, log_id, "BASE", "logs")
+        if add_value_if_missing(cur, log_id, "BASE", "logs"):
+            added.append("PATHS.LOG.BASE")
         configs_id = get_or_create_setting(cur, "CONFIGS", "path", "PV configs directory", paths_id)
-        add_value_if_missing(cur, configs_id, "BASE", "configs")
+        if add_value_if_missing(cur, configs_id, "BASE", "configs"):
+            added.append("PATHS.CONFIGS.BASE")
         outputs_id = get_or_create_setting(cur, "OUTPUTS", "path", "Outputs directory", paths_id)
-        add_value_if_missing(cur, outputs_id, "BASE", "outputs")
+        if add_value_if_missing(cur, outputs_id, "BASE", "outputs"):
+            added.append("PATHS.OUTPUTS.BASE")
         scan_id = get_or_create_setting(cur, "SCAN", "path", "Scans directory", outputs_id)
-        add_value_if_missing(cur, scan_id, "BASE", "scans")
+        if add_value_if_missing(cur, scan_id, "BASE", "scans"):
+            added.append("PATHS.OUTPUTS.SCAN.BASE")
         slices_id = get_or_create_setting(cur, "SLICES", "path", "Slices directory", outputs_id)
-        add_value_if_missing(cur, slices_id, "BASE", "slices")
+        if add_value_if_missing(cur, slices_id, "BASE", "slices"):
+            added.append("PATHS.OUTPUTS.SLICES.BASE")
 
         # ── CONSUMERS (under PATHS) ───────────────────────────────────────── #
         consumers_id = get_or_create_setting(cur, "CONSUMERS", "path", "Consumer directories", paths_id)
-        add_value_if_missing(cur, consumers_id, "BASE", "consumers")
-        add_value_if_missing(cur, consumers_id, "IOC", "caIOC_servers")
+        if add_value_if_missing(cur, consumers_id, "BASE", "consumers"):
+            added.append("PATHS.CONSUMERS.BASE")
+        if add_value_if_missing(cur, consumers_id, "IOC", "caIOC_servers"):
+            added.append("PATHS.CONSUMERS.IOC")
         hpc_id = get_or_create_setting(cur, "hpc", "section", "HPC consumer names", consumers_id)
-        add_value_if_missing(cur, hpc_id, "BASE", "hpc")
-        add_value_if_missing(cur, hpc_id, "meta", "meta")
-        add_value_if_missing(cur, hpc_id, "analysis", "analysis")
+        if add_value_if_missing(cur, hpc_id, "BASE", "hpc"):
+            added.append("PATHS.CONSUMERS.hpc.BASE")
+        if add_value_if_missing(cur, hpc_id, "meta", "meta"):
+            added.append("PATHS.CONSUMERS.hpc.meta")
+        if add_value_if_missing(cur, hpc_id, "analysis", "analysis"):
+            added.append("PATHS.CONSUMERS.hpc.analysis")
 
         # ── APP_DATA > workflow > {meta, collector, analysis} ─────────────── #
         app_data_id = get_or_create_setting(cur, "APP_DATA", "root", "Application runtime data", None)
@@ -138,8 +151,8 @@ def seed_defaults() -> None:
         # (authoritative when present and shaped like "{prefix}:Name:Value"),
         # otherwise fall back to DETECTOR_PREFIX.
         # Idempotent — profiles that already have IOC_PREFIX are skipped.
-        for row_id, raw in cur.execute(
-            "SELECT id, config_value FROM profile_configs "
+        for row_id, profile_id, raw in cur.execute(
+            "SELECT id, profile_id, config_value FROM profile_configs "
             "WHERE config_type='__toml__' AND config_key='__data__'"
         ).fetchall():
             if not isinstance(raw, str):
@@ -171,6 +184,7 @@ def seed_defaults() -> None:
                 continue
             data["IOC_PREFIX"] = derived
             cur.execute("UPDATE profile_configs SET config_value=? WHERE id=?", (json.dumps(data), row_id))
+            added.append(f"profile {profile_id}.IOC_PREFIX")
 
         conn.commit()
     except Exception:
@@ -178,6 +192,7 @@ def seed_defaults() -> None:
         raise
     finally:
         conn.close()
+    return added
 
 
 if __name__ == "__main__":
