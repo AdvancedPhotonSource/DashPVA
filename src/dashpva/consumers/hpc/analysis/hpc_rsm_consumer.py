@@ -25,6 +25,7 @@ import pvaccess as pva
 from pvaccess import PvObject
 from pvapy.utility.timeUtility import TimeUtility
 
+import dashpva.settings as app_settings
 from dashpva.consumers.core.base_analysis_processor import BaseAnalysisProcessor
 from dashpva.utils.config.hkl import (
     axis_field_channels,
@@ -129,6 +130,11 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
         self.config = config
         self.hkl_config = self.config.get('HKL') or {}
         self.hkl_pv_channels = required_rsm_channels(self.hkl_config)
+        self.position_channels = {
+            channel
+            for role in ('sample', 'detector')
+            for channel in axis_field_channels(self.hkl_config, role, 'POSITION')
+        }
 
     def parse_hkl_ndattributes(self, pva_object):
         """
@@ -277,10 +283,17 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
     def attributes_diff(self, hkl_attr: dict, old_attr: dict) -> bool:
         if hkl_attr.keys() != old_attr.keys():
             return True
+        # Motor readback jitter would otherwise force a full angle->Q recompute
+        # every frame; compared against the angles Q was last computed from.
+        tolerance = app_settings.RSM_Q_REUSE_ANGLE_TOLERANCE_DEG
+        positions = getattr(self, 'position_channels', set())
         for key, value in hkl_attr.items():
             old = old_attr[key]
             if isinstance(value, np.ndarray):
                 if not np.array_equal(value, old):
+                    return True
+            elif key in positions and isinstance(value, (int, float)) and isinstance(old, (int, float)):
+                if abs(float(value) - float(old)) > tolerance:
                     return True
             elif old != value:
                 return True

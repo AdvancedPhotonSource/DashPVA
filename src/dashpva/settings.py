@@ -283,6 +283,8 @@ RSM_GRID_METADATA_MAX_AGE_SECONDS: float = float("inf")
 RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
 RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
 RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
+# Circle-position changes below this reuse the last angle->Q result (readback jitter).
+RSM_Q_REUSE_ANGLE_TOLERANCE_DEG: float = 1e-4
 RSM_GRID_DEFAULT_RESOLUTION: int = 200
 # Grid lines the box preview will draw per axis before it stops subdividing --
 # past this the lines merge into a solid block and stop conveying anything.

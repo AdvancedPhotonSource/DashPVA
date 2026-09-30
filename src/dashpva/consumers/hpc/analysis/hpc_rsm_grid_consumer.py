@@ -36,6 +36,7 @@ import pvaccess as pva
 
 import dashpva.settings as app_settings
 from dashpva.consumers.hpc.analysis.hpc_rsm_consumer import HpcRsmProcessor
+from dashpva.utils.config.hkl import get_hkl_section
 from dashpva.utils.metadata_binding import (
     METADATA_TIMESTAMP_ATTRIBUTE_PREFIX,
     BindingRejection,
@@ -328,7 +329,12 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
         self, values: Mapping[str, Any], shape: tuple[int, ...]
     ) -> str:
         assert self.binder is not None
-        static_values = [(name, values.get(name)) for name in self.binder.static_names]
+        # Energy is per-frame geometry: every frame is converted to Q with its
+        # own energy, so energy scans and mono drift must not stop the grid.
+        energy = get_hkl_section(self.hkl_config, "SPEC", required=True).get("ENERGY_VALUE")
+        static_values = [
+            (name, values.get(name)) for name in self.binder.static_names if name != energy
+        ]
         canonical = self.config.get("IOC_RSM_PARAMETER", {}) or {}
         return geometry_fingerprint(static_values, canonical, shape)
 
