@@ -79,10 +79,8 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
         self._save_request_id = ""
         self._save_error = ""
         self._save_thread: Optional[threading.Thread] = None
-        self._estimating = False
-        self._estimate_extrema: Optional[list[float]] = None
-        self._estimated_bounds: list[float] = []
-        self._estimate_fingerprint = ""
+        self._observed_extrema: Optional[list[float]] = None
+        self._observed_q = None
         super().__init__(configDict)
 
     # -- configuration/control -------------------------------------------
@@ -200,34 +198,16 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
         assert self.binder is not None
         if self._save_state == "running":
             raise SessionError("A live-grid save is in progress; wait for completion.")
-        if command == "estimate_start":
-            if self.session.state is GridSessionState.RUNNING:
-                raise SessionError("Stop the grid before estimating new bounds.")
-            self.binder.reset(keep_static=True)
-            self._estimating = True
-            self._estimate_extrema = None
-            self._estimated_bounds = []
-            self._estimate_fingerprint = ""
-            self._runtime_error = ""
-            return self.session.get_state()
-        if command == "estimate_finish":
-            if self._estimate_extrema is None:
-                raise SessionError(
-                    "No valid frames were observed while estimating bounds."
-                )
-            self._estimating = False
-            self._estimated_bounds = self._padded_extrema(self._estimate_extrema)
-            return self.session.get_state()
         if command == "start":
-            self._estimating = False
             self._runtime_error = ""
             if self.session.state is GridSessionState.IDLE:
                 self.binder.reset(keep_static=True)
             current = self.session.get_state()
+            # Idle starts latch the geometry from the first accepted frame.
             fingerprint = (
                 str(current.get("geometry_fingerprint", ""))
                 if self.session.state is GridSessionState.STOPPED
-                else self._estimate_fingerprint
+                else ""
             )
             return self.session.start(
                 self._bounds_from(payload),
@@ -238,10 +218,8 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             return self.session.stop()
         if command == "clear":
             self.binder.reset(keep_static=True)
-            self._estimating = False
-            self._estimate_extrema = None
-            self._estimated_bounds = []
-            self._estimate_fingerprint = ""
+            self._observed_extrema = None
+            self._observed_q = None
             self._latest_preview = None
             self._saved_path = ""
             self._save_state = "idle"
@@ -347,25 +325,35 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             result.extend((low - margin, high + margin))
         return result
 
-    def _observe_bounds(self, qxyz: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
-        extrema = [
-            float(np.nanmin(qxyz[0])),
-            float(np.nanmax(qxyz[0])),
-            float(np.nanmin(qxyz[1])),
-            float(np.nanmax(qxyz[1])),
-            float(np.nanmin(qxyz[2])),
-            float(np.nanmax(qxyz[2])),
-        ]
-        if self._estimate_extrema is None:
-            self._estimate_extrema = extrema
+    @staticmethod
+    def _q_extrema(qxyz) -> list[float]:
+        # Q is smooth across the detector: a strided interior plus the full
+        # border gives the same range at ~1% of the cost of the whole frame.
+        step = app_settings.RSM_OBSERVED_BOUNDS_STRIDE
+        extrema: list[float] = []
+        for axis in qxyz[:3]:
+            axis = np.asarray(axis)
+            if axis.ndim != 2:
+                samples = axis.ravel()
+            else:
+                samples = np.concatenate((
+                    axis[::step, ::step].ravel(),
+                    axis[0], axis[-1], axis[:, 0], axis[:, -1],
+                ))
+            extrema.extend((float(np.nanmin(samples)), float(np.nanmax(samples))))
+        return extrema
+
+    def _merge_observed(self, extrema: list[float]) -> None:
+        if self._observed_extrema is None:
+            self._observed_extrema = list(extrema)
             return
         for index in (0, 2, 4):
-            self._estimate_extrema[index] = min(
-                self._estimate_extrema[index], extrema[index]
+            self._observed_extrema[index] = min(
+                self._observed_extrema[index], extrema[index]
             )
         for index in (1, 3, 5):
-            self._estimate_extrema[index] = max(
-                self._estimate_extrema[index], extrema[index]
+            self._observed_extrema[index] = max(
+                self._observed_extrema[index], extrema[index]
             )
 
     def process(self, pvObject):
@@ -381,18 +369,26 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             except Exception as exc:
                 self.nFrameErrors += 1
                 self.log_error("RSM attach failed", exc)
+        # Track the H/K/L extent of every frame so the dock can offer bounds.
+        observed = None
+        if self.q_full is not None and self.q_full is not self._observed_q:
+            try:
+                observed = self._q_extrema(self.q_full)
+            except ValueError:
+                observed = None
         with self._grid_lock:
             assert self.session is not None
             assert self.binder is not None
+            if observed is not None and all(np.isfinite(observed)):
+                self._merge_observed(observed)
+                self._observed_q = self.q_full
             running = self.session.state is GridSessionState.RUNNING
-            active = running or self._estimating
-            if not active:
+            if not running:
                 self.binder.observe_inactive_frame_id(self._frame_id(pvObject))
                 self.processingTime += time.time() - started
                 self.updateOutputChannel(pvObject)
                 return pvObject
-            if running:
-                self.session.note_frame_seen()
+            self.session.note_frame_seen()
 
             try:
                 dims = pvObject["dimension"]
@@ -406,8 +402,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                     metadata_timestamps=self._metadata_timestamps(current),
                 )
                 if bound is None:
-                    if running:
-                        self.session.note_binding_rejection()
+                    self.session.note_binding_rejection()
                     self.nFrameErrors += 1
                     return pvObject
 
@@ -420,42 +415,31 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                 q_values = (qxyz[0], qxyz[1], qxyz[2])
                 fingerprint = self._frame_geometry_fingerprint(bound.values, shape)
 
-                if self._estimating:
-                    if not self._estimate_fingerprint:
-                        self._estimate_fingerprint = fingerprint
-                    elif self._estimate_fingerprint != fingerprint:
-                        self._estimating = False
-                        raise ValueError(
-                            "Static RSM geometry changed while estimating bounds. "
-                            "Restart the estimate after the geometry is stable."
-                        )
-                    self._observe_bounds(q_values)
+                try:
+                    self.session.validate_geometry(fingerprint)
+                except SessionError:
+                    self.session.note_processing_rejection()
+                    raise
+                accepted_before = int(
+                    self.session.get_state().get("frames_accepted", 0)
+                )
+                self.session.add_frame(
+                    *q_values,
+                    image,
+                    monitor=bound.monitor,
+                    followed_gap=bound.followed_gap,
+                )
+                accepted_after = int(
+                    self.session.get_state().get("frames_accepted", 0)
+                )
+                if accepted_after > accepted_before:
+                    self.nFramesProcessed += 1
+                    self._runtime_error = ""
                 else:
-                    try:
-                        self.session.validate_geometry(fingerprint)
-                    except SessionError:
-                        self.session.note_processing_rejection()
-                        raise
-                    accepted_before = int(
-                        self.session.get_state().get("frames_accepted", 0)
+                    self.nFrameErrors += 1
+                    self._runtime_error = str(
+                        self.session.get_state().get("last_error", "")
                     )
-                    self.session.add_frame(
-                        *q_values,
-                        image,
-                        monitor=bound.monitor,
-                        followed_gap=bound.followed_gap,
-                    )
-                    accepted_after = int(
-                        self.session.get_state().get("frames_accepted", 0)
-                    )
-                    if accepted_after > accepted_before:
-                        self.nFramesProcessed += 1
-                        self._runtime_error = ""
-                    else:
-                        self.nFrameErrors += 1
-                        self._runtime_error = str(
-                            self.session.get_state().get("last_error", "")
-                        )
                 self._publish_preview_if_due()
             except SessionError as exc:
                 self.nFrameErrors += 1
@@ -464,8 +448,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
                     self.logger.warning("Live grid stopped: %s", exc)
             except Exception as exc:
                 self.nFrameErrors += 1
-                if running:
-                    self.session.note_processing_rejection(str(exc))
+                self.session.note_processing_rejection(str(exc))
                 self._runtime_error = str(exc)
                 if hasattr(self, "logger"):
                     self.logger.warning("Live grid skipped a frame: %s", exc)
@@ -497,7 +480,6 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "ack_command": self._ack_command,
             "command_error": self._command_error,
             "state": state.get("state", "idle"),
-            "estimate_state": "collecting" if self._estimating else "idle",
             "incomplete": int(bool(state.get("incomplete", False))),
             "last_error": state.get("last_error", "") or self._runtime_error,
             "saved_path": self._saved_path,
@@ -507,7 +489,11 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "geometry_fingerprint": state.get("geometry_fingerprint", ""),
             "grid_shape": state.get("grid_shape", []),
             "grid_bounds": state.get("grid_bounds", []),
-            "estimated_bounds": self._estimated_bounds,
+            "observed_bounds": (
+                self._padded_extrema(self._observed_extrema)
+                if self._observed_extrema is not None
+                else []
+            ),
             "frames_seen_running": int(state.get("frames_seen_running", 0)),
             "frames_bound": int(binder.get("frames_bound", 0)),
             "last_binding_rejection": str(binder.get("last_rejection", "")),
@@ -573,7 +559,6 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "ack_command": pva.STRING,
             "command_error": pva.STRING,
             "state": pva.STRING,
-            "estimate_state": pva.STRING,
             "incomplete": pva.UINT,
             "last_error": pva.STRING,
             "saved_path": pva.STRING,
@@ -583,7 +568,7 @@ class HpcRsmGridProcessor(HpcRsmProcessor):
             "geometry_fingerprint": pva.STRING,
             "grid_shape": [pva.UINT],
             "grid_bounds": [pva.DOUBLE],
-            "estimated_bounds": [pva.DOUBLE],
+            "observed_bounds": [pva.DOUBLE],
             "frames_seen_running": pva.ULONG,
             "frames_bound": pva.ULONG,
             "last_binding_rejection": pva.STRING,

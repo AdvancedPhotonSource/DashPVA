@@ -18,7 +18,7 @@
 # ******************************************************************************************************
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QDockWidget, QMenu
+from PyQt5.QtWidgets import QDockWidget, QFrame, QMenu, QScrollArea
 
 
 class BaseDock(QDockWidget):
@@ -31,6 +31,20 @@ class BaseDock(QDockWidget):
         # Store initial visibility preference
         self._initial_show = bool(show)
         self.setup()
+
+    def set_scrollable_widget(self, widget) -> None:
+        """Install ``widget`` inside a scroll area so a crowded dock scrolls instead of squashing."""
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        area.setWidget(widget)
+        # A scroll area's own minimum is tiny, which lets the dock collapse;
+        # keep the content's width and scroll vertically only.
+        area.setMinimumWidth(
+            widget.minimumSizeHint().width() + area.verticalScrollBar().sizeHint().width()
+        )
+        self.setWidget(area)
 
     def setup(self):
         # Dock

@@ -280,11 +280,23 @@ RSM_GRID_PREVIEW_INTERVAL_SECONDS: float = 1.0
 # Motors publish only on value changes; infinity still requires the associator
 # source timestamp, while a finite age limit remains an explicit override.
 RSM_GRID_METADATA_MAX_AGE_SECONDS: float = float("inf")
-RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 5.0
+# Binning one large-detector frame holds the consumer lock for seconds.
+RSM_GRID_CONTROL_TIMEOUT_SECONDS: float = 20.0
 RSM_GRID_SAVE_TIMEOUT_SECONDS: float = 300.0
 RSM_GRID_CONTROL_POLL_INTERVAL_SECONDS: float = 0.05
 # Circle-position changes below this reuse the last angle->Q result (readback jitter).
 RSM_Q_REUSE_ANGLE_TOLERANCE_DEG: float = 1e-4
+RSM_GRID_STATUS_POLL_MS: int = 1000
+# Pixel stride for the observed H/K/L range (border is always included).
+RSM_OBSERVED_BOUNDS_STRIDE: int = 8
+# Live volume autoscale over filled voxels; the high percentile keeps a few
+# hot voxels from compressing everything else. Empty voxels are transparent,
+# filled ones never drop below RSM_GRID_FILLED_MIN_OPACITY.
+RSM_GRID_AUTOSCALE_LOW_PERCENTILE: float = 1.0
+RSM_GRID_AUTOSCALE_HIGH_PERCENTILE: float = 99.9
+RSM_GRID_FILLED_MIN_OPACITY: float = 0.03
+# Below this filled fraction the dock suggests tighter bounds.
+RSM_GRID_SPARSE_FILL_FRACTION: float = 0.001
 RSM_GRID_DEFAULT_RESOLUTION: int = 200
 # Grid lines the box preview will draw per axis before it stops subdividing --
 # past this the lines merge into a solid block and stop conveying anything.
