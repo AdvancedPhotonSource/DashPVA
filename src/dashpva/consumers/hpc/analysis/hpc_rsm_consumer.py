@@ -101,6 +101,7 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
         self.qx = None
         self.qy = None
         self.qz = None
+        self.q_full = None
         self.codec_name = None
         self.codec_parameters = -1
         self.original_dtype = np.dtype('float64')
@@ -285,23 +286,32 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
                 return True
         return False
 
-    def process(self, pvObject):
-        t0 = time.time()
-
-        dims = pvObject['dimension']
-        nDims = len(dims)
-        if not nDims:
-            # Frame has no image data
-            return pvObject
-
-        if 'timeStamp' not in pvObject:
-            # No timestamp, just return the object
-            return pvObject
-
+    def is_rsm_frame(self, pvObject) -> bool:
+        if not len(pvObject['dimension']) or 'timeStamp' not in pvObject:
+            return False
         if 'attribute' not in pvObject:
             self.log_error('attributes not in pvObject')
-            return pvObject
+            return False
+        return True
 
+    def process(self, pvObject):
+        t0 = time.time()
+        if not self.is_rsm_frame(pvObject):
+            return pvObject
+        try:
+            if self.attach_rsm(pvObject, t0):
+                self.nFramesProcessed += 1
+        except Exception as e:
+            self.nFrameErrors += 1
+            self.log_error("Frame processing error", e)
+            return pvObject
+        self.updateOutputChannel(pvObject)
+        self.processingTime += (time.time() - t0)
+        return pvObject
+
+    def attach_rsm(self, pvObject, t0: float) -> bool:
+        """Compute (or reuse) Q for this frame and append the RSM attribute."""
+        dims = pvObject['dimension']
         self.hkl_attributes = self.parse_hkl_ndattributes(pvObject)
         shape = tuple(dim['size'] for dim in dims)
         layout_changed = shape != self.shape or pvObject['codec']['name'] != self.codec_name
@@ -314,6 +324,7 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
 
         if attributes_diff or layout_changed:
             self.qx = self.qy = self.qz = None
+            self.q_full = None
             self.old_attrbutes = None
             qxyz = self.create_rsm(self.hkl_attributes, self.shape)
             if qxyz is None or qxyz[0] is None:
@@ -323,9 +334,8 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
                         "Skipping RSM for this frame: create_rsm returned None "
                         "(likely missing HKL attributes from associator)."
                     )
-                self.updateOutputChannel(pvObject)
-                self.processingTime += (time.time() - t0)
-                return pvObject
+                return False
+            self.q_full = (qxyz[0], qxyz[1], qxyz[2])
             self.qx: np.ndarray = np.ravel(qxyz[0])
             self.qy: np.ndarray = np.ravel(qxyz[1])
             self.qz: np.ndarray = np.ravel(qxyz[2])
@@ -348,92 +358,81 @@ class HpcRsmProcessor(BaseAnalysisProcessor):
             self.old_attrbutes = copy.deepcopy(self.hkl_attributes)
 
         if self.qx is None or self.codec_name is None:
-            self.updateOutputChannel(pvObject)
-            self.processingTime += (time.time() - t0)
-            return pvObject
+            return False
 
-        try:
-            # Create RSM data structure
-            rsm_data = {
-                        'codec':{
-                            'name': self.codec_name,
-                            'parameters': self.codec_parameters},
-                        'qx': {
-                            'compressedSize': int(self.compressed_size_qx),
-                            'uncompressedSize': int(self.uncompressed_size),
-                            'value':self.qx},
-                        'qy': {
-                            'compressedSize': int(self.compressed_size_qy),
-                            'uncompressedSize': int(self.uncompressed_size),
-                            'value':self.qy},
-                        'qz': {
-                            'compressedSize': int(self.compressed_size_qz),
-                            'uncompressedSize': int(self.uncompressed_size),
-                            'value':self.qz},
-                        }
+        rsm_data = {
+                    'codec':{
+                        'name': self.codec_name,
+                        'parameters': self.codec_parameters},
+                    'qx': {
+                        'compressedSize': int(self.compressed_size_qx),
+                        'uncompressedSize': int(self.uncompressed_size),
+                        'value':self.qx},
+                    'qy': {
+                        'compressedSize': int(self.compressed_size_qy),
+                        'uncompressedSize': int(self.uncompressed_size),
+                        'value':self.qy},
+                    'qz': {
+                        'compressedSize': int(self.compressed_size_qz),
+                        'uncompressedSize': int(self.uncompressed_size),
+                        'value':self.qz},
+                    }
 
-            # Create PV object to hold RSM attributes
-            if self.codec_name != '':
-                rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict_compressed}, {'value': rsm_data})}
-            else:
-                rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
+        if self.codec_name != '':
+            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict_compressed}, {'value': rsm_data})}
+        else:
+            rsm_object = {'name': 'RSM', 'value': PvObject({'value': self.type_dict}, {'value': rsm_data})}
 
-            # Rebuild attribute list: all parsed metadata + RSM
-            frameAttributes = []
-            for name, value in self.all_attributes.items():
-                try:
-                    if isinstance(value, bool):
-                        attr = {'name': name, 'value': pva.PvBoolean(value)}
-                    elif isinstance(value, (int, float)):
-                        attr = {'name': name, 'value': pva.PvFloat(float(value))}
-                    elif isinstance(value, str):
-                        attr = {'name': name, 'value': pva.PvString(value)}
-                    elif isinstance(value, np.ndarray):
-                        pv = pva.PvScalarArray(pva.DOUBLE)
-                        pv.set(value.tolist())
-                        attr = {'name': name, 'value': pv}
-                    else:
-                        continue
-                    frameAttributes.append(attr)
-                except Exception:
-                    pass
-            frameAttributes.append(rsm_object)
+        # Rebuild attribute list: all parsed metadata + RSM
+        frameAttributes = []
+        for name, value in self.all_attributes.items():
+            try:
+                if isinstance(value, bool):
+                    attr = {'name': name, 'value': pva.PvBoolean(value)}
+                elif isinstance(value, (int, float)):
+                    attr = {'name': name, 'value': pva.PvFloat(float(value))}
+                elif isinstance(value, str):
+                    attr = {'name': name, 'value': pva.PvString(value)}
+                elif isinstance(value, np.ndarray):
+                    pv = pva.PvScalarArray(pva.DOUBLE)
+                    pv.set(value.tolist())
+                    attr = {'name': name, 'value': pv}
+                else:
+                    continue
+                frameAttributes.append(attr)
+            except Exception:
+                pass
+        frameAttributes.append(rsm_object)
 
-            # Update stats
-            frameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
-            self.lastFrameTimestamp = frameTimestamp
-            self.nFramesProcessed += 1
+        self.lastFrameTimestamp = TimeUtility.getTimeStampAsFloat(pvObject['timeStamp'])
 
-            proc_time_start = pva.PvObject({'value': pva.DOUBLE})
-            proc_time_start['value'] = t0  # seconds, or multiply by 1000.0 for ms
-            frameAttributes.append({
-                'name': f'procTimeStart_{self.__class__.__name__}',
-                'value': proc_time_start
-            })
-            proc_time_end = pva.PvObject({'value': pva.DOUBLE})
-            proc_time_end['value'] = time.time()  # seconds, or multiply by 1000.0 for ms
-            frameAttributes.append({
-                'name': f'procTimeEnd_{self.__class__.__name__}',
-                'value': proc_time_end
-            })
-            proc_time = pva.PvObject({'value': pva.DOUBLE})
-            proc_time['value'] = (time.time() - t0)  # seconds, or multiply by 1000.0 for ms
-            frameAttributes.append({
-                'name': f'procTime_{self.__class__.__name__}',
-                'value': proc_time
-            })
+        proc_time_start = pva.PvObject({'value': pva.DOUBLE})
+        proc_time_start['value'] = t0
+        frameAttributes.append({
+            'name': f'procTimeStart_{self.__class__.__name__}',
+            'value': proc_time_start
+        })
+        proc_time_end = pva.PvObject({'value': pva.DOUBLE})
+        proc_time_end['value'] = time.time()
+        frameAttributes.append({
+            'name': f'procTimeEnd_{self.__class__.__name__}',
+            'value': proc_time_end
+        })
+        proc_time = pva.PvObject({'value': pva.DOUBLE})
+        proc_time['value'] = (time.time() - t0)
+        frameAttributes.append({
+            'name': f'procTime_{self.__class__.__name__}',
+            'value': proc_time
+        })
 
-            pvObject['attribute'] = frameAttributes
+        pvObject['attribute'] = frameAttributes
+        return True
 
-            self.updateOutputChannel(pvObject)
-
-            # Update processing time
-            t1 = time.time()
-            self.processingTime += (t1 - t0)
-
-            return pvObject
-
-        except Exception as e:
-            self.nFrameErrors += 1
-            self.log_error("Frame processing error", e)
-            return pvObject
+    def cached_q_for(self, hkl_values: dict):
+        """Full-shape (qx, qy, qz) from the last attach_rsm if it used these values."""
+        if self.q_full is None or self.old_attrbutes is None:
+            return None
+        subset = {k: v for k, v in hkl_values.items() if k in self.hkl_pv_channels}
+        if self.attributes_diff(subset, self.old_attrbutes):
+            return None
+        return self.q_full
