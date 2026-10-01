@@ -289,12 +289,18 @@ RSM_GRID_DEFAULT_RESOLUTION: int = 200
 RSM_GRID_PREVIEW_MAX_DIVISIONS: int = 24
 # Factor per click of the zoom +/- buttons on DashAnalysis 3D views.
 ANALYSIS_CAMERA_ZOOM_STEP: float = 1.25
+# File endings DashAnalysis.load_data accepts when given a folder.
+ANALYSIS_SCAN_EXTENSIONS: tuple = (".h5", ".hdf5", ".nxs")
 # Tick-label format of the H/K/L axis numbers on DashAnalysis 3D views.
 ANALYSIS_AXIS_NUMBER_FORMAT: str = "%.3f"
 # Front/back step of the 3D slice buttons, as a fraction of the data extent along the normal.
 ANALYSIS_SLICE_MOVE_FRACTION: float = 0.02
 # Degrees per click of the 3D slice tilt buttons.
 ANALYSIS_SLICE_TILT_STEP_DEGREES: float = 5.0
+# H/K/L grid step the 3D slice Snap button uses when no slice_snap is given.
+ANALYSIS_SLICE_SNAP_STEP: float = 0.1
+# Decimal places of the H/K/L values da.slice_info returns.
+ANALYSIS_SLICE_INFO_DECIMALS: int = 4
 RSM_STATIC_METADATA_RELATIVE_TOLERANCE: float = 1e-6
 RSM_STATIC_METADATA_ABSOLUTE_TOLERANCE: float = 1e-9
 RSM_IOC_POLL_INTERVAL_SECONDS: float = 0.01
