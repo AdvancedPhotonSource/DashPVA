@@ -194,6 +194,11 @@ class _RoiStatsWindow(QDialog):
 
 
 class DiffractionImageWindow(BaseWindow):
+    #: Opt out of BaseWindow's store while this viewer still restores its own
+    #: area_det_* keys in __init__ -- both running would restore twice, the
+    #: second from an empty key. Dropped when it migrates onto the shared store.
+    persist_state = False
+
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
     # the main (GUI) thread. Args: message, level ('info' | 'warning' | 'error').

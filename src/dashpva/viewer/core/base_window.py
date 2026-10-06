@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
@@ -64,6 +64,17 @@ class BaseWindow(QMainWindow):
     # Signals
     file_opened = pyqtSignal(str)  # Emitted when a file is opened
     file_saved = pyqtSignal(str)   # Emitted when a file is saved
+
+    #: Persist geometry and dock layout to QSettings. Geometry and dock layout
+    #: are physical machine state, so they live in Qt's per-user store rather
+    #: than a portable TOML/JSON config. False opts out (the area-detector
+    #: viewer keeps its own older area_det_* keys).
+    persist_state = True
+
+    #: Dock-state version for this viewer. Raise it on the one viewer whose dock
+    #: set changed -- Qt drops a saved state whose version does not match, and a
+    #: number shared across viewers would retire every other layout as well.
+    dock_state_version: int = app_settings.DOCK_STATE_VERSION
 
     def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
                  visible_actions=_SHOW_ALL, size_policy: dict = None):
@@ -114,6 +125,9 @@ class BaseWindow(QMainWindow):
 
         # CPU, GPU, runtime in status bar
         self.init_perf_statusbar()
+
+        if self.persist_state:
+            QTimer.singleShot(0, self._restore_on_start)
 
     def load_ui(self):
         """Load the UI file for this window."""
@@ -633,6 +647,73 @@ class BaseWindow(QMainWindow):
         self._close_confirmed = True
         return True
 
+    # ---- Machine-local UI persistence (QSettings, per viewer type) ----
+
+    def _qsettings(self) -> QSettings:
+        """QSettings scoped to this viewer type (org "DashPVA")."""
+        return QSettings("DashPVA", type(self).__name__)
+
+    def save_layout(self) -> None:
+        """Persist window geometry and dock layout."""
+        if not self.persist_state:
+            return
+        s = self._qsettings()
+        s.setValue("geometry", self.saveGeometry())
+        s.setValue("dock_state", self.saveState(self.dock_state_version))
+
+    def restore_geometry(self) -> None:
+        """Restore window geometry, clamped to the current screen.
+
+        Safe to call from ``__init__``. Geometry saved on a larger monitor
+        would otherwise reopen off the edge of a smaller one.
+        """
+        if not self.persist_state:
+            return
+        geom = self._qsettings().value("geometry")
+        if not geom:
+            return
+        try:
+            self.restoreGeometry(geom)
+            avail = self.screen().availableGeometry()
+            if self.width() > avail.width() or self.height() > avail.height():
+                self.resize(min(self.width(), avail.width()),
+                            min(self.height(), avail.height()))
+        except Exception:
+            pass
+
+    def restore_dock_state(self) -> None:
+        """Restore dock layout. Call only once this window's docks exist.
+
+        Qt drops a saved state whose version does not match, so bumping this
+        viewer's ``dock_state_version`` retires its stale layouts instead of
+        restoring docks into places that no longer exist.
+        """
+        if not self.persist_state:
+            return
+        state = self._qsettings().value("dock_state")
+        if state:
+            try:
+                self.restoreState(state, self.dock_state_version)
+            except Exception:
+                pass
+
+    def _restore_on_start(self) -> None:
+        """Restore once __init__ has finished, on the next event-loop turn.
+
+        Deferred so every subclass __init__ body is done: its docks exist (dock
+        state cannot be restored before them) and its hardcoded defaults are
+        already set, which would otherwise overwrite restored values. Doing it
+        here rather than in each subclass also means no window can forget to.
+        """
+        if not self.persist_state:
+            return
+        self.restore_layout()
+
+    def restore_layout(self) -> None:
+        """Geometry and docks together, for windows whose docks already exist."""
+        self.restore_geometry()
+        self.restore_dock_state()
+
     def closeEvent(self, event):
         """Close only once any unsaved edits have been saved or discarded.
 
@@ -641,6 +722,7 @@ class BaseWindow(QMainWindow):
         """
         if not self.confirm_close(event):
             return
+        self.save_layout()
         event.accept()
 
     def save_checkable_state(self, settings, widget, key: str) -> None:
