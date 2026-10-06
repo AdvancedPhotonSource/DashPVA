@@ -26,10 +26,17 @@ from dashpva.workflow.workflow import Workflow
 
 def test_frame_memory_text_scales_with_frame_count():
     one = Workflow._frame_memory_text(1)
-    assert one.startswith("1 MP reference")
+    assert one.startswith("Estimated for 1 MP: images")
+    assert "with HKL" in one
     assert "1.9 MiB" in one
     assert "24.8 MiB" in Workflow._frame_memory_text(1)
     assert "GiB" in Workflow._frame_memory_text(1000)
+
+
+def test_frame_memory_rich_text_bolds_sizes():
+    text = Workflow._frame_memory_text(1, rich_text=True)
+    assert "images <b>1.9 MiB</b>" in text
+    assert "with HKL <b>24.8 MiB</b>" in text
 
 
 def test_small_buffers_start_without_asking(monkeypatch):

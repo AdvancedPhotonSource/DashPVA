@@ -642,12 +642,15 @@ class Workflow(QDialog, LogMixin):
             value /= 1024
 
     @classmethod
-    def _frame_memory_text(cls, frame_count: int) -> str:
+    def _frame_memory_text(cls, frame_count: int, rich_text: bool = False) -> str:
         image = cls._format_memory(frame_count * _REFERENCE_IMAGE_BYTES)
         image_q = cls._format_memory(
             frame_count * (_REFERENCE_IMAGE_BYTES + _REFERENCE_Q_BYTES)
         )
-        return f'1 MP reference: uint16 image {image}; image + float64 Q {image_q}'
+        if rich_text:
+            image = f'<b>{image}</b>'
+            image_q = f'<b>{image_q}</b>'
+        return f'Estimated for 1 MP: images {image}; with HKL {image_q}'
 
     def _setup_memory_feedback(self) -> None:
         queue_tip = (
@@ -668,16 +671,23 @@ class Workflow(QDialog, LogMixin):
         self._memory_estimate_labels = []
         for spin_box, layout, row, tooltip in controls:
             label = QtWidgets.QLabel()
-            label.setProperty('class', 'caption')
+            label.setProperty('memoryEstimate', True)
             label.setToolTip(tooltip)
             spin_box.setToolTip(tooltip)
-            layout.addWidget(label, row, 2)
+            field = QtWidgets.QWidget()
+            field_layout = QtWidgets.QVBoxLayout(field)
+            field_layout.setContentsMargins(0, 0, 0, 0)
+            field_layout.setSpacing(2)
+            layout.removeWidget(spin_box)
+            field_layout.addWidget(spin_box)
+            field_layout.addWidget(label)
+            layout.addWidget(field, row, 1, 1, 2)
             spin_box.valueChanged.connect(
                 lambda value, estimate_label=label: estimate_label.setText(
-                    self._frame_memory_text(value)
+                    self._frame_memory_text(value, rich_text=True)
                 )
             )
-            label.setText(self._frame_memory_text(spin_box.value()))
+            label.setText(self._frame_memory_text(spin_box.value(), rich_text=True))
             self._memory_estimate_labels.append(label)
 
     def _confirm_memory_risk(self, title: str, entries: list[tuple[str, int]]) -> bool:
