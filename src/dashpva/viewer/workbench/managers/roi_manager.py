@@ -855,11 +855,13 @@ class ROIManager:
             if sub is None or int(sub.size) == 0:
                 return None
 
+            pos = roi.pos()
+            size = roi.size()
             stats = {
-                'x': int(x0) if x0 is not None else 0,
-                'y': int(y0) if y0 is not None else 0,
-                'w': int(w) if w is not None else int(sub.shape[1]) if sub.ndim == 2 else 0,
-                'h': int(h) if h is not None else int(sub.shape[0]) if sub.ndim == 2 else 0,
+                'x': int(pos.x()),
+                'y': int(pos.y()),
+                'w': int(size.x()),
+                'h': int(size.y()),
                 'sum': float(np.sum(sub)),
                 'min': float(np.min(sub)),
                 'max': float(np.max(sub)),
