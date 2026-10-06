@@ -357,6 +357,11 @@ QTreeWidget#treeWidgetConfig[sectionActive="false"] {
     color: palette(mid);
 }
 QLabel#labelProfile, QLabel#labelProfileDescription { color: $INFO; font-weight: bold; }
+QLabel[memoryEstimate="true"] {
+    color: $TEXT_MUTED;
+    font-style: italic;
+    font-size: $FONT_CAPTION;
+}
 QComboBox#comboBoxProfile { border: 1px solid $INFO; border-radius: 3px; padding: 2px 6px; }
 QLineEdit#lineEditProfileDescription { color: $TEXT_SECONDARY; background: transparent; border: none; }
 QPushButton#buttonCollapseAll, QPushButton#buttonExpandAll { font-size: $FONT_BODY; padding: 4px 8px; min-height: 28px; }
