@@ -50,10 +50,42 @@ def test_batch_save_writes_cropped_stack_and_geometry(tmp_path):
     with h5py.File(path, "r") as h5f:
         source = h5f["/entry/data/data"]
         roi = h5f[saved_path]
-        np.testing.assert_array_equal(roi[...], source[:, 3:7, 4:9])
+        np.testing.assert_array_equal(roi[...], source[:, 4:9, 3:7])
         assert (roi.attrs["x"], roi.attrs["y"]) == (4, 3)
         assert (roi.attrs["w"], roi.attrs["h"]) == (5, 4)
         assert roi.attrs["source_path"] == "/entry/data/data"
+        frames = roi[...]
+        totals = frames.sum(axis=(1, 2))
+        expected_x = frames.sum(axis=2) @ np.arange(frames.shape[1]) / totals
+        expected_y = frames.sum(axis=1) @ np.arange(frames.shape[2]) / totals
+        np.testing.assert_allclose(
+            h5f["/entry/data/rois/info/Batch_ROI/ComX"], expected_x)
+        np.testing.assert_allclose(
+            h5f["/entry/data/rois/info/Batch_ROI/ComY"], expected_y)
+        result = h5f["/entry/data/rois/info/Batch_ROI"]
+        assert result.attrs["NX_class"] == "NXcollection"
+        assert result["ComX"].attrs["units"] == "pixel"
+        assert result["ComY"].attrs["units"] == "pixel"
+        assert h5f.get(f"{result.name}/roi", getlink=True).path == saved_path
+        assert h5f.get(f"{result.name}/source", getlink=True).path == "/entry/data/data"
+        assert roi.attrs["com_x"] == f"{result.name}/ComX"
+        assert roi.attrs["com_y"] == f"{result.name}/ComY"
+        assert roi.attrs["analysis"] == result.name
+
+
+def test_saved_com_matches_the_spot_the_roi_was_drawn_on(tmp_path):
+    path = tmp_path / "spot.h5"
+    data = np.zeros((1, 12, 16))
+    data[0, 7, 4] = 1.0
+    with h5py.File(path, "w") as h5f:
+        h5f["/entry/data/data"] = data
+
+    ROIManager._save_roi_geometry_to_file(
+        str(path), "/entry/data/data", "Spot", (4, 3, 5, 4))
+
+    with h5py.File(path, "r") as h5f:
+        assert h5f["/entry/data/rois/info/Spot/ComX"][0] == 3.0
+        assert h5f["/entry/data/rois/info/Spot/ComY"][0] == 1.0
 
 
 def test_batch_save_suffixes_same_named_roi(tmp_path):
@@ -70,8 +102,29 @@ def test_batch_save_suffixes_same_named_roi(tmp_path):
         first_roi = h5f["/entry/data/rois/Batch_ROI"]
         second_roi = h5f[second_path]
         assert first_roi.shape == (3, 2, 2)
-        assert second_roi.shape == (3, 5, 4)
+        assert second_roi.shape == (3, 4, 5)
         assert (second_roi.attrs["x"], second_roi.attrs["y"]) == (2, 3)
+        assert "/entry/data/rois/info/Batch_ROI/ComX" in h5f
+        assert "/entry/data/rois/info/Batch_ROI(2)/ComX" in h5f
+
+
+def test_deleting_an_roi_removes_its_results_and_keeps_the_others(tmp_path):
+    path = tmp_path / "scan.h5"
+    _image_file(path)
+    first = ROIManager._save_roi_geometry_to_file(
+        str(path), "/entry/data/data", "First", (1, 1, 2, 2))
+    second = ROIManager._save_roi_geometry_to_file(
+        str(path), "/entry/data/data", "Second", (2, 2, 2, 2))
+
+    with h5py.File(path, "a") as h5f:
+        ROIManager._delete_roi_dataset(h5f, first)
+        assert first not in h5f
+        assert "/entry/data/rois/info/First" not in h5f
+        assert "/entry/data/rois/info/Second/ComX" in h5f
+
+        ROIManager._delete_roi_dataset(h5f, second)
+        assert "/entry/data/rois" not in h5f
+        assert "/entry/data/data" in h5f
 
 
 def test_batch_update_reuses_linked_dataset(tmp_path):
@@ -92,7 +145,8 @@ def test_batch_update_reuses_linked_dataset(tmp_path):
         datasets = [name for name, item in rois.items() if isinstance(item, h5py.Dataset)]
         assert datasets == ["Batch_ROI"]
         roi = rois["Batch_ROI"]
-        assert roi.shape == (3, 5, 4)
+        assert roi.shape == (3, 4, 5)
+        assert rois["info/Batch_ROI/ComX"].shape == (3,)
         assert roi.attrs["batch_id"] == "batch-1"
         assert roi.attrs["batch_name"] == "Batch ROI"
 
@@ -455,11 +509,17 @@ def test_save_to_always_includes_current_file_once(qapp, monkeypatch, tmp_path):
         lambda *args, **kwargs: None,
     )
 
-    manager._save_roi_to_files(Roi(), [str(other), str(current)])
+    roi = Roi()
+    manager._save_roi_to_files(roi, [str(other), str(current)])
+
+    assert manager.roi_source_by_id[id(roi)]["roi_dataset_path"] == "/entry/data/rois/Exported_ROI"
+    assert manager.roi_source_by_id[id(roi)]["file_path"] == str(current)
 
     for path in (current, other):
         with h5py.File(path, "r") as h5f:
             assert "/entry/data/rois/Exported_ROI" in h5f
+            assert "/entry/data/rois/info/Exported_ROI/ComX" in h5f
+            assert "/entry/data/rois/info/Exported_ROI/ComY" in h5f
 
 
 def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path):
@@ -502,3 +562,96 @@ def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path
     assert str(current) in details[0]
     assert str(other) in details[0]
     assert prompted_names == ["ROI (current)"]
+
+
+def test_save_roi_refuses_an_roi_that_was_never_saved(tmp_path):
+    path = tmp_path / "scan.h5"
+    data = np.zeros((2, 12, 16), dtype=np.float32)
+    data[:, 7, 4] = 1.0
+    with h5py.File(path, "w") as h5f:
+        h5f["/entry/data/data"] = data
+
+    class Point:
+        def __init__(self, x, y):
+            self._x, self._y = x, y
+
+        def x(self):
+            return self._x
+
+        def y(self):
+            return self._y
+
+    class Roi:
+        def pos(self):
+            return Point(4, 3)
+
+        def size(self):
+            return Point(5, 4)
+
+    class Main:
+        current_file_path = str(path)
+        current_2d_data = data
+        selected_dataset_path = "/entry/data/data"
+
+        def update_status(self, *args, **kwargs):
+            pass
+
+    manager = ROIManager(Main())
+    manager.get_roi_name = lambda roi: "New ROI"
+    manager.save_roi(Roi())
+
+    with h5py.File(path, "r") as h5f:
+        assert "/entry/data/rois" not in h5f
+
+
+def _file_backed_manager(path, data):
+    class Main:
+        current_file_path = str(path)
+        current_2d_data = data
+        selected_dataset_path = "/entry/data/data"
+        image_view = types.SimpleNamespace(addItem=lambda item: None, imageItem=None)
+        rois = []
+
+        def update_status(self, *args, **kwargs):
+            pass
+
+        def get_current_frame_data(self):
+            return data[0]
+
+    manager = ROIManager(Main())
+    manager.render_rois_for_dataset(str(path), "/entry/data/data")
+    return manager
+
+
+def test_save_roi_overrides_the_existing_roi(qapp, tmp_path):
+    path = tmp_path / "scan.h5"
+    _image_file(path)
+    ROIManager._save_roi_geometry_to_file(
+        str(path), "/entry/data/data", "R", (1, 1, 2, 2))
+    with h5py.File(path, "r") as h5f:
+        data = h5f["/entry/data/data"][...].astype(np.float32)
+    manager = _file_backed_manager(path, data)
+
+    manager.save_roi(manager.rois[0])
+
+    with h5py.File(path, "r") as h5f:
+        assert list(k for k in h5f["/entry/data/rois"] if k != "info") == ["R"]
+        info = h5f["/entry/data/rois/info"]
+        assert [k for k in info if isinstance(info[k], h5py.Group)] == ["R"]
+
+
+def test_delete_from_disk_finds_a_renamed_file_backed_roi(qapp, tmp_path):
+    path = tmp_path / "scan.h5"
+    _image_file(path)
+    ROIManager._save_roi_geometry_to_file(
+        str(path), "/entry/data/data", "R", (1, 1, 2, 2))
+    with h5py.File(path, "r") as h5f:
+        data = h5f["/entry/data/data"][...].astype(np.float32)
+    manager = _file_backed_manager(path, data)
+    roi = manager.rois[0]
+    manager.roi_names[id(roi)] = "Renamed"
+
+    manager.delete_roi_from_disk(roi)
+
+    with h5py.File(path, "r") as h5f:
+        assert "/entry/data/rois" not in h5f

@@ -38,7 +38,14 @@ from dashpva.viewer.workbench.rois.roi_plot_dock import (
     norm_array,
     norm_key,
     normalize_series,
+    roi_com,
 )
+
+
+def test_roi_com_weights_axis_0_as_x():
+    sub = np.zeros((5, 4))
+    sub[3, 1] = 1.0
+    assert roi_com(sub) == (3.0, 1.0)
 
 
 def test_a_matching_divisor_divides_point_for_point():

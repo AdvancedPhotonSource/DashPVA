@@ -19,6 +19,7 @@
 
 import os
 
+import h5py
 from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import (
     QGroupBox,
@@ -26,6 +27,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
 )
 
@@ -200,7 +202,7 @@ class DataStructureDock(BaseDock):
     def refresh_data_structure_display(self, file_path=None):
         """Refresh the data tree by reloading currently listed top-level items (files and folder sections).
         This uses the main window's existing load functions to ensure identical population behavior.
-        If a specific file_path is provided, it will attempt to refresh only that entry; otherwise, refreshes all."""
+        If a specific file_path is provided, only that file's entries are updated in place; otherwise, refreshes all."""
         try:
             tree = getattr(self, 'tree_data', None)
             if tree is None:
@@ -211,24 +213,54 @@ class DataStructureDock(BaseDock):
                 QMessageBox.information(self, "Refresh", "Main window is not available.")
                 return
 
+            if file_path:
+                # Update that file's entries in place, wherever they sit in the tree
+                target = os.path.realpath(file_path)
+                stack = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+                while stack:
+                    item = stack.pop()
+                    path = item.data(0, Qt.UserRole + 1)
+                    if item.data(0, Qt.UserRole + 2) != "file_root":
+                        stack.extend(item.child(i) for i in range(item.childCount()))
+                        continue
+                    if not isinstance(path, str) or os.path.realpath(path) != target:
+                        continue
+                    fresh = QTreeWidgetItem()
+                    with h5py.File(path, 'r') as h5f:
+                        mw._populate_tree_recursive(h5f, fresh)
+                    # Add, remove or relabel children only, so what is expanded stays expanded
+                    pairs = [(item, fresh)]
+                    while pairs:
+                        old_parent, new_parent = pairs.pop()
+                        existing = {
+                            old_parent.child(i).text(0).split(' (')[0]: old_parent.child(i)
+                            for i in range(old_parent.childCount())
+                        }
+                        index = 0
+                        for new in new_parent.takeChildren():
+                            old = existing.pop(new.text(0).split(' (')[0], None)
+                            if old is None:
+                                old_parent.insertChild(index, new)
+                                index += 1
+                                continue
+                            old.setText(0, new.text(0))
+                            old.setForeground(0, new.foreground(0))
+                            for role in (Qt.UserRole, Qt.UserRole + 3):
+                                old.setData(0, role, new.data(0, role))
+                            index = old_parent.indexOfChild(old) + 1
+                            pairs.append((old, new))
+                        for stale in existing.values():
+                            old_parent.removeChild(stale)
+                return
+
             # Snapshot existing top-level items and their paths/types
             snapshot = []
             try:
-                if file_path:
-                    # If a specific path was requested, try to locate it among top-level items
-                    for i in range(tree.topLevelItemCount()):
-                        item = tree.topLevelItem(i)
-                        path = item.data(0, Qt.UserRole + 1)
-                        if path == file_path:
-                            item_type = item.data(0, Qt.UserRole + 2)
-                            snapshot.append((item_type, path))
-                            break
-                else:
-                    for i in range(tree.topLevelItemCount()):
-                        item = tree.topLevelItem(i)
-                        item_type = item.data(0, Qt.UserRole + 2)
-                        path = item.data(0, Qt.UserRole + 1)
-                        snapshot.append((item_type, path))
+                for i in range(tree.topLevelItemCount()):
+                    item = tree.topLevelItem(i)
+                    item_type = item.data(0, Qt.UserRole + 2)
+                    path = item.data(0, Qt.UserRole + 1)
+                    snapshot.append((item_type, path))
             except Exception:
                 snapshot = []
 

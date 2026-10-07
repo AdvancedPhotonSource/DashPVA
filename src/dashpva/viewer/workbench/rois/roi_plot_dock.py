@@ -76,6 +76,15 @@ def _add_metric_item(combo, key: str):
     combo.addItem(DISPLAY_NAMES.get(key, key), key)
 
 
+def roi_com(sub):
+    """Return the intensity-weighted (x, y) centre of an ROI region, axis 0 being x."""
+    total = float(np.sum(sub)) or 1.0
+    return (
+        float(np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total,
+        float(sub.sum(axis=0) @ np.arange(sub.shape[1])) / total,
+    )
+
+
 def normalize_series(y_data, norm):
     """Divide y_data by norm point for point, offline, from values already in the file.
 
@@ -322,11 +331,11 @@ class ROIPlotDock(QDockWidget):
         # Fallback to axis-aligned bounding box
         if sub is None or int(getattr(sub, 'size', 0)) == 0:
             x0, y0, w, h = self._get_roi_bounds()
-            hgt, wid = frame.shape
+            wid, hgt = frame.shape
             x1 = min(wid, x0 + w)
             y1 = min(hgt, y0 + h)
             if x0 < x1 and y0 < y1:
-                sub = frame[y0:y1, x0:x1]
+                sub = frame[x0:x1, y0:y1]
             else:
                 sub = None
         return sub
@@ -355,9 +364,7 @@ class ROIPlotDock(QDockWidget):
                     s = float(np.sum(sub))
                     mn = float(np.min(sub))
                     mx = float(np.max(sub))
-                    total = s if s != 0.0 else 1.0
-                    cy = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
-                    cx = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
+                    cx, cy = roi_com(sub)
                 else:
                     s = 0.0
                     mn = 0.0
@@ -398,9 +405,7 @@ class ROIPlotDock(QDockWidget):
                 s = float(np.sum(sub))
                 mn = float(np.min(sub))
                 mx = float(np.max(sub))
-                total = s if s != 0.0 else 1.0
-                cx = float((sub.sum(axis=0) @ np.arange(sub.shape[1])) / total)
-                cy = float((np.arange(sub.shape[0]) @ sub.sum(axis=1)) / total)
+                cx, cy = roi_com(sub)
             else:
                 s = 0.0
                 mn = 0.0

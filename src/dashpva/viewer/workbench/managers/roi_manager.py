@@ -112,6 +112,7 @@ class ContextRectROI(pg.RectROI):
                     action_save.setToolTip("Use Save Batch for a linked ROI")
                 try:
                     action_save.triggered.connect(lambda: self.parent_window.roi_manager.save_roi(self))
+                    action_save.setEnabled('roi_dataset_path' in self.parent_window.roi_manager.roi_source_by_id.get(id(self), {}))
                 except Exception:
                     pass
                 menu.addAction(action_save)
@@ -182,7 +183,7 @@ class ROIManager:
         # Each listener is called as cb(event: str, roi: Optional[pg.ROI])
         self._listeners: Set[Callable[[str, Optional[pg.ROI]], None]] = set()
         # Track ROI source (file/dataset) for naming and scoping
-        # roi_source_by_id[roi_id] = { 'file_path': str|None, 'dataset_path': str|None }
+        # roi_source_by_id[roi_id] = { 'file_path': str|None, 'dataset_path': str|None, 'roi_dataset_path': str (file-backed) }
         self.roi_source_by_id = {}
         # Guard to suppress itemChanged recursion when programmatically updating table cells
         self._suppress_table_item_changed = False
@@ -420,7 +421,7 @@ class ROIManager:
             pass
 
     def delete_roi_from_disk(self, roi, delete_batch: bool = False) -> None:
-        """Delete the ROI dataset from disk under /entry/data/rois. Ignores if not present."""
+        """Delete the ROI dataset from disk under /entry/data/rois, reporting when it cannot."""
         try:
             # Resolve file path: prefer recorded source mapping, fallback to current file
             src = dict(self.roi_source_by_id.get(id(roi), {}))
@@ -452,7 +453,7 @@ class ROIManager:
                             item = rois_group.get(name)
                             if (isinstance(item, h5py.Dataset)
                                     and str(item.attrs.get('batch_id', '')) == batch_id):
-                                del rois_group[name]
+                                self._remove_roi_entry(h5f, item.name)
                                 break
                 for batch_file in remaining_files:
                     try:
@@ -488,22 +489,45 @@ class ROIManager:
                         candidates.append(p)
 
             # Delete the first existing candidate
+            deleted = None
             try:
                 with h5py.File(file_path, 'a') as h5f:
                     for p in candidates:
-                        try:
-                            if p in h5f and isinstance(h5f[p], h5py.Dataset):
-                                del h5f[p]
-                                self.main.update_status(f"ROI dataset deleted from disk: {p}")
-                                break
-                        except Exception:
-                            # continue to next candidate
-                            continue
-            except Exception:
-                # Silently ignore disk errors per spec
-                pass
-        except Exception:
-            pass
+                        if p in h5f and isinstance(h5f[p], h5py.Dataset):
+                            self._delete_roi_dataset(h5f, p)
+                            deleted = p
+                            break
+            except (OSError, KeyError) as exc:
+                self.main.update_status(
+                    f"Could not delete ROI from {file_path}: {exc}", level='warning')
+                return
+            if deleted is None:
+                self.main.update_status(
+                    f"ROI not found on disk in {os.path.basename(file_path)}", level='warning')
+                return
+            self.main.update_status(f"ROI dataset deleted from disk: {deleted}")
+            if hasattr(self.main, 'data_structure_dock'):
+                self.main.data_structure_dock.refresh_data_structure_display(file_path)
+        except Exception as exc:
+            self.main.update_status(f"Error deleting ROI from disk: {exc}", level='warning')
+
+    @staticmethod
+    def _remove_roi_entry(h5f, path) -> None:
+        """Delete an ROI dataset and its CoM results."""
+        name = path.rsplit('/', 1)[-1]
+        result_path = str(h5f[path].attrs.get('analysis', f"/entry/data/rois/info/{name}"))
+        del h5f[path]
+        if result_path in h5f:
+            del h5f[result_path]
+
+    @staticmethod
+    def _delete_roi_dataset(h5f, path) -> None:
+        """Delete an ROI dataset, its CoM results and, once no ROIs remain, the rois group."""
+        ROIManager._remove_roi_entry(h5f, path)
+        rois_group = h5f.get('/entry/data/rois')
+        if isinstance(rois_group, h5py.Group) and not any(
+                isinstance(rois_group[key], h5py.Dataset) for key in rois_group):
+            del h5f['/entry/data/rois']
 
     def detach_roi_from_batch(self, roi) -> None:
         """Keep the current ROI dataset while removing it from its linked batch."""
@@ -641,7 +665,7 @@ class ROIManager:
             self.main.update_status(f"Error deleting ROI: {e}", level='error')
 
     def save_roi(self, roi) -> None:
-        """Save the selected ROI to the current HDF5 file under /entry/data/rois with same frame structure."""
+        """Overwrite an already-saved ROI's dataset in its HDF5 file; new ROIs are saved with Save To."""
         source = self.roi_source_by_id.get(id(roi), {})
         if source.get('batch_id') and source.get('batch_files'):
             self.main.update_status(
@@ -649,8 +673,11 @@ class ROIManager:
                 level='warning')
             return
         try:
-            # Ensure we have a current HDF5 file path
-            file_path = getattr(self.main, "current_file_path", None)
+            roi_path = self.roi_source_by_id.get(id(roi), {}).get('roi_dataset_path')
+            if not isinstance(roi_path, str):
+                self.main.update_status("ROI has not been saved yet; use Save To…", level='warning')
+                return
+            file_path = self.roi_source_by_id[id(roi)].get('file_path')
             if not file_path or not isinstance(file_path, str):
                 self.main.update_status("No current HDF5 file loaded", level='warning')
                 return
@@ -682,15 +709,15 @@ class ROIManager:
                     y0 = max(0, int(pos.y()))
                     w = max(1, int(size.x()))
                     h = max(1, int(size.y()))
-                    hgt, wid = frame.shape
+                    wid, hgt = frame.shape
                     x1 = min(wid, x0 + w)
                     y1 = min(hgt, y0 + h)
                     if x0 < x1 and y0 < y1:
-                        sub = frame[y0:y1, x0:x1]
+                        sub = frame[x0:x1, y0:y1]
                 return sub
 
             # Build ROI stack across frames (or single frame for 2D data)
-            # Build ROI-only stack: shape is (num_frames, h, w) for 3D data, or (h, w) for 2D
+            # Build ROI-only stack: shape is (num_frames, w, h) for 3D data, or (w, h) for 2D
             if isinstance(data, np.ndarray) and data.ndim == 3:
                 num_frames = int(data.shape[0])
                 samples = []
@@ -702,7 +729,7 @@ class ROIManager:
                         size = roi.size()
                         w = max(1, int(size.x()))
                         h = max(1, int(size.y()))
-                        samples.append(np.zeros((h, w), dtype=np.float32))
+                        samples.append(np.zeros((w, h), dtype=np.float32))
                     else:
                         samples.append(np.asarray(sub, dtype=np.float32))
                 # Ensure consistent shape across frames by trimming to smallest h,w
@@ -732,9 +759,9 @@ class ROIManager:
                         data_grp = entry.require_group('data')
                     rois_grp = data_grp.require_group('rois')
 
-                    # Dataset name based on ROI name
-                    name = self.get_roi_name(roi)
-                    ds_name = self._unique_roi_dataset_name(rois_grp, name)
+                    ds_name = roi_path.rsplit('/', 1)[-1]
+                    if isinstance(rois_grp.get(ds_name), h5py.Dataset):
+                        self._remove_roi_entry(h5f, f"{rois_grp.name}/{ds_name}")
                     dset = rois_grp.create_dataset(ds_name, data=roi_stack, dtype=np.float32)
                     # Attach ROI metadata as dataset attributes: position/size and source dataset path
                     try:
@@ -751,6 +778,7 @@ class ROIManager:
                         dset.attrs['source_path'] = str(src_path)
                     except Exception:
                         pass
+                    self._save_roi_com(h5f, dset, roi_stack)
 
                     # Info group: original file name and frames used (blank for now)
                     info_grp = rois_grp.require_group('info')
@@ -769,6 +797,8 @@ class ROIManager:
                         pass
 
                 self.main.update_status(f"ROI saved to HDF5 at /entry/data/rois/{ds_name}")
+                if hasattr(self.main, 'data_structure_dock'):
+                    self.main.data_structure_dock.refresh_data_structure_display(file_path)
                 # Record source mapping for robust deletion later
                 try:
                     self.roi_source_by_id[id(roi)] = {
@@ -972,12 +1002,21 @@ class ROIManager:
         failed = []
         for file_path in file_paths:
             try:
-                self._save_roi_geometry_to_file(
+                saved_path = self._save_roi_geometry_to_file(
                     file_path, dataset_path, roi_name, geometry,
                     batch_id=batch_id,
                     batch_files=file_paths if as_batch else None,
                     batch_color=color_name if as_batch else None)
                 saved.append(file_path)
+                if 'roi_dataset_path' not in source and isinstance(source_file, str) \
+                        and os.path.abspath(source_file) == file_path:
+                    self.roi_source_by_id[id(roi)] = {
+                        'file_path': file_path,
+                        'dataset_path': dataset_path,
+                        'roi_dataset_path': saved_path,
+                    }
+                if hasattr(self.main, 'data_structure_dock'):
+                    self.main.data_structure_dock.refresh_data_structure_display(file_path)
             except (OSError, KeyError, TypeError, ValueError) as exc:
                 failed.append((file_path, str(exc)))
 
@@ -1140,7 +1179,7 @@ class ROIManager:
                 item = rois_group.get(name)
                 if (isinstance(item, h5py.Dataset)
                         and str(item.attrs.get('batch_id', '')) == batch_id):
-                    del rois_group[name]
+                    ROIManager._remove_roi_entry(h5f, item.name)
                     return True
         return False
 
@@ -1169,11 +1208,11 @@ class ROIManager:
             source = h5f[dataset_path]
             if source.ndim not in (2, 3) or not np.issubdtype(source.dtype, np.number):
                 raise TypeError(f"dataset {dataset_path} is not a 2D/3D numeric image")
-            source_height, source_width = source.shape[-2:]
+            source_width, source_height = source.shape[-2:]
             if x + width > source_width or y + height > source_height:
                 raise ValueError(
                     f"ROI exceeds image size {source_width}x{source_height}")
-            crop = source[..., y:y + height, x:x + width]
+            crop = source[..., x:x + width, y:y + height]
             rois_group = h5f.require_group('/entry/data/rois')
             dataset_name = None
             if update_batch and batch_id:
@@ -1182,7 +1221,7 @@ class ROIManager:
                     if (isinstance(item, h5py.Dataset)
                             and str(item.attrs.get('batch_id', '')) == batch_id):
                         dataset_name = existing_name
-                        del rois_group[existing_name]
+                        ROIManager._remove_roi_entry(h5f, item.name)
                         break
             if dataset_name is None:
                 dataset_name = ROIManager._unique_roi_dataset_name(rois_group, name)
@@ -1199,9 +1238,39 @@ class ROIManager:
                 saved.attrs['batch_files'] = json.dumps(list(batch_files or []))
                 if batch_color:
                     saved.attrs['batch_color'] = str(batch_color)
+            ROIManager._save_roi_com(h5f, saved, crop)
             info_group = rois_group.require_group('info')
             info_group.attrs['original_file_name'] = os.path.basename(file_path)
         return f"/entry/data/rois/{dataset_name}"
+
+    @staticmethod
+    def _save_roi_com(h5f, roi_dataset, roi_data) -> None:
+        """Save one ComX and ComY value per ROI frame; frames are (x, y) like the view."""
+        frames = np.asarray(roi_data, dtype=float)
+        if frames.ndim == 2:
+            frames = frames[np.newaxis, ...]
+        totals = frames.sum(axis=(1, 2))
+        com_x = np.zeros(len(frames), dtype=float)
+        com_y = np.zeros(len(frames), dtype=float)
+        nonzero = totals != 0
+        com_x[nonzero] = (
+            frames[nonzero].sum(axis=2) @ np.arange(frames.shape[1])
+        ) / totals[nonzero]
+        com_y[nonzero] = (
+            frames[nonzero].sum(axis=1) @ np.arange(frames.shape[2])
+        ) / totals[nonzero]
+        result = h5f.require_group('/entry/data/rois/info').require_group(
+            roi_dataset.name.rsplit('/', 1)[-1])
+        result.attrs['NX_class'] = 'NXcollection'
+        result.create_dataset('ComX', data=com_x).attrs['units'] = 'pixel'
+        result.create_dataset('ComY', data=com_y).attrs['units'] = 'pixel'
+        result['roi'] = h5py.SoftLink(roi_dataset.name)
+        source_path = str(roi_dataset.attrs.get('source_path', ''))
+        if source_path in h5f:
+            result['source'] = h5py.SoftLink(source_path)
+        roi_dataset.attrs['com_x'] = f"{result.name}/ComX"
+        roi_dataset.attrs['com_y'] = f"{result.name}/ComY"
+        roi_dataset.attrs['analysis'] = result.name
 
     @staticmethod
     def _unique_roi_dataset_name(rois_group, name) -> str:
