@@ -28,12 +28,17 @@ from typing import Callable, List, Optional, Set
 import h5py
 import numpy as np
 import pyqtgraph as pg
-import qtawesome as qta
+
+try:
+    import qtawesome as qta
+except ImportError:
+    qta = None
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QColor, QCursor
 from PyQt5.QtWidgets import (
     QAction,
     QColorDialog,
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLineEdit,
@@ -100,6 +105,10 @@ class ContextRectROI(pg.RectROI):
                 except Exception:
                     pass
                 menu.addAction(action_save)
+                action_save_multiple = QAction("Save ROI to Multiple Files…", menu)
+                action_save_multiple.triggered.connect(
+                    lambda: self.parent_window.roi_manager.save_roi_to_multiple_files(self))
+                menu.addAction(action_save_multiple)
                 try:
                     menu.exec_(QCursor.pos())
                 except Exception:
@@ -621,6 +630,104 @@ class ROIManager:
                 self.main.update_status(f"Error writing ROI to HDF5: {e}", level='error')
         except Exception as e:
             self.main.update_status(f"Error in save_roi: {e}", level='error')
+
+    def save_roi_to_multiple_files(self, roi) -> None:
+        """Save one ROI at the same position in multiple compatible HDF5 files."""
+        source = self.roi_source_by_id.get(id(roi), {})
+        dataset_path = source.get('dataset_path')
+        if not isinstance(dataset_path, str) or dataset_path.startswith('/entry/data/rois'):
+            dataset_path = getattr(self.main, 'selected_dataset_path', None)
+        dataset_path = dataset_path or '/entry/data/data'
+
+        current_file = getattr(self.main, 'current_file_path', None)
+        start_dir = os.path.dirname(current_file) if isinstance(current_file, str) else ''
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self.main,
+            "Save ROI to Multiple HDF5 Files",
+            start_dir,
+            "HDF5 Files (*.h5 *.hdf5);;All Files (*)",
+        )
+        if not file_paths:
+            return
+
+        pos = roi.pos()
+        size = roi.size()
+        geometry = (
+            max(0, int(pos.x())),
+            max(0, int(pos.y())),
+            max(1, int(size.x())),
+            max(1, int(size.y())),
+        )
+        answer = QMessageBox.question(
+            self.main,
+            "Save ROI to Multiple Files",
+            f"Save {self.get_roi_name(roi)} at x={geometry[0]}, y={geometry[1]}, "
+            f"w={geometry[2]}, h={geometry[3]} to {len(file_paths)} file(s)?\n\n"
+            f"Source dataset: {dataset_path}\n"
+            "An existing ROI with the same name will be replaced.",
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        saved = []
+        failed = []
+        for file_path in file_paths:
+            try:
+                self._save_roi_geometry_to_file(
+                    file_path, dataset_path, self.get_roi_name(roi), geometry)
+                saved.append(file_path)
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                failed.append((file_path, str(exc)))
+
+        if failed:
+            details = "\n".join(
+                f"{os.path.basename(path)}: {message}" for path, message in failed)
+            QMessageBox.warning(
+                self.main,
+                "ROI Batch Save Finished",
+                f"Saved to {len(saved)} of {len(file_paths)} file(s).\n\n"
+                f"Skipped:\n{details}",
+            )
+        else:
+            QMessageBox.information(
+                self.main,
+                "ROI Batch Save Complete",
+                f"Saved {self.get_roi_name(roi)} to {len(saved)} file(s).",
+            )
+        self.main.update_status(
+            f"ROI batch save: {len(saved)} saved, {len(failed)} skipped")
+
+    @staticmethod
+    def _save_roi_geometry_to_file(file_path, dataset_path, name, geometry) -> str:
+        """Crop ``dataset_path`` using ``geometry`` and persist it as an ROI dataset."""
+        x, y, width, height = geometry
+        with h5py.File(file_path, 'a') as h5f:
+            if dataset_path not in h5f or not isinstance(h5f[dataset_path], h5py.Dataset):
+                raise KeyError(f"dataset {dataset_path} was not found")
+            source = h5f[dataset_path]
+            if source.ndim not in (2, 3) or not np.issubdtype(source.dtype, np.number):
+                raise TypeError(f"dataset {dataset_path} is not a 2D/3D numeric image")
+            source_height, source_width = source.shape[-2:]
+            if x + width > source_width or y + height > source_height:
+                raise ValueError(
+                    f"ROI exceeds image size {source_width}x{source_height}")
+            crop = source[..., y:y + height, x:x + width]
+            rois_group = h5f.require_group('/entry/data/rois')
+            dataset_name = str(name).replace(' ', '_')
+            if dataset_name in rois_group:
+                del rois_group[dataset_name]
+            saved = rois_group.create_dataset(
+                dataset_name, data=np.asarray(crop, dtype=np.float32))
+            saved.attrs['x'] = x
+            saved.attrs['y'] = y
+            saved.attrs['w'] = width
+            saved.attrs['h'] = height
+            saved.attrs['source_path'] = dataset_path
+            info_group = rois_group.require_group('info')
+            info_group.attrs['original_file_name'] = os.path.basename(file_path)
+        return f"/entry/data/rois/{dataset_name}"
 
     def clear_all_rois(self) -> None:
         try:
@@ -1228,10 +1335,11 @@ class ROIManager:
                     _icon_color = 'gray'
                 def _qi(name, fallback='?'):
                     for n in ([name] if isinstance(name, str) else name):
-                        try:
-                            return qta.icon(n, color=_icon_color), ''
-                        except Exception:
-                            pass
+                        if qta is not None:
+                            try:
+                                return qta.icon(n, color=_icon_color), ''
+                            except Exception:
+                                pass
                     return None, fallback
                 icon_visible,   _t_vis   = _qi(['fa.eye',       'fa5s.eye'],         '👁')
                 icon_hidden,    _t_hid   = _qi(['fa.eye-slash', 'fa5s.eye-slash'],   '🚫')
