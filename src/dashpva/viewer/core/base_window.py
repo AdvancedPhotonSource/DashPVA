@@ -33,6 +33,7 @@ from pathlib import Path
 
 from PyQt5 import uic
 from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
@@ -40,6 +41,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QShortcut,
 )
 
 import dashpva.settings as app_settings
@@ -116,6 +118,9 @@ class BaseWindow(QMainWindow):
             self.load_ui()
 
         self.setup_base_connections()
+        self._save_shortcut = QShortcut(QKeySequence.Save, self)
+        self._save_shortcut.setContext(Qt.WindowShortcut)
+        self._save_shortcut.activated.connect(self.handle_save_shortcut)
 
         if visible_actions is not _SHOW_ALL:
             self._apply_visible_actions()
@@ -149,7 +154,8 @@ class BaseWindow(QMainWindow):
         if hasattr(self, 'actionOpenFolder'):
             self.actionOpenFolder.triggered.connect(self.open_folder)
         if hasattr(self, 'actionSave'):
-            self.actionSave.triggered.connect(self.save_file)
+            self.actionSave.setShortcut(QKeySequence())
+            self.actionSave.triggered.connect(self.handle_save_shortcut)
         if hasattr(self, 'actionExit'):
             self.actionExit.triggered.connect(self.close)
         # Documentation menu — wire existing UI action and always ensure the menu exists
@@ -341,6 +347,10 @@ class BaseWindow(QMainWindow):
             self.current_file_path = file_path
             self.save_file_content(file_path)
             self.file_saved.emit(file_path)
+
+    def handle_save_shortcut(self) -> None:
+        """Handle the window's Save action and Ctrl+S shortcut."""
+        self.save_file()
 
     def get_file_filters(self):
         """

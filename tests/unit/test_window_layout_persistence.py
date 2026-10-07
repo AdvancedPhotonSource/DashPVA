@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import pytest
 from PyQt5.QtCore import QSettings
-from PyQt5.QtWidgets import QApplication, QDockWidget
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import QAction, QApplication, QDockWidget
 
 from dashpva.viewer.core.base_window import BaseWindow
 
@@ -107,3 +108,41 @@ def test_opting_out_writes_nothing(qapp):
     w.close()
 
     assert QSettings("DashPVA", "_NoPersist").allKeys() == []
+
+
+def test_base_save_action_uses_standard_ctrl_s_hook(qapp):
+    class _SaveWindow(BaseWindow):
+        def __init__(self):
+            self.save_calls = 0
+            super().__init__(
+                ui_file_name="test-save.ui", viewer_name="SaveTest",
+                visible_actions=None)
+
+        def load_ui(self):
+            self.actionSave = QAction("Save", self)
+
+        def handle_save_shortcut(self):
+            self.save_calls += 1
+
+    window = _SaveWindow()
+
+    assert window._save_shortcut.key() == QKeySequence.Save
+    window.actionSave.trigger()
+    assert window.save_calls == 1
+
+
+def test_base_ctrl_s_exists_without_a_save_menu_action(qapp):
+    class _ShortcutOnlyWindow(BaseWindow):
+        def __init__(self):
+            self.save_calls = 0
+            super().__init__(viewer_name="ShortcutOnly", visible_actions=None)
+
+        def handle_save_shortcut(self):
+            self.save_calls += 1
+
+    window = _ShortcutOnlyWindow()
+
+    assert not hasattr(window, 'actionSave')
+    assert window._save_shortcut.key() == QKeySequence.Save
+    window._save_shortcut.activated.emit()
+    assert window.save_calls == 1

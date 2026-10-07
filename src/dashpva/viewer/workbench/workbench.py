@@ -330,6 +330,7 @@ class WorkbenchWindow(BaseWindow):
             if roi is None:
                 return
             menu = QMenu(self)
+            menu.setToolTipsVisible(True)
             # ROI visibility and deletion actions
             action_hide = QAction("Hide ROI", self)
             action_hide.triggered.connect(lambda: self.roi_manager.set_roi_visibility(roi, False))
@@ -337,6 +338,35 @@ class WorkbenchWindow(BaseWindow):
             action_delete = QAction("Delete ROI", self)
             action_delete.triggered.connect(lambda: self.roi_manager.delete_roi(roi))
             menu.addAction(action_delete)
+            menu.addSeparator()
+            action_save_to = QAction("Save To…", self)
+            action_save_to.setToolTip(
+                "Save an independent copy to selected files or a folder")
+            action_save_to.triggered.connect(
+                lambda: self.roi_manager.save_roi_to_destination(roi))
+            menu.addAction(action_save_to)
+            source = self.roi_manager.get_roi_source(roi)
+            is_batch = bool(source.get('batch_id'))
+            action_save_batch = QAction(
+                "Save Batch" if is_batch else "Save as Batch…", self)
+            action_save_batch.setToolTip(
+                "Save current geometry to every linked file"
+                if is_batch else
+                "Link this ROI across files; changes save only when Save Batch is clicked")
+            if is_batch:
+                action_save_batch.triggered.connect(
+                    lambda: self.roi_manager.save_batch_roi(roi))
+            else:
+                action_save_batch.triggered.connect(
+                    lambda: self.roi_manager.save_roi_to_destination(roi, as_batch=True))
+            menu.addAction(action_save_batch)
+            if source.get('batch_id'):
+                action_detach = QAction("Detach from Batch", self)
+                action_detach.setToolTip(
+                    "Keep this file's ROI but stop updating it with the batch")
+                action_detach.triggered.connect(
+                    lambda: self.roi_manager.detach_roi_from_batch(roi))
+                menu.addAction(action_detach)
             menu.addSeparator()
             action_plot = QAction("Open ROI Plot", self)
             action_plot.triggered.connect(lambda: self.open_roi_plot_dock(roi))
@@ -1317,6 +1347,18 @@ class WorkbenchWindow(BaseWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save analysis: {str(e)}")
             self.update_status("Failed to save file")
+
+    def handle_save_shortcut(self) -> None:
+        """Save the active Workbench ROI, or its linked batch, with Ctrl+S."""
+        roi = getattr(self.roi_manager, 'current_roi', None) or self.current_roi
+        if roi is None:
+            self.update_status("Select an ROI before saving", level='warning')
+            return
+        source = self.roi_manager.get_roi_source(roi)
+        if source.get('batch_id'):
+            self.roi_manager.save_batch_roi(roi)
+        else:
+            self.roi_manager.save_roi(roi)
 
     def load_folder_content(self, folder_path):
         """

@@ -312,6 +312,28 @@ class RSMConverter:
         dc_pos = [self._read_position(h5_file, p, frame) for p in detector_paths]
         return sc_dir, sc_pos, dc_dir, dc_pos
 
+    def get_motor_positions(self, h5_file: h5py.File, frame: int) -> list[dict]:
+        """Return named sample and detector motor positions for one frame."""
+        sample_paths, detector_paths = self._resolve_circle_paths(h5_file)
+        positions = []
+        for role, paths in (("sample", sample_paths), ("detector", detector_paths)):
+            for axis_path in paths:
+                group = h5_file[axis_path]
+                name = axis_path.rsplit("/", 1)[-1]
+                if "NAME" in group:
+                    name = self._static_str(group["NAME"], f"motor name at {axis_path}")
+                units = "deg"
+                if "ANGLE_UNITS" in group:
+                    units = self._static_str(
+                        group["ANGLE_UNITS"], f"motor units at {axis_path}")
+                positions.append({
+                    "name": name,
+                    "role": role,
+                    "value": self._read_position(h5_file, axis_path, frame),
+                    "units": units,
+                })
+        return positions
+
     def _resolve_circle_paths(self, h5_file: h5py.File) -> Tuple[List[str], List[str]]:
         """Return (sample_paths, detector_paths): the resolved HKL group paths
         for sample/detector circles, in circle order. Numbered groups are

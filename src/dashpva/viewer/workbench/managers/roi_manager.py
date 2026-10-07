@@ -22,7 +22,9 @@ ROI Manager for Workbench
 Centralizes ROI lifecycle, docks, stats computation, and interactions to shorten WorkbenchWindow.
 """
 
+import json
 import os
+import uuid
 from typing import Callable, List, Optional, Set
 
 import h5py
@@ -73,6 +75,7 @@ class ContextRectROI(pg.RectROI):
         try:
             if ev.button() == Qt.RightButton:
                 menu = QMenu()
+                menu.setToolTipsVisible(True)
                 action_stats = QAction("Show ROI Stats", menu)
                 action_rename = QAction("Rename ROI", menu)
                 action_set_active = QAction("Set Active ROI", menu)
@@ -100,15 +103,43 @@ class ContextRectROI(pg.RectROI):
                 menu.addSeparator()
                 # Save ROI action
                 action_save = QAction("Save ROI", menu)
+                source = self.parent_window.roi_manager.get_roi_source(self)
+                is_batch = bool(source.get('batch_id'))
+                if is_batch:
+                    action_save.setEnabled(False)
+                    action_save.setToolTip("Use Save Batch for a linked ROI")
                 try:
                     action_save.triggered.connect(lambda: self.parent_window.roi_manager.save_roi(self))
                 except Exception:
                     pass
                 menu.addAction(action_save)
                 action_save_to = QAction("Save To…", menu)
+                action_save_to.setToolTip(
+                    "Save an independent copy to selected files or a folder")
                 action_save_to.triggered.connect(
                     lambda: self.parent_window.roi_manager.save_roi_to_destination(self))
                 menu.addAction(action_save_to)
+                action_save_batch = QAction(
+                    "Save Batch" if is_batch else "Save as Batch…", menu)
+                action_save_batch.setToolTip(
+                    "Save current geometry to every linked file"
+                    if is_batch else
+                    "Link this ROI across files; changes save only when Save Batch is clicked")
+                if is_batch:
+                    action_save_batch.triggered.connect(
+                        lambda: self.parent_window.roi_manager.save_batch_roi(self))
+                else:
+                    action_save_batch.triggered.connect(
+                        lambda: self.parent_window.roi_manager.save_roi_to_destination(
+                            self, as_batch=True))
+                menu.addAction(action_save_batch)
+                if source.get('batch_id'):
+                    action_detach_batch = QAction("Detach from Batch", menu)
+                    action_detach_batch.setToolTip(
+                        "Keep this file's ROI but stop updating it with the batch")
+                    action_detach_batch.triggered.connect(
+                        lambda: self.parent_window.roi_manager.detach_roi_from_batch(self))
+                    menu.addAction(action_detach_batch)
                 try:
                     menu.exec_(QCursor.pos())
                 except Exception:
@@ -385,6 +416,34 @@ class ROIManager:
         try:
             # Resolve file path: prefer recorded source mapping, fallback to current file
             src = dict(self.roi_source_by_id.get(id(roi), {}))
+            batch_id = src.get('batch_id')
+            batch_files = src.get('batch_files', [])
+            if batch_id and batch_files:
+                current_file = src.get('file_path') or getattr(
+                    self.main, 'current_file_path', None)
+                if not current_file:
+                    return
+                remaining_files = [
+                    path for path in batch_files
+                    if os.path.abspath(path) != os.path.abspath(current_file)]
+                with h5py.File(current_file, 'a') as h5f:
+                    rois_group = h5f.get('/entry/data/rois')
+                    if isinstance(rois_group, h5py.Group):
+                        for name in list(rois_group.keys()):
+                            item = rois_group.get(name)
+                            if (isinstance(item, h5py.Dataset)
+                                    and str(item.attrs.get('batch_id', '')) == batch_id):
+                                del rois_group[name]
+                                break
+                for batch_file in remaining_files:
+                    try:
+                        self._update_batch_file_manifest(
+                            batch_file, batch_id, remaining_files)
+                    except OSError:
+                        continue
+                self.main.update_status(
+                    "ROI deleted and current file removed from batch")
+                return
             file_path = src.get('file_path') or getattr(self.main, 'current_file_path', None)
             if not file_path or not isinstance(file_path, str) or not os.path.exists(file_path):
                 return
@@ -427,6 +486,53 @@ class ROIManager:
         except Exception:
             pass
 
+    def detach_roi_from_batch(self, roi) -> None:
+        """Keep the current ROI dataset while removing it from its linked batch."""
+        source = self.roi_source_by_id.get(id(roi), {})
+        batch_id = source.get('batch_id')
+        current_file = source.get('file_path') or getattr(self.main, 'current_file_path', None)
+        batch_files = source.get('batch_files', [])
+        if not batch_id or not current_file:
+            return
+        confirmation = QMessageBox(self.main if isinstance(self.main, QWidget) else None)
+        confirmation.setWindowTitle("Detach ROI from Batch")
+        confirmation.setText("Keep this ROI in the current file but detach it from the batch?")
+        confirmation.setInformativeText(
+            "Future batch saves, edits, color changes, and deletion will not affect this copy.")
+        confirmation.setDetailedText(f"Detached file:\n{current_file}")
+        confirmation.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        confirmation.setDefaultButton(QMessageBox.Yes)
+        if confirmation.exec_() != QMessageBox.Yes:
+            return
+        remaining_files = self._detach_batch_file(current_file, batch_id, batch_files)
+        for file_path in remaining_files:
+            try:
+                self._update_batch_file_manifest(file_path, batch_id, remaining_files)
+            except OSError:
+                pass
+        for key in ('batch_id', 'batch_files', 'batch_name', 'batch_color'):
+            source.pop(key, None)
+        self.update_roi_item(roi)
+        self.main.update_status("ROI detached from batch")
+
+    @staticmethod
+    def _detach_batch_file(current_file, batch_id, batch_files):
+        """Remove batch metadata from one file and return the remaining manifest."""
+        current_file = os.path.abspath(current_file)
+        remaining_files = [
+            path for path in batch_files if os.path.abspath(path) != current_file]
+        with h5py.File(current_file, 'a') as h5f:
+            rois_group = h5f.get('/entry/data/rois')
+            if isinstance(rois_group, h5py.Group):
+                for item in rois_group.values():
+                    if (isinstance(item, h5py.Dataset)
+                            and str(item.attrs.get('batch_id', '')) == batch_id):
+                        for attr in ('batch_id', 'batch_name', 'batch_files', 'batch_color'):
+                            if attr in item.attrs:
+                                del item.attrs[attr]
+                        break
+        return remaining_files
+
     def delete_roi(self, roi, prompt: bool = True) -> None:
         """Delete an ROI. With prompt=True, shows a confirmation dialog offering Hide/Delete/No.
         - Hide: hides the ROI from view (no disk changes)
@@ -448,6 +554,13 @@ class ROIManager:
             except Exception:
                 pass
             msg.setText("You are deleting your ROI from disk for this file.")
+            source = self.roi_source_by_id.get(id(roi), {})
+            if source.get('batch_id'):
+                msg.setText("Delete this ROI and remove the current file from its batch?")
+                msg.setInformativeText(
+                    "The ROI copies in the other linked files will remain.")
+                msg.setDetailedText(
+                    "Linked files:\n" + "\n".join(source.get('batch_files', [])))
             try:
                 msg.setInformativeText("This action is irreversible. Proceed?")
             except Exception:
@@ -490,6 +603,12 @@ class ROIManager:
 
     def save_roi(self, roi) -> None:
         """Save the selected ROI to the current HDF5 file under /entry/data/rois with same frame structure."""
+        source = self.roi_source_by_id.get(id(roi), {})
+        if source.get('batch_id') and source.get('batch_files'):
+            self.main.update_status(
+                "This ROI belongs to a batch; use Save Batch to update linked files",
+                level='warning')
+            return
         try:
             # Ensure we have a current HDF5 file path
             file_path = getattr(self.main, "current_file_path", None)
@@ -625,22 +744,24 @@ class ROIManager:
         except Exception as e:
             self.main.update_status(f"Error in save_roi: {e}", level='error')
 
-    def save_roi_to_destination(self, roi) -> None:
+    def save_roi_to_destination(self, roi, as_batch: bool = False) -> None:
         """Choose files or a folder, then save one ROI to every selected file."""
         dialog = QMessageBox(self.main)
-        dialog.setWindowTitle("Save ROI To")
-        dialog.setText("Choose where to save this ROI.")
+        dialog.setWindowTitle("Save ROI as Batch" if as_batch else "Save ROI To")
+        dialog.setText(
+            "Choose which files this batch ROI should control."
+            if as_batch else "Choose where to save this ROI.")
         files_button = dialog.addButton("Select Files…", QMessageBox.ActionRole)
         folder_button = dialog.addButton("Select Folder…", QMessageBox.ActionRole)
         dialog.addButton(QMessageBox.Cancel)
         dialog.exec_()
         clicked = dialog.clickedButton()
         if clicked is files_button:
-            self.save_roi_to_multiple_files(roi)
+            self.save_roi_to_multiple_files(roi, as_batch=as_batch)
         elif clicked is folder_button:
-            self.save_roi_to_folder(roi)
+            self.save_roi_to_folder(roi, as_batch=as_batch)
 
-    def save_roi_to_multiple_files(self, roi) -> None:
+    def save_roi_to_multiple_files(self, roi, as_batch: bool = False) -> None:
         """Select multiple HDF5 files and apply the ROI to each one."""
         current_file = getattr(self.main, 'current_file_path', None)
         start_dir = os.path.dirname(current_file) if isinstance(current_file, str) else ''
@@ -652,9 +773,9 @@ class ROIManager:
         )
         if not file_paths:
             return
-        self._save_roi_to_files(roi, file_paths)
+        self._save_roi_to_files(roi, file_paths, as_batch=as_batch)
 
-    def save_roi_to_folder(self, roi) -> None:
+    def save_roi_to_folder(self, roi, as_batch: bool = False) -> None:
         """Save one ROI to every HDF5 file directly inside a selected folder."""
         current_file = getattr(self.main, 'current_file_path', None)
         start_dir = os.path.dirname(current_file) if isinstance(current_file, str) else ''
@@ -670,7 +791,7 @@ class ROIManager:
                 "The selected folder contains no .h5 or .hdf5 files.",
             )
             return
-        self._save_roi_to_files(roi, file_paths)
+        self._save_roi_to_files(roi, file_paths, as_batch=as_batch)
 
     @staticmethod
     def _hdf5_files_in_folder(folder) -> List[str]:
@@ -686,7 +807,7 @@ class ROIManager:
             and os.path.isfile(os.path.join(folder, name))
         )
 
-    def _save_roi_to_files(self, roi, file_paths) -> None:
+    def _save_roi_to_files(self, roi, file_paths, as_batch: bool = False) -> None:
         """Confirm and apply one ROI geometry to the supplied HDF5 files."""
         current_file = getattr(self.main, 'current_file_path', None)
         candidates = list(file_paths)
@@ -699,6 +820,11 @@ class ROIManager:
         if not isinstance(dataset_path, str) or dataset_path.startswith('/entry/data/rois'):
             dataset_path = getattr(self.main, 'selected_dataset_path', None)
         dataset_path = dataset_path or '/entry/data/data'
+
+        existing_batch_id = source.get('batch_id')
+        if as_batch and existing_batch_id and source.get('batch_files'):
+            self._update_batch_roi(roi)
+            return
 
         source_file = source.get('file_path') or current_file
         source_stem = ''
@@ -741,12 +867,18 @@ class ROIManager:
         if confirmation.exec_() != QMessageBox.Yes:
             return
 
+        batch_id = uuid.uuid4().hex if as_batch else None
+        color = self._get_roi_color(roi)
+        color_name = color.name() if color is not None else None
         saved = []
         failed = []
         for file_path in file_paths:
             try:
                 self._save_roi_geometry_to_file(
-                    file_path, dataset_path, roi_name, geometry)
+                    file_path, dataset_path, roi_name, geometry,
+                    batch_id=batch_id,
+                    batch_files=file_paths if as_batch else None,
+                    batch_color=color_name if as_batch else None)
                 saved.append(file_path)
             except (OSError, KeyError, TypeError, ValueError) as exc:
                 failed.append((file_path, str(exc)))
@@ -768,9 +900,80 @@ class ROIManager:
             )
         self.main.update_status(
             f"ROI batch save: {len(saved)} saved, {len(failed)} skipped")
+        if saved and as_batch:
+            for file_path in saved:
+                try:
+                    self._update_batch_file_manifest(file_path, batch_id, saved)
+                except OSError:
+                    pass
+            self.roi_source_by_id.setdefault(id(roi), {}).update({
+                'batch_id': batch_id,
+                'batch_files': saved,
+                'batch_name': roi_name,
+                'batch_color': color_name,
+            })
+            self.update_roi_item(roi)
+
+    def _update_batch_roi(self, roi) -> None:
+        """Update every HDF5 dataset linked to an existing batch ROI."""
+        source = self.roi_source_by_id.get(id(roi), {})
+        batch_id = source.get('batch_id')
+        file_paths = source.get('batch_files', [])
+        dataset_path = source.get('dataset_path') or '/entry/data/data'
+        if not batch_id or not file_paths:
+            return
+        pos = roi.pos()
+        size = roi.size()
+        geometry = (
+            max(0, int(pos.x())), max(0, int(pos.y())),
+            max(1, int(size.x())), max(1, int(size.y())),
+        )
+        color = self._get_roi_color(roi)
+        color_name = color.name() if color is not None else source.get('batch_color')
+        saved = []
+        failed = []
+        for file_path in file_paths:
+            try:
+                self._save_roi_geometry_to_file(
+                    file_path, dataset_path,
+                    source.get('batch_name') or self.get_roi_name(roi), geometry,
+                    batch_id=batch_id, batch_files=file_paths, update_batch=True,
+                    batch_color=color_name)
+                saved.append(file_path)
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                failed.append((file_path, str(exc)))
+        self.main.update_status(
+            f"Batch ROI updated: {len(saved)} saved, {len(failed)} skipped")
+        if failed:
+            QMessageBox.warning(
+                self.main, "Batch ROI Update Finished",
+                f"Updated {len(saved)} of {len(file_paths)} linked file(s).")
+
+    def save_batch_roi(self, roi) -> None:
+        """Explicitly persist current batch ROI geometry to all linked files."""
+        source = self.roi_source_by_id.get(id(roi), {})
+        if not source.get('batch_id'):
+            self.save_roi_to_destination(roi, as_batch=True)
+            return
+        self._update_batch_roi(roi)
 
     @staticmethod
-    def _save_roi_geometry_to_file(file_path, dataset_path, name, geometry) -> str:
+    def _update_batch_file_manifest(file_path, batch_id, batch_files) -> None:
+        """Store the final successful destination list on a batch ROI dataset."""
+        with h5py.File(file_path, 'a') as h5f:
+            rois_group = h5f.get('/entry/data/rois')
+            if not isinstance(rois_group, h5py.Group):
+                return
+            for item in rois_group.values():
+                if (isinstance(item, h5py.Dataset)
+                        and str(item.attrs.get('batch_id', '')) == batch_id):
+                    item.attrs['batch_files'] = json.dumps(list(batch_files))
+                    return
+
+    @staticmethod
+    def _save_roi_geometry_to_file(
+            file_path, dataset_path, name, geometry, batch_id=None,
+            batch_files=None, update_batch=False, batch_color=None) -> str:
         """Crop ``dataset_path`` using ``geometry`` and persist it as an ROI dataset."""
         x, y, width, height = geometry
         with h5py.File(file_path, 'a') as h5f:
@@ -785,7 +988,17 @@ class ROIManager:
                     f"ROI exceeds image size {source_width}x{source_height}")
             crop = source[..., y:y + height, x:x + width]
             rois_group = h5f.require_group('/entry/data/rois')
-            dataset_name = ROIManager._unique_roi_dataset_name(rois_group, name)
+            dataset_name = None
+            if update_batch and batch_id:
+                for existing_name in rois_group.keys():
+                    item = rois_group.get(existing_name)
+                    if (isinstance(item, h5py.Dataset)
+                            and str(item.attrs.get('batch_id', '')) == batch_id):
+                        dataset_name = existing_name
+                        del rois_group[existing_name]
+                        break
+            if dataset_name is None:
+                dataset_name = ROIManager._unique_roi_dataset_name(rois_group, name)
             saved = rois_group.create_dataset(
                 dataset_name, data=np.asarray(crop, dtype=np.float32))
             saved.attrs['x'] = x
@@ -793,6 +1006,12 @@ class ROIManager:
             saved.attrs['w'] = width
             saved.attrs['h'] = height
             saved.attrs['source_path'] = dataset_path
+            if batch_id:
+                saved.attrs['batch_id'] = batch_id
+                saved.attrs['batch_name'] = str(name)
+                saved.attrs['batch_files'] = json.dumps(list(batch_files or []))
+                if batch_color:
+                    saved.attrs['batch_color'] = str(batch_color)
             info_group = rois_group.require_group('info')
             info_group.attrs['original_file_name'] = os.path.basename(file_path)
         return f"/entry/data/rois/{dataset_name}"
@@ -846,7 +1065,8 @@ class ROIManager:
                     w = int(item.attrs.get('w', max(1, item.shape[-1] if len(item.shape) >= 2 else 1)))
                     h = int(item.attrs.get('h', max(1, item.shape[-2] if len(item.shape) >= 2 else 1)))
                     # Create ROI
-                    pen = (255, 0, 0, 255)
+                    batch_color = item.attrs.get('batch_color', None)
+                    pen = str(batch_color) if batch_color else (255, 0, 0, 255)
                     roi = ContextRectROI(self.main, [x, y], [w, h], pen=pen)
                     try:
                         self.main.image_view.addItem(roi)
@@ -871,6 +1091,15 @@ class ROIManager:
                             'dataset_path': dataset_path,
                             'roi_dataset_path': f"/entry/data/rois/{name}",
                         }
+                        batch_id = item.attrs.get('batch_id', None)
+                        if batch_id:
+                            batch_files = json.loads(item.attrs.get('batch_files', '[]'))
+                            self.roi_source_by_id[id(roi)].update({
+                                'batch_id': str(batch_id),
+                                'batch_files': batch_files,
+                                'batch_name': str(item.attrs.get('batch_name', name)),
+                                'batch_color': str(batch_color) if batch_color else None,
+                            })
                     except Exception:
                         pass
                     # Wire signals and populate stats
@@ -1106,7 +1335,8 @@ class ROIManager:
             w = int(size.x())
             h = int(size.y())
             name = self.get_roi_name(roi)
-            return f"{name}: x={x}, y={y}, w={w}, h={h}"
+            batch = "[Batch] " if self.get_roi_source(roi).get('batch_id') else ""
+            return f"{batch}{name}: x={x}, y={y}, w={w}, h={h}"
         except Exception:
             return "ROI"
 
@@ -1589,12 +1819,40 @@ class ROIManager:
                 color = QColorDialog.getColor(initial, self.main, "ROI Color")
                 if color.isValid():
                     roi.setPen(pg.mkPen(color, width=roi.pen.width()))
+                    source = self.roi_source_by_id.get(id(roi), {})
+                    batch_id = source.get('batch_id')
+                    if batch_id:
+                        color_name = color.name()
+                        for file_path in source.get('batch_files', []):
+                            try:
+                                self._set_batch_color(file_path, batch_id, color_name)
+                            except OSError:
+                                pass
+                        source['batch_color'] = color_name
+                        for linked_roi in self.rois:
+                            linked_source = self.roi_source_by_id.get(id(linked_roi), {})
+                            if linked_source.get('batch_id') == batch_id:
+                                linked_roi.setPen(
+                                    pg.mkPen(color, width=linked_roi.pen.width()))
                     row_idx = self.stats_row_by_roi_id.get(id(roi))
                     if row_idx is not None:
                         self._refresh_name_cell_widget(row_idx, roi)
             except Exception:
                 pass
         return on_paint_clicked
+
+    @staticmethod
+    def _set_batch_color(file_path, batch_id, color_name) -> None:
+        """Persist one shared display color for every copy in a batch."""
+        with h5py.File(file_path, 'a') as h5f:
+            rois_group = h5f.get('/entry/data/rois')
+            if not isinstance(rois_group, h5py.Group):
+                return
+            for item in rois_group.values():
+                if (isinstance(item, h5py.Dataset)
+                        and str(item.attrs.get('batch_id', '')) == batch_id):
+                    item.attrs['batch_color'] = color_name
+                    return
 
     def _set_name_cell_widget(self, row, roi):
         """Create and install the [color swatch][name edit] cell widget for column 2."""
