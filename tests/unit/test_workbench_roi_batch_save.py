@@ -14,7 +14,15 @@ pytest.importorskip("pyqtgraph")
 
 sys.modules.setdefault("qtawesome", types.SimpleNamespace(icon=lambda *args, **kwargs: None))
 
+from PyQt5.QtWidgets import QApplication, QMessageBox  # noqa: E402
+
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    app = QApplication.instance() or QApplication([])
+    yield app
 
 
 def _image_file(path, shape=(3, 12, 16), dataset_path="/entry/data/data"):
@@ -69,3 +77,97 @@ def test_batch_save_rejects_missing_or_too_small_source(tmp_path):
     with pytest.raises(ValueError, match="exceeds image size"):
         ROIManager._save_roi_geometry_to_file(
             str(small), "/entry/data/data", "ROI", (3, 3, 2, 2))
+
+
+def test_folder_selection_finds_only_direct_hdf5_files(tmp_path):
+    (tmp_path / "b.hdf5").touch()
+    (tmp_path / "a.H5").touch()
+    (tmp_path / "notes.txt").touch()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "ignored.h5").touch()
+
+    files = ROIManager._hdf5_files_in_folder(str(tmp_path))
+
+    assert files == [str(tmp_path / "a.H5"), str(tmp_path / "b.hdf5")]
+
+
+def test_save_to_always_includes_current_file_once(qapp, monkeypatch, tmp_path):
+    current = tmp_path / "current.h5"
+    other = tmp_path / "other.h5"
+    _image_file(current)
+    _image_file(other)
+
+    class Point:
+        def __init__(self, x, y):
+            self._x = x
+            self._y = y
+
+        def x(self):
+            return self._x
+
+        def y(self):
+            return self._y
+
+    class Roi:
+        def pos(self):
+            return Point(1, 2)
+
+        def size(self):
+            return Point(3, 4)
+
+    class Main:
+        current_file_path = str(current)
+        selected_dataset_path = "/entry/data/data"
+
+        def update_status(self, *args, **kwargs):
+            pass
+
+    manager = ROIManager(Main())
+    monkeypatch.setattr(manager, "get_roi_name", lambda roi: "Batch ROI")
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Yes)
+    monkeypatch.setattr(
+        "dashpva.viewer.workbench.managers.roi_manager.QMessageBox.information",
+        lambda *args, **kwargs: None,
+    )
+
+    manager._save_roi_to_files(Roi(), [str(other), str(current)])
+
+    for path in (current, other):
+        with h5py.File(path, "r") as h5f:
+            assert "/entry/data/rois/Batch_ROI" in h5f
+
+
+def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path):
+    current = tmp_path / "current.h5"
+    other = tmp_path / "other.h5"
+    _image_file(current)
+    _image_file(other)
+
+    class Point:
+        def x(self):
+            return 1
+
+        def y(self):
+            return 2
+
+    class Roi:
+        pos = size = lambda self: Point()
+
+    class Main:
+        current_file_path = str(current)
+        selected_dataset_path = "/entry/data/data"
+
+        def update_status(self, *args, **kwargs):
+            pass
+
+    details = []
+    manager = ROIManager(Main())
+    monkeypatch.setattr(manager, "get_roi_name", lambda roi: "ROI")
+    monkeypatch.setattr(QMessageBox, "setDetailedText", lambda self, text: details.append(text))
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Cancel)
+
+    manager._save_roi_to_files(Roi(), [str(other)])
+
+    assert str(current) in details[0]
+    assert str(other) in details[0]

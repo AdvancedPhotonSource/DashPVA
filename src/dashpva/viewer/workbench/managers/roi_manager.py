@@ -105,10 +105,10 @@ class ContextRectROI(pg.RectROI):
                 except Exception:
                     pass
                 menu.addAction(action_save)
-                action_save_multiple = QAction("Save ROI to Multiple Files…", menu)
-                action_save_multiple.triggered.connect(
-                    lambda: self.parent_window.roi_manager.save_roi_to_multiple_files(self))
-                menu.addAction(action_save_multiple)
+                action_save_to = QAction("Save To…", menu)
+                action_save_to.triggered.connect(
+                    lambda: self.parent_window.roi_manager.save_roi_to_destination(self))
+                menu.addAction(action_save_to)
                 try:
                     menu.exec_(QCursor.pos())
                 except Exception:
@@ -631,14 +631,23 @@ class ROIManager:
         except Exception as e:
             self.main.update_status(f"Error in save_roi: {e}", level='error')
 
-    def save_roi_to_multiple_files(self, roi) -> None:
-        """Save one ROI at the same position in multiple compatible HDF5 files."""
-        source = self.roi_source_by_id.get(id(roi), {})
-        dataset_path = source.get('dataset_path')
-        if not isinstance(dataset_path, str) or dataset_path.startswith('/entry/data/rois'):
-            dataset_path = getattr(self.main, 'selected_dataset_path', None)
-        dataset_path = dataset_path or '/entry/data/data'
+    def save_roi_to_destination(self, roi) -> None:
+        """Choose files or a folder, then save one ROI to every selected file."""
+        dialog = QMessageBox(self.main)
+        dialog.setWindowTitle("Save ROI To")
+        dialog.setText("Choose where to save this ROI.")
+        files_button = dialog.addButton("Select Files…", QMessageBox.ActionRole)
+        folder_button = dialog.addButton("Select Folder…", QMessageBox.ActionRole)
+        dialog.addButton(QMessageBox.Cancel)
+        dialog.exec_()
+        clicked = dialog.clickedButton()
+        if clicked is files_button:
+            self.save_roi_to_multiple_files(roi)
+        elif clicked is folder_button:
+            self.save_roi_to_folder(roi)
 
+    def save_roi_to_multiple_files(self, roi) -> None:
+        """Select multiple HDF5 files and apply the ROI to each one."""
         current_file = getattr(self.main, 'current_file_path', None)
         start_dir = os.path.dirname(current_file) if isinstance(current_file, str) else ''
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -649,6 +658,53 @@ class ROIManager:
         )
         if not file_paths:
             return
+        self._save_roi_to_files(roi, file_paths)
+
+    def save_roi_to_folder(self, roi) -> None:
+        """Save one ROI to every HDF5 file directly inside a selected folder."""
+        current_file = getattr(self.main, 'current_file_path', None)
+        start_dir = os.path.dirname(current_file) if isinstance(current_file, str) else ''
+        folder = QFileDialog.getExistingDirectory(
+            self.main, "Select Folder of HDF5 Files", start_dir)
+        if not folder:
+            return
+        file_paths = self._hdf5_files_in_folder(folder)
+        if not file_paths:
+            QMessageBox.information(
+                self.main,
+                "No HDF5 Files Found",
+                "The selected folder contains no .h5 or .hdf5 files.",
+            )
+            return
+        self._save_roi_to_files(roi, file_paths)
+
+    @staticmethod
+    def _hdf5_files_in_folder(folder) -> List[str]:
+        """Return HDF5 files directly inside ``folder`` in name order."""
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return []
+        return sorted(
+            os.path.join(folder, name)
+            for name in names
+            if name.lower().endswith(('.h5', '.hdf5'))
+            and os.path.isfile(os.path.join(folder, name))
+        )
+
+    def _save_roi_to_files(self, roi, file_paths) -> None:
+        """Confirm and apply one ROI geometry to the supplied HDF5 files."""
+        current_file = getattr(self.main, 'current_file_path', None)
+        candidates = list(file_paths)
+        if isinstance(current_file, str) and current_file:
+            candidates.insert(0, current_file)
+        file_paths = list(dict.fromkeys(os.path.abspath(path) for path in candidates))
+
+        source = self.roi_source_by_id.get(id(roi), {})
+        dataset_path = source.get('dataset_path')
+        if not isinstance(dataset_path, str) or dataset_path.startswith('/entry/data/rois'):
+            dataset_path = getattr(self.main, 'selected_dataset_path', None)
+        dataset_path = dataset_path or '/entry/data/data'
 
         pos = roi.pos()
         size = roi.size()
@@ -658,17 +714,20 @@ class ROIManager:
             max(1, int(size.x())),
             max(1, int(size.y())),
         )
-        answer = QMessageBox.question(
-            self.main,
-            "Save ROI to Multiple Files",
-            f"Save {self.get_roi_name(roi)} at x={geometry[0]}, y={geometry[1]}, "
-            f"w={geometry[2]}, h={geometry[3]} to {len(file_paths)} file(s)?\n\n"
+        confirmation = QMessageBox(self.main if isinstance(self.main, QWidget) else None)
+        confirmation.setWindowTitle("Save ROI To")
+        confirmation.setIcon(QMessageBox.Question)
+        confirmation.setText(
+            f"Save {self.get_roi_name(roi)} to {len(file_paths)} file(s)?")
+        confirmation.setInformativeText(
+            f"Position: x={geometry[0]}, y={geometry[1]}, "
+            f"w={geometry[2]}, h={geometry[3]}\n"
             f"Source dataset: {dataset_path}\n"
-            "An existing ROI with the same name will be replaced.",
-            QMessageBox.Yes | QMessageBox.Cancel,
-            QMessageBox.Yes,
-        )
-        if answer != QMessageBox.Yes:
+            "An existing ROI with the same name will be replaced.")
+        confirmation.setDetailedText("Destination files:\n" + "\n".join(file_paths))
+        confirmation.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        confirmation.setDefaultButton(QMessageBox.Yes)
+        if confirmation.exec_() != QMessageBox.Yes:
             return
 
         saved = []
