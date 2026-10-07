@@ -317,9 +317,15 @@ class RSMConverter:
         sample_paths, detector_paths = self._resolve_circle_paths(h5_file)
         positions = []
         for role, paths in (("sample", sample_paths), ("detector", detector_paths)):
-            for axis_path in paths:
+            fallback_names = (
+                ("Mu", "Eta", "Chi", "Phi")
+                if role == "sample" else ("Nu", "Delta"))
+            for index, axis_path in enumerate(paths):
                 group = h5_file[axis_path]
-                name = axis_path.rsplit("/", 1)[-1]
+                name = (
+                    fallback_names[index]
+                    if index < len(fallback_names)
+                    else axis_path.rsplit("/", 1)[-1])
                 if "NAME" in group:
                     name = self._static_str(group["NAME"], f"motor name at {axis_path}")
                 units = "deg"

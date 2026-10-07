@@ -304,7 +304,7 @@ class WorkbenchWindow(BaseWindow):
 
     def on_roi_list_item_clicked(self, item):
         try:
-            roi = self.roi_by_item.get(item)
+            roi = self.roi_manager.roi_by_item.get(id(item))
             if roi:
                 self.set_active_roi(roi)
         except Exception as e:
@@ -312,7 +312,7 @@ class WorkbenchWindow(BaseWindow):
 
     def on_roi_list_item_double_clicked(self, item):
         try:
-            roi = self.roi_by_item.get(item)
+            roi = self.roi_manager.roi_by_item.get(id(item))
             if roi:
                 self.show_roi_stats_for_roi(roi)
         except Exception as e:
@@ -326,7 +326,7 @@ class WorkbenchWindow(BaseWindow):
             item = self.roi_list.itemAt(position)
             if item is None:
                 return
-            roi = self.roi_by_item.get(item)
+            roi = self.roi_manager.roi_by_item.get(id(item))
             if roi is None:
                 return
             menu = QMenu(self)
@@ -361,6 +361,12 @@ class WorkbenchWindow(BaseWindow):
                     lambda: self.roi_manager.save_roi_to_destination(roi, as_batch=True))
             menu.addAction(action_save_batch)
             if source.get('batch_id'):
+                action_save_batch_to = QAction("Save Batch To…", self)
+                action_save_batch_to.setToolTip(
+                    "Reselect the files or folder controlled by this batch")
+                action_save_batch_to.triggered.connect(
+                    lambda: self.roi_manager.save_batch_to_destination(roi))
+                menu.addAction(action_save_batch_to)
                 action_detach = QAction("Detach from Batch", self)
                 action_detach.setToolTip(
                     "Keep this file's ROI but stop updating it with the batch")

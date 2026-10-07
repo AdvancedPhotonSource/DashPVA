@@ -142,6 +142,13 @@ class TestGeometryRefactorEquivalence:
             "units": "deg",
         }
 
+    def test_get_motor_positions_uses_axis_names_without_name_metadata(self, scan_path):
+        converter = RSMConverter()
+        with h5py.File(scan_path, "r") as h5_file:
+            positions = converter.get_motor_positions(h5_file, frame=1)
+
+        assert [position["name"] for position in positions] == ["Mu", "Nu"]
+
     def test_legacy_circle_names_remain_supported(self, scan_path):
         with h5py.File(scan_path, "r+") as h5_file:
             hkl = h5_file["entry/data/metadata/HKL"]

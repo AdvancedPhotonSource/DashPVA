@@ -57,12 +57,15 @@ This file is a local Codex handoff. Do not include it in a product PR unless req
   - Batch identity, file manifest, name, and color persist as HDF5 attributes.
   - Moving/resizing a batch member does not write any file.
   - `Save ROI` is disabled for batch members; explicit `Save Batch` updates all remaining linked copies without another confirmation.
+  - `Save Batch To…` directly opens the destination picker, fills its filename input with every linked file, and replaces the manifest without creating a nested/new batch ID. Deselecting a file deletes that batch ROI from the file.
+  - The ROI Manager shows regular ROIs first, then a non-selectable `Batches` divider and the batch ROIs below it; entries move automatically when membership changes.
   - BaseWindow always installs `Ctrl+S` and routes it through overridable `handle_save_shortcut()`, even when a viewer has no File → Save action.
   - A viewer can override `handle_save_shortcut()`; the BaseWindow default calls `save_file()`.
   - In Workbench, `Ctrl+S` saves the active regular ROI or explicitly saves its batch.
   - Batch members use the same persisted color.
   - `Detach from Batch` keeps the current file's ROI but removes its batch metadata.
   - Deleting a batch member deletes only the current file's ROI and removes that file from the batch manifest; other copies remain.
+  - The batch delete prompt offers `Delete Batch`, `Detach and Delete`, and `Cancel`.
   - `Save To…` remains independent and does not create a tracked batch.
 - Latest validation before the newest requests: 21 focused tests passed and Ruff passed.
 

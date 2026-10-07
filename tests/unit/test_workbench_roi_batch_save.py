@@ -14,7 +14,13 @@ pytest.importorskip("pyqtgraph")
 
 sys.modules.setdefault("qtawesome", types.SimpleNamespace(icon=lambda *args, **kwargs: None))
 
-from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
+from PyQt5.QtCore import Qt  # noqa: E402
+from PyQt5.QtWidgets import (  # noqa: E402
+    QApplication,
+    QInputDialog,
+    QListWidget,
+    QMessageBox,
+)
 
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager  # noqa: E402
 from dashpva.viewer.workbench.workbench import WorkbenchWindow  # noqa: E402
@@ -121,6 +127,35 @@ def test_delete_batch_roi_removes_current_copy_from_batch(tmp_path):
         assert roi_dataset.attrs["batch_files"] == f'["{second}"]'
 
 
+def test_delete_entire_batch_removes_all_linked_copies(tmp_path):
+    first = tmp_path / "first.h5"
+    second = tmp_path / "second.h5"
+    batch_files = [str(first), str(second)]
+    for path in (first, second):
+        _image_file(path)
+        ROIManager._save_roi_geometry_to_file(
+            str(path), "/entry/data/data", "Batch ROI", (1, 1, 2, 2),
+            batch_id="batch-1", batch_files=batch_files)
+
+    class Main:
+        def update_status(self, *args, **kwargs):
+            pass
+
+    roi = object()
+    manager = ROIManager(Main())
+    manager.roi_source_by_id[id(roi)] = {
+        "batch_id": "batch-1",
+        "batch_files": batch_files,
+        "file_path": str(first),
+    }
+
+    manager.delete_roi_from_disk(roi, delete_batch=True)
+
+    for path in (first, second):
+        with h5py.File(path, "r") as h5f:
+            assert "/entry/data/rois/Batch_ROI" not in h5f
+
+
 def test_batch_manifest_keeps_only_successful_files(tmp_path):
     path = tmp_path / "scan.h5"
     _image_file(path)
@@ -133,6 +168,110 @@ def test_batch_manifest_keeps_only_successful_files(tmp_path):
     with h5py.File(path, "r") as h5f:
         manifest = h5f["/entry/data/rois/Batch_ROI"].attrs["batch_files"]
         assert manifest == f'["{path}"]'
+
+
+def test_save_batch_to_reuses_batch_id_and_replaces_manifest(qapp, monkeypatch, tmp_path):
+    current = tmp_path / "current.h5"
+    removed = tmp_path / "removed.h5"
+    added = tmp_path / "added.h5"
+    old_files = [str(current), str(removed)]
+    for path in (current, removed):
+        _image_file(path)
+        ROIManager._save_roi_geometry_to_file(
+            str(path), "/entry/data/data", "Batch ROI", (1, 1, 2, 2),
+            batch_id="batch-1", batch_files=old_files)
+    _image_file(added)
+
+    class Point:
+        def __init__(self, x, y):
+            self._x = x
+            self._y = y
+
+        def x(self):
+            return self._x
+
+        def y(self):
+            return self._y
+
+    class Roi:
+        def pos(self):
+            return Point(2, 3)
+
+        def size(self):
+            return Point(4, 5)
+
+    class Main:
+        current_file_path = str(current)
+
+        def update_status(self, *args, **kwargs):
+            pass
+
+    roi = Roi()
+    manager = ROIManager(Main())
+    manager.roi_source_by_id[id(roi)] = {
+        "file_path": str(current),
+        "dataset_path": "/entry/data/data",
+        "batch_id": "batch-1",
+        "batch_files": old_files,
+        "batch_name": "Batch ROI",
+    }
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Yes)
+
+    manager._save_batch_to_files(roi, [str(added)])
+
+    expected_manifest = f'["{current}", "{added}"]'
+    for path in (current, added):
+        with h5py.File(path, "r") as h5f:
+            dataset = h5f["/entry/data/rois/Batch_ROI"]
+            assert dataset.attrs["batch_id"] == "batch-1"
+            assert dataset.attrs["batch_files"] == expected_manifest
+    with h5py.File(removed, "r") as h5f:
+        assert "/entry/data/rois/Batch_ROI" not in h5f
+    assert manager.roi_source_by_id[id(roi)]["batch_files"] == [
+        str(current), str(added)]
+
+
+def test_roi_dock_groups_standalone_and_batch_rois(qapp):
+    class Point:
+        def __init__(self, x, y):
+            self._x = x
+            self._y = y
+
+        def x(self):
+            return self._x
+
+        def y(self):
+            return self._y
+
+    class Roi:
+        def __init__(self, x):
+            self._x = x
+
+        def pos(self):
+            return Point(self._x, 2)
+
+        def size(self):
+            return Point(3, 4)
+
+    class Main:
+        roi_list = QListWidget()
+        current_roi = None
+
+    standalone = Roi(1)
+    batch = Roi(5)
+    manager = ROIManager(Main())
+    manager.rois = [standalone, batch]
+    manager.roi_names = {id(standalone): "Solo", id(batch): "Linked"}
+    manager.roi_source_by_id[id(batch)] = {"batch_id": "batch-1"}
+
+    manager._rebuild_roi_dock()
+
+    texts = [Main.roi_list.item(row).text() for row in range(Main.roi_list.count())]
+    assert texts == [
+        "Solo: x=1, y=2, w=3, h=4",
+        "Batches", "Linked: x=5, y=2, w=3, h=4",
+    ]
+    assert Main.roi_list.item(1).flags() == Qt.NoItemFlags
 
 
 def test_detach_keeps_roi_but_removes_batch_metadata(tmp_path):
@@ -192,7 +331,7 @@ def test_roi_dock_text_marks_batch_members():
     manager.roi_names[id(roi)] = "Linked ROI"
     manager.roi_source_by_id[id(roi)] = {"batch_id": "batch-1"}
 
-    assert manager.format_roi_text(roi) == "[Batch] Linked ROI: x=1, y=2, w=3, h=4"
+    assert manager.format_roi_text(roi) == "Linked ROI: x=1, y=2, w=3, h=4"
 
 
 def test_save_roi_does_not_write_batch_until_save_batch_is_used(monkeypatch):
