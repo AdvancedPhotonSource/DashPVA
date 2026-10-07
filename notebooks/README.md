@@ -20,8 +20,8 @@ execute as demos.
 
 2. Register the DashPVA environment as a Jupyter kernel:
    ```bash
+   uv sync --extra notebooks   # notebook-only env; skip if you installed the Full or Standalone edition
    source .venv/bin/activate
-   pip install ipykernel ipympl
    python -m ipykernel install --user --name DashPVA --display-name "DashPVA"
    ```
 
@@ -30,7 +30,7 @@ execute as demos.
    jupyter notebook notebooks/DashAnalysis_Quickstart.ipynb
    ```
 
-All dependencies (numpy, h5py, matplotlib, pyvista, etc.) are installed by DashPVA.
+The `notebooks` extra (also part of `standalone` and `full`) installs the notebook dependencies: pyvista, trame, ipykernel, ipywidgets and ipympl.
 `ipympl` is needed only for the interactive line cut, which uses `%matplotlib widget`.
 
 ## Usage
@@ -41,8 +41,14 @@ In Python and notebooks, import the package as lowercase `dashpva`:
 from dashpva.utils import DashAnalysis
 
 da = DashAnalysis()
-data = da.load_data("your_data.h5")
+data_raw = da.load_data("your_data.h5")  # file as saved: .images, .intensities, .entry (NeXus tree)
+data = da.load_3d("your_data.h5")        # same, plus .points (N×3 HKL) computed from the geometry
 ```
+
+`load_data` does no reciprocal-space calculation; `data_raw.points` is `None`.
+Browse the file with attribute access and Tab completion, e.g.
+`data_raw.entry.data.metadata.ca.eta`. Use `data` from `load_3d` for point clouds,
+slices, line cuts and volumes.
 
 > **Note:** The CLI command is `DashPVA` (mixed case), but the Python import is
 > `dashpva` (lowercase).
@@ -55,7 +61,8 @@ raising, so a notebook runs top to bottom before you have data in place.
 
 ### DashAnalysis_Quickstart.ipynb
 
-- Loading HDF5 data and inspecting metadata
+- Loading the raw scan into `data_raw` and browsing its NeXus tree
+- Computing HKL points into `data` with `load_3d`
 - 3D point cloud visualization
 - 2D slicing — canonical planes, custom normals, explicit HKL axes, thick slabs
 - Line cuts — presets, custom endpoints, width averaging, interactive mode
