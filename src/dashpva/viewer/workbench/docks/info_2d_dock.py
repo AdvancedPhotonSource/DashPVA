@@ -19,9 +19,12 @@
 
 from typing import Optional
 
+import h5py
 import numpy as np
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QLabel
 
+from dashpva.utils.rsm_converter import RSMConverter
 from dashpva.viewer.workbench.docks.information_dock_base import InformationDockBase
 
 
@@ -40,12 +43,19 @@ class Info2DDock(InformationDockBase):
         show: bool = True,
     ):
         super().__init__(title=title, main_window=main_window, segment_name=segment_name, dock_area=dock_area, show=show)
+        self.lbl_motor_positions = QLabel("—")
+        self.lbl_motor_positions.setWordWrap(True)
+        self.lbl_motor_positions.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_motor_positions.setToolTip(
+            "Sample and detector motor positions for the displayed frame")
+        self._widget.layout().insertRow(5, "Motor Positions:", self.lbl_motor_positions)
 
     def refresh(self) -> None:
         """Refresh the displayed information based on the main window's 2D state."""
         mw = getattr(self, 'main_window', None)
         if mw is None:
             return
+        self._refresh_motor_positions(mw)
         # Try to keep mouse info consistent when refresh occurs
         try:
             xy = getattr(mw, '_last_hover_xy', None)
@@ -142,3 +152,30 @@ class Info2DDock(InformationDockBase):
             dx = None
             dy = None
         self.set_axes(dx, dy)
+
+    def _refresh_motor_positions(self, main_window) -> None:
+        """Show the selected dataset's current-frame diffraction motors."""
+        data = getattr(main_window, 'current_2d_data', None)
+        frame = 0
+        if getattr(data, 'ndim', 0) == 3:
+            spinbox = getattr(main_window, 'frame_spinbox', None)
+            frame = int(spinbox.value()) if spinbox is not None else 0
+        file_path = getattr(main_window, 'current_file_path', None)
+        selected = getattr(main_window, 'selected_dataset_path', None)
+        if not file_path or not selected:
+            self.lbl_motor_positions.setText("—")
+            return
+        try:
+            with h5py.File(file_path, "r") as h5_file:
+                positions = RSMConverter().get_motor_positions(h5_file, frame)
+        except (OSError, KeyError, TypeError, ValueError):
+            positions = []
+        groups = []
+        for role, heading in (("sample", "Sample"), ("detector", "Detector")):
+            values = [
+                f"  {position['name']}: {position['value']:.6g} {position['units']}"
+                for position in positions if position['role'] == role
+            ]
+            if values:
+                groups.append("\n".join((f"{heading}:", *values)))
+        self.lbl_motor_positions.setText("\n".join(groups) or "—")
