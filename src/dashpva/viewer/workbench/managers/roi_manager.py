@@ -576,13 +576,7 @@ class ROIManager:
 
                     # Dataset name based on ROI name
                     name = self.get_roi_name(roi)
-                    ds_name = str(name).replace(' ', '_')
-                    # Replace existing dataset if present
-                    if ds_name in rois_grp:
-                        try:
-                            del rois_grp[ds_name]
-                        except Exception:
-                            pass
+                    ds_name = self._unique_roi_dataset_name(rois_grp, name)
                     dset = rois_grp.create_dataset(ds_name, data=roi_stack, dtype=np.float32)
                     # Attach ROI metadata as dataset attributes: position/size and source dataset path
                     try:
@@ -706,6 +700,23 @@ class ROIManager:
             dataset_path = getattr(self.main, 'selected_dataset_path', None)
         dataset_path = dataset_path or '/entry/data/data'
 
+        source_file = source.get('file_path') or current_file
+        source_stem = ''
+        if isinstance(source_file, str) and source_file:
+            source_stem = os.path.splitext(os.path.basename(source_file))[0]
+        roi_name = self.get_roi_name(roi)
+        default_name = f"{roi_name} ({source_stem})" if source_stem else roi_name
+        roi_name, accepted = QInputDialog.getText(
+            self.main if isinstance(self.main, QWidget) else None,
+            "Save ROI To",
+            "ROI name:",
+            QLineEdit.Normal,
+            default_name,
+        )
+        roi_name = roi_name.strip()
+        if not accepted or not roi_name:
+            return
+
         pos = roi.pos()
         size = roi.size()
         geometry = (
@@ -718,12 +729,12 @@ class ROIManager:
         confirmation.setWindowTitle("Save ROI To")
         confirmation.setIcon(QMessageBox.Question)
         confirmation.setText(
-            f"Save {self.get_roi_name(roi)} to {len(file_paths)} file(s)?")
+            f"Save {roi_name} to {len(file_paths)} file(s)?")
         confirmation.setInformativeText(
             f"Position: x={geometry[0]}, y={geometry[1]}, "
             f"w={geometry[2]}, h={geometry[3]}\n"
             f"Source dataset: {dataset_path}\n"
-            "An existing ROI with the same name will be replaced.")
+            "If that name exists, a numbered suffix will be added.")
         confirmation.setDetailedText("Destination files:\n" + "\n".join(file_paths))
         confirmation.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
         confirmation.setDefaultButton(QMessageBox.Yes)
@@ -735,7 +746,7 @@ class ROIManager:
         for file_path in file_paths:
             try:
                 self._save_roi_geometry_to_file(
-                    file_path, dataset_path, self.get_roi_name(roi), geometry)
+                    file_path, dataset_path, roi_name, geometry)
                 saved.append(file_path)
             except (OSError, KeyError, TypeError, ValueError) as exc:
                 failed.append((file_path, str(exc)))
@@ -753,7 +764,7 @@ class ROIManager:
             QMessageBox.information(
                 self.main,
                 "ROI Batch Save Complete",
-                f"Saved {self.get_roi_name(roi)} to {len(saved)} file(s).",
+                f"Saved {roi_name} to {len(saved)} file(s).",
             )
         self.main.update_status(
             f"ROI batch save: {len(saved)} saved, {len(failed)} skipped")
@@ -774,9 +785,7 @@ class ROIManager:
                     f"ROI exceeds image size {source_width}x{source_height}")
             crop = source[..., y:y + height, x:x + width]
             rois_group = h5f.require_group('/entry/data/rois')
-            dataset_name = str(name).replace(' ', '_')
-            if dataset_name in rois_group:
-                del rois_group[dataset_name]
+            dataset_name = ROIManager._unique_roi_dataset_name(rois_group, name)
             saved = rois_group.create_dataset(
                 dataset_name, data=np.asarray(crop, dtype=np.float32))
             saved.attrs['x'] = x
@@ -787,6 +796,17 @@ class ROIManager:
             info_group = rois_group.require_group('info')
             info_group.attrs['original_file_name'] = os.path.basename(file_path)
         return f"/entry/data/rois/{dataset_name}"
+
+    @staticmethod
+    def _unique_roi_dataset_name(rois_group, name) -> str:
+        """Return a normalized ROI dataset name that does not replace existing data."""
+        base_name = str(name).strip().replace(' ', '_') or 'ROI'
+        if base_name not in rois_group:
+            return base_name
+        number = 2
+        while f"{base_name}({number})" in rois_group:
+            number += 1
+        return f"{base_name}({number})"
 
     def clear_all_rois(self) -> None:
         try:

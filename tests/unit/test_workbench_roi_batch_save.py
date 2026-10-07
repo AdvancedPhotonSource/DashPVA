@@ -14,7 +14,7 @@ pytest.importorskip("pyqtgraph")
 
 sys.modules.setdefault("qtawesome", types.SimpleNamespace(icon=lambda *args, **kwargs: None))
 
-from PyQt5.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E402
 
 from dashpva.viewer.workbench.managers.roi_manager import ROIManager  # noqa: E402
 
@@ -49,19 +49,22 @@ def test_batch_save_writes_cropped_stack_and_geometry(tmp_path):
         assert roi.attrs["source_path"] == "/entry/data/data"
 
 
-def test_batch_save_replaces_same_named_roi(tmp_path):
+def test_batch_save_suffixes_same_named_roi(tmp_path):
     path = tmp_path / "scan.h5"
     _image_file(path)
 
     ROIManager._save_roi_geometry_to_file(
         str(path), "/entry/data/data", "Batch ROI", (1, 1, 2, 2))
-    ROIManager._save_roi_geometry_to_file(
+    second_path = ROIManager._save_roi_geometry_to_file(
         str(path), "/entry/data/data", "Batch ROI", (2, 3, 4, 5))
 
+    assert second_path == "/entry/data/rois/Batch_ROI(2)"
     with h5py.File(path, "r") as h5f:
-        roi = h5f["/entry/data/rois/Batch_ROI"]
-        assert roi.shape == (3, 5, 4)
-        assert (roi.attrs["x"], roi.attrs["y"]) == (2, 3)
+        first_roi = h5f["/entry/data/rois/Batch_ROI"]
+        second_roi = h5f[second_path]
+        assert first_roi.shape == (3, 2, 2)
+        assert second_roi.shape == (3, 5, 4)
+        assert (second_roi.attrs["x"], second_roi.attrs["y"]) == (2, 3)
 
 
 def test_batch_save_rejects_missing_or_too_small_source(tmp_path):
@@ -125,6 +128,8 @@ def test_save_to_always_includes_current_file_once(qapp, monkeypatch, tmp_path):
 
     manager = ROIManager(Main())
     monkeypatch.setattr(manager, "get_roi_name", lambda roi: "Batch ROI")
+    monkeypatch.setattr(
+        QInputDialog, "getText", lambda *args, **kwargs: ("Exported ROI", True))
     monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Yes)
     monkeypatch.setattr(
         "dashpva.viewer.workbench.managers.roi_manager.QMessageBox.information",
@@ -135,7 +140,7 @@ def test_save_to_always_includes_current_file_once(qapp, monkeypatch, tmp_path):
 
     for path in (current, other):
         with h5py.File(path, "r") as h5f:
-            assert "/entry/data/rois/Batch_ROI" in h5f
+            assert "/entry/data/rois/Exported_ROI" in h5f
 
 
 def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path):
@@ -164,6 +169,12 @@ def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path
     details = []
     manager = ROIManager(Main())
     monkeypatch.setattr(manager, "get_roi_name", lambda roi: "ROI")
+    prompted_names = []
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        lambda *args, **kwargs: (prompted_names.append(args[-1]) or args[-1], True),
+    )
     monkeypatch.setattr(QMessageBox, "setDetailedText", lambda self, text: details.append(text))
     monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Cancel)
 
@@ -171,3 +182,4 @@ def test_confirmation_details_list_every_destination(qapp, monkeypatch, tmp_path
 
     assert str(current) in details[0]
     assert str(other) in details[0]
+    assert prompted_names == ["ROI (current)"]
