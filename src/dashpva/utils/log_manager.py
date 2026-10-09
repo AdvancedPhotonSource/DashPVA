@@ -88,9 +88,10 @@ class UINoiseFilter(logging.Filter):
 
 class LogManager:
     """
-    Central logging manager with a single RotatingFileHandler.
+    Central logging manager built on RotatingFileHandler.
     - Log file: <settings.LOG_PATH>/general.log when available, otherwise logs/general.log
-      (ensures directory exists)
+      (ensures directory exists). get_logger(name, log_file=...) writes to another
+      file in the same directory with the same rotation and format.
     - Format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
     - Rotation defaults: 10 MB per file, 10 backups
       Override via env: DASHPVA_LOG_MAX_BYTES, DASHPVA_LOG_BACKUPS
@@ -131,21 +132,10 @@ class LogManager:
         level = getattr(logging, level_name, logging.INFO)
         self.level = level
 
-        # Ensure logs directory exists
-        Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
-
-        # Create rotating file handler
-        self._handler = RotatingFileHandler(
-            self.log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
-        )
-        self._handler.setLevel(level)
-        # Formatter without milliseconds in the timestamp
-        self._handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s [%(name)s] %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
+        self._max_bytes = max_bytes
+        self._backup_count = backup_count
+        self._handler = self._make_handler(self.log_file)
+        self._file_handlers = {}
 
         # Attach a UI noise filter to drop low-value INFO messages from persisting
         drop_specs = os.environ.get("DASHPVA_LOG_INFO_DROP", "").strip()
@@ -171,20 +161,49 @@ class LogManager:
                 continue
         self._handler.addFilter(UINoiseFilter(compiled))
 
-        # Track which loggers we've already attached the handler to
+        # Track which loggers we've already attached a handler to
         self._attached = set()
 
         # Install global excepthook
         self.enable_global_excepthook()
 
-    def get_logger(self, name: str) -> logging.Logger:
-        """Return a logger named as provided, ensuring our rotating file handler is attached once."""
+    def _make_handler(self, path: str) -> RotatingFileHandler:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            path, maxBytes=self._max_bytes, backupCount=self._backup_count, encoding="utf-8"
+        )
+        handler.setLevel(self.level)
+        # Formatter without milliseconds in the timestamp
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        return handler
+
+    def get_logger(self, name: str, log_file: str = None) -> logging.Logger:
+        """Return a logger named as provided, ensuring a rotating file handler is attached once.
+
+        log_file names a file next to general.log (e.g. "consumer_collector.log") to write
+        to instead of it.
+
+        Usage:
+            get_default_manager().get_logger("Workflow").info("general.log")
+            get_default_manager().get_logger("consumer.collector", log_file="consumer_collector.log")
+        """
         logger = logging.getLogger(str(name) if name else self.app_name)
         logger.setLevel(self.level)
         # Avoid duplicate propagation to root to keep single sink
         logger.propagate = False
         if logger.name not in self._attached:
-            logger.addHandler(self._handler)
+            if log_file:
+                path = str(Path(self.log_file).parent / log_file)
+                if path not in self._file_handlers:
+                    self._file_handlers[path] = self._make_handler(path)
+                logger.addHandler(self._file_handlers[path])
+            else:
+                logger.addHandler(self._handler)
             self._attached.add(logger.name)
         return logger
 
@@ -224,7 +243,7 @@ def get_default_manager(app: QApplication = None) -> LogManager:
 class LogMixin:
     """Mixin providing a drop-in self.logger backed by LogManager."""
 
-    def set_log_manager(self, manager: LogManager = None, viewer_name: str = None) -> None:
+    def set_log_manager(self, manager: LogManager = None, viewer_name: str = None, log_file: str = None) -> None:
         mgr = manager or get_default_manager()
         # Allow caller to set/override viewer_name
         if viewer_name is not None:
@@ -233,6 +252,6 @@ class LogMixin:
             except Exception:
                 self.viewer_name = None
         name = getattr(self, "viewer_name", None) or f"{self.__module__}.{self.__class__.__name__}"
-        self.logger = mgr.get_logger(name)
+        self.logger = mgr.get_logger(name, log_file=log_file)
 
         

@@ -19,7 +19,6 @@
 
 import ast
 import json
-import logging
 import os
 import pathlib
 import re
@@ -28,7 +27,6 @@ import subprocess
 import sys
 import threading
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 
 import toml
 from PyQt5 import QtGui, QtWidgets, uic
@@ -91,26 +89,7 @@ class _OpaqueValue:
         self.value = value
 
 
-def _consumer_logger(name: str) -> logging.Logger:
-    """Rotating file next to general.log so consumer output survives the Workflow."""
-    logger = logging.getLogger(f"dashpva.consumer.{name}")
-    if not logger.handlers:
-        log_dir = pathlib.Path(app_settings.LOG_PATH or "logs").expanduser()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(
-            log_dir / f"consumer_{name}.log",
-            maxBytes=app_settings.CONSUMER_LOG_MAX_BYTES,
-            backupCount=app_settings.CONSUMER_LOG_BACKUP_COUNT,
-            encoding="utf-8",
-        )
-        handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%Y-%m-%d %H:%M:%S"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
-    return logger
-
-
-class Worker(QObject):
+class Worker(QObject, LogMixin):
     """
     Worker class to manage subprocess output and communicate it back to the main thread.
     """
@@ -120,21 +99,21 @@ class Worker(QObject):
         super().__init__()
         self.process = process
         self._running = True
-        self._log = _consumer_logger(log_name)
-        self._log.info("=== started PID %s: %s", process.pid, " ".join(map(str, process.args)))
+        self.set_log_manager(viewer_name=f"consumer.{log_name}", log_file=f"consumer_{log_name}.log")
+        self.logger.info("=== started PID %s: %s", process.pid, " ".join(map(str, process.args)))
 
     def run(self):
         while self._running:
             output = self.process.stdout.readline()
             if output:
                 text = output.strip()
-                self._log.info(text)
+                self.logger.info(text)
                 self.output_signal.emit(text)
             elif self.process.poll() is not None:
                 break
         code = self.process.poll()
         if code is not None:
-            self._log.info("=== PID %s exited with code %s", self.process.pid, code)
+            self.logger.info("=== PID %s exited with code %s", self.process.pid, code)
 
     def stop(self):
         self._running = False

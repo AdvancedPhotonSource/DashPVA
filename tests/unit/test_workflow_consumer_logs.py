@@ -24,19 +24,22 @@ import subprocess
 import sys
 
 import dashpva.settings as app_settings
+from dashpva.utils import log_manager
 
 
 def test_workflow_worker_persists_consumer_output_and_exit_code(monkeypatch, tmp_path):
     from dashpva.workflow import workflow
 
     monkeypatch.setattr(app_settings, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
+    monkeypatch.setattr(log_manager, "_default_manager", log_manager.LogManager())
     process = subprocess.Popen(
         [sys.executable, "-c", "print('Traceback: boom'); raise SystemExit(3)"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True,
     )
     worker = workflow.Worker(process, "unit_test_consumer")
     worker.run()
-    for handler in workflow._consumer_logger("unit_test_consumer").handlers:
+    for handler in worker.logger.handlers:
         handler.flush()
 
     text = (tmp_path / "consumer_unit_test_consumer.log").read_text()
