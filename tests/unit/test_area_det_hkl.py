@@ -20,6 +20,10 @@ def _code(obj) -> str:
     )
 
 
+def test_area_detector_logger_drops_repeated_hkl_errors():
+    assert VIEWER.log_drop_repeats is True
+
+
 def test_hkl_setup_does_not_request_removed_motor_name_fields():
     setup = _code(VIEWER.hkl_setup)
     assert "sample_circle_names" not in setup

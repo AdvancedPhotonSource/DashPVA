@@ -86,6 +86,25 @@ class UINoiseFilter(logging.Filter):
         return True
 
 
+class RepeatFilter(logging.Filter):
+    """Drop a record whose level and text already went out within ``window`` seconds."""
+
+    def __init__(self, window: float):
+        super().__init__()
+        self.window = float(window)
+        self._last = {}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        key = (record.levelno, record.getMessage())
+        last = self._last.get(key)
+        if last is not None and record.created - last < self.window:
+            return False
+        if len(self._last) > 1000:
+            self._last = {k: t for k, t in self._last.items() if record.created - t < self.window}
+        self._last[key] = record.created
+        return True
+
+
 class LogManager:
     """
     Central logging manager with a single RotatingFileHandler.
@@ -103,8 +122,10 @@ class LogManager:
       separated regex). If not set, defaults are applied.
     """
 
-    def __init__(self, app: QApplication = None, app_name: str = "DashPVA", log_file: str = "logs/general.log"):
+    def __init__(self, app: QApplication = None, app_name: str = "DashPVA", log_file: str = "logs/general.log",
+                 *, repeat_window: float = 60):
         self.app = app
+        self.repeat_window = repeat_window
         self.app_name = app_name
         # Resolve log path from settings module; fallback to provided default
         if settings.LOG_PATH:
@@ -177,9 +198,20 @@ class LogManager:
         # Install global excepthook
         self.enable_global_excepthook()
 
-    def get_logger(self, name: str) -> logging.Logger:
-        """Return a logger named as provided, ensuring our rotating file handler is attached once."""
+    def get_logger(self, name: str, drop_repeats: bool = False) -> logging.Logger:
+        """Return a logger named as provided, ensuring our rotating file handler is attached once.
+
+        drop_repeats=True writes the same message at the same level at most once per
+        ``repeat_window`` seconds (set on the manager, default 60).
+
+        Usage:
+            logger = get_default_manager().get_logger("Area Detector", drop_repeats=True)
+            for _ in range(1000):
+                logger.error("[HKL] setup failed: missing Energy:Value")   # written once a minute
+        """
         logger = logging.getLogger(str(name) if name else self.app_name)
+        if drop_repeats and not any(isinstance(f, RepeatFilter) for f in logger.filters):
+            logger.addFilter(RepeatFilter(self.repeat_window))
         logger.setLevel(self.level)
         # Avoid duplicate propagation to root to keep single sink
         logger.propagate = False
@@ -224,7 +256,8 @@ def get_default_manager(app: QApplication = None) -> LogManager:
 class LogMixin:
     """Mixin providing a drop-in self.logger backed by LogManager."""
 
-    def set_log_manager(self, manager: LogManager = None, viewer_name: str = None) -> None:
+    def set_log_manager(self, manager: LogManager = None, viewer_name: str = None,
+                        drop_repeats: bool = False) -> None:
         mgr = manager or get_default_manager()
         # Allow caller to set/override viewer_name
         if viewer_name is not None:
@@ -233,6 +266,6 @@ class LogMixin:
             except Exception:
                 self.viewer_name = None
         name = getattr(self, "viewer_name", None) or f"{self.__module__}.{self.__class__.__name__}"
-        self.logger = mgr.get_logger(name)
+        self.logger = mgr.get_logger(name, drop_repeats=drop_repeats)
 
         
