@@ -653,7 +653,7 @@ def save_input_channel(channel: str) -> bool:
         return False
 
 
-def get_input_channel_hkl3d(fallback: str = "pvapy:image") -> str:
+def get_input_channel_hkl3d(fallback: str = "processor:1:analysis") -> str:
     """Return HKL3D-specific INPUT_CHANNEL, independent of the Area Detector channel."""
     if INPUT_CHANNEL_HKL3D:
         return INPUT_CHANNEL_HKL3D
