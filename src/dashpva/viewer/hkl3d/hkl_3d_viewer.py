@@ -550,7 +550,8 @@ class HKLImageWindow(BaseWindow):
                 point_size=3
             )
             self.plotter.add_axes(xlabel='H', ylabel='K', zlabel='L')
-            self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+            self.plotter.show_bounds(xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+                                     fmt='%.3f')
 
         self.plotter.render()
 

@@ -304,10 +304,12 @@ class HKL3DSliceWindow(QMainWindow):
                 n_xlabels=7, n_ylabels=7, n_zlabels=7,
                 x_color='red', y_color='green', z_color='blue',
                 font_size=20,
+                fmt='%.3f',
             )
         except Exception:
             try:
-                self.plotter.show_bounds(mesh=self.cloud_mesh, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis')
+                self.plotter.show_bounds(mesh=self.cloud_mesh, xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
+                                         fmt='%.3f')
             except Exception:
                 pass
 
