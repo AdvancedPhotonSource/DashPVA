@@ -185,6 +185,7 @@ class PVAReader(QObject):
         self.caches_initialized = False
         self.cached_attributes = None
         self.cached_images = None
+        self.cache_limit_notice = ""
         self.cached_qx = None
         self.cached_qy = None
         self.cached_qz = None
@@ -617,8 +618,32 @@ class PVAReader(QObject):
         raise ValueError(f"Unsupported array codec: {codec}")
 
 ################################## Caching ####################################
+    def _cap_rsm_cache(self, rsm_attributes) -> None:
+        """Bound RSM frame caches by bytes: full-resolution Q is ~24 B/pixel, so a
+        frame count sized for small detectors can exceed the machine's RAM."""
+        if self.viewer_type != self.VIEWER_TYPE_MAP['rsm'] or not rsm_attributes:
+            return
+        frame_bytes = int(np.asarray(self.image).nbytes) + sum(
+            int(np.asarray(values).nbytes) for values in rsm_attributes.values()
+        )
+        if frame_bytes <= 0:
+            return
+        limit = max(1, int(app_settings.RSM_CACHE_MAX_BYTES // frame_bytes))
+        if limit >= (self.cached_images.maxlen or 0):
+            return
+        for name in ('cached_images', 'cached_attributes', 'cached_qx', 'cached_qy', 'cached_qz'):
+            setattr(self, name, deque(getattr(self, name), maxlen=limit))
+        self.cache_limit_notice = (
+            f"Frame cache limited to {limit} frames ({frame_bytes / 1024 ** 2:.0f} MB each, "
+            f"{app_settings.RSM_CACHE_MAX_BYTES / 1024 ** 3:.0f} GB budget) instead of "
+            f"{self.MAX_CACHE_SIZE}."
+        )
+        self.MAX_CACHE_SIZE = limit
+
     def cache_attributes(self, pv_attributes=None, rsm_attributes=None, analysis_attributes=None) -> bool:
         """Returns True if this frame was cached (caller should also cache the image)."""
+        if self.CACHING_MODE in ('alignment', 'scan'):
+            self._cap_rsm_cache(rsm_attributes)
         if self.CACHING_MODE == 'alignment':
             self.cached_attributes.append(pv_attributes)
             if rsm_attributes:
