@@ -367,6 +367,12 @@ LAST_PONI_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_CIF_DIR: str = _DEFAULT_BROWSE_DIR
 LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 
+# UI persistence (QSettings) — see AGENTS.md "UI persistence — QSettings".
+# Default dock-state version. A viewer overrides BaseWindow.dock_state_version
+# to raise its own when its dock set changes, so a stale restore cannot misplace
+# that viewer's docks without retiring every other viewer's layout too.
+DOCK_STATE_VERSION: int = 1
+
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
 _STATE_FILE: Path = PROJECT_ROOT / '.dashpva_locator'
@@ -650,7 +656,7 @@ def save_input_channel(channel: str) -> bool:
         return False
 
 
-def get_input_channel_hkl3d(fallback: str = "pvapy:image") -> str:
+def get_input_channel_hkl3d(fallback: str = "processor:1:analysis") -> str:
     """Return HKL3D-specific INPUT_CHANNEL, independent of the Area Detector channel."""
     if INPUT_CHANNEL_HKL3D:
         return INPUT_CHANNEL_HKL3D
