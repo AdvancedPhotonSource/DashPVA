@@ -89,25 +89,31 @@ class _OpaqueValue:
         self.value = value
 
 
-class Worker(QObject):
+class Worker(QObject, LogMixin):
     """
     Worker class to manage subprocess output and communicate it back to the main thread.
     """
     output_signal = pyqtSignal(str)
 
-    def __init__(self, process):
+    def __init__(self, process, log_name: str):
         super().__init__()
         self.process = process
         self._running = True
+        self.set_log_manager(viewer_name=f"consumer.{log_name}", log_file=f"consumer_{log_name}.log")
+        self.logger.info("=== started PID %s: %s", process.pid, " ".join(map(str, process.args)))
 
     def run(self):
         while self._running:
             output = self.process.stdout.readline()
             if output:
                 text = output.strip()
+                self.logger.info(text)
                 self.output_signal.emit(text)
             elif self.process.poll() is not None:
                 break
+        code = self.process.poll()
+        if code is not None:
+            self.logger.info("=== PID %s exited with code %s", self.process.pid, code)
 
     def stop(self):
         self._running = False
@@ -2349,7 +2355,7 @@ class Workflow(QDialog, LogMixin):
                 universal_newlines=True
             )
             self.processes['sim_server'] = process
-            worker = Worker(process)
+            worker = Worker(process, 'sim_server')
             worker.output_signal.connect(self.textEditSimServerOutput.appendPlainText)
             worker.output_signal.connect(self._on_sim_server_output)
             thread = threading.Thread(target=worker.run)
@@ -2809,7 +2815,7 @@ class Workflow(QDialog, LogMixin):
             if stale_box is not None:
                 stale_box.close()
                 self._associator_stale_notice_box = None
-            worker = Worker(process)
+            worker = Worker(process, 'associator')
             worker.output_signal.connect(self._format_associator_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
@@ -3102,7 +3108,7 @@ class Workflow(QDialog, LogMixin):
                 universal_newlines=True
             )
             self.processes['collector'] = process
-            worker = Worker(process)
+            worker = Worker(process, 'collector')
             worker.output_signal.connect(self.textEditCollectorOutput.appendPlainText)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
@@ -3168,7 +3174,7 @@ class Workflow(QDialog, LogMixin):
                 universal_newlines=True
             )
             self.processes['analysis_consumer'] = process
-            worker = Worker(process)
+            worker = Worker(process, 'analysis')
             worker.output_signal.connect(self._format_analysis_output)
             thread = threading.Thread(target=worker.run)
             thread.daemon = True
