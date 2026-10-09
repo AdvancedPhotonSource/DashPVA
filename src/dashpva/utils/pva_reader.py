@@ -249,12 +249,12 @@ class PVAReader(QObject):
         if self.CACHING_MODE:
             self.caches_needed = True
             if self.CACHING_MODE == 'alignment':
-                self.MAX_CACHE_SIZE = app_settings.ALIGNMENT_MAX_CACHE_SIZE or 100
+                self.MAX_CACHE_SIZE = app_settings.ALIGNMENT_MAX_CACHE_SIZE or 1
             elif self.CACHING_MODE == 'scan':
                 self.FLAG_PV = app_settings.SCAN_FLAG_PV or ''
                 self.START_SCAN = app_settings.SCAN_START_SCAN if app_settings.SCAN_START_SCAN is not None else True
                 self.STOP_SCAN = app_settings.SCAN_STOP_SCAN if app_settings.SCAN_STOP_SCAN is not None else False
-                self.MAX_CACHE_SIZE = app_settings.SCAN_MAX_CACHE_SIZE or 100
+                self.MAX_CACHE_SIZE = app_settings.SCAN_MAX_CACHE_SIZE or 1
             elif self.CACHING_MODE == 'bin':
                 self.BIN_COUNT = app_settings.BIN_COUNT or 10
                 self.BIN_SIZE = app_settings.BIN_SIZE or 16

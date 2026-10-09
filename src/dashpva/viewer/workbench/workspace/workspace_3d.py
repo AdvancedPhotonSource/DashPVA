@@ -693,6 +693,7 @@ class Workspace3D(BaseTab):
             mesh=grid,
             xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
             bounds=grid.bounds,
+            fmt='%.3f',
         )
         self._set_data_mode('volume')
         self.on_3d_colormap_changed()
@@ -819,7 +820,8 @@ class Workspace3D(BaseTab):
                             ticks='inside', minor_ticks=True,
                             n_xlabels=7, n_ylabels=7, n_zlabels=7,
                             x_color='red', y_color='green', z_color='blue',
-                            font_size=20
+                            font_size=20,
+                            fmt='%.3f',
                         )
                     except Exception:
                         pass
@@ -1151,6 +1153,7 @@ class Workspace3D(BaseTab):
                 mesh=mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=mesh.bounds,
+                fmt='%.3f',
             )
             self.plotter.reset_camera()
 

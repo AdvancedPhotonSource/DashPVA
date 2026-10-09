@@ -105,6 +105,7 @@ class Render3D(QObject):
                 mesh=mesh,
                 xtitle='H Axis', ytitle='K Axis', ztitle='L Axis',
                 bounds=mesh.bounds,
+                fmt='%.3f',
             )
             plotter.reset_camera()
 
