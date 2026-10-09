@@ -47,3 +47,12 @@ def test_nan_motor_position_fails_setup_with_a_logged_error(monkeypatch, capsys)
     reported = "".join(errors) + capsys.readouterr().out
     assert window.rsm_geometry_ready is False
     assert "sample:POSITION" in reported and "non-finite" in reported
+
+
+def test_hkl_updates_use_the_configured_preview_throttle():
+    source = _code(VIEWER.__init__)
+    assert "app_settings.PREVIEW['HKL_UPDATE_INTERVAL_MS']" in source
+    assert mod.app_settings.PREVIEW_DEFAULTS['HKL_UPDATE_INTERVAL_MS'] == 500
+    assert mod.app_settings.preview_settings({
+        'PREVIEW': {'HKL_UPDATE_INTERVAL_MS': 250},
+    })['HKL_UPDATE_INTERVAL_MS'] == 250
