@@ -343,8 +343,13 @@ class HpcAdMetadataProcessor(BaseMetaAssociator):
             arr_u8 = np.frombuffer(comp_data, dtype=np.uint8)
             # PvAccess expects a list for union array values
             pvObject['value'] = ({'ubyteValue': arr_u8.tolist()},)
-            pvObject['codec']['name'] = 'lz4'
-            pvObject['codec']['parameters'] = ({'value': int(original_enum)},) if original_enum is not None else ()
+            # Whole-field assign: setting pvObject['codec']['name'] edits a copy and
+            # is lost, shipping compressed bytes labelled as uncompressed.
+            pvObject['codec'] = (
+                {'name': 'lz4', 'parameters': pva.PvInt(int(original_enum))}
+                if original_enum is not None
+                else {'name': 'lz4'}
+            )
             pvObject['uncompressedSize'] = raw_len
         else:
             # Leave original branch and clear codec
