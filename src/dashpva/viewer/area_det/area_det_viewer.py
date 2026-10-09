@@ -2008,10 +2008,11 @@ class DiffractionImageWindow(BaseWindow):
                     missing = [
                         channel
                         for channel, value in zip(channels, values)
-                        if value is None
+                        if value is None or (
+                            isinstance(value, (int, float, np.number)) and not np.isfinite(value))
                     ]
                     if missing:
-                        raise ValueError(f"Missing {description} PV data: {missing}")
+                        raise ValueError(f"Missing or non-finite {description} PV data: {missing}")
                     return values
 
                 self.sample_circle_directions = _values(
@@ -2022,14 +2023,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(self.hkl_config, 'sample', 'POSITION'),
                     'sample circle position',
                 )
-                self.sample_circle_names = _values(
-                    axis_field_channels(
-                        self.hkl_config,
-                        'sample',
-                        required=False,
-                    ),
-                    'sample circle motor name',
-                )
                 self.det_circle_directions = _values(
                     axis_field_channels(self.hkl_config, 'detector', 'DIRECTION_AXIS'),
                     'detector circle direction',
@@ -2038,15 +2031,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(self.hkl_config, 'detector', 'POSITION'),
                     'detector circle position',
                 )
-                self.det_circle_names = _values(
-                    axis_field_channels(
-                        self.hkl_config,
-                        'detector',
-                        required=False,
-                    ),
-                    'detector circle motor name',
-                )
-
                 vector_fields = ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3')
                 self.primary_beam_directions = _values(
                     section_field_channels(
