@@ -30,6 +30,7 @@ and data filtering operations.
 
 import glob
 import os
+from collections.abc import Sequence
 from typing import Optional
 
 import numpy as np
@@ -310,6 +311,7 @@ class DashAnalysis:
         self._last_extent = None  # [U_min, U_max, V_min, V_max]
         self._last_orientation = None
         self.last_slice = None
+        self.last_background = None
         self.slice_orientation = None
         self.stack_slices = None
         self.file_path = None
@@ -3142,49 +3144,73 @@ class DashAnalysis:
                 arr = np.asarray(val)
                 print("  " * indent + (f"{key}: {arr.dtype} {arr.shape}" if arr.ndim else f"{key}: {val}"))
 
-    def plot_raw_roi(self, raw_data, roi=None, background_roi=None, frame_index=1,
-                     file_index=0, x_axis=None, cmap="gray", log_scale=False,
-                     cap=None, **kwargs):
-        """Plot per-frame signal sums with optional background-mean subtraction.
+    def remove_background(
+        self,
+        raw_data: "DataStack | Data | np.ndarray",
+        peak_roi: "tuple[float, float, float, float] | dict | str | bool | None" = None,
+        background_roi: (
+            "tuple[float, float, float, float] | Sequence[tuple[float, float]] | dict | str | bool | None"
+        ) = None,
+        frame_displayed: int = 1,
+        file_index: int = 0,
+        x_axis: "str | Sequence[float] | np.ndarray | None" = None,
+        cmap: str = "gray",
+        log_scale: "bool | str" = False,
+        frame_range: "int | tuple[int, int] | None" = None,
+        x_range: "tuple[float | None, float | None] | None" = None,
+        y_range: "tuple[float | None, float | None] | None" = None,
+        **kwargs: int,
+    ) -> "dict[str, dict[str, np.ndarray] | np.ndarray]":
+        """Subtract the background from detector frames and plot the corrected ROI trace.
+
+        For every frame, the background pixels are averaged into one number and that
+        number is subtracted from the whole frame. If a peak ROI is given, its pixels
+        are summed per frame, the background is removed, and the result is plotted
+        against ``x_axis`` with the frame range in the plot title (e.g. "Frames 10 - 50").
+
+        Usage:
+            results = da.remove_background(file_data_raw, peak_roi=(100, 80, 40, 30),
+                                           background_roi="draw", frame_range=(10, 50))
+            plt.plot(results["1d"]["x"], results["1d"]["y"])   # 1D trace, background removed
+            plt.imshow(results["2d"][0].T)                     # 2D frame, background removed
 
         Parameters:
-            raw_data: A DataStack/folder, Data object containing ``images``, a 2D frame,
-                or a 3D frame stack. For a DataStack, one frame is selected from every file.
-            roi: Signal ROI as ``(x, y, width, height)`` or a saved ROI reference.
-                Pass None, True, or ``"draw"`` to draw it interactively.
-            background_roi: Background ROI as ``(x, y, width, height)``. Pass True or
-                ``"draw"`` to select it interactively after the signal ROI. A saved ROI
-                can be selected with ``{source: roi_number}``, ``{"file": source,
-                "roi": roi_number}``, or ``{"data": source, "roi": roi_number}``, where
-                source is a Data object or scan file path. It uses the displayed
-                ``frame_index`` unless ``"frame": index`` selects a different frame.
-            frame_index (int): One-based frame number within each file. For example,
-                ``frame_index=40`` selects array index 39. With a DataStack, this frame
-                is selected from every file and used to build the scan trace.
-            file_index (int): DataStack file displayed while drawing the ROIs. This matches
-                the first index in ``folder_scans[file_index][frame_index]``.
-            x_axis: Metadata name such as ``"eta"`` or ``"temp"``, or numeric values
-                matching the trace length. When None, the numeric metadata field with the
-                strongest relative variation is used. Falls back to frame or scan number.
-            cmap (str): Matplotlib colormap used for the displayed detector frame.
-            log_scale: False for linear scales; True or ``"both"`` for a logarithmic
-                image and symmetric-log 1D plot; ``"image"`` or ``"plot"`` for one only.
-            cap: Optional capacitance configuration. Pass a file path or a dictionary with
-                ``file``/``data``, ``x_axis`` (for example ``"eta"`` or ``"voltage"``),
-                ``axis`` (``"x"`` or ``"y"``), and ``unit`` (``"F"`` or ``"pF"``).
-                Capacitance is read from ``entry/instruments/bluesky/streams/primary``.
+            raw_data: Detector frames: a 3D ``(frames, x, y)`` array, a single 2D frame, a
+                Data object from ``load_data``, or a DataStack (one frame from every file).
+            peak_roi: Box around the peak to measure. ``(x, y, width, height)``, a saved ROI
+                read from a file's ROI metadata (``{file_data_raw: 4}``, ``{file_data_raw: "ROI4"}``,
+                ``{folder_scans[23]: 5}``), or None / True / ``"draw"`` to draw it.
+            background_roi: Background. ``(x, y, width, height)``, pixel points
+                ``[(x1, y1), (x2, y2), ...]``, a saved ROI such as ``{file_data_raw: 3}``,
+                or True / ``"draw"`` to draw it after the peak ROI. None skips it.
+            frame_displayed: One-based frame shown on the detector image (``40`` shows
+                array index 39). For a DataStack it is also the frame taken from every file.
+            file_index: DataStack file shown while drawing the ROIs.
+            x_axis: Trace X axis. A metadata name such as ``"eta"``, ``"frame"``, or one
+                value per frame. None picks the metadata field that
+                changes most.
+            cmap: Matplotlib colormap for the detector image.
+            log_scale: False, True (``"both"``), ``"image"`` or ``"plot"``.
+            frame_range: Frames to use, one-based and inclusive: ``(10, 50)``, or ``25`` for
+                one frame (files for a DataStack). None uses the full dataset.
+            x_range: ``(min, max)`` of the trace plot's X axis; either end may be None.
+            y_range: ``(min, max)`` of the trace plot's Y axis; either end may be None.
+            **kwargs: ``scan_index`` is accepted as an older name for ``file_index``.
 
         Returns:
-            dict: Nested ``integrated_intensity`` and ``plot`` dictionaries.
+            dict: ``{"1d": {"x": ..., "y": ...}, "2d": ...}``. ``"1d"`` is the trace (peak ROI
+            sum minus the background mean); ``"2d"`` is the frames ``(frames, x, y)`` minus
+            their background mean. A drawn ROI fills them in place once drawn (NaN until then).
+            The ROIs, background mean, figure and axes are kept in ``self.last_background``.
         """
         if plt is None:
-            raise ImportError("Matplotlib is required for plot_raw_roi()")
+            raise ImportError("Matplotlib is required for remove_background()")
 
         if "scan_index" in kwargs:
             file_index = kwargs.pop("scan_index")
         if kwargs:
             unexpected = next(iter(kwargs))
-            raise TypeError(f"plot_raw_roi() got an unexpected keyword argument {unexpected!r}")
+            raise TypeError(f"remove_background() got an unexpected keyword argument {unexpected!r}")
 
         from matplotlib.colors import LogNorm
         from matplotlib.patches import Rectangle
@@ -3200,9 +3226,9 @@ class DashAnalysis:
         image_log = log_mode in {"image", "both"}
         plot_log = log_mode in {"plot", "both"}
 
-        frame_number = int(frame_index)
+        frame_number = int(frame_displayed)
         if frame_number < 1:
-            raise ValueError("frame_index is one-based and must be at least 1")
+            raise ValueError("frame_displayed is one-based and must be at least 1")
         frame_offset = frame_number - 1
         file_index = int(file_index)
         is_folder = isinstance(raw_data, DataStack)
@@ -3221,7 +3247,7 @@ class DashAnalysis:
                 scan_images = np.asarray(loaded_scan.images)
                 if frame_offset >= len(scan_images):
                     raise IndexError(
-                        f"frame_index {frame_number} is outside the frame range for {path!r}"
+                        f"frame_displayed {frame_number} is outside the frame range for {path!r}"
                     )
                 selected_frames.append(scan_images[frame_offset])
             images = np.asarray(selected_frames)
@@ -3242,7 +3268,7 @@ class DashAnalysis:
                     "(frames, rows, cols)"
                 )
             if frame_offset >= len(images):
-                raise IndexError(f"frame_index {frame_number} is outside the frame range")
+                raise IndexError(f"frame_displayed {frame_number} is outside the frame range")
             display_index = frame_offset
             trace_labels = None
             default_axis_label = "Frame"
@@ -3326,113 +3352,41 @@ class DashAnalysis:
             return default_values, default_axis_label
 
         trace_positions, trace_axis_label = resolve_x_axis()
-
-        def find_hdf5_dataset(group, field_name):
-            target = field_name.lower()
-            matches = []
-
-            def visitor(name, item):
-                if isinstance(item, h5py.Dataset) and name.rsplit("/", 1)[-1].lower() == target:
-                    matches.append(item[()])
-
-            group.visititems(visitor)
-            return np.asarray(matches[0]).ravel() if matches else None
-
-        def load_capacitance():
-            if cap is None:
-                return None
-            cap_config = dict(cap) if isinstance(cap, dict) else {"file": cap}
-            source = cap_config.get("file", cap_config.get("data", self.file_path))
-            axis_name = cap_config.get("x_axis", x_axis)
-            plot_axis = str(cap_config.get("axis", "y")).lower()
-            unit = str(cap_config.get("unit", "F"))
-            if plot_axis not in {"x", "y"}:
-                raise ValueError("cap['axis'] must be 'x' or 'y'")
-            if unit.lower() not in {"f", "pf"}:
-                raise ValueError("cap['unit'] must be 'F' or 'pF'")
-            if isinstance(source, Data):
-                source_path = getattr(source, "file_path", None)
-                if not source_path:
-                    raise ValueError("CAP data requires an HDF5 file path")
-            else:
-                source_path = os.path.expanduser(str(source))
-            if not source_path or not os.path.isfile(source_path):
-                raise FileNotFoundError(f"No CAP data file at {source_path!r}")
-
-            with h5py.File(source_path, "r") as handle:
-                primary = None
-                for path in (
-                    "entry/instruments/bluesky/streams/primary",
-                    "entry/instrument/bluesky/streams/primary",
-                ):
-                    if path in handle:
-                        primary = handle[path]
-                        break
-                if primary is None:
-                    raise ValueError(
-                        "CAP file does not contain entry/instruments/bluesky/streams/primary"
-                    )
-                capacitance = find_hdf5_dataset(primary, "ah2700a_capacitance")
-                if capacitance is None:
-                    raise ValueError("CAP file does not contain ah2700a_capacitance")
-                positions = (
-                    find_hdf5_dataset(primary, axis_name) if axis_name is not None else None
-                )
-
-            if unit.lower() == "pf":
-                capacitance = capacitance * 1e12
-                unit = "pF"
-            else:
-                unit = "F"
-            if positions is None:
-                positions = np.arange(1, capacitance.size + 1, dtype=float)
-                axis_name = "Point"
-            if positions.size != capacitance.size:
-                raise ValueError("CAP position and capacitance arrays must have matching lengths")
-
-            valid = np.isfinite(positions) & np.isfinite(capacitance)
-            positions = np.asarray(positions[valid], dtype=float)
-            capacitance = np.asarray(capacitance[valid], dtype=float)
-            unique_positions, inverse = np.unique(positions, return_inverse=True)
-            sums = np.bincount(inverse, weights=capacitance)
-            counts = np.bincount(inverse)
-            averaged = sums / counts
-            return {
-                "capacitance": averaged,
-                "position": unique_positions,
-                "x_axis": axis_name,
-                "axis": plot_axis,
-                "unit": unit,
-                "source": source_path,
-                "samples_per_position": counts,
-            }
-
-        cap_result = load_capacitance()
-        if cap_result is not None and cap_result["axis"] == "x":
-            if cap_result["capacitance"].size != len(images):
-                raise ValueError(
-                    "CAP capacitance values must match the ROI trace length when cap axis is 'x'"
-                )
-            trace_positions = cap_result["capacitance"]
-            trace_axis_label = f"Capacitance ({cap_result['unit']})"
+        display_frame = images[display_index]
+        if frame_range is None:
+            first, last = 1, len(images)
+        elif np.isscalar(frame_range):
+            first = last = int(frame_range)
+        else:
+            first, last = (int(value) for value in frame_range)
+        if not 1 <= first <= last <= len(images):
+            raise ValueError(f"frame_range must satisfy 1 <= first <= last <= {len(images)}")
+        selected = slice(first - 1, last)
+        images = images[selected]
+        trace_positions = np.asarray(trace_positions)[selected]
+        if trace_labels is not None:
+            trace_labels = list(trace_labels)[selected]
+        range_title = f"{'Files' if is_folder else 'Frames'} {first} - {last}"
 
         draw_background = background_roi is True or (
             isinstance(background_roi, str) and background_roi.lower() == "draw"
         )
-        draw_signal = roi is None or roi is True or (
-            isinstance(roi, str) and roi.lower() == "draw"
+        draw_peak = peak_roi is None or peak_roi is True or (
+            isinstance(peak_roi, str) and peak_roi.lower() == "draw"
         )
         result = {
+            "images": np.full(images.shape, np.nan),
             "integrated_intensity": {
-                "corrected": None,
-                "signal_sum": None,
+                "corrected": np.full(len(images), np.nan),
+                "peak_sum": None,
                 "background_mean": None,
             },
-            "CAP": cap_result,
             "plot": {
-                "roi": None,
+                "peak_roi": None,
                 "background_roi": None,
-                "frame_index": frame_number,
+                "background_points": None,
+                "frame_displayed": frame_number,
+                "frame_range": (first, last),
                 "file_index": file_index if is_folder else None,
                 "x": trace_positions,
                 "x_axis": trace_axis_label,
@@ -3444,7 +3398,6 @@ class DashAnalysis:
                 "figure": None,
                 "image_axis": None,
                 "trace_axis": None,
-                "cap_axis": None,
                 "selector": None,
             },
         }
@@ -3454,7 +3407,7 @@ class DashAnalysis:
             "image_axis": image_axis,
             "trace_axis": trace_axis,
         })
-        display_image = images[display_index].T
+        display_image = display_frame.T
         image_options = {"cmap": cmap, "origin": "upper"}
         if image_log:
             positive = display_image[np.isfinite(display_image) & (display_image > 0)]
@@ -3467,7 +3420,8 @@ class DashAnalysis:
         image_axis.set_xlabel("x pixel")
         image_axis.set_ylabel("y pixel")
         trace_axis.set_xlabel(trace_axis_label)
-        trace_axis.set_ylabel("Signal ROI sum")
+        trace_axis.set_ylabel("Peak ROI sum")
+        trace_axis.set_title(range_title)
         patches = []
 
         def scalar_at_frame(value, saved_frame_index):
@@ -3519,7 +3473,10 @@ class DashAnalysis:
                 raise ValueError("Saved ROI source does not contain ROI metadata")
 
             members = group_members(roi_groups)
-            roi_names = (f"ROI{int(roi_number)}", f"ROI_{int(roi_number)}")
+            if isinstance(roi_number, str) and not roi_number.strip().isdigit():
+                roi_names = (roi_number.strip(),)
+            else:
+                roi_names = (f"ROI{int(roi_number)}", f"ROI_{int(roi_number)}")
             roi_group = find_member(members, roi_names)
             return (
                 scalar_at_frame(
@@ -3584,7 +3541,7 @@ class DashAnalysis:
                 patch.remove()
             patches.clear()
             for bounds, color, label in (
-                (result["plot"]["roi"], "tab:red", "signal"),
+                (result["plot"]["peak_roi"], "tab:red", "peak"),
                 (result["plot"]["background_roi"], "tab:cyan", "background"),
             ):
                 if bounds is not None:
@@ -3595,31 +3552,39 @@ class DashAnalysis:
                     )
                     image_axis.add_patch(patch)
                     patches.append(patch)
+            points = result["plot"]["background_points"]
+            if points is not None:
+                patches.append(image_axis.scatter(
+                    points[:, 0], points[:, 1], s=12, color="tab:cyan", label="background",
+                ))
             if patches:
                 image_axis.legend(loc="upper right")
             figure.canvas.draw_idle()
 
-        def refresh_plot():
-            if result["plot"]["roi"] is not None:
-                signal = roi_pixels(result["plot"]["roi"])
-                axes = (1, 2)
-                signal_integrated = np.asarray([
-                    ndimage.sum(np.nan_to_num(frame, nan=0.0)) for frame in signal
-                ])
-                background_mean = None
-                trace = signal_integrated.copy()
-                if result["plot"]["background_roi"] is not None:
-                    background = np.nanmean(
-                        roi_pixels(result["plot"]["background_roi"]), axis=axes
-                    )
-                    background_mean = background
-                    trace = signal_integrated - background_mean
+        def background_mean():
+            points = result["plot"]["background_points"]
+            if points is not None:
+                return np.nanmean(images[:, points[:, 0], points[:, 1]], axis=1)
+            if result["plot"]["background_roi"] is not None:
+                return np.nanmean(roi_pixels(result["plot"]["background_roi"]), axis=(1, 2))
+            return None
 
-                result["integrated_intensity"].update({
-                    "corrected": trace,
-                    "signal_sum": signal_integrated,
-                    "background_mean": background_mean,
-                })
+        def refresh_plot():
+            background = background_mean()
+            if background is not None:
+                result["images"][...] = images - background[:, None, None]
+            elif not draw_background:
+                result["images"][...] = images
+            result["integrated_intensity"]["background_mean"] = background
+            if result["plot"]["peak_roi"] is not None:
+                peak = roi_pixels(result["plot"]["peak_roi"])
+                peak_sum = np.asarray([
+                    ndimage.sum(np.nan_to_num(frame, nan=0.0)) for frame in peak
+                ])
+                trace = peak_sum if background is None else peak_sum - background
+
+                result["integrated_intensity"]["corrected"][:] = trace
+                result["integrated_intensity"]["peak_sum"] = peak_sum
                 trace_axis.clear()
                 trace_axis.plot(
                     trace_positions,
@@ -3628,19 +3593,6 @@ class DashAnalysis:
                 )
                 if plot_log:
                     trace_axis.set_yscale("symlog")
-                if cap_result is not None and cap_result["axis"] == "y":
-                    cap_axis = result["plot"]["cap_axis"]
-                    if cap_axis is None:
-                        cap_axis = trace_axis.twinx()
-                        result["plot"]["cap_axis"] = cap_axis
-                    cap_axis.clear()
-                    cap_axis.plot(
-                        cap_result["position"],
-                        cap_result["capacitance"],
-                        color="tab:orange",
-                    )
-                    cap_axis.set_xlabel(str(cap_result["x_axis"]))
-                    cap_axis.set_ylabel(f"Capacitance ({cap_result['unit']})")
                 trace_axis.set_xlabel(trace_axis_label)
                 if (
                     trace_labels is not None
@@ -3651,11 +3603,16 @@ class DashAnalysis:
                         f"{index + 1}: {name}" for index, name in enumerate(trace_labels)
                     ]
                     trace_axis.set_xticks(trace_positions, labels, rotation=45, ha="right")
-                if result["plot"]["background_roi"] is not None:
-                    trace_axis.set_ylabel("Signal ROI sum - background ROI mean")
+                if background is not None:
+                    trace_axis.set_ylabel("Peak ROI sum - background mean")
                 else:
-                    trace_axis.set_ylabel("Signal ROI sum")
+                    trace_axis.set_ylabel("Peak ROI sum")
+                trace_axis.set_title(range_title)
                 trace_axis.grid(alpha=0.25)
+                if x_range is not None:
+                    trace_axis.set_xlim(*x_range)
+                if y_range is not None:
+                    trace_axis.set_ylim(*y_range)
             draw_overlays()
 
         def start_background_selection():
@@ -3665,7 +3622,7 @@ class DashAnalysis:
                 bounds = selected_roi(click, release)
                 if bounds is not None:
                     result["plot"]["background_roi"] = bounds
-                    image_axis.set_title(f"{image_title}: signal and background ROIs")
+                    image_axis.set_title(f"{image_title}: peak and background ROIs")
                     refresh_plot()
 
             result["plot"]["selector"] = RectangleSelector(
@@ -3678,34 +3635,46 @@ class DashAnalysis:
             )
 
         if background_roi is not None and not draw_background:
-            result["plot"]["background_roi"] = normalize_roi(
-                resolve_roi(background_roi)
+            points = (
+                np.asarray(background_roi, dtype=float)
+                if isinstance(background_roi, (list, tuple, np.ndarray)) else None
             )
-            draw_overlays()
+            if points is not None and points.ndim == 2 and points.shape[1] == 2:
+                points = np.rint(points).astype(int)
+                inside = (
+                    (points[:, 0] >= 0) & (points[:, 0] < images.shape[1])
+                    & (points[:, 1] >= 0) & (points[:, 1] < images.shape[2])
+                )
+                if not inside.all():
+                    raise ValueError("background_roi points must lie inside the detector frame")
+                result["plot"]["background_points"] = points
+            else:
+                result["plot"]["background_roi"] = normalize_roi(resolve_roi(background_roi))
+            refresh_plot()
 
-        if not draw_signal:
-            result["plot"]["roi"] = normalize_roi(resolve_roi(roi))
+        if not draw_peak:
+            result["plot"]["peak_roi"] = normalize_roi(resolve_roi(peak_roi))
             refresh_plot()
             if draw_background:
                 start_background_selection()
         else:
-            image_axis.set_title(f"{image_title}: draw the SIGNAL ROI")
+            image_axis.set_title(f"{image_title}: draw the PEAK ROI")
 
-            def on_signal(click, release):
+            def on_peak(click, release):
                 bounds = selected_roi(click, release)
                 if bounds is None:
                     return
-                result["plot"]["roi"] = bounds
+                result["plot"]["peak_roi"] = bounds
                 result["plot"]["selector"].set_active(False)
                 refresh_plot()
                 if draw_background:
                     start_background_selection()
                 else:
-                    image_axis.set_title(f"{image_title}: signal ROI")
+                    image_axis.set_title(f"{image_title}: peak ROI")
 
             result["plot"]["selector"] = RectangleSelector(
                 image_axis,
-                on_signal,
+                on_peak,
                 useblit=True,
                 button=[1],
                 interactive=True,
@@ -3714,11 +3683,11 @@ class DashAnalysis:
 
         plt.tight_layout()
         plt.show()
-        return result
-
-    def plot_roi_trace(self, *args, **kwargs):
-        """Compatibility alias for :meth:`plot_raw_roi`."""
-        return self.plot_raw_roi(*args, **kwargs)
+        self.last_background = result
+        return {
+            "1d": {"x": result["plot"]["x"], "y": result["integrated_intensity"]["corrected"]},
+            "2d": result["images"],
+        }
 
     def load_data(self, source=None, cache=False):
         """
