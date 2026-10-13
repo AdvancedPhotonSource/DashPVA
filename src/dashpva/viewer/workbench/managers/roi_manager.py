@@ -382,7 +382,9 @@ class ROIManager:
 
             # Build candidate dataset paths for deletion
             candidates = []
-            ds_path = src.get('dataset_path')
+            ds_path = src.get('roi_dataset_path')
+            if not ds_path and str(src.get('dataset_path', '')).startswith('/entry/data/rois'):
+                ds_path = src.get('dataset_path')
             if isinstance(ds_path, str) and ds_path.startswith('/entry/data/rois'):
                 candidates.append(ds_path)
             # Fallback using ROI name: raw and sanitized underscores
@@ -549,6 +551,12 @@ class ROIManager:
                 roi_stack = np.asarray(sub, dtype=np.float32)
 
             # Write to HDF5 under /entry/data/rois
+            source = self.roi_source_by_id.get(id(roi), {})
+            src_path = source.get('dataset_path')
+            if not isinstance(src_path, str) or src_path.startswith('/entry/data/rois'):
+                src_path = getattr(self.main, 'selected_dataset_path', None)
+            src_path = src_path or '/entry/data/data'
+
             try:
                 with h5py.File(file_path, 'a') as h5f:
                     entry = h5f.require_group('entry')
@@ -579,7 +587,6 @@ class ROIManager:
                         dset.attrs['y'] = int(y)
                         dset.attrs['w'] = int(w)
                         dset.attrs['h'] = int(h)
-                        src_path = getattr(self.main, 'selected_dataset_path', None) or '/entry/data/data'
                         dset.attrs['source_path'] = str(src_path)
                     except Exception:
                         pass
@@ -605,7 +612,8 @@ class ROIManager:
                 try:
                     self.roi_source_by_id[id(roi)] = {
                         'file_path': file_path,
-                        'dataset_path': f"/entry/data/rois/{ds_name}",
+                        'dataset_path': src_path,
+                        'roi_dataset_path': f"/entry/data/rois/{ds_name}",
                     }
                 except Exception:
                     pass
@@ -675,6 +683,7 @@ class ROIManager:
                         self.roi_source_by_id[id(roi)] = {
                             'file_path': file_path,
                             'dataset_path': dataset_path,
+                            'roi_dataset_path': f"/entry/data/rois/{name}",
                         }
                     except Exception:
                         pass
