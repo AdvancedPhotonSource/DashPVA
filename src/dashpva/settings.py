@@ -321,6 +321,9 @@ SCAN_START_SCAN: Optional[bool] = None
 SCAN_STOP_SCAN: Optional[bool] = None
 SCAN_THRESHOLD: Optional[float] = None
 SCAN_MAX_CACHE_SIZE: Optional[int] = None
+# HKL3D frame cache budget: full-resolution Q is ~24 bytes/pixel, so a frame
+# count alone can exceed the machine's RAM on a large detector.
+RSM_CACHE_MAX_BYTES: int = 8 * 1024 ** 3
 BIN_COUNT: Optional[int] = None
 BIN_SIZE: Optional[int] = None
 
