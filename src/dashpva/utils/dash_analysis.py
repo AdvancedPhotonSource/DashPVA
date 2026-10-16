@@ -30,7 +30,6 @@ and data filtering operations.
 
 import glob
 import os
-from collections.abc import Sequence
 from typing import Optional
 
 import numpy as np
@@ -316,6 +315,204 @@ class DashAnalysis:
         self.stack_slices = None
         self.file_path = None
         self._loaded_stack = None
+
+
+    def plot(self, data, rois=None, title=None, **kwargs):
+        plt.figure()
+        plt.imshow(data, **kwargs)
+        if title:
+            plt.title(title)
+        if rois:
+            from matplotlib.patches import Rectangle
+
+            axis = plt.gca()
+            for roi in rois:
+                x, y = roi["pos"]
+                width, height = roi["size"]
+                axis.add_patch(Rectangle(
+                    (x, y), width, height, fill=False,
+                    edgecolor=roi.get("color", "red"), linewidth=2,
+                    label=roi.get("label", "ROI"),
+                ))
+            axis.legend()
+        plt.show()
+
+    def plot_2d(
+        self, data, show=True, transpose=False, rois=None, title=None, **kwargs
+    ):
+        if show:
+            if transpose:
+                data = data.T
+            if rois is not None:
+                kwargs["rois"] = rois
+            if title is not None:
+                kwargs["title"] = title
+            self.plot(data, **kwargs)
+
+    def plot_background_rois(
+        self, full_frame, peak_data, bg_data, rois, transpose=False, **kwargs
+    ):
+        """Plot the selected frame and ROIs in a 2-by-2 analysis layout."""
+        if transpose:
+            full_frame = full_frame.T
+            peak_data = peak_data.T
+            bg_data = bg_data.T
+
+        _, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes[0, 0].imshow(full_frame, **kwargs)
+        axes[0, 0].set_title("Full Frame")
+
+        from matplotlib.patches import Rectangle
+
+        for roi in rois:
+            x, y = roi["pos"]
+            width, height = roi["size"]
+            axes[0, 0].add_patch(Rectangle(
+                (x, y), width, height, fill=False,
+                edgecolor=roi.get("color", "red"), linewidth=2,
+                label=roi.get("label", "ROI"),
+            ))
+        axes[0, 0].legend()
+
+        axes[0, 1].set_title("1D Plot (Coming Soon)")
+        axes[0, 1].set_axis_off()
+        axes[1, 0].imshow(peak_data, **kwargs)
+        axes[1, 0].set_title("Peak")
+        axes[1, 1].imshow(bg_data, **kwargs)
+        axes[1, 1].set_title("Background")
+        plt.tight_layout()
+        plt.show()
+
+    # def plot_3d(self, data, show=True): pass
+
+    # def plot_1d(self): pass
+
+    def remove_background(
+        self,
+        data: Data | np.ndarray,
+        peak_roi: dict[str, tuple[int, int]] | tuple[int, int, int, int],
+        bg_roi: dict[str, tuple[int, int] | int] | tuple[int, int, int, int],
+        frame_range=None,
+        frame_displayed: int = 1,
+        show=True,
+        **kwargs,
+    ) -> dict[str, np.ndarray]:
+        """Extract ROIs and subtract the background.
+
+        Each ROI may be ``{"size": (width, height), "pos": (x, y)}`` or the
+        compatible tuple ``(x, y, width, height)``. A background ROI dictionary
+        may also contain a one-based ``"frame"`` to use that one background
+        frame for every selected peak frame.
+
+        Returns:
+            dict: ``peak_data`` and ``bg_data`` contain the extracted ROIs;
+            ``rm_bg_data`` contains ``peak_data - bg_data``.
+        """
+        # Data stores detector frames in .images; an ndarray already is the frame data.
+        images = data.images if isinstance(data, Data) else data
+
+        # Select the requested frames before cutting out either ROI.
+        data_range = images[slice(*frame_range)] if frame_range is not None else images
+
+        # Convert both accepted ROI formats into array positions and sizes.
+        peak_x, peak_y, peak_width, peak_height = self.get_roi(peak_roi)
+        bg_x, bg_y, bg_width, bg_height = self.get_roi(bg_roi)
+
+        # Extract the peak and background ROIs from the selected frames.
+        peak_data = data_range[..., peak_x:peak_x + peak_width, peak_y:peak_y + peak_height]
+        bg_frame = bg_roi.get("frame") if isinstance(bg_roi, dict) else None
+        if bg_frame is not None:
+            if images.ndim != 3:
+                raise ValueError("bg_roi frame requires a stack of detector frames")
+            bg_frame_index = bg_frame - 1
+            if not 0 <= bg_frame_index < images.shape[0]:
+                raise ValueError("bg_roi frame is outside the source data")
+            bg_data = images[
+                bg_frame_index, bg_x:bg_x + bg_width, bg_y:bg_y + bg_height
+            ]
+        else:
+            bg_data = data_range[..., bg_x:bg_x + bg_width, bg_y:bg_y + bg_height]
+
+        # Subtract the background ROI from the peak ROI to produce the background-subtracted data.
+        rm_bg_data = self._remove_background(peak_data, bg_data)
+
+        if show:
+            transpose = kwargs.get("transpose", False)
+            if transpose:
+                display_rois = [
+                    {
+                        "label": "peak", "size": (peak_width, peak_height),
+                        "pos": (peak_x, peak_y), "color": "red",
+                    },
+                    {
+                        "label": "background", "size": (bg_width, bg_height),
+                        "pos": (bg_x, bg_y), "color": "cyan",
+                    },
+                ]
+            else:
+                display_rois = [
+                    {
+                        "label": "peak", "size": (peak_height, peak_width),
+                        "pos": (peak_y, peak_x), "color": "red",
+                    },
+                    {
+                        "label": "background", "size": (bg_height, bg_width),
+                        "pos": (bg_y, bg_x), "color": "cyan",
+                    },
+                ]
+
+            # frame_displayed is one-based and must be within frame_range when one is selected.
+            if images.ndim == 3:
+                if frame_range is not None:
+                    range_start, range_end = frame_range
+                    if not range_start <= frame_displayed <= range_end:
+                        raise ValueError("frame_displayed is outside the selected frame range")
+                frame_index = frame_displayed - 1
+                if not 0 <= frame_index < images.shape[0]:
+                    raise ValueError("frame_displayed is outside the source data")
+                display_frame = images[frame_index]
+                display_peak = display_frame[
+                    peak_x:peak_x + peak_width, peak_y:peak_y + peak_height
+                ]
+                display_bg = (
+                    bg_data
+                    if bg_frame is not None
+                    else display_frame[bg_x:bg_x + bg_width, bg_y:bg_y + bg_height]
+                )
+                self.plot_background_rois(
+                    display_frame,
+                    display_peak,
+                    display_bg,
+                    display_rois,
+                    **kwargs,
+                )
+            else:
+                self.plot_background_rois(
+                    images, peak_data, bg_data, display_rois, **kwargs
+                )
+
+        return {
+            "peak_data": peak_data,
+            "bg_data": bg_data,
+            "rm_bg_data": rm_bg_data,
+        }
+
+    def _remove_background(
+        self, peak_data: np.ndarray, bg_data: np.ndarray
+    ) -> np.ndarray:
+        """Subtract background ROI values from peak ROI values."""
+        return peak_data - bg_data
+
+    def get_roi(
+        self, roi: dict[str, tuple[int, int]] | tuple[int, int, int, int]
+    ) -> tuple[int, int, int, int]:
+        """Return an ROI as ``(x, y, width, height)``."""
+        if isinstance(roi, dict):
+            width, height = roi["size"]
+            x, y = roi["pos"]
+            return x, y, width, height
+        return roi
+
 
 
 # ============================================================================
@@ -3144,550 +3341,6 @@ class DashAnalysis:
                 arr = np.asarray(val)
                 print("  " * indent + (f"{key}: {arr.dtype} {arr.shape}" if arr.ndim else f"{key}: {val}"))
 
-    def remove_background(
-        self,
-        raw_data: "DataStack | Data | np.ndarray",
-        peak_roi: "tuple[float, float, float, float] | dict | str | bool | None" = None,
-        background_roi: (
-            "tuple[float, float, float, float] | Sequence[tuple[float, float]] | dict | str | bool | None"
-        ) = None,
-        frame_displayed: int = 1,
-        file_index: int = 0,
-        x_axis: "str | Sequence[float] | np.ndarray | None" = None,
-        cmap: str = "gray",
-        log_scale: "bool | str" = False,
-        frame_range: "int | tuple[int, int] | None" = None,
-        x_range: "tuple[float | None, float | None] | None" = None,
-        y_range: "tuple[float | None, float | None] | None" = None,
-        **kwargs: int,
-    ) -> "dict[str, dict[str, np.ndarray] | np.ndarray]":
-        """Subtract the background from detector frames and plot the corrected ROI trace.
-
-        For every frame, the background pixels are averaged into one number and that
-        number is subtracted from the whole frame. If a peak ROI is given, its pixels
-        are summed per frame, the background is removed, and the result is plotted
-        against ``x_axis`` with the frame range in the plot title (e.g. "Frames 10 - 50").
-
-        Usage:
-            results = da.remove_background(file_data_raw, peak_roi=(100, 80, 40, 30),
-                                           background_roi="draw", frame_range=(10, 50))
-            plt.plot(results["1d"]["x"], results["1d"]["y"])   # 1D trace, background removed
-            plt.imshow(results["2d"][0].T)                     # 2D frame, background removed
-
-        Parameters:
-            raw_data: Detector frames: a 3D ``(frames, x, y)`` array, a single 2D frame, a
-                Data object from ``load_data``, or a DataStack (one frame from every file).
-            peak_roi: Box around the peak to measure. ``(x, y, width, height)``, a saved ROI
-                read from a file's ROI metadata (``{file_data_raw: 4}``, ``{file_data_raw: "ROI4"}``,
-                ``{folder_scans[23]: 5}``), or None / True / ``"draw"`` to draw it.
-            background_roi: Background. ``(x, y, width, height)``, pixel points
-                ``[(x1, y1), (x2, y2), ...]``, a saved ROI such as ``{file_data_raw: 3}``,
-                or True / ``"draw"`` to draw it after the peak ROI. None skips it.
-            frame_displayed: One-based frame shown on the detector image (``40`` shows
-                array index 39). For a DataStack it is also the frame taken from every file.
-            file_index: DataStack file shown while drawing the ROIs.
-            x_axis: Trace X axis. A metadata name such as ``"eta"``, ``"frame"``, or one
-                value per frame. None picks the metadata field that
-                changes most.
-            cmap: Matplotlib colormap for the detector image.
-            log_scale: False, True (``"both"``), ``"image"`` or ``"plot"``.
-            frame_range: Frames to use, one-based and inclusive: ``(10, 50)``, or ``25`` for
-                one frame (files for a DataStack). None uses the full dataset.
-            x_range: ``(min, max)`` of the trace plot's X axis; either end may be None.
-            y_range: ``(min, max)`` of the trace plot's Y axis; either end may be None.
-            **kwargs: ``scan_index`` is accepted as an older name for ``file_index``.
-
-        Returns:
-            dict: ``{"1d": {"x": ..., "y": ...}, "2d": ...}``. ``"1d"`` is the trace (peak ROI
-            sum minus the background mean); ``"2d"`` is the frames ``(frames, x, y)`` minus
-            their background mean. A drawn ROI fills them in place once drawn (NaN until then).
-            The ROIs, background mean, figure and axes are kept in ``self.last_background``.
-        """
-        if plt is None:
-            raise ImportError("Matplotlib is required for remove_background()")
-
-        if "scan_index" in kwargs:
-            file_index = kwargs.pop("scan_index")
-        if kwargs:
-            unexpected = next(iter(kwargs))
-            raise TypeError(f"remove_background() got an unexpected keyword argument {unexpected!r}")
-
-        from matplotlib.colors import LogNorm
-        from matplotlib.patches import Rectangle
-        from matplotlib.widgets import RectangleSelector
-        from scipy import ndimage
-
-        if isinstance(log_scale, str):
-            log_mode = log_scale.lower()
-            if log_mode not in {"image", "plot", "both"}:
-                raise ValueError("log_scale must be False, True, 'image', 'plot', or 'both'")
-        else:
-            log_mode = "both" if log_scale else "none"
-        image_log = log_mode in {"image", "both"}
-        plot_log = log_mode in {"plot", "both"}
-
-        frame_number = int(frame_displayed)
-        if frame_number < 1:
-            raise ValueError("frame_displayed is one-based and must be at least 1")
-        frame_offset = frame_number - 1
-        file_index = int(file_index)
-        is_folder = isinstance(raw_data, DataStack)
-        scan_data = None
-        if is_folder:
-            if not len(raw_data):
-                raise ValueError("raw_data folder does not contain scans")
-            if not -len(raw_data) <= file_index < len(raw_data):
-                raise IndexError(f"file_index {file_index} is outside the folder scan range")
-            file_index %= len(raw_data)
-            selected_frames = []
-            scan_data = []
-            for path in raw_data.files:
-                loaded_scan = self._load_data_file(path)
-                scan_data.append(loaded_scan)
-                scan_images = np.asarray(loaded_scan.images)
-                if frame_offset >= len(scan_images):
-                    raise IndexError(
-                        f"frame_displayed {frame_number} is outside the frame range for {path!r}"
-                    )
-                selected_frames.append(scan_images[frame_offset])
-            images = np.asarray(selected_frames)
-            display_index = file_index
-            trace_labels = raw_data.names
-            default_axis_label = "Scan"
-            image_title = f"File {file_index + 1}, frame {frame_number}"
-        else:
-            images = raw_data.images if hasattr(raw_data, "images") else raw_data
-            if images is None:
-                raise ValueError("raw_data does not contain detector images")
-            images = np.asarray(images)
-            if images.ndim == 2:
-                images = images[np.newaxis, ...]
-            if images.ndim != 3:
-                raise ValueError(
-                    "Expected a DataStack, one frame (rows, cols), or a stack "
-                    "(frames, rows, cols)"
-                )
-            if frame_offset >= len(images):
-                raise IndexError(f"frame_displayed {frame_number} is outside the frame range")
-            display_index = frame_offset
-            trace_labels = None
-            default_axis_label = "Frame"
-            image_title = f"Frame {frame_number}"
-
-        def flatten_numeric_metadata(tree, prefix=""):
-            values = {}
-            if isinstance(tree, Group):
-                tree = vars(tree)
-            if not isinstance(tree, dict):
-                return values
-            for key, value in tree.items():
-                path = f"{prefix}.{key}" if prefix else str(key)
-                if isinstance(value, (dict, Group)):
-                    values.update(flatten_numeric_metadata(value, path))
-                    continue
-                try:
-                    array = np.asarray(value, dtype=float).ravel()
-                except (TypeError, ValueError):
-                    continue
-                if array.size:
-                    values[path] = array
-            return values
-
-        def metadata_axes():
-            if is_folder:
-                per_scan = [flatten_numeric_metadata(data.metadata) for data in scan_data]
-                if not per_scan:
-                    return {}
-                common_names = set(per_scan[0]).intersection(*(set(item) for item in per_scan[1:]))
-                axes = {}
-                for name in common_names:
-                    values = []
-                    for item in per_scan:
-                        array = item[name]
-                        index = min(frame_offset, array.size - 1)
-                        values.append(array[index])
-                    axes[name] = np.asarray(values, dtype=float)
-                return axes
-            metadata = getattr(raw_data, "metadata", None)
-            axes = flatten_numeric_metadata(metadata)
-            return {name: values for name, values in axes.items() if values.size == len(images)}
-
-        def resolve_x_axis():
-            default_values = np.arange(1, len(images) + 1)
-            if x_axis is not None and not isinstance(x_axis, str):
-                values = np.asarray(x_axis, dtype=float).ravel()
-                if values.size != len(images):
-                    raise ValueError("x_axis values must match the ROI trace length")
-                return values, "X"
-
-            available = metadata_axes()
-            if isinstance(x_axis, str):
-                if x_axis.lower() in {"frame", "scan", "index"}:
-                    return default_values, default_axis_label
-                matches = [
-                    name for name in available
-                    if name.lower() == x_axis.lower()
-                    or name.rsplit(".", 1)[-1].lower() == x_axis.lower()
-                ]
-                if not matches:
-                    names = ", ".join(sorted(available)) or "none"
-                    raise ValueError(f"No numeric metadata named {x_axis!r}; available: {names}")
-                name = min(matches, key=len)
-                return available[name], name
-
-            varying = {}
-            for name, values in available.items():
-                if "roi" in name.lower():
-                    continue
-                finite = values[np.isfinite(values)]
-                if finite.size < 2:
-                    continue
-                variation = float(np.ptp(finite))
-                scale = max(float(np.max(np.abs(finite))), 1.0)
-                if variation > np.finfo(float).eps * scale:
-                    varying[name] = variation / scale
-            if varying:
-                name = max(varying, key=varying.get)
-                return available[name], name
-            return default_values, default_axis_label
-
-        trace_positions, trace_axis_label = resolve_x_axis()
-        display_frame = images[display_index]
-        if frame_range is None:
-            first, last = 1, len(images)
-        elif np.isscalar(frame_range):
-            first = last = int(frame_range)
-        else:
-            first, last = (int(value) for value in frame_range)
-        if not 1 <= first <= last <= len(images):
-            raise ValueError(f"frame_range must satisfy 1 <= first <= last <= {len(images)}")
-        selected = slice(first - 1, last)
-        images = images[selected]
-        trace_positions = np.asarray(trace_positions)[selected]
-        if trace_labels is not None:
-            trace_labels = list(trace_labels)[selected]
-        range_title = f"{'Files' if is_folder else 'Frames'} {first} - {last}"
-
-        draw_background = background_roi is True or (
-            isinstance(background_roi, str) and background_roi.lower() == "draw"
-        )
-        draw_peak = peak_roi is None or peak_roi is True or (
-            isinstance(peak_roi, str) and peak_roi.lower() == "draw"
-        )
-        result = {
-            "images": np.full(images.shape, np.nan),
-            "integrated_intensity": {
-                "corrected": np.full(len(images), np.nan),
-                "peak_sum": None,
-                "background_mean": None,
-            },
-            "plot": {
-                "peak_roi": None,
-                "background_roi": None,
-                "background_points": None,
-                "frame_displayed": frame_number,
-                "frame_range": (first, last),
-                "file_index": file_index if is_folder else None,
-                "x": trace_positions,
-                "x_axis": trace_axis_label,
-                "labels": trace_labels,
-                "cmap": cmap,
-                "log_scale": log_mode,
-                "image_log_scale": image_log,
-                "trace_log_scale": plot_log,
-                "figure": None,
-                "image_axis": None,
-                "trace_axis": None,
-                "selector": None,
-            },
-        }
-        figure, (image_axis, trace_axis) = plt.subplots(1, 2, figsize=(12, 4))
-        result["plot"].update({
-            "figure": figure,
-            "image_axis": image_axis,
-            "trace_axis": trace_axis,
-        })
-        display_image = display_frame.T
-        image_options = {"cmap": cmap, "origin": "upper"}
-        if image_log:
-            positive = display_image[np.isfinite(display_image) & (display_image > 0)]
-            if positive.size:
-                image_options["norm"] = LogNorm(
-                    vmin=float(np.min(positive)),
-                    vmax=float(np.max(positive)),
-                )
-        image_axis.imshow(display_image, **image_options)
-        image_axis.set_xlabel("x pixel")
-        image_axis.set_ylabel("y pixel")
-        trace_axis.set_xlabel(trace_axis_label)
-        trace_axis.set_ylabel("Peak ROI sum")
-        trace_axis.set_title(range_title)
-        patches = []
-
-        def scalar_at_frame(value, saved_frame_index):
-            values = np.asarray(value).ravel()
-            if values.size == 0:
-                raise ValueError("Saved ROI coordinate is empty")
-            if values.size == 1:
-                return float(values[0])
-            if not -values.size <= saved_frame_index < values.size:
-                raise IndexError(
-                    f"Saved ROI frame {saved_frame_index} is outside its coordinate range"
-                )
-            index = saved_frame_index % values.size
-            return float(values[index])
-
-        def group_members(group):
-            return vars(group) if isinstance(group, Group) else group
-
-        def find_member(group, names):
-            members = group_members(group)
-            if not isinstance(members, dict):
-                raise ValueError("Saved ROI metadata is not a group")
-            lower_names = {str(name).lower(): name for name in members}
-            for name in names:
-                key = lower_names.get(name.lower())
-                if key is not None:
-                    return members[key]
-            raise ValueError(f"Saved ROI is missing {names[0]}")
-
-        def saved_roi(source, roi_number, saved_frame_index=None):
-            saved_frame_number = (
-                frame_number if saved_frame_index is None else int(saved_frame_index)
-            )
-            if saved_frame_number < 1:
-                raise ValueError("Saved ROI frame is one-based and must be at least 1")
-            saved_frame_offset = saved_frame_number - 1
-            if isinstance(source, (str, os.PathLike)):
-                source = self._load_data_file(source)
-            entry = getattr(source, "entry", None)
-            if entry is None:
-                raise ValueError("Saved ROI source must be a Data object or scan file path")
-
-            roi_groups = getattr(entry, "rois", None)
-            if roi_groups is None:
-                data_group = getattr(entry, "data", None)
-                metadata = getattr(data_group, "metadata", None)
-                roi_groups = getattr(metadata, "rois", None)
-            if roi_groups is None:
-                raise ValueError("Saved ROI source does not contain ROI metadata")
-
-            members = group_members(roi_groups)
-            if isinstance(roi_number, str) and not roi_number.strip().isdigit():
-                roi_names = (roi_number.strip(),)
-            else:
-                roi_names = (f"ROI{int(roi_number)}", f"ROI_{int(roi_number)}")
-            roi_group = find_member(members, roi_names)
-            return (
-                scalar_at_frame(
-                    find_member(roi_group, ("MinX", "MIN_X", "min_x", "x")),
-                    saved_frame_offset,
-                ),
-                scalar_at_frame(
-                    find_member(roi_group, ("MinY", "MIN_Y", "min_y", "y")),
-                    saved_frame_offset,
-                ),
-                scalar_at_frame(
-                    find_member(roi_group, ("SizeX", "SIZE_X", "size_x", "width")),
-                    saved_frame_offset,
-                ),
-                scalar_at_frame(
-                    find_member(roi_group, ("SizeY", "SIZE_Y", "size_y", "height")),
-                    saved_frame_offset,
-                ),
-            )
-
-        def resolve_roi(value):
-            if not isinstance(value, dict):
-                return value
-            if "roi" in value and ("file" in value or "data" in value):
-                source = value.get("file", value.get("data"))
-                saved_frame_index = value.get("frame", value.get("frame_index"))
-                return saved_roi(source, value["roi"], saved_frame_index)
-            if len(value) == 1:
-                source, roi_number = next(iter(value.items()))
-                return saved_roi(source, roi_number)
-            raise ValueError(
-                "Saved ROI must be {source: roi_number} or "
-                "{'file': source, 'roi': roi_number}"
-            )
-
-        def normalize_roi(values):
-            x, y, width, height = (float(value) for value in values)
-            x0, x1 = sorted((int(np.floor(x)), int(np.ceil(x + width))))
-            y0, y1 = sorted((int(np.floor(y)), int(np.ceil(y + height))))
-            x0, x1 = np.clip((x0, x1), 0, images.shape[1])
-            y0, y1 = np.clip((y0, y1), 0, images.shape[2])
-            if x1 <= x0 or y1 <= y0:
-                raise ValueError("ROI must contain at least one pixel")
-            return int(x0), int(y0), int(x1 - x0), int(y1 - y0)
-
-        def selected_roi(click, release):
-            if None in (click.xdata, click.ydata, release.xdata, release.ydata):
-                return None
-            return normalize_roi((
-                click.xdata,
-                click.ydata,
-                release.xdata - click.xdata,
-                release.ydata - click.ydata,
-            ))
-
-        def roi_pixels(bounds):
-            x, y, width, height = bounds
-            return images[:, x:x + width, y:y + height]
-
-        def draw_overlays():
-            for patch in patches:
-                patch.remove()
-            patches.clear()
-            for bounds, color, label in (
-                (result["plot"]["peak_roi"], "tab:red", "peak"),
-                (result["plot"]["background_roi"], "tab:cyan", "background"),
-            ):
-                if bounds is not None:
-                    x, y, width, height = bounds
-                    patch = Rectangle(
-                        (x, y), width, height, fill=False,
-                        edgecolor=color, linewidth=2, label=label,
-                    )
-                    image_axis.add_patch(patch)
-                    patches.append(patch)
-            points = result["plot"]["background_points"]
-            if points is not None:
-                patches.append(image_axis.scatter(
-                    points[:, 0], points[:, 1], s=12, color="tab:cyan", label="background",
-                ))
-            if patches:
-                image_axis.legend(loc="upper right")
-            figure.canvas.draw_idle()
-
-        def background_mean():
-            points = result["plot"]["background_points"]
-            if points is not None:
-                return np.nanmean(images[:, points[:, 0], points[:, 1]], axis=1)
-            if result["plot"]["background_roi"] is not None:
-                return np.nanmean(roi_pixels(result["plot"]["background_roi"]), axis=(1, 2))
-            return None
-
-        def refresh_plot():
-            background = background_mean()
-            if background is not None:
-                result["images"][...] = images - background[:, None, None]
-            elif not draw_background:
-                result["images"][...] = images
-            result["integrated_intensity"]["background_mean"] = background
-            if result["plot"]["peak_roi"] is not None:
-                peak = roi_pixels(result["plot"]["peak_roi"])
-                peak_sum = np.asarray([
-                    ndimage.sum(np.nan_to_num(frame, nan=0.0)) for frame in peak
-                ])
-                trace = peak_sum if background is None else peak_sum - background
-
-                result["integrated_intensity"]["corrected"][:] = trace
-                result["integrated_intensity"]["peak_sum"] = peak_sum
-                trace_axis.clear()
-                trace_axis.plot(
-                    trace_positions,
-                    trace,
-                    marker="o" if len(trace) == 1 else None,
-                )
-                if plot_log:
-                    trace_axis.set_yscale("symlog")
-                trace_axis.set_xlabel(trace_axis_label)
-                if (
-                    trace_labels is not None
-                    and trace_axis_label == default_axis_label
-                    and len(trace_labels) <= 20
-                ):
-                    labels = [
-                        f"{index + 1}: {name}" for index, name in enumerate(trace_labels)
-                    ]
-                    trace_axis.set_xticks(trace_positions, labels, rotation=45, ha="right")
-                if background is not None:
-                    trace_axis.set_ylabel("Peak ROI sum - background mean")
-                else:
-                    trace_axis.set_ylabel("Peak ROI sum")
-                trace_axis.set_title(range_title)
-                trace_axis.grid(alpha=0.25)
-                if x_range is not None:
-                    trace_axis.set_xlim(*x_range)
-                if y_range is not None:
-                    trace_axis.set_ylim(*y_range)
-            draw_overlays()
-
-        def start_background_selection():
-            image_axis.set_title(f"{image_title}: draw the BACKGROUND ROI")
-
-            def on_background(click, release):
-                bounds = selected_roi(click, release)
-                if bounds is not None:
-                    result["plot"]["background_roi"] = bounds
-                    image_axis.set_title(f"{image_title}: peak and background ROIs")
-                    refresh_plot()
-
-            result["plot"]["selector"] = RectangleSelector(
-                image_axis,
-                on_background,
-                useblit=True,
-                button=[1],
-                interactive=True,
-                props={"edgecolor": "tab:cyan", "fill": False, "linewidth": 2},
-            )
-
-        if background_roi is not None and not draw_background:
-            points = (
-                np.asarray(background_roi, dtype=float)
-                if isinstance(background_roi, (list, tuple, np.ndarray)) else None
-            )
-            if points is not None and points.ndim == 2 and points.shape[1] == 2:
-                points = np.rint(points).astype(int)
-                inside = (
-                    (points[:, 0] >= 0) & (points[:, 0] < images.shape[1])
-                    & (points[:, 1] >= 0) & (points[:, 1] < images.shape[2])
-                )
-                if not inside.all():
-                    raise ValueError("background_roi points must lie inside the detector frame")
-                result["plot"]["background_points"] = points
-            else:
-                result["plot"]["background_roi"] = normalize_roi(resolve_roi(background_roi))
-            refresh_plot()
-
-        if not draw_peak:
-            result["plot"]["peak_roi"] = normalize_roi(resolve_roi(peak_roi))
-            refresh_plot()
-            if draw_background:
-                start_background_selection()
-        else:
-            image_axis.set_title(f"{image_title}: draw the PEAK ROI")
-
-            def on_peak(click, release):
-                bounds = selected_roi(click, release)
-                if bounds is None:
-                    return
-                result["plot"]["peak_roi"] = bounds
-                result["plot"]["selector"].set_active(False)
-                refresh_plot()
-                if draw_background:
-                    start_background_selection()
-                else:
-                    image_axis.set_title(f"{image_title}: peak ROI")
-
-            result["plot"]["selector"] = RectangleSelector(
-                image_axis,
-                on_peak,
-                useblit=True,
-                button=[1],
-                interactive=True,
-                props={"edgecolor": "tab:red", "fill": False, "linewidth": 2},
-            )
-
-        plt.tight_layout()
-        plt.show()
-        self.last_background = result
-        return {
-            "1d": {"x": result["plot"]["x"], "y": result["integrated_intensity"]["corrected"]},
-            "2d": result["images"],
-        }
 
     def load_data(self, source=None, cache=False):
         """
