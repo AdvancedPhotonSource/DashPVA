@@ -18,7 +18,7 @@
 # ******************************************************************************************************
 
 
-"""Named-input persistence via UiStateMixin.
+"""Named-input persistence built into BaseWindow.
 
 Inputs are remembered per window type in Qt's per-user store, so these tests
 redirect that store into tmp_path rather than touching the developer's own.
@@ -32,12 +32,10 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QLineEdit,
-    QMainWindow,
     QSpinBox,
 )
 
 from dashpva.viewer.core.base_window import BaseWindow
-from dashpva.viewer.core.ui_state import UiStateMixin
 
 
 @pytest.fixture(scope="module")
@@ -51,11 +49,11 @@ def isolated_settings(tmp_path):
     yield
 
 
-class _Form(UiStateMixin, QMainWindow):
-    """A bare QMainWindow -- the standalone case the mixin exists for."""
+class _Form(BaseWindow):
+    """A BaseWindow with a few named inputs."""
 
     def __init__(self):
-        super().__init__()
+        super().__init__(viewer_name="Form")
         self.edit = QLineEdit(self)
         self.edit.setObjectName("edit")
         self.count = QSpinBox(self)
@@ -67,8 +65,8 @@ class _Form(UiStateMixin, QMainWindow):
         self.choice.addItems(["alpha", "beta"])
 
 
-def test_the_mixin_works_without_base_window(qapp):
-    """Its whole reason to exist: a plain QMainWindow can mix it in."""
+def test_inputs_round_trip(qapp):
+    """Named inputs are saved on one BaseWindow and re-applied on the next."""
     w = _Form()
     w.edit.setText("prefix:1")
     w.count.setValue(7)
