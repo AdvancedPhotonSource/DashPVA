@@ -253,6 +253,9 @@ PREVIEW_DEFAULTS = {
     "MIN_TIMER_INTERVAL_MS": 1,
 }
 PREVIEW = dict(PREVIEW_DEFAULTS)
+# Status-bar RAM readout turns orange/red at these fractions of total memory.
+MEMORY_WARN_FRACTION: float = 0.25
+MEMORY_ERROR_FRACTION: float = 0.50
 
 
 def preview_settings(config):

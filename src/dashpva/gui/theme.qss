@@ -114,6 +114,9 @@ QComboBox { min-height: 28px; }
 /* -- Connection state labels ----------------------------------------- */
 QLabel[connectionState="connected"] { color: $SUCCESS; font-weight: bold; }
 QLabel[connectionState="disconnected"] { color: $ERROR; font-weight: bold; }
+/* BaseWindow status bar RAM readout (thresholds in settings.MEMORY_*) */
+QLabel#perfMemory[memoryLevel="warning"] { color: $WARNING; font-weight: bold; }
+QLabel#perfMemory[memoryLevel="error"] { color: $ERROR; font-weight: bold; }
 
 /* -- Stats labels (ROI docks, controls) ------------------------------ */
 QLabel#stats_label, QLabel#roi_stats_label {
