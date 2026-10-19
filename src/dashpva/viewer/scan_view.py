@@ -31,12 +31,13 @@ from dashpva.gui import configure_app, ui_path
 from dashpva.gui.theme_colors import ERROR, SUCCESS, WARNING
 from dashpva.utils import HDF5Handler, PVAReader
 from dashpva.utils.log_manager import LogMixin
+from dashpva.viewer.core.ui_state import UiStateMixin
 
 
-class ScanMonitorWindow(QMainWindow, LogMixin):
+class ScanMonitorWindow(UiStateMixin, QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
     signal_trigger_save = pyqtSignal(bool, bool, bool, str)  # clear_caches, write_temp, write_output, output_override
-    
+
     def __init__(self, channel: str = ""):
         super(ScanMonitorWindow, self).__init__()
         uic.loadUi(ui_path("scan_view.ui"), self)
@@ -48,6 +49,10 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
 
         self.channel = channel or app_settings.get_input_channel("")
         self.scan_state = False
+        # An explicit --channel is a one-off override: keep it out of save/restore
+        # so the remembered channel is neither clobbered on open nor overwritten.
+        if channel:
+            self.persist_input_skip = {'lineedit_channel'}
 
         # Track applied state for UI labels
         self.applied_channel = None
@@ -84,6 +89,9 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
         # Setup Initial UI State
         self._setup_ui_elements()
         self._setup_graph()
+
+        # Deferred so runtime-populated widgets exist before values are re-applied.
+        QTimer.singleShot(0, self.restore_inputs)
 
     def _setup_ui_elements(self):
         if hasattr(self, 'label_mode'):
@@ -571,6 +579,7 @@ class ScanMonitorWindow(QMainWindow, LogMixin):
                 pass
 
     def closeEvent(self, event):
+        self.save_inputs()
         self.info_timer.stop()
         self._cleanup_existing_instances()
         super().closeEvent(event)
