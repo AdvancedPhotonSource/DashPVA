@@ -521,3 +521,15 @@ def test_plot_background_rois_limits_only_the_trace_axes(monkeypatch):
     assert trace.get_xlim() == (2.55, 2.65)
     assert trace.get_ylim()[1] == 10
     assert full_frame.get_xlim() == (-0.5, 3.5)
+
+
+def test_load_data_file_range_keeps_only_those_sorted_files(monkeypatch, tmp_path):
+    for name in ("a.h5", "b.h5", "c.h5", "d.h5"):
+        (tmp_path / name).touch()
+    analysis = DashAnalysis()
+    monkeypatch.setattr(analysis, "_load_data_file", lambda path: path)
+
+    first = analysis.load_data(str(tmp_path), file_range=(1, 3))
+
+    assert first == str(tmp_path / "b.h5")
+    assert analysis._loaded_stack.files == [str(tmp_path / "b.h5"), str(tmp_path / "c.h5")]

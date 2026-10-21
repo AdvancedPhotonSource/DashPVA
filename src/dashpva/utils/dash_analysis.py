@@ -3623,7 +3623,7 @@ class DashAnalysis:
         plt.show()
         return result
 
-    def load_data(self, source=None, cache=False):
+    def load_data(self, source=None, cache=False, file_range=None):
         """
         Load the first scan from a file, folder, glob, or list.
 
@@ -3637,6 +3637,7 @@ class DashAnalysis:
         Parameters:
             source: A file, folder, glob pattern, list of files, or None for the cached file
             cache (bool): Keep stack items in memory after their first load
+            file_range (tuple): Zero-based ``(start, stop)`` of the sorted files to keep, stop excluded
 
         Returns:
             Data for the first detected file
@@ -3669,6 +3670,8 @@ class DashAnalysis:
                 files = [path]
             else:
                 files = sorted(glob.glob(path))
+        if file_range is not None:
+            files = files[slice(*file_range)]
         if not files:
             raise FileNotFoundError(f"No scan files found for {source!r}")
 
