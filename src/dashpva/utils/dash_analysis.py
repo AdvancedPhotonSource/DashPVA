@@ -102,7 +102,7 @@ class Data:
     """
     
     def __init__(self, points: np.ndarray=None, intensities: np.ndarray=None, metadata: dict=None, num_images: int=0, shape: tuple=None,
-                 images: np.ndarray=None, entry: Group=None):
+                 images: np.ndarray=None, entry: Group=None, file_path: str=None):
         """
         Initialize Data object.
         
@@ -119,6 +119,13 @@ class Data:
         self.shape = shape
         self.images = images
         self.entry = entry
+        self.file_path = file_path
+
+    def __getitem__(self, index):
+        """Return a raw detector frame by index."""
+        if self.images is None:
+            raise TypeError("This Data object does not contain detector images")
+        return self.images[index]
 
 
 
@@ -304,11 +311,266 @@ class DashAnalysis:
         self._last_extent = None  # [U_min, U_max, V_min, V_max]
         self._last_orientation = None
         self.last_slice = None
+        self.last_background = None
         self.slice_orientation = None
         self.stack_slices = None
         self.file_path = None
         self._loaded_stack = None
 
+    def plot(self, data, rois=None, title=None, **kwargs):
+        plt.figure()
+        plt.imshow(data, **kwargs)
+        if title:
+            plt.title(title)
+        if rois:
+            from matplotlib.patches import Rectangle
+
+            axis = plt.gca()
+            for roi in rois:
+                x, y = roi["pos"]
+                width, height = roi["size"]
+                axis.add_patch(Rectangle(
+                    (x, y), width, height, fill=False,
+                    edgecolor=roi.get("color", "red"), linewidth=2,
+                    label=roi.get("label", "ROI"),
+                ))
+            axis.legend()
+        plt.show()
+
+    def plot_2d(
+        self, data, show=True, transpose=False, rois=None, title=None, **kwargs
+    ):
+        if show:
+            if transpose:
+                data = data.T
+            if rois is not None:
+                kwargs["rois"] = rois
+            if title is not None:
+                kwargs["title"] = title
+            self.plot(data, **kwargs)
+
+    def plot_background_rois(
+        self, full_frame, peak_data, bg_data, rm_bg_data, rois,
+        frame_numbers=None, transpose=False, x_label="Frame", y_values=None,
+        y_label="Summed Intensity", x_range=None, y_range=None, **kwargs
+    ):
+        """Plot the selected frame and ROIs in a 2-by-2 analysis layout."""
+        if transpose:
+            full_frame = full_frame.T
+            peak_data = peak_data.T
+            bg_data = bg_data.T
+
+        _, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes[0, 0].imshow(full_frame, **kwargs)
+        axes[0, 0].set_title("Full Frame")
+
+        from matplotlib.patches import Rectangle
+
+        for roi in rois:
+            x, y = roi["pos"]
+            width, height = roi["size"]
+            axes[0, 0].add_patch(Rectangle(
+                (x, y), width, height, fill=False,
+                edgecolor=roi.get("color", "red"), linewidth=2,
+                label=roi.get("label", "ROI"),
+            ))
+        axes[0, 0].legend()
+
+        corrected_stack = (
+            rm_bg_data[np.newaxis, ...] if rm_bg_data.ndim == 2 else rm_bg_data
+        )
+        corrected_intensity = (
+            np.sum(corrected_stack, axis=(-2, -1)) if y_values is None else y_values
+        )
+        if frame_numbers is None:
+            frame_numbers = np.arange(corrected_intensity.size)
+        axes[0, 1].plot(
+            frame_numbers, corrected_intensity,
+            marker="o" if corrected_intensity.size == 1 else None,
+        )
+        axes[0, 1].set_title("Peak - Background")
+        axes[0, 1].set_xlabel(x_label)
+        axes[0, 1].set_ylabel(y_label)
+        if x_range is not None:
+            axes[0, 1].set_xlim(*x_range)
+        if y_range is not None:
+            axes[0, 1].set_ylim(*y_range)
+        axes[1, 0].imshow(peak_data, **kwargs)
+        axes[1, 0].set_title("Peak")
+        axes[1, 1].imshow(bg_data, **kwargs)
+        axes[1, 1].set_title("Background")
+        plt.tight_layout()
+        plt.show()
+
+    # def plot_3d(self, data, show=True): pass
+
+    # def plot_1d(self): pass
+
+    def remove_background(
+        self,
+        data: Data | np.ndarray,
+        peak_roi: dict[str, tuple[int, int] | int] | tuple[int, int, int, int],
+        bg_roi: dict[str, tuple[int, int] | int] | tuple[int, int, int, int],
+        frame_range=None,
+        frame_displayed: int = 0,
+        x_axis=None,
+        y_axis=None,
+        x_range=None,
+        y_range=None,
+        show=True,
+        **kwargs,
+    ) -> dict[str, np.ndarray]:
+        """Extract ROIs and subtract the background.
+
+        Each ROI may be ``{"size": (width, height), "pos": (x, y)}`` or the
+        compatible tuple ``(x, y, width, height)``. Either ROI dictionary may
+        also contain a zero-based ``"frame"`` to cut that ROI from that one
+        frame instead of from every selected frame.
+
+        ``x_axis`` and ``y_axis`` set the 1D trace axes: a ``ca`` name from the
+        file's metadata (``"eta"``) or one value per source frame. By default x
+        is the frame number and y the summed peak - background intensity.
+        ``x_range`` and ``y_range`` are ``(min, max)`` limits for that trace;
+        ``None`` (or a ``None`` end) leaves it automatic.
+
+        Returns:
+            dict: ``peak_data`` and ``bg_data`` contain the extracted ROIs;
+            ``rm_bg_data`` contains ``peak_data - bg_data``.
+        """
+        # Data stores detector frames in .images; an ndarray already is the frame data.
+        images = data.images if isinstance(data, Data) else data
+
+        # Select the requested frames before cutting out either ROI.
+        data_range = images[slice(*frame_range)] if frame_range is not None else images
+
+        # Convert both accepted ROI formats into array positions and sizes.
+        peak_x, peak_y, peak_width, peak_height = self.get_roi(peak_roi)
+        bg_x, bg_y, bg_width, bg_height = self.get_roi(bg_roi)
+
+        # Extract the peak and background ROIs from the selected frames.
+        peak_data, peak_frame = self._cut_roi(images, data_range, peak_roi, "peak_roi")
+        bg_data, bg_frame = self._cut_roi(images, data_range, bg_roi, "bg_roi")
+
+        # Subtract the background ROI from the peak ROI to produce the background-subtracted data.
+        rm_bg_data = self._remove_background(peak_data, bg_data)
+
+        if show:
+            transpose = kwargs.get("transpose", False)
+            if transpose:
+                display_rois = [
+                    {
+                        "label": "peak", "size": (peak_width, peak_height),
+                        "pos": (peak_x, peak_y), "color": "red",
+                    },
+                    {
+                        "label": "background", "size": (bg_width, bg_height),
+                        "pos": (bg_x, bg_y), "color": "cyan",
+                    },
+                ]
+            else:
+                display_rois = [
+                    {
+                        "label": "peak", "size": (peak_height, peak_width),
+                        "pos": (peak_y, peak_x), "color": "red",
+                    },
+                    {
+                        "label": "background", "size": (bg_height, bg_width),
+                        "pos": (bg_y, bg_x), "color": "cyan",
+                    },
+                ]
+
+            # frame_displayed is zero-based and must be within frame_range when one is selected.
+            if images.ndim == 3:
+                if frame_range is not None:
+                    range_start, range_end = frame_range
+                    if not range_start <= frame_displayed < range_end:
+                        raise ValueError("frame_displayed is outside the selected frame range")
+                frame_index = frame_displayed
+                if not 0 <= frame_index < images.shape[0]:
+                    raise ValueError("frame_displayed is outside the source data")
+                display_frame = images[frame_index]
+                frames = (
+                    np.array([peak_frame])
+                    if rm_bg_data.ndim == 2
+                    else np.arange(*frame_range)
+                    if frame_range is not None
+                    else np.arange(rm_bg_data.shape[0])
+                )
+                display_peak = (
+                    peak_data
+                    if peak_frame is not None
+                    else display_frame[peak_x:peak_x + peak_width, peak_y:peak_y + peak_height]
+                )
+                display_bg = (
+                    bg_data
+                    if bg_frame is not None
+                    else display_frame[bg_x:bg_x + bg_width, bg_y:bg_y + bg_height]
+                )
+                self.plot_background_rois(
+                    display_frame,
+                    display_peak,
+                    display_bg,
+                    rm_bg_data,
+                    display_rois,
+                    frame_numbers=frames if x_axis is None else self._axis_values(data, x_axis, frames),
+                    x_label=x_axis if isinstance(x_axis, str) else "Frame",
+                    y_values=self._axis_values(data, y_axis, frames),
+                    y_label=y_axis if isinstance(y_axis, str) else "Summed Intensity",
+                    x_range=x_range,
+                    y_range=y_range,
+                    **kwargs,
+                )
+            else:
+                self.plot_background_rois(
+                    images, peak_data, bg_data, rm_bg_data, display_rois,
+                    x_range=x_range, y_range=y_range, **kwargs
+                )
+
+        return {
+            "peak_data": peak_data,
+            "bg_data": bg_data,
+            "rm_bg_data": rm_bg_data,
+        }
+
+    def _remove_background(
+        self, peak_data: np.ndarray, bg_data: np.ndarray
+    ) -> np.ndarray:
+        """Subtract background ROI values from peak ROI values."""
+        # Detector frames are unsigned; subtracting them directly wraps negatives.
+        return peak_data.astype(np.float64) - bg_data
+
+    def _axis_values(self, data, axis, frames):
+        """Values of ``axis`` (a ``ca`` name or one value per source frame) at ``frames``."""
+        if axis is None:
+            return None
+        if isinstance(axis, str):
+            ca = (data.metadata or {}).get("ca", {}) if isinstance(data, Data) else {}
+            if axis not in ca:
+                raise ValueError(f"{axis!r} is not a ca name in this file: {sorted(ca)}")
+            axis = ca[axis]
+        return np.asarray(axis)[frames]
+
+    def _cut_roi(self, images, data_range, roi, name):
+        """Cut ``roi`` from the selected frames, or from its zero-based ``"frame"``."""
+        x, y, width, height = self.get_roi(roi)
+        frame = roi.get("frame") if isinstance(roi, dict) else None
+        if frame is None:
+            return data_range[..., x:x + width, y:y + height], None
+        if images.ndim != 3:
+            raise ValueError(f"{name} frame requires a stack of detector frames")
+        if not 0 <= frame < images.shape[0]:
+            raise ValueError(f"{name} frame is outside the source data")
+        return images[frame, x:x + width, y:y + height], frame
+
+    def get_roi(
+        self, roi: dict[str, tuple[int, int]] | tuple[int, int, int, int]
+    ) -> tuple[int, int, int, int]:
+        """Return an ROI as ``(x, y, width, height)``."""
+        if isinstance(roi, dict):
+            width, height = roi["size"]
+            x, y = roi["pos"]
+            return x, y, width, height
+        return roi
 
 # ============================================================================
 # MAIN METHODS (Ordered by complexity/length - longest to shortest)
@@ -3431,7 +3693,7 @@ class DashAnalysis:
             tree = read_group(f['entry'])
         images = tree['data']['data']
         return Data(intensities=images.ravel(), metadata=tree['data'].get('metadata', {}), num_images=images.shape[0],
-                    shape=images.shape[1:], images=images, entry=to_group(tree))
+                    shape=images.shape[1:], images=images, entry=to_group(tree), file_path=path)
 
     def _load_3d_file(self, path):
         data = self._load_data_file(path)
