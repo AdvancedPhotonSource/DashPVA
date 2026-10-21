@@ -30,6 +30,7 @@ and data filtering operations.
 
 import glob
 import os
+import re
 from typing import Optional
 
 import numpy as np
@@ -3134,6 +3135,231 @@ class DashAnalysis:
             else:
                 arr = np.asarray(val)
                 print("  " * indent + (f"{key}: {arr.dtype} {arr.shape}" if arr.ndim else f"{key}: {val}"))
+
+    def plot_capacitance(self, source=None, *, plot=True, **options):
+        """Read Bluesky master files and plot capacitance (or other fields) against a motor.
+
+        This reads the Bluesky streams rather than detector frames. Values recorded
+        more than once at the same position are averaged.
+
+        Usage:
+            cap = da.plot_capacitance({"folder": "/data/run5", "scans": (12, 20),
+                                       "variables": ["psic_eta", "ah2700a_capacitance"],
+                                       "unit": "pF"})
+            cap["position"], cap["capacitance"]
+
+        Parameters:
+            source: A master-file path, a Data object, or a dictionary of the options
+                below; keyword options are merged over it.
+            plot (bool): Draw the figure; False only returns the values.
+            file/data: One file. ``folder`` plus ``scans=(first, last)`` (scan numbers in
+                the names, inclusive) or ``file_range=(start, stop)`` (sorted ``pattern``
+                matches, default ``"*_master.hdf"``) joins several.
+            variables: Fields from the HDF5 tree; ``x_axis`` selects X (default the first
+                variable). Without ``variables``, ``ah2700a_capacitance`` is read and
+                ``x_axis`` optionally names its motor.
+            path: Group to read, default ``entry/instrument/bluesky/streams/primary``.
+            source_unit/unit: ``"F"``, ``"pF"`` or None, or ``{"x": ..., "y": ...}``.
+
+        Returns:
+            dict: ``position``, ``capacitance``, ``variables`` (averaged per position),
+            ``raw_variables``, ``samples_per_position``, ``x_axis``, ``unit``, ``source``
+            and ``plot`` (``figure``, ``axes``).
+        """
+        from scipy import constants
+
+        config = dict(source) if isinstance(source, dict) else (
+            {} if source is None else {"file": source}
+        )
+        config.update(options)
+
+        def find_hdf5_dataset(group, field_name):
+            target = field_name.lower()
+            matches = []
+
+            def visitor(name, item):
+                if name.rsplit("/", 1)[-1].lower() != target:
+                    return
+                if isinstance(item, h5py.Dataset):
+                    matches.append(item[()])
+                elif isinstance(item, h5py.Group) and isinstance(
+                    item.get("value"), h5py.Dataset
+                ):
+                    matches.append(item["value"][()])
+
+            group.visititems(visitor)
+            return np.asarray(matches[0]).ravel() if matches else None
+
+        def source_files(config):
+            folder = config.get("folder")
+            if folder is None:
+                source = config.get("file", config.get("data", self.file_path))
+                if isinstance(source, Data):
+                    source = getattr(source, "file_path", None)
+                    if not source:
+                        raise ValueError("capacitance data requires an HDF5 file path")
+                return [os.path.expanduser(str(source))]
+            folder = os.path.expanduser(str(folder))
+            if not os.path.isdir(folder):
+                raise FileNotFoundError(f"No folder at {folder!r}")
+            pattern = config.get("pattern", "*_master.hdf")
+            files = sorted(glob.glob(os.path.join(folder, pattern)))
+            scans = config.get("scans")
+            if scans is not None:
+                first, last = (int(value) for value in scans)
+                numbered = {}
+                for path in files:
+                    digits = re.findall(r"\d+", os.path.basename(path))
+                    if digits:
+                        numbered.setdefault(int(digits[-1]), path)
+                files = [numbered[n] for n in range(first, last + 1) if n in numbered]
+            elif config.get("file_range") is not None:
+                files = files[slice(*config["file_range"])]
+            if not files:
+                raise FileNotFoundError(f"No files matching {pattern!r} in {folder!r}")
+            return files
+
+        def load_fields():
+            variables = config.get("variables")
+            variables_mode = variables is not None
+            if variables is not None:
+                if isinstance(variables, str):
+                    variables = [variables]
+                else:
+                    variables = list(variables)
+                if not variables:
+                    raise ValueError("variables must contain at least one field name")
+            axis_name = config.get("x_axis")
+            if not isinstance(axis_name, str):
+                axis_name = None
+            if variables is not None and axis_name is None:
+                axis_name = variables[0]
+            if variables is not None and axis_name not in variables:
+                raise ValueError("x_axis must be included in variables")
+
+            def per_axis(key, default):
+                value = config.get(key, default)
+                value = value if isinstance(value, dict) else {"x": value, "y": value}
+                units = {}
+                for name in ("x", "y"):
+                    unit_name = value.get(name, default)
+                    if unit_name is not None and str(unit_name).lower() not in {"f", "pf"}:
+                        raise ValueError(f"{key} must be 'F', 'pF', or None")
+                    units[name] = None if unit_name is None else str(unit_name).lower()
+                return units
+
+            source_units = per_axis("source_unit", "F")
+            target_units = per_axis("unit", "F")
+            capacitance_axis = "x" if axis_name == "ah2700a_capacitance" else "y"
+            source_unit = source_units[capacitance_axis]
+            unit = target_units[capacitance_axis] or source_unit or "f"
+            group_paths = (
+                [config["path"]] if config.get("path") else [
+                    "entry/instruments/bluesky/streams/primary",
+                    "entry/instrument/bluesky/streams/primary",
+                ]
+            )
+
+            source_paths = source_files(config)
+            field_names = variables or ["ah2700a_capacitance"]
+            if axis_name is not None and axis_name not in field_names and not variables_mode:
+                field_names = field_names + [axis_name]
+            collected = {name: [] for name in field_names}
+            for source_path in source_paths:
+                if not os.path.isfile(source_path):
+                    raise FileNotFoundError(f"No file at {source_path!r}")
+                with h5py.File(source_path, "r") as handle:
+                    group = next((handle[path] for path in group_paths if path in handle), None)
+                    if group is None:
+                        raise ValueError(f"{source_path!r} does not contain {group_paths[0]}")
+                    for field_name in field_names:
+                        values = find_hdf5_dataset(group, field_name)
+                        if values is None:
+                            if field_name == axis_name and not variables_mode:
+                                collected.pop(field_name, None)
+                                continue
+                            raise ValueError(f"{source_path!r} does not contain {field_name}")
+                        if field_name in collected:
+                            collected[field_name].append(values)
+            field_values = {
+                name: np.concatenate(chunks) for name, chunks in collected.items() if chunks
+            }
+            capacitance = field_values.get("ah2700a_capacitance", np.array([], dtype=float))
+            if capacitance.size and source_unit == "f" and unit == "pf":
+                capacitance = capacitance / constants.pico
+            elif capacitance.size and source_unit == "pf" and unit == "f":
+                capacitance = capacitance * constants.pico
+            if "ah2700a_capacitance" in field_values:
+                field_values["ah2700a_capacitance"] = capacitance
+            unit = "pF" if unit == "pf" else "F"
+            positions = (
+                field_values.get(axis_name) if variables_mode
+                else field_values.pop(axis_name, None)
+            )
+            if positions is None:
+                positions = np.arange(1, capacitance.size + 1, dtype=float)
+                axis_name = "Point"
+            expected_size = positions.size
+            for field_name, values in field_values.items():
+                if values.size != expected_size:
+                    raise ValueError(
+                        f"Fields {axis_name!r} and {field_name!r} must have matching lengths"
+                    )
+
+            valid = np.isfinite(positions)
+            for values in field_values.values():
+                valid &= np.isfinite(values)
+            positions = np.asarray(positions[valid], dtype=float)
+            field_values = {
+                name: np.asarray(values[valid], dtype=float)
+                for name, values in field_values.items()
+            }
+            unique_positions, inverse = np.unique(positions, return_inverse=True)
+            counts = np.bincount(inverse)
+            averaged_fields = {
+                name: np.bincount(inverse, weights=values) / counts
+                for name, values in field_values.items()
+                if name != axis_name
+            }
+            averaged = averaged_fields.get("ah2700a_capacitance", np.array([]))
+            return {
+                "capacitance": averaged,
+                "position": unique_positions,
+                "x_axis": axis_name,
+                "unit": unit,
+                "source": source_paths[0] if len(source_paths) == 1 else source_paths,
+                "samples_per_position": counts,
+                "variables": averaged_fields,
+                "raw_variables": field_values,
+                "variables_mode": variables_mode,
+            }
+
+        result = load_fields()
+        result["plot"] = {"figure": None, "axes": []}
+        if not plot:
+            return result
+        if plt is None:
+            raise ImportError("Matplotlib is required for plot_capacitance()")
+
+        def label(name):
+            return f"Capacitance ({result['unit']})" if name == "ah2700a_capacitance" else name
+
+        figure, axis = plt.subplots(figsize=(7, 4))
+        axes = [axis]
+        for index, (name, values) in enumerate(result["variables"].items()):
+            if index:
+                axes.append(axis.twinx())
+                axes[-1].spines["right"].set_position(("outward", 70 * (index - 1)))
+            color = f"C{index}"
+            axes[-1].plot(result["position"], values, color=color, marker="o" if values.size == 1 else None)
+            axes[-1].set_ylabel(label(name), color=color)
+            axes[-1].tick_params(axis="y", colors=color)
+        axis.set_xlabel(label(result["x_axis"]))
+        axis.grid(alpha=0.25)
+        figure.tight_layout()
+        result["plot"].update({"figure": figure, "axes": axes})
+        plt.show()
+        return result
 
     def load_data(self, source=None, cache=False):
         """
