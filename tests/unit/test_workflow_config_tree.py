@@ -42,14 +42,16 @@ match, which is why the rendered text is stored separately.
 """
 
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 import toml
 
 pytest.importorskip("PyQt5.QtWidgets")
 
-from PyQt5.QtWidgets import QApplication, QTreeWidget  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QComboBox, QTreeWidget  # noqa: E402
 
+import dashpva.workflow.workflow as workflow_module  # noqa: E402
 from dashpva.utils.config.resolver import resolve_profile_config  # noqa: E402
 from dashpva.workflow.workflow import Workflow  # noqa: E402
 
@@ -210,3 +212,54 @@ class TestScalarsAndEdits:
         tree.round_trip({"AXES": [{"LABEL": "Mu"}]})
         item = tree.treeWidgetConfig.topLevelItem(0)
         assert not (item.flags() & Qt.ItemIsEditable)
+
+
+def test_profile_dropdown_activates_runtime_profile(qapp, monkeypatch):
+    calls = []
+
+    class Database:
+        def set_selected_profile(self, profile_id):
+            calls.append(("selected", profile_id))
+            return True
+
+    workflow = Workflow.__new__(Workflow)
+    workflow._db_available = True
+    workflow._db = Database()
+    workflow.comboBoxProfile = QComboBox()
+    workflow.comboBoxProfile.addItem("first", 11)
+    workflow.comboBoxProfile.addItem("second", 22)
+    workflow.comboBoxProfile.setCurrentIndex(1)
+    workflow.processes = {}
+    workflow.load_profile_to_tree = lambda: calls.append(("loaded", 22))
+
+    monkeypatch.setattr(workflow_module.app_settings, "set_locator", lambda value: calls.append(("locator", value)))
+    monkeypatch.setattr(workflow_module.app_settings, "reload", lambda: calls.append(("reload", None)))
+
+    workflow._activate_current_profile()
+
+    assert calls == [
+        ("selected", 22),
+        ("locator", 22),
+        ("reload", None),
+        ("loaded", 22),
+    ]
+
+
+def test_refresh_profile_combo_preserves_displayed_profile(qapp):
+    class Database:
+        @staticmethod
+        def get_all_profiles():
+            return [
+                SimpleNamespace(id=11, name="first", is_selected=True),
+                SimpleNamespace(id=22, name="editing", is_selected=False),
+            ]
+
+    workflow = Workflow.__new__(Workflow)
+    workflow._db_available = True
+    workflow._db = Database()
+    workflow.comboBoxProfile = QComboBox()
+
+    workflow._refresh_profile_combo(preferred_profile_id=22)
+
+    assert workflow.comboBoxProfile.currentData() == 22
+    assert workflow.comboBoxProfile.currentText() == "editing"
