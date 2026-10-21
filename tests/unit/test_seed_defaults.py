@@ -83,7 +83,7 @@ def seeded_db(tmp_path, monkeypatch):
     monkeypatch.setattr(seed_mod, "DB_PATH", str(db_file))
 
     def run_seed():
-        seed_mod.seed_defaults()
+        return seed_mod.seed_defaults()
 
     return db_file, run_seed
 
@@ -118,17 +118,18 @@ class TestSeedDefaultsAppRows:
 
     def test_seeds_expected_top_level_settings(self, seeded_db):
         db_file, run_seed = seeded_db
-        run_seed()
+        added = run_seed()
         conn = sqlite3.connect(db_file)
         names = {row[0] for row in conn.execute("SELECT name FROM settings WHERE parent_id IS NULL")}
         conn.close()
         assert {"BEAMLINE_NAME", "PATHS", "APP_DATA"} <= names
+        assert "PATHS.LOG.BASE" in added
 
     def test_idempotent_no_duplicate_rows(self, seeded_db):
         db_file, run_seed = seeded_db
         run_seed()
-        run_seed()
-        run_seed()
+        assert run_seed() == []
+        assert run_seed() == []
         conn = sqlite3.connect(db_file)
         # No duplicates: each (name, parent_id) pair should appear at most once.
         dupes = conn.execute(
