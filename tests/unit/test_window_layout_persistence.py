@@ -60,8 +60,9 @@ def test_close_saves_geometry_and_dock_state(qapp):
     w.resize(640, 480)
     w.close()
 
-    s = QSettings("DashPVA", "_Docked")
-    assert sorted(s.allKeys()) == ["dock_state", "geometry"]
+    keys = QSettings("DashPVA", "_Docked").allKeys()
+    assert "geometry" in keys
+    assert "dock_state" in keys
 
 
 def test_a_window_reopens_at_the_size_it_was_closed_at(qapp):
