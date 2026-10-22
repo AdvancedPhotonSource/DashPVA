@@ -116,6 +116,39 @@ class TestGeometryRefactorEquivalence:
                 assert dc_dir == ["z-"]
                 assert len(sc_pos) == 1 and len(dc_pos) == 1
 
+    def test_get_motor_positions_tracks_the_displayed_frame(self, scan_path):
+        converter = RSMConverter()
+        with h5py.File(scan_path, "r+") as h5_file:
+            hkl = h5_file["entry/data/metadata/HKL"]
+            sample = hkl["SAMPLE_CIRCLE_AXIS_1"]
+            detector = hkl["DETECTOR_CIRCLE_AXIS_1"]
+            string_dtype = h5py.string_dtype("utf-8")
+            sample.create_dataset("NAME", data="Eta", dtype=string_dtype)
+            sample.create_dataset("ANGLE_UNITS", data="deg", dtype=string_dtype)
+            detector.create_dataset("NAME", data="Delta", dtype=string_dtype)
+
+            positions = converter.get_motor_positions(h5_file, frame=2)
+
+        assert positions[0] == {
+            "name": "Eta",
+            "role": "sample",
+            "value": pytest.approx(np.linspace(0.0, 10.0, 4)[2]),
+            "units": "deg",
+        }
+        assert positions[1] == {
+            "name": "Delta",
+            "role": "detector",
+            "value": pytest.approx(20.0),
+            "units": "deg",
+        }
+
+    def test_get_motor_positions_uses_axis_names_without_name_metadata(self, scan_path):
+        converter = RSMConverter()
+        with h5py.File(scan_path, "r") as h5_file:
+            positions = converter.get_motor_positions(h5_file, frame=1)
+
+        assert [position["name"] for position in positions] == ["Mu", "Nu"]
+
     def test_legacy_circle_names_remain_supported(self, scan_path):
         with h5py.File(scan_path, "r+") as h5_file:
             hkl = h5_file["entry/data/metadata/HKL"]
