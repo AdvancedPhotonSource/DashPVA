@@ -25,7 +25,7 @@ import time
 
 import numpy as np
 import pyqtgraph as pg
-from epics import PV, ca, caget, camonitor
+from epics import PV, ca, caget, camonitor, camonitor_clear
 from PyQt5 import uic
 from PyQt5.QtCore import (
     QByteArray,
@@ -233,6 +233,9 @@ class DiffractionImageWindow(BaseWindow):
         # background thread. Read-only flag for any code that wants to know if
         # the initial PV connection sweep has finished.
         self._pv_pollers_loading = False
+        #: The sweep's thread, kept so closeEvent can wait for it -- clearing
+        #: monitors while it still runs lets it register one afterwards.
+        self._pv_poller_thread = None
         # Indeterminate spinner + label in the status bar, only visible while
         # the PV poller thread is running. Driven by _on_pv_pollers_status.
         self._build_pv_pollers_indicator()
@@ -280,8 +283,8 @@ class DiffractionImageWindow(BaseWindow):
         self._last_autoscale_ts = 0.0
 
         # Initializing but not starting timers so they can be reached by different functions
-        self.timer_labels = QTimer()
-        self.timer_plot = QTimer()
+        self.timer_labels = QTimer(self)
+        self.timer_plot = QTimer(self)
         self.file_writer_thread = QThread()
         self.timer_labels.timeout.connect(self.update_labels)
         self.timer_plot.timeout.connect(self.update_image)
@@ -1162,7 +1165,9 @@ class DiffractionImageWindow(BaseWindow):
                 # several seconds when any PV was dead (caget × 0.5s timeout
                 # × N dead PVs).
                 import threading
-                threading.Thread(target=self._connect_pv_pollers, daemon=True).start()
+                self._pv_poller_thread = threading.Thread(
+                    target=self._connect_pv_pollers, daemon=True)
+                self._pv_poller_thread.start()
                 # add_rois() runs from the rois_ready signal once the background
                 # sweep populates reader.rois — calling it here would race the
                 # async caget and find an empty dict.
@@ -1304,6 +1309,8 @@ class DiffractionImageWindow(BaseWindow):
         pieces (ROI rectangles + stats labels) first keeps the user-facing
         UI responsive even if the metadata sweep takes a while.
         """
+        if self.is_closing:
+            return
         self._pv_pollers_loading = True
         # This worker thread does Channel Access (caget/camonitor for ROI, Stats,
         # HKL). Attach it to the main CA context so pyepics doesn't spin up a
@@ -1322,24 +1329,40 @@ class DiffractionImageWindow(BaseWindow):
             if self.reader is None:
                 return
             self.reader.start_scan_monitor()
-            self.pv_pollers_status.emit("Loading HKL monitors…", "info")
+            self._emit_poller_status("Loading HKL monitors…", "info")
             self.start_hkl_monitors()
+            if self.is_closing:
+                return
             if not self.reader.rois:
-                self.pv_pollers_status.emit("Loading ROIs…", "info")
+                self._emit_poller_status("Loading ROIs…", "info")
                 self.reader.start_roi_backup_monitor()
+            if self.is_closing:
+                return
             if self.reader.rois:
                 self.rois_ready.emit()
-            self.pv_pollers_status.emit("Loading stats…", "info")
+            self._emit_poller_status("Loading stats…", "info")
             self.start_stats_monitors()
             # Metadata CA sweep disabled — was suspected of slowing the GUI.
             # if 'METADATA' in self.reader.config:
-            #     self.pv_pollers_status.emit("Loading metadata PVs…", "info")
+            #     self._emit_poller_status("Loading metadata PVs…", "info")
             #     self.reader.start_metadata_ca_monitor()
-            self.pv_pollers_status.emit("ROIs and stats ready", "info")
+            self._emit_poller_status("ROIs and stats ready", "info")
         except Exception as e:
-            self.pv_pollers_status.emit(f"PV poller error: {e}", "error")
+            self._emit_poller_status(f"PV poller error: {e}", "error")
         finally:
             self._pv_pollers_loading = False
+
+    def _emit_poller_status(self, message: str, level: str) -> None:
+        """Emit ``pv_pollers_status`` from the sweep thread without touching a
+        deleted window. Reaching a bound signal on a destroyed QObject raises,
+        so check the plain ``is_closing`` flag first and guard the emit itself.
+        """
+        if self.is_closing:
+            return
+        try:
+            self.pv_pollers_status.emit(message, level)
+        except RuntimeError:
+            pass
 
     def _build_pv_pollers_indicator(self) -> None:
         """Add a hidden indeterminate progress bar + label to the status bar."""
@@ -2695,6 +2718,59 @@ class DiffractionImageWindow(BaseWindow):
         result[result > max_thresh] = 0
         return result
     
+    def _join_pv_poller(self) -> None:
+        """Wait for the PV poller sweep to finish before its monitors are cleared.
+
+        ``begin_close`` has already set ``is_closing``, so the sweep returns at
+        its next checkpoint. The wait is what makes that reliable: the checks sit
+        between steps and ``start_hkl_monitors`` is not atomic, so without it the
+        sweep can register an HKL callback *after* teardown cleared them and
+        leave it attached to a dead window.
+        """
+        thread = self._pv_poller_thread
+        if thread is None or not thread.is_alive():
+            self._pv_poller_thread = None
+            return
+        thread.join()
+        self._pv_poller_thread = None
+
+    def _teardown_live_view(self) -> None:
+        """Stop everything that could outlive the window: the poller sweep, the
+        timers, the Stats camonitors, the HKL PV callbacks, the ROI backup
+        camonitors and the PVA channel monitor.
+
+        The sweep is joined first so nothing it registers survives the clearing
+        that follows. Each step after that is guarded separately — a teardown
+        that raises part way through would leave the rest running, which is the
+        bug it exists for.
+        """
+        self._join_pv_poller()
+        self.stop_child_timers()
+        for pv_name in list(self.stats_data):
+            try:
+                camonitor_clear(pv_name)
+            except Exception:
+                pass
+        for hkl_pv in list(self.hkl_pvs.values()):
+            try:
+                hkl_pv.clear_callbacks()
+                hkl_pv.disconnect()
+            except Exception:
+                pass
+        self.hkl_pvs = {}
+        if self.reader is not None:
+            try:
+                self.reader._clear_roi_backup_monitor()
+            except Exception:
+                pass
+            # Unconditional: stop_channel_monitor also clears the FLAG_PV
+            # camonitor, cancels the queue and joins the consumer thread, none
+            # of which depend on the PVA monitor still being active.
+            try:
+                self.reader.stop_channel_monitor()
+            except Exception:
+                pass
+
     def closeEvent(self, event):
         """
         Custom close event to clean up resources, including stat dialogs.
@@ -2705,6 +2781,10 @@ class DiffractionImageWindow(BaseWindow):
         if self.mask_viewer is not None and not self.mask_viewer.close():
             event.ignore()
             return
+        if not self.confirm_close(event):
+            return
+        self.begin_close()
+        self._teardown_live_view()
         try:
             s = _settings()
             s.setValue("area_det_dock_state", self.saveState(_DOCK_STATE_VERSION))
