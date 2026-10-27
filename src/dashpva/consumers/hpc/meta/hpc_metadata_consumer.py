@@ -341,8 +341,7 @@ class HpcAdMetadataProcessor(BaseMetaAssociator):
         if codec == 'lz4':
             # Compressed path: put bytes under UBYTE union branch
             arr_u8 = np.frombuffer(comp_data, dtype=np.uint8)
-            # PvAccess expects a list for union array values
-            pvObject['value'] = ({'ubyteValue': arr_u8.tolist()},)
+            pvObject['value'] = ({'ubyteValue': arr_u8},)
             # Whole-field assign: setting pvObject['codec']['name'] edits a copy and
             # is lost, shipping compressed bytes labelled as uncompressed.
             pvObject['codec'] = (
