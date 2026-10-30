@@ -72,6 +72,11 @@ _TREE_IS_TABLE_ROLE = Qt.UserRole        # column 0: this node is a dict
 _TREE_ORIGINAL_ROLE = Qt.UserRole        # column 1: the untouched typed value
 _TREE_RENDERED_ROLE = Qt.UserRole + 1    # column 1: the text we rendered
 
+_REFERENCE_PIXELS = 1_000_000
+_REFERENCE_IMAGE_BYTES = _REFERENCE_PIXELS * 2
+_REFERENCE_Q_BYTES = _REFERENCE_PIXELS * 3 * 8
+_MEMORY_CONFIRM_BYTES = 1_000_000_000
+
 
 class _OpaqueValue:
     """Carries a Python value through Qt item data untouched.
@@ -456,6 +461,8 @@ class Workflow(QDialog, LogMixin):
         self.buttonRunAnalysisConsumer.clicked.connect(self.run_analysis_consumer)
         self.buttonStopAnalysisConsumer.clicked.connect(self.stop_analysis_consumer)
 
+        self._setup_memory_feedback()
+
         # DB init / refresh buttons
         self.buttonInitDb.clicked.connect(self._init_db_and_recheck)
         self.buttonRefreshDb.clicked.connect(self._refresh_db)
@@ -625,6 +632,88 @@ class Workflow(QDialog, LogMixin):
                     self._analysis_non_grid_consumers
                 )
             self.spinBoxNConsumersAnalysis.setToolTip("")
+
+    @staticmethod
+    def _format_memory(byte_count: int) -> str:
+        value = float(byte_count)
+        for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+            if value < 1000 or unit == 'TB':
+                return f'{value:.3g} {unit}'
+            value /= 1000
+
+    @classmethod
+    def _frame_memory_text(cls, frame_count: int, rich_text: bool = False) -> str:
+        image = cls._format_memory(frame_count * _REFERENCE_IMAGE_BYTES)
+        image_q = cls._format_memory(
+            frame_count * (_REFERENCE_IMAGE_BYTES + _REFERENCE_Q_BYTES)
+        )
+        if rich_text:
+            image = f'<b>{image}</b>'
+            image_q = f'<b>{image_q}</b>'
+        return f'≈ {image} for 1 MP images ({image_q} with HKL)'
+
+    def _setup_memory_feedback(self) -> None:
+        queue_tip = (
+            'Number of full input updates retained by the upstream PVA server for this '
+            'subscription. Larger values absorb short bursts but do not improve sustained '
+            'processing speed; they increase RAM use and latency.'
+        )
+        cache_tip = (
+            'Number of full incoming frames retained by the collector while ordering producer '
+            'updates. This is separate from the server queue and profile frame cache.'
+        )
+        controls = (
+            (self.spinBoxServerQueueSizeAssociator, self.gridLayout, 7, queue_tip),
+            (self.spinBoxServerQueueSizeCollector, self.gridLayout_3, 9, queue_tip),
+            (self.spinBoxCollectorCacheSize, self.gridLayout_3, 10, cache_tip),
+            (self.spinBoxServerQueueSizeAnalysis, self.gridLayout_4, 7, queue_tip),
+        )
+        self._memory_estimate_labels = []
+        for spin_box, layout, row, tooltip in controls:
+            label = QtWidgets.QLabel()
+            label.setProperty('memoryEstimate', True)
+            label.setToolTip(tooltip)
+            spin_box.setToolTip(tooltip)
+            field = QtWidgets.QWidget()
+            field_layout = QtWidgets.QVBoxLayout(field)
+            field_layout.setContentsMargins(0, 0, 0, 0)
+            field_layout.setSpacing(2)
+            layout.removeWidget(spin_box)
+            field_layout.addWidget(spin_box)
+            field_layout.addWidget(label)
+            layout.addWidget(field, row, 1, 1, 2)
+            spin_box.valueChanged.connect(
+                lambda value, estimate_label=label: estimate_label.setText(
+                    self._frame_memory_text(value, rich_text=True)
+                )
+            )
+            label.setText(self._frame_memory_text(spin_box.value(), rich_text=True))
+            self._memory_estimate_labels.append(label)
+
+    def _confirm_memory_risk(self, title: str, entries: list[tuple[str, int, bool]]) -> bool:
+        """entries: (buffer name, frames it can hold, whether those frames carry HKL Q arrays)."""
+        sized = [(name, frames, with_hkl,
+                  frames * (_REFERENCE_IMAGE_BYTES + (_REFERENCE_Q_BYTES if with_hkl else 0)))
+                 for name, frames, with_hkl in entries]
+        risky = [entry for entry in sized if entry[3] >= _MEMORY_CONFIRM_BYTES]
+        if not risky:
+            return True
+        details = '\n'.join(
+            f'• {name}: up to {frames} frames ≈ {Workflow._format_memory(size)}'
+            + (' (including HKL data)' if with_hkl else '')
+            for name, frames, with_hkl, size in risky
+        )
+        reply = QMessageBox.warning(
+            self,
+            'Large Queue Size',
+            f'{title} can hold a lot of frames in memory:\n\n{details}\n\n'
+            'Sizes are for a 1-megapixel detector; bigger detectors use more.\n'
+            "A bigger queue uses more memory but doesn't make processing faster.\n\n"
+            'Start anyway?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return reply == QMessageBox.Yes
 
     # ------------------------------------------------------------------ #
     # Database controls
@@ -1658,6 +1747,7 @@ class Workflow(QDialog, LogMixin):
             w = table.cellWidget(idx, 3)
             if w is not None:
                 w.setEnabled(False)
+            _update_cache_notice()
 
         for r, (kind, key, old, new) in enumerate(rows):
             key_item = QTableWidgetItem(
@@ -1694,6 +1784,44 @@ class Workflow(QDialog, LogMixin):
             table.setCellWidget(r, 3, btn)
 
         layout.addWidget(table)
+
+        cache_paths = {
+            'CACHE_OPTIONS.ALIGNMENT.MAX_CACHE_SIZE',
+            'CACHE_OPTIONS.SCAN.MAX_CACHE_SIZE',
+        }
+        cache_rows = [
+            index for index, (_kind, key, _old, _new) in enumerate(rows)
+            if key in cache_paths
+        ]
+        cache_notice = QtWidgets.QLabel()
+        cache_notice.setWordWrap(True)
+
+        def _update_cache_notice():
+            estimates = []
+            for index in cache_rows:
+                if dropped_flags[index]:
+                    continue
+                cell = table.item(index, 2)
+                try:
+                    frame_count = int(cell.text())
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                estimates.append(
+                    f'{rows[index][1]} = {frame_count}: '
+                    f'{self._frame_memory_text(frame_count)}'
+                )
+            cache_notice.setText(
+                'Frame-cache memory estimate (Save HDF5/Post-scan; not needed for ordinary '
+                'live viewing):\n' + '\n'.join(estimates)
+                if estimates else ''
+            )
+            cache_notice.setVisible(bool(estimates))
+
+        if cache_rows:
+            table.itemChanged.connect(lambda _item: _update_cache_notice())
+            layout.addWidget(cache_notice)
+            _update_cache_notice()
+
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
@@ -2528,6 +2656,16 @@ class Workflow(QDialog, LogMixin):
             self.logger.warning('Start Metadata Associator ignored — already running')
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Associator Consumers are already running.')
             return
+        queue_frames = (
+            self.spinBoxServerQueueSizeAssociator.value()
+            * self.spinBoxNConsumersAssociator.value()
+        )
+        if not Workflow._confirm_memory_risk(
+            self,
+            'The Metadata Associator',
+            [('Server queues across consumers', queue_frames, False)],
+        ):
+            return
 
         # Reload before building anything below, so a profile switched (or
         # edited via the separate HKL Setup process) since the last reload is
@@ -2896,6 +3034,17 @@ class Workflow(QDialog, LogMixin):
         if 'collector' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Collector is already running.')
             return
+        producer_count = max(1, int(self.lineEditProducerIdList.text()))
+        if not Workflow._confirm_memory_risk(
+            self,
+            'The Collector',
+            [
+                ('Server queues across producers',
+                 self.spinBoxServerQueueSizeCollector.value() * producer_count, False),
+                ('Collector cache', self.spinBoxCollectorCacheSize.value(), False),
+            ],
+        ):
+            return
         self._save_collector_last()
 
         producer_id_list = [str(i) for i in range(1, int(self.lineEditProducerIdList.text()) + 1)]
@@ -2964,6 +3113,16 @@ class Workflow(QDialog, LogMixin):
     def run_analysis_consumer(self):
         if 'analysis_consumer' in self.processes:
             QtWidgets.QMessageBox.warning(self, 'Warning', 'Analysis Consumer is already running.')
+            return
+        queue_frames = (
+            self.spinBoxServerQueueSizeAnalysis.value()
+            * self.spinBoxNConsumersAnalysis.value()
+        )
+        if not Workflow._confirm_memory_risk(
+            self,
+            'The Analysis Consumer',
+            [('Server queues across consumers', queue_frames, True)],
+        ):
             return
         self._on_analysis_processor_file_changed(
             self.comboBoxProcessorFileAnalysis.currentText()
