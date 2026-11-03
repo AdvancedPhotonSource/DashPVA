@@ -200,8 +200,7 @@ CONFIRM_UNSAVED_CHANGES_ON_CLOSE: bool = True
 # relative to PROJECT_ROOT (static -- not config-driven). The label order is the
 # dropdown order; the first entry is the default.
 #: ``options`` lists only the flags that server's parser accepts -- passing any
-#: other makes argparse exit before the server starts. The RSM data server takes
-#: none at all.
+#: other makes argparse exit before the server starts.
 SIM_SERVER_TYPES: dict[str, dict] = {
     "Area detector": {
         "path": "src/dashpva/consumers/caIOC_servers/ad_sim_server_modified.py",
@@ -210,10 +209,6 @@ SIM_SERVER_TYPES: dict[str, dict] = {
     "Probe beam": {
         "path": "src/dashpva/consumers/caIOC_servers/probe_sim_server.py",
         "options": ("cn", "nx", "ny", "fps", "dt", "rt", "rp", "shape"),
-    },
-    "RSM data": {
-        "path": "src/dashpva/consumers/caIOC_servers/sim_rsm_data.py",
-        "options": (),
     },
 }
 
