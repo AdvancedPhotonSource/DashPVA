@@ -372,6 +372,11 @@ LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 # to raise its own when its dock set changes, so a stale restore cannot misplace
 # that viewer's docks without retiring every other viewer's layout too.
 DOCK_STATE_VERSION: int = 1
+# Files at or above this size are not auto-reopened on launch; the path is kept
+# so the user can load it deliberately.
+SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3
+# Delay before reopening the last session's files, so the window paints first (ms)
+SESSION_RESTORE_DELAY_MS: int = 300
 
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
