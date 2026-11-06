@@ -129,12 +129,14 @@ DEFAULT_PROFILE_DATA: Dict[str, Any] = {
     "CONSUMER_MODE": "continuous",
     "CACHE_OPTIONS": {
         "CACHING_MODE": "alignment",
-        "ALIGNMENT": {"MAX_CACHE_SIZE": 1000},
+        # Frames kept in viewer RAM for Save HDF5 / Post-scan. One large-detector
+        # frame with Q is ~0.4 GB, so raise this only where it is needed.
+        "ALIGNMENT": {"MAX_CACHE_SIZE": 1},
         "SCAN": {
             "START_SCAN": True,
             "STOP_SCAN": False,
             "THRESHOLD": 0.05,
-            "MAX_CACHE_SIZE": 1000,
+            "MAX_CACHE_SIZE": 1,
         },
         "BIN": {"COUNT": 10, "SIZE": 16},
     },

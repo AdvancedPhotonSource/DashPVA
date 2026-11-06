@@ -253,6 +253,9 @@ PREVIEW_DEFAULTS = {
     "MIN_TIMER_INTERVAL_MS": 1,
 }
 PREVIEW = dict(PREVIEW_DEFAULTS)
+# Status-bar RAM readout turns orange/red at these fractions of total memory.
+MEMORY_WARN_FRACTION: float = 0.25
+MEMORY_ERROR_FRACTION: float = 0.50
 
 
 def preview_settings(config):
@@ -383,6 +386,11 @@ LAST_TOML_DIR: str = str(PROJECT_ROOT / 'pv_configs')
 # to raise its own when its dock set changes, so a stale restore cannot misplace
 # that viewer's docks without retiring every other viewer's layout too.
 DOCK_STATE_VERSION: int = 1
+# Files at or above this size are not auto-reopened on launch; the path is kept
+# so the user can load it deliberately.
+SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3
+# Delay before reopening the last session's files, so the window paints first (ms)
+SESSION_RESTORE_DELAY_MS: int = 300
 
 # Internal state
 _locator_internal: Optional[Union[int, str]] = None
@@ -667,7 +675,7 @@ def save_input_channel(channel: str) -> bool:
         return False
 
 
-def get_input_channel_hkl3d(fallback: str = "pvapy:image") -> str:
+def get_input_channel_hkl3d(fallback: str = "processor:1:analysis") -> str:
     """Return HKL3D-specific INPUT_CHANNEL, independent of the Area Detector channel."""
     if INPUT_CHANNEL_HKL3D:
         return INPUT_CHANNEL_HKL3D

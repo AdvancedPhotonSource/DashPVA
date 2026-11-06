@@ -1802,7 +1802,7 @@ def _build_gui_classes() -> tuple[type, type, type]:
             answer = QMessageBox.question(
                 self,
                 "Discard staged edits?",
-                "Reloading discards edits that have not been applied.",
+                "Reloading will discard any edits that have not been applied.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )

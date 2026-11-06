@@ -272,6 +272,14 @@ class TestInputChannel:
         monkeypatch.setattr(settings, "DETECTOR_PREFIX", None)
         assert settings.get_input_channel() == "pvapy:image"
 
+    def test_get_input_channel_hkl3d_falls_back_to_the_analysis_output(self, monkeypatch):
+        import dashpva.settings as settings
+
+        monkeypatch.setattr(settings, "INPUT_CHANNEL_HKL3D", None)
+        assert settings.get_input_channel_hkl3d() == "processor:1:analysis"
+        monkeypatch.setattr(settings, "INPUT_CHANNEL_HKL3D", "custom:analysis")
+        assert settings.get_input_channel_hkl3d() == "custom:analysis"
+
     def test_get_input_channel_custom_fallback(self, monkeypatch):
         import dashpva.settings as settings
 

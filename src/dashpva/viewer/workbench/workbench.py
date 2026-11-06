@@ -25,6 +25,7 @@ Inherits from BaseWindow for consistent functionality across the application.
 """
 
 import glob
+import json
 import os
 import sys
 from pathlib import Path
@@ -47,10 +48,12 @@ from PyQt5.QtWidgets import (
     QSlider,
     QTableWidgetItem,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QVBoxLayout,
     QWidget,
 )
 
+import dashpva.settings as app_settings
 from dashpva.gui import configure_app
 from dashpva.utils.hdf5_loader import HDF5Loader
 from dashpva.utils.log_manager import get_default_manager
@@ -81,10 +84,13 @@ class WorkbenchWindow(BaseWindow):
     """
 
     # === Initialization & UI Setup ===
+    _ALWAYS_LOAD_ALL_KEY = "session_restore/always_load_all"
+
     def __init__(self):
         """Initialize the Workbench window."""
         super().__init__(ui_file_name="workbench/workbench.ui", viewer_name="Workbench")
         self.setup_window_properties("Workbench - Data Analysis", 1600, 1000)
+        self._setup_session_restore_settings()
 
         # ====== DOCKS START ====== #
         # 2d
@@ -108,6 +114,7 @@ class WorkbenchWindow(BaseWindow):
 
         # Alias Workbench's tree to the dock's tree widget
         self.tree_data = self.data_structure_dock.tree_data
+        self.tree_data.itemExpanded.connect(self._populate_prepared_hdf5_item)
         # Hide any fixed left panel from the UI and give space to analysis
         if hasattr(self, 'leftPanel') and self.leftPanel is not None:
             self.leftPanel.hide()
@@ -853,6 +860,108 @@ class WorkbenchWindow(BaseWindow):
                 pass
         super().closeEvent(event)
 
+    def session_paths(self) -> list:
+        """The data tree's loaded files and folders, top to bottom."""
+        kinds = {"folder_section": "folder", "file_root": "file"}
+        entries = []
+        for i in range(self.tree_data.topLevelItemCount()):
+            item = self.tree_data.topLevelItem(i)
+            kind = kinds.get(item.data(0, Qt.UserRole + 2))
+            path = item.data(0, Qt.UserRole + 1)
+            if kind and path:
+                entries.append([kind, path])
+        return entries
+
+    def session_view(self) -> dict:
+        """The open file and dataset, the analysis tab and the 2D frame being shown."""
+        tabs = self.tabWidget_analysis
+        spin = self.frame_spinbox
+        return {
+            "file": self.current_file_path,
+            "dataset": self.selected_dataset_path,
+            "tab": tabs.tabText(tabs.currentIndex()),
+            "frame": spin.value() if spin is not None else None,
+        }
+
+    def restore_session_view(self, view: dict) -> None:
+        """Reload the saved dataset like a double-click, then show its tab and frame once loaded."""
+        self._populate_prepared_file(view.get("file"))
+        item = self._find_dataset_item(view.get("file"), view.get("dataset"))
+        if item is None:
+            self._show_session_tab_and_frame(view)
+            return
+        self.tree_data.setCurrentItem(item)
+        self._pending_session_view = view
+        self._ensure_current_file_from_item(item)
+        self.selected_dataset_path = item.data(0, 32)
+        self.start_dataset_load(
+            loaded_callback=self._apply_pending_session_view,
+            failed_callback=self._clear_pending_session_view)
+
+    def _populate_prepared_file(self, file_path):
+        if not file_path:
+            return
+        iterator = QTreeWidgetItemIterator(self.tree_data)
+        while iterator.value():
+            item = iterator.value()
+            if (
+                item.data(0, Qt.UserRole + 2) == "file_root"
+                and item.data(0, Qt.UserRole + 1) == file_path
+            ):
+                self._populate_prepared_hdf5_item(item)
+                return
+            iterator += 1
+
+    @pyqtSlot(object)
+    def _apply_pending_session_view(self, _data) -> None:
+        view = getattr(self, "_pending_session_view", None)
+        self._pending_session_view = None
+        if view:
+            self._show_session_tab_and_frame(view)
+
+    @pyqtSlot(str)
+    def _clear_pending_session_view(self, _message) -> None:
+        self._pending_session_view = None
+
+    def _find_dataset_item(self, file_path, dataset_path):
+        """The tree item for ``dataset_path`` inside the file root for ``file_path``, or None."""
+        if not file_path or not dataset_path:
+            return None
+        it = QTreeWidgetItemIterator(self.tree_data)
+        while it.value():
+            item = it.value()
+            if item.data(0, 32) == dataset_path:  # the tree keeps dataset paths in role 32
+                root = item
+                while root is not None and root.data(0, Qt.UserRole + 2) != "file_root":
+                    root = root.parent()
+                if root is not None and root.data(0, Qt.UserRole + 1) == file_path:
+                    return item
+            it += 1
+        return None
+
+    def _show_session_tab_and_frame(self, view: dict) -> None:
+        tabs = self.tabWidget_analysis
+        for i in range(tabs.count()):
+            if tabs.tabText(i) == view.get("tab"):
+                tabs.setCurrentIndex(i)
+                break
+        spin = self.frame_spinbox
+        if spin is not None and view.get("frame") is not None:
+            spin.setValue(int(view["frame"]))
+
+    def restore_session_path_order(self, entries: list) -> None:
+        """Put restored top-level items back in their saved order."""
+        by_path = {}
+        while self.tree_data.topLevelItemCount():
+            item = self.tree_data.takeTopLevelItem(0)
+            by_path[item.data(0, Qt.UserRole + 1)] = item
+        for _kind, path in entries:
+            item = by_path.pop(path, None)
+            if item is not None:
+                self.tree_data.addTopLevelItem(item)
+        for item in by_path.values():
+            self.tree_data.addTopLevelItem(item)
+
     def setup_workbench_connections(self):
         """Set up connections specific to the workbench."""
         # Tree widget connections
@@ -1265,72 +1374,6 @@ class WorkbenchWindow(BaseWindow):
             "All Files (*)"
         )
 
-    # def load_file_content(self, file_path):
-    #     """
-    #     Load HDF5 file content and add it to the top of the data tree.
-
-    #     Args:
-    #         file_path (str): Path to the HDF5 file to load
-    #     """
-    #     try:
-    #         # Update UI to show loading state
-    #         self.update_status(f"Loading: {os.path.basename(file_path)}")
-
-    #         # Store the current file path
-    #         self.current_file_path = file_path
-
-    #         # Update file info display
-    #         self.update_file_info_display(file_path)
-
-    #         # Check if this file is already loaded to avoid duplicates
-    #         if hasattr(self, 'tree_data'):
-    #             for i in range(self.tree_data.topLevelItemCount()):
-    #                 existing_item = self.tree_data.topLevelItem(i)
-    #                 existing_path = existing_item.data(0, Qt.UserRole + 1)
-    #                 if existing_path == file_path:
-    #                     # File already loaded, just select it and return
-    #                     self.tree_data.setCurrentItem(existing_item)
-    #                     self.update_status(f"File already loaded: {os.path.basename(file_path)}")
-    #                     return
-
-    #         # Clear any existing visualizations
-    #         self.clear_2d_plot()
-    #         self.clear_3d_plot()
-
-    #         # Reset selected dataset path
-    #         self.selected_dataset_path = None
-
-    #         # Open and read HDF5 file
-    #         with h5py.File(file_path, 'r') as h5file:
-    #             # Create root item
-    #             root_item = QTreeWidgetItem([os.path.basename(file_path)])
-    #             root_item.setData(0, Qt.UserRole + 1, file_path)  # Store file path
-    #             root_item.setData(0, Qt.UserRole + 2, "file_root")  # Mark as file root
-
-    #             # Insert at the top (index 0) instead of adding to the end
-    #             self.tree_data.insertTopLevelItem(0, root_item)
-
-    #             # Recursively populate tree
-    #             self._populate_tree_recursive(h5file, root_item)
-
-    #             # Keep the root item collapsed by default
-    #             root_item.setExpanded(False)
-
-    #             # Select the newly added item
-    #             self.tree_data.setCurrentItem(root_item)
-
-    #         # Update workspace displays
-    #         if hasattr(self, 'file_status_label'):
-    #             self.file_status_label.setText(f"HDF5 file loaded: {os.path.basename(file_path)}")
-    #         if hasattr(self, 'dataset_info_text'):
-    #             self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
-
-    #         self.update_status("HDF5 File Loaded Successfully")
-
-    #     except Exception as e:
-    #         QMessageBox.critical(self, "Error", f"Failed to load HDF5 file: {str(e)}")
-    #         self.update_status("Failed to load file")
-
     def save_file_content(self, file_path):
         """
         Save analysis results.
@@ -1367,6 +1410,253 @@ class WorkbenchWindow(BaseWindow):
             self.roi_manager.save_roi(roi)
 
     def load_folder_content(self, folder_path):
+        self._load_folder_content(folder_path)
+
+    def restore_session(self):
+        self._session_restore_load_all = self._always_load_all()
+        try:
+            view = json.loads(self._qsettings().value("session_view") or "{}")
+        except (TypeError, ValueError):
+            view = {}
+        self._session_restore_active_file = view.get("file")
+        super().restore_session()
+
+    @staticmethod
+    def _dataset_metadata_renderable(shape, dtype):
+        if not np.issubdtype(dtype, np.number):
+            return False
+        if len(shape) >= 2:
+            return True
+        if len(shape) == 1 and shape[0] >= 100:
+            side = int(np.sqrt(shape[0]))
+            return side * side == shape[0]
+        return False
+
+    @classmethod
+    def _inspect_hdf5_group(cls, group):
+        nodes = []
+        for key in group.keys():
+            link = group.get(key, getlink=True)
+            if isinstance(link, h5py.SoftLink):
+                try:
+                    full_path = group[key].name
+                except Exception:
+                    full_path = None
+                nodes.append({
+                    "text": f"{key} (SoftLink -> {link.path})",
+                    "path": full_path,
+                    "renderable": False,
+                    "children": [],
+                })
+                continue
+            item = group[key]
+            if isinstance(item, h5py.Group):
+                nodes.append({
+                    "text": f"{key} (Group)",
+                    "path": item.name,
+                    "renderable": False,
+                    "children": cls._inspect_hdf5_group(item),
+                })
+            elif isinstance(item, h5py.Dataset):
+                shape = tuple(item.shape)
+                shape_text = f"{shape}" if shape else "scalar"
+                nodes.append({
+                    "text": f"{key} (Dataset: {shape_text}, {item.dtype})",
+                    "path": item.name,
+                    "renderable": cls._dataset_metadata_renderable(shape, item.dtype),
+                    "children": [],
+                })
+        return nodes
+
+    @classmethod
+    def _inspect_hdf5_file(cls, file_path):
+        with h5py.File(file_path, 'r') as h5file:
+            return cls._inspect_hdf5_group(h5file)
+
+    @staticmethod
+    def _inspect_image_shape(file_path):
+        extension = Path(file_path).suffix.lower()
+        if extension in ('.tif', '.tiff'):
+            try:
+                import tifffile
+                with tifffile.TiffFile(file_path) as image:
+                    return tuple(image.series[0].shape)
+            except Exception:
+                pass
+        try:
+            from PIL import Image
+            with Image.open(file_path) as image:
+                width, height = image.size
+                return height, width
+        except Exception:
+            return None
+
+    def prepare_session_entry(self, kind, path):
+        if kind == "file" and self._is_hdf5_path(path):
+            nodes = (
+                self._inspect_hdf5_file(path)
+                if path == self._session_restore_active_file else None)
+            return "hdf5_file", path, nodes
+        if kind != "folder":
+            return super().prepare_session_entry(kind, path)
+
+        patterns = (
+            '*.h5', '*.hdf5', '*.H5', '*.HDF5', '*.tif', '*.tiff', '*.png',
+            '*.jpg', '*.jpeg', '*.bmp', '*.TIF', '*.TIFF', '*.PNG', '*.JPG',
+            '*.JPEG', '*.BMP')
+        file_paths = []
+        for pattern in patterns:
+            file_paths.extend(glob.glob(os.path.join(path, pattern)))
+        file_paths.sort()
+        accepted = []
+        skipped = []
+        for file_path in file_paths:
+            try:
+                if self._session_restore_load_all or os.path.getsize(
+                        file_path) < app_settings.SESSION_RESTORE_MAX_BYTES:
+                    accepted.append(file_path)
+                else:
+                    skipped.append(file_path)
+            except OSError:
+                skipped.append(file_path)
+        files = []
+        for file_path in accepted:
+            if self._is_hdf5_path(file_path):
+                try:
+                    metadata = (
+                        self._inspect_hdf5_file(file_path)
+                        if file_path == self._session_restore_active_file else None)
+                    files.append(("hdf5", file_path, metadata))
+                except Exception as exc:
+                    files.append(("error", file_path, str(exc)))
+            else:
+                files.append(("image", file_path, self._inspect_image_shape(file_path)))
+        return "folder", path, files, skipped
+
+    def _add_prepared_hdf5(self, file_path, parent=None, nodes=None):
+        root_item = QTreeWidgetItem([os.path.basename(file_path)])
+        root_item.setData(0, Qt.UserRole + 1, file_path)
+        root_item.setData(0, Qt.UserRole + 2, "file_root")
+        root_item.setData(0, Qt.UserRole + 4, nodes if nodes is not None else True)
+        if parent is None:
+            self.tree_data.addTopLevelItem(root_item)
+        else:
+            parent.addChild(root_item)
+        root_item.addChild(QTreeWidgetItem(["Loading structure..."]))
+        root_item.setExpanded(False)
+
+    def _populate_prepared_hdf5_item(self, item):
+        prepared = item.data(0, Qt.UserRole + 4)
+        if prepared is None:
+            return
+        if prepared is True:
+            file_path = item.data(0, Qt.UserRole + 1)
+            try:
+                prepared = self._inspect_hdf5_file(file_path)
+            except Exception as exc:
+                item.takeChildren()
+                item.addChild(QTreeWidgetItem([f"Could not read structure: {exc}"]))
+                item.setData(0, Qt.UserRole + 4, None)
+                return
+        item.takeChildren()
+        self._add_prepared_hdf5_nodes(item, prepared)
+        item.setData(0, Qt.UserRole + 4, None)
+
+    def _find_file_root(self, file_path):
+        iterator = QTreeWidgetItemIterator(self.tree_data)
+        while iterator.value():
+            item = iterator.value()
+            if (
+                item.data(0, Qt.UserRole + 2) == "file_root"
+                and item.data(0, Qt.UserRole + 1) == file_path
+            ):
+                return item
+            iterator += 1
+        return None
+
+    def _add_prepared_hdf5_nodes(self, parent, nodes):
+        for node in nodes:
+            item = QTreeWidgetItem([node["text"]])
+            item.setData(0, 32, node["path"])
+            if node["renderable"]:
+                item.setForeground(0, QBrush(QColor('blue')))
+                item.setData(0, Qt.UserRole + 3, True)
+            parent.addChild(item)
+            self._add_prepared_hdf5_nodes(item, node["children"])
+
+    def apply_session_entry(self, prepared):
+        kind = prepared[0]
+        if kind == "hdf5_file":
+            _kind, file_path, nodes = prepared
+            self._add_prepared_hdf5(file_path, nodes=nodes)
+            return
+        if kind != "folder":
+            super().apply_session_entry(prepared)
+            return
+
+        _kind, folder_path, files, skipped = prepared
+        folder_name = os.path.basename(folder_path)
+        folder_item = QTreeWidgetItem([f"📁 {folder_name} ({len(files)} files)"])
+        folder_item.setData(0, Qt.UserRole + 1, folder_path)
+        folder_item.setData(0, Qt.UserRole + 2, "folder_section")
+        self.tree_data.insertTopLevelItem(0, folder_item)
+        loaded_count = 0
+        for file_kind, file_path, metadata in files:
+            if file_kind == "hdf5":
+                self._add_prepared_hdf5(file_path, folder_item, metadata)
+                loaded_count += 1
+            elif file_kind == "image":
+                root_item = QTreeWidgetItem([os.path.basename(file_path)])
+                root_item.setData(0, Qt.UserRole + 1, file_path)
+                root_item.setData(0, Qt.UserRole + 2, "file_root")
+                shape_text = f" (Shape: {metadata})" if metadata else ""
+                child = QTreeWidgetItem([f"image{shape_text}"])
+                child.setData(0, 32, "__image__")
+                child.setData(0, Qt.UserRole + 3, True)
+                root_item.addChild(child)
+                folder_item.addChild(root_item)
+                loaded_count += 1
+            else:
+                self.update_status(
+                    f"Failed to load {file_path}: {metadata}", level='warning')
+        folder_item.setExpanded(True)
+        self.tree_data.setCurrentItem(folder_item)
+        if skipped:
+            self.update_status(
+                f"Skipped {len(skipped)} large or unavailable file(s) from {folder_name}",
+                level='warning')
+        else:
+            self.update_status(f"Loaded {loaded_count} files from folder: {folder_name}")
+
+    def _setup_session_restore_settings(self):
+        settings_menu = QMenu("Settings", self)
+        self.menuBar.addMenu(settings_menu)
+        self.action_always_load_all = QAction("Always Load All", self)
+        self.action_always_load_all.setCheckable(True)
+        self.action_always_load_all.setStatusTip(
+            "When unchecked, automatically restore only session files smaller than 2 GB")
+        self.action_always_load_all.setChecked(self._always_load_all())
+        self.action_always_load_all.toggled.connect(self._set_always_load_all)
+        settings_menu.addAction(self.action_always_load_all)
+
+    def _always_load_all(self):
+        return self._qsettings().value(
+            self._ALWAYS_LOAD_ALL_KEY, False, type=bool)
+
+    def _set_always_load_all(self, checked):
+        settings = self._qsettings()
+        settings.setValue(self._ALWAYS_LOAD_ALL_KEY, bool(checked))
+        settings.sync()
+        mode = "all files" if checked else "files smaller than 2 GB"
+        self.update_status(f"Next session restore will load {mode}")
+
+    def should_restore_session_file(self, file_path):
+        return (
+            self._always_load_all()
+            or BaseWindow.should_restore_session_file(self, file_path)
+        )
+
+    def _load_folder_content(self, folder_path):
         """
         Load all HDF5 files from a folder and organize them under a folder section.
 
@@ -1409,7 +1699,6 @@ class WorkbenchWindow(BaseWindow):
             # Sort files for consistent ordering
             h5_files.sort()
             img_files.sort()
-
             # Create folder section header at the top
             total_files = len(h5_files) + len(img_files)
             folder_section_item = QTreeWidgetItem([f"📁 {folder_name} ({total_files} files)"])
@@ -1452,7 +1741,6 @@ class WorkbenchWindow(BaseWindow):
                 self.dataset_info_text.setPlainText("Select a dataset from the tree to view detailed information.")
 
             self.update_status(f"Loaded {loaded_count} files from folder: {folder_name}")
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load folder: {str(e)}")
             self.update_status("Failed to load folder")
@@ -1852,7 +2140,7 @@ class WorkbenchWindow(BaseWindow):
                 self.dataset_info_text.setPlainText(error_msg)
             self.update_status(error_msg)
 
-    def start_dataset_load(self):
+    def start_dataset_load(self, loaded_callback=None, failed_callback=None):
         """Create a worker thread to load dataset without blocking the UI."""
         try:
             self.update_status(f"Loading dataset: {self.selected_dataset_path}")
@@ -1862,6 +2150,10 @@ class WorkbenchWindow(BaseWindow):
             self._dataset_thread.started.connect(self._dataset_worker.run)
             self._dataset_worker.loaded.connect(self.on_dataset_loaded)
             self._dataset_worker.failed.connect(self.on_dataset_failed)
+            if loaded_callback is not None:
+                self._dataset_worker.loaded.connect(loaded_callback)
+            if failed_callback is not None:
+                self._dataset_worker.failed.connect(failed_callback)
             # Ensure thread quits after work
             self._dataset_worker.loaded.connect(self._dataset_thread.quit)
             self._dataset_worker.failed.connect(self._dataset_thread.quit)

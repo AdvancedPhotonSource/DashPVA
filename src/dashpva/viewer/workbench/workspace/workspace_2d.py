@@ -1831,7 +1831,7 @@ class Workspace2D(BaseTab):
             if not hasattr(self, 'image_view'):
                 return
 
-            lut = None
+            cmap = None
             # Try pyqtgraph ColorMap first
             try:
                 if hasattr(pg, "colormap") and hasattr(pg.colormap, "get"):
@@ -1839,30 +1839,25 @@ class Workspace2D(BaseTab):
                         cmap = pg.colormap.get(colormap_name)
                     except Exception:
                         cmap = None
-                    if cmap is not None:
-                        lut = cmap.getLookupTable(nPts=256)
             except Exception:
-                lut = None
+                cmap = None
 
             # Fallback to matplotlib if needed
-            if lut is None:
+            if cmap is None:
                 try:
                     import matplotlib.pyplot as plt
                     mpl_cmap = plt.get_cmap(colormap_name)
-                    # Build LUT as uint8 Nx3
                     xs = np.linspace(0.0, 1.0, 256, dtype=float)
-                    colors = mpl_cmap(xs, bytes=True)  # returns Nx4 uint8
-                    lut = colors[:, :3]
+                    cmap = pg.ColorMap(xs, mpl_cmap(xs, bytes=True))
                 except Exception:
-                    # Last resort: grayscale
-                    xs = (np.linspace(0, 255, 256)).astype(np.uint8)
-                    lut = np.column_stack([xs, xs, xs])
+                    xs = np.linspace(0.0, 1.0, 256, dtype=float)
+                    gray = (xs * 255).astype(np.uint8)
+                    cmap = pg.ColorMap(xs, np.column_stack([gray, gray, gray]))
 
-            # Apply the lookup table
             try:
-                self.image_view.imageItem.setLookupTable(lut)
+                self.image_view.setColorMap(cmap)
             except Exception:
-                pass
+                self.image_view.imageItem.setLookupTable(cmap.getLookupTable(nPts=256))
 
         except Exception as e:
             self.main_window.update_status(f"Error applying colormap: {e}")

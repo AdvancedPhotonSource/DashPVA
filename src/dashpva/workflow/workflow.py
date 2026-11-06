@@ -3086,7 +3086,10 @@ class Workflow(QDialog, LogMixin):
             '--processor-class', self.lineEditProcessorClassCollector.text(),
             '--report-period', str(self.spinBoxReportPeriodCollector.value()),
             '--server-queue-size', str(self.spinBoxServerQueueSizeCollector.value()),
-            '--collector-cache-size', str(self.spinBoxCollectorCacheSize.value())
+            '--collector-cache-size', str(self.spinBoxCollectorCacheSize.value()),
+            # No tty under Popen: pvapy's curses screen aborts with "setupterm:
+            # could not find terminal" unless disabled, as the other consumers do.
+            '-dc'
         ]
 
         roi_pvs = self._build_roi_channels()

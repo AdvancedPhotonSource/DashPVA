@@ -24,6 +24,7 @@ A base class for all main window interfaces in the DashPVA application.
 Provides common functionality and consistent behavior across all windows.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -32,16 +33,28 @@ import time
 from pathlib import Path
 
 from PyQt5 import uic
-from PyQt5.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QObject, QSettings, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QProgressBar,
+    QRadioButton,
     QShortcut,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
 )
 
 import dashpva.settings as app_settings
@@ -56,6 +69,31 @@ from dashpva.viewer.documentation.dialog import DocumentationDialog
 project_root = Path(__file__).parent.parent.parent
 
 _SHOW_ALL = object()  # sentinel: visible_actions not passed → show all menus
+
+
+class _SessionRestoreWorker(QObject):
+    preparing = pyqtSignal(int, str)
+    prepared = pyqtSignal(int, object)
+    failed = pyqtSignal(int, str, str)
+    finished = pyqtSignal()
+
+    def __init__(self, entries, prepare):
+        super().__init__()
+        self.entries = entries
+        self.prepare = prepare
+
+    @pyqtSlot()
+    def run(self):
+        for index, (kind, path) in enumerate(self.entries):
+            self.preparing.emit(index, path)
+            try:
+                prepared = self.prepare(kind, path)
+            except Exception as exc:
+                self.failed.emit(index, path, str(exc))
+                continue
+            self.prepared.emit(index, prepared)
+        self.finished.emit()
+
 
 class BaseWindow(QMainWindow):
     """
@@ -77,6 +115,23 @@ class BaseWindow(QMainWindow):
     #: set changed -- Qt drops a saved state whose version does not match, and a
     #: number shared across viewers would retire every other layout as well.
     dock_state_version: int = app_settings.DOCK_STATE_VERSION
+
+    #: objectNames never persisted as inputs (per class; extend in subclasses).
+    persist_input_skip: set = set()
+
+    #: Widget type -> (getter, setter) for named-input persistence. Splitters are
+    #: included, so splitter positions persist alongside the plain inputs.
+    _INPUT_ACCESSORS = (
+        (QLineEdit, lambda w: w.text(), lambda w, v: w.setText(str(v))),
+        (QComboBox, lambda w: w.currentText(), None),          # setter needs a lookup
+        (QDoubleSpinBox, lambda w: w.value(), lambda w, v: w.setValue(float(v))),
+        (QSpinBox, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
+        (QCheckBox, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
+        (QRadioButton, lambda w: w.isChecked(), lambda w, v: w.setChecked(bool(v))),
+        (QSlider, lambda w: w.value(), lambda w, v: w.setValue(int(v))),
+        (QTabWidget, lambda w: w.currentIndex(), lambda w, v: w.setCurrentIndex(int(v))),
+        (QSplitter, lambda w: w.sizes(), lambda w, v: w.setSizes([int(x) for x in v])),
+    )
 
     def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
                  visible_actions=_SHOW_ALL, size_policy: dict = None):
@@ -130,6 +185,7 @@ class BaseWindow(QMainWindow):
 
         # CPU, GPU, runtime in status bar
         self.init_perf_statusbar()
+        self._build_status_progress()
 
         if self.persist_state:
             QTimer.singleShot(0, self._restore_on_start)
@@ -486,6 +542,13 @@ class BaseWindow(QMainWindow):
         self._cpu_label = QLabel("CPU: -%")
         self._gpu_label = QLabel("GPU: N/A")
         self._runtime_label = QLabel("Runtime: 0s")
+        self._mem_label = QLabel("RAM: -")
+        self._mem_label.setObjectName("perfMemory")
+        self._mem_label.setToolTip(
+            "Memory used by this window's process, and its share of the machine's RAM. "
+            "Orange/red means frame caches are large — lower the cache size or clear caches."
+        )
+        sb.addPermanentWidget(self._mem_label)
         sb.addPermanentWidget(self._cpu_label)
         sb.addPermanentWidget(self._gpu_label)
         sb.addPermanentWidget(self._runtime_label)
@@ -495,6 +558,39 @@ class BaseWindow(QMainWindow):
         self._perf_timer.setInterval(1000)
         self._perf_timer.timeout.connect(self._update_perf_labels)
         self._perf_timer.start()
+
+    def _build_status_progress(self) -> None:
+        """Add the shared, normally hidden activity indicator to the status bar."""
+        self._status_progress = QProgressBar(self)
+        self._status_progress.setObjectName("statusProgress")
+        self._status_progress.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self._status_progress.setTextVisible(False)
+        self._status_progress_label = QLabel("", self)
+        self._status_progress_label.setObjectName("statusProgressLabel")
+        self.statusBar().addWidget(self._status_progress)
+        self.statusBar().addWidget(self._status_progress_label)
+        self.hide_status_progress()
+
+    def show_status_progress(self, message: str, maximum: int = 0, value: int = 0) -> None:
+        """Show shared status-bar progress; maximum zero selects busy mode."""
+        self._status_progress.setRange(0, max(0, maximum))
+        if maximum > 0:
+            self._status_progress.setValue(value)
+        self._status_progress_label.setText(message)
+        self._status_progress.show()
+        self._status_progress_label.show()
+
+    def update_status_progress(self, message: str, value: int) -> None:
+        """Update the shared status-bar activity text and determinate value."""
+        self._status_progress_label.setText(message)
+        self._status_progress.setValue(value)
+        QApplication.processEvents()
+
+    def hide_status_progress(self) -> None:
+        """Hide and clear the shared status-bar activity indicator."""
+        self._status_progress.hide()
+        self._status_progress_label.hide()
+        self._status_progress_label.clear()
 
     def _update_perf_labels(self):
         # CPU — /proc/stat is Linux-only; use psutil or skip on other platforms
@@ -527,9 +623,43 @@ class BaseWindow(QMainWindow):
                     gpu_text = f"GPU: {int(val)}%"
         self._gpu_label.setText(gpu_text)
 
+        self._update_memory_label()
+
         # Runtime
         elapsed = int(time.monotonic() - self._start_time)
         self._runtime_label.setText(f"Runtime: {elapsed}s")
+
+    def _update_memory_label(self):
+        """Resident memory of this process from /proc (Linux); hidden elsewhere."""
+        try:
+            rss_kb = total_kb = None
+            with open("/proc/self/status", "r") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                        break
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        total_kb = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            self._mem_label.hide()
+            return
+        if not rss_kb or not total_kb:
+            self._mem_label.hide()
+            return
+        fraction = rss_kb / total_kb
+        level = (
+            "error" if fraction >= app_settings.MEMORY_ERROR_FRACTION
+            else "warning" if fraction >= app_settings.MEMORY_WARN_FRACTION
+            else "normal"
+        )
+        self._mem_label.setText(f"RAM: {rss_kb / 1048576:.1f} GB ({fraction:.0%})")
+        if self._mem_label.property("memoryLevel") != level:
+            self._mem_label.setProperty("memoryLevel", level)
+            self._mem_label.style().unpolish(self._mem_label)
+            self._mem_label.style().polish(self._mem_label)
 
     def setup_window_properties(self, title, width=800, height=600):
         """
@@ -660,16 +790,226 @@ class BaseWindow(QMainWindow):
     # ---- Machine-local UI persistence (QSettings, per viewer type) ----
 
     def _qsettings(self) -> QSettings:
-        """QSettings scoped to this viewer type (org "DashPVA")."""
+        """QSettings scoped to this window's type (org "DashPVA")."""
         return QSettings("DashPVA", type(self).__name__)
 
+    def _persisted_inputs(self):
+        """Yield ``(name, widget, getter, setter)`` for every persistable input.
+
+        Anything without a stable objectName is skipped: Qt's internal children
+        are named ``qt_*``, and unnamed designer widgets have no key to store
+        them under. ``seen`` guards against a widget matching twice.
+        """
+        seen = set()
+        for cls, getter, setter in self._INPUT_ACCESSORS:
+            for w in self.findChildren(cls):
+                name = w.objectName()
+                if (not name or name.startswith('qt_') or name in seen
+                        or name in self.persist_input_skip):
+                    continue
+                seen.add(name)
+                yield name, w, getter, setter
+
+    def session_inputs(self) -> dict:
+        """Current value of every named input, keyed by objectName."""
+        values = {}
+        for name, w, getter, _ in self._persisted_inputs():
+            try:
+                values[name] = getter(w)
+            except Exception:
+                pass
+        return values
+
+    def apply_session_inputs(self, values: dict) -> None:
+        """Re-apply saved input values, skipping anything that no longer fits."""
+        for name, w, _, setter in self._persisted_inputs():
+            if name not in values:
+                continue
+            value = values[name]
+            try:
+                if isinstance(w, QComboBox):
+                    # Items may be populated at runtime; only restore a choice
+                    # that actually exists, never inject a new one.
+                    idx = w.findText(str(value))
+                    if idx >= 0:
+                        w.setCurrentIndex(idx)
+                    elif w.isEditable():
+                        w.setEditText(str(value))
+                elif setter is not None:
+                    setter(w, value)
+            except Exception:
+                pass
+
+    def save_inputs(self) -> None:
+        """Write the named inputs' values to this window's store."""
+        if not self.persist_state:
+            return
+        self._qsettings().setValue("inputs", json.dumps(self.session_inputs()))
+
+    def restore_inputs(self) -> None:
+        """Re-apply the input values saved by the previous session."""
+        if not self.persist_state:
+            return
+        raw = self._qsettings().value("inputs")
+        if not raw:
+            return
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+        if isinstance(values, dict) and values:
+            self.apply_session_inputs(values)
+
+    def session_paths(self) -> list:
+        """Open files/folders as ``[[kind, path], ...]``, kind "file"/"folder"."""
+        return []
+
+    def session_view(self) -> dict:
+        """What the window was showing (e.g. file, dataset, tab, frame); {} for nothing."""
+        return {}
+
+    def restore_session_view(self, view: dict) -> None:
+        """Show again what :meth:`session_view` saved, once the session's files are open."""
+
+    def load_session_folder_content(self, folder_path: str) -> None:
+        """Load a saved folder; viewers may override for per-file restore safeguards."""
+        self.load_folder_content(folder_path)
+
+    def prepare_session_entry(self, kind: str, path: str):
+        """Prepare a saved entry in the restore worker without touching Qt widgets."""
+        return kind, path
+
+    def apply_session_entry(self, prepared) -> None:
+        """Apply one worker result on the GUI thread."""
+        kind, path = prepared
+        if kind == "folder":
+            self.load_session_folder_content(path)
+        else:
+            self.load_file_content(path)
+
+    def restore_session_path_order(self, entries: list) -> None:
+        """Restore viewer-specific ordering after all saved paths have loaded."""
+
+    def should_restore_session_file(self, file_path: str) -> bool:
+        """Return whether a file is small enough to reopen automatically."""
+        return os.path.getsize(file_path) < app_settings.SESSION_RESTORE_MAX_BYTES
+
+    def restore_session(self) -> None:
+        """Reopen the files and folders that were open when this window closed.
+
+        Entries that no longer exist are dropped, and files at or above
+        ``app_settings.SESSION_RESTORE_MAX_BYTES`` are skipped so a huge dataset
+        cannot stall startup. Preparation runs in a worker thread while Qt widget
+        updates remain on the GUI thread.
+        """
+        if not self.persist_state:
+            return
+        thread = getattr(self, "_session_restore_thread", None)
+        if thread is not None and thread.isRunning():
+            return
+        raw = self._qsettings().value("session")
+        if not raw:
+            return
+        try:
+            entries = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+
+        pending, skipped = [], []
+        for entry in entries or []:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                continue
+            kind, path = entry
+            if not isinstance(path, str):
+                continue
+            if kind == "file" and not os.path.isfile(path):
+                continue
+            if kind == "folder" and not os.path.isdir(path):
+                continue
+            if kind not in {"file", "folder"}:
+                continue
+            if kind == "file":
+                try:
+                    if not self.should_restore_session_file(path):
+                        skipped.append(path)
+                        continue
+                except OSError:
+                    continue
+            pending.append((kind, path))
+
+        if skipped:
+            self.update_status(
+                f"Skipped {len(skipped)} large file(s) from the last session", 'warning')
+        if not pending:
+            return
+
+        try:
+            view = json.loads(self._qsettings().value("session_view") or "{}")
+        except (TypeError, ValueError):
+            view = {}
+
+        self._session_restore_entries = pending
+        self._session_restore_view = view if isinstance(view, dict) else {}
+        self._session_restore_applied = 0
+        self.show_status_progress("Restoring previous session...", len(pending))
+        self._session_restore_thread = QThread(self)
+        self._session_restore_worker = _SessionRestoreWorker(
+            pending, self.prepare_session_entry)
+        self._session_restore_worker.moveToThread(self._session_restore_thread)
+        self._session_restore_thread.started.connect(self._session_restore_worker.run)
+        self._session_restore_worker.preparing.connect(self._on_session_restore_preparing)
+        self._session_restore_worker.prepared.connect(self._on_session_restore_prepared)
+        self._session_restore_worker.failed.connect(self._on_session_restore_failed)
+        self._session_restore_worker.finished.connect(self._finish_session_restore)
+        self._session_restore_worker.finished.connect(self._session_restore_thread.quit)
+        self._session_restore_thread.finished.connect(self._session_restore_worker.deleteLater)
+        self._session_restore_thread.finished.connect(self._clear_session_restore_worker)
+        self._session_restore_thread.finished.connect(self._session_restore_thread.deleteLater)
+        self._session_restore_thread.start()
+
+    @pyqtSlot()
+    def _clear_session_restore_worker(self) -> None:
+        self._session_restore_worker = None
+        self._session_restore_thread = None
+
+    @pyqtSlot(int, str)
+    def _on_session_restore_preparing(self, index: int, path: str) -> None:
+        self.update_status_progress(f"Opening {os.path.basename(path)}...", index)
+
+    @pyqtSlot(int, object)
+    def _on_session_restore_prepared(self, _index: int, prepared) -> None:
+        try:
+            self.apply_session_entry(prepared)
+        except Exception as exc:
+            self.update_status(f"Could not restore session item: {exc}", 'warning')
+        self._session_restore_applied += 1
+        self._status_progress.setValue(self._session_restore_applied)
+
+    @pyqtSlot(int, str, str)
+    def _on_session_restore_failed(self, _index: int, path: str, error: str) -> None:
+        self.update_status(
+            f"Could not reopen {os.path.basename(path)}: {error}", 'warning')
+
+    @pyqtSlot()
+    def _finish_session_restore(self) -> None:
+        entries = self._session_restore_entries
+        view = self._session_restore_view
+        self._status_progress.setValue(len(entries))
+        self.hide_status_progress()
+        self.restore_session_path_order(entries)
+        if view:
+            self.restore_session_view(view)
+
     def save_layout(self) -> None:
-        """Persist window geometry and dock layout."""
+        """Persist geometry, dock layout, inputs, the open files and the current view."""
         if not self.persist_state:
             return
         s = self._qsettings()
         s.setValue("geometry", self.saveGeometry())
         s.setValue("dock_state", self.saveState(self.dock_state_version))
+        self.save_inputs()
+        s.setValue("session", json.dumps(self.session_paths()))
+        s.setValue("session_view", json.dumps(self.session_view()))
 
     def restore_geometry(self) -> None:
         """Restore window geometry, clamped to the current screen.
@@ -718,6 +1058,9 @@ class BaseWindow(QMainWindow):
         if not self.persist_state:
             return
         self.restore_layout()
+        self.restore_inputs()
+        # after the window has painted, so loading files never leaves it black
+        QTimer.singleShot(app_settings.SESSION_RESTORE_DELAY_MS, self.restore_session)
 
     def restore_layout(self) -> None:
         """Geometry and docks together, for windows whose docks already exist."""
@@ -732,6 +1075,10 @@ class BaseWindow(QMainWindow):
         """
         if not self.confirm_close(event):
             return
+        thread = getattr(self, "_session_restore_thread", None)
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait()
         self.save_layout()
         event.accept()
 
