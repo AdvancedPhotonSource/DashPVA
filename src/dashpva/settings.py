@@ -375,8 +375,6 @@ DOCK_STATE_VERSION: int = 1
 # Files at or above this size are not auto-reopened on launch; the path is kept
 # so the user can load it deliberately.
 SESSION_RESTORE_MAX_BYTES: int = 2 * 1024 ** 3
-# Restoring more than this many files/folders prompts before loading.
-SESSION_RESTORE_PROMPT_COUNT: int = 5
 # Delay before reopening the last session's files, so the window paints first (ms)
 SESSION_RESTORE_DELAY_MS: int = 300
 
