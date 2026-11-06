@@ -76,6 +76,9 @@ class BaseWindow(QMainWindow):
     #: number shared across viewers would retire every other layout as well.
     dock_state_version: int = app_settings.DOCK_STATE_VERSION
 
+    #: True drops a message this viewer already logged within the LogManager's repeat_window.
+    log_drop_repeats = False
+
     def __init__(self, ui_file_name=None, viewer_name=None, log_manager: LogManager = None,
                  visible_actions=_SHOW_ALL, size_policy: dict = None):
         """
@@ -104,7 +107,7 @@ class BaseWindow(QMainWindow):
         try:
             logger_name = self.viewer_name or f"{self.__module__}.{self.__class__.__name__}"
             if self._log_manager is not None:
-                self.logger = self._log_manager.get_logger(logger_name)
+                self.logger = self._log_manager.get_logger(logger_name, drop_repeats=self.log_drop_repeats)
             else:
                 import logging as _logging
                 self.logger = _logging.getLogger(logger_name)

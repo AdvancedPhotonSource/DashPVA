@@ -105,6 +105,22 @@ def test_canonical_profile_generates_managed_hkl_without_mutating_raw():
     assert "SAMPLE_SURFACE_NORMAL_DIRECITON" not in effective["HKL"]
 
 
+def test_explicit_spec_channels_override_generated_ioc_defaults():
+    raw = _canonical_profile()
+    raw["HKL"]["SPEC"] = {
+        "ENERGY_VALUE": "beamline:energy",
+        "UB_MATRIX_VALUE": "beamline:ub",
+    }
+
+    effective = resolve_profile_config(raw)
+
+    assert effective["HKL"]["SPEC"] == {
+        "ENERGY_VALUE": "beamline:energy",
+        "UB_MATRIX_VALUE": "beamline:ub",
+        "ENERGY_UNITS": "6idb:spec:Energy:Units",
+    }
+
+
 def test_empty_canonical_axis_lists_remove_all_legacy_managed_axes():
     raw = _canonical_profile()
     raw["HKL"]["MU"] = {"POSITION": "legacy:mu"}
