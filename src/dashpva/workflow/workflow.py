@@ -2159,8 +2159,7 @@ class Workflow(QDialog, LogMixin):
         sim_path = self.lineEditProcessorFileSim.text()
         if not os.path.isabs(sim_path):
             sim_path = os.path.join(str(app_settings.PROJECT_ROOT), sim_path)
-        # Only the flags this server's parser accepts -- argparse exits on any
-        # other, and the RSM data server takes none.
+        # Only the flags this server's parser accepts -- argparse exits on any other.
         spec = app_settings.SIM_SERVER_TYPES.get(self.comboBoxSimType.currentText(), {})
         values = self._sim_option_values()
         cmd = [sys.executable, '-u', sim_path]
