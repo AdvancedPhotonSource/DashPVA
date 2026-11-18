@@ -197,6 +197,34 @@ def test_actual_pvapy_configure_process_and_nested_user_stats(tmp_path):
     assert wire_status["frames_rejected_missing_required"] == 1
 
 
+def test_frames_carry_rsm_and_grid_reuses_the_published_q(tmp_path):
+    processor = _processor(tmp_path)
+    processor.hkl_pv_channels = {"angle", "energy"}
+    calls = []
+    q = np.array([[0.2, 0.4], [0.6, 0.8]])
+
+    def _create_rsm(_attributes, _shape):
+        calls.append(1)
+        return q, q, q
+
+    processor.create_rsm = _create_rsm
+    controller, harness = _pipeline(processor)
+
+    idle = _frame(1, energy=10.0)
+    idle["codec"] = {"name": ""}
+    controller.process(idle)
+    assert any(attribute["name"] == "RSM" for attribute in idle["attribute"])
+
+    _start(harness)
+    running = _frame(2, angle=2.0, energy=10.0)
+    running["codec"] = {"name": ""}
+    controller.process(running)
+
+    assert any(attribute["name"] == "RSM" for attribute in running["attribute"])
+    assert controller.getUserStats()[RSM_GRID_NAMESPACE]["frames_accepted"] == 1
+    assert len(calls) == 2
+
+
 def test_detector_pixels_are_reconstructed_in_ntndarray_order(tmp_path):
     processor = _processor(tmp_path)
     processor.decompress_image = lambda _frame: np.arange(6, dtype=np.float32)
