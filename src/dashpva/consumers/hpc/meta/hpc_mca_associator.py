@@ -308,7 +308,7 @@ class HpcMcaAssociator(BaseHpcProcessor):
             comp = lz4.block.compress(raw, store_size=False)
             if len(comp) < raw_len:
                 arr_u8 = np.frombuffer(comp, dtype=np.uint8)
-                pvObject['value'] = ({'ubyteValue': arr_u8.tolist()},)
+                pvObject['value'] = ({'ubyteValue': arr_u8},)
                 codec = 'lz4'
         pvObject['codec']['name'] = 'lz4' if codec == 'lz4' else ''
         pvObject['codec']['parameters'] = (
