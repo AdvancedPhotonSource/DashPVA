@@ -156,7 +156,10 @@ def resolve_profile_config(raw: Mapping[str, Any] | None) -> dict[str, Any]:
     }
     if parameters.get("ENERGY_UNITS") is not None:
         spec["ENERGY_UNITS"] = _pv(prefix, "spec:Energy:Units")
-    _managed_section(hkl, "SPEC", spec)
+    configured_spec = hkl.pop("SPEC", None)
+    if isinstance(configured_spec, Mapping):
+        spec.update(configured_spec)
+    hkl["SPEC"] = spec
 
     for name, record, aliases in (
         ("PRIMARY_BEAM_DIRECTION", "PrimaryBeamDirection", ()),

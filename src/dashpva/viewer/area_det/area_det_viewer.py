@@ -198,6 +198,7 @@ class DiffractionImageWindow(BaseWindow):
     #: area_det_* keys in __init__ -- both running would restore twice, the
     #: second from an empty key. Dropped when it migrates onto the shared store.
     persist_state = False
+    log_drop_repeats = True
 
     hkl_data_updated = pyqtSignal(bool)
     # Emitted from the ROI/Stats connection thread so update_status can run on
@@ -297,7 +298,9 @@ class DiffractionImageWindow(BaseWindow):
         self.rsm_geometry_ready = False
         self._hkl_update_timer = QTimer(self)
         self._hkl_update_timer.setSingleShot(True)
-        self._hkl_update_timer.setInterval(100)
+        self._hkl_update_timer.setInterval(
+            app_settings.PREVIEW['HKL_UPDATE_INTERVAL_MS']
+        )
         self._hkl_update_timer.timeout.connect(self.handle_hkl_data_update)
         self._rsm_geometry_cache = None
         self._rsm_geometry_cache_key = None
@@ -1943,14 +1946,19 @@ class DiffractionImageWindow(BaseWindow):
                 # Share the live HKL values with the reader so its per-frame merge
                 # saves them into the scan H5 (the associator may not attach them).
                 self.reader.hkl_values = self.hkl_data
-                missing = [n for n, v in self.hkl_data.items() if v is None]
-                got = len(self.hkl_data) - len(missing)
-                print(f"[Diffraction Image Viewer] HKL monitors started: "
-                      f"{got}/{len(self.hkl_data)} PVs returned values"
-                      + (f"; missing/None: {missing}" if missing else ""))
+                got = sum(1 for value in self.hkl_data.values() if value is not None)
+                self.logger.info(
+                    f'[HKL] {got} of {len(self.hkl_data)} PVs returned values')
+                missing = [
+                    name for name, value in self.hkl_data.items() if value is None
+                ]
+                if missing:
+                    self.logger.error(
+                        f'[HKL] monitor initialization failed: no value from '
+                        f'{len(missing)} channel(s): {", ".join(missing)}')
                 self.hkl_data_updated.emit(True)
         except Exception as e:
-            print(f"[Diffraction Image Viewer] Failed to initialize HKL monitors: {e}")
+            self.logger.error(f'[HKL] monitor initialization failed: {e or type(e).__name__}')
 
     def hkl_ca_callback(self, pvname, value, **kwargs) -> None:
         """
@@ -1975,7 +1983,8 @@ class DiffractionImageWindow(BaseWindow):
 
     def _schedule_hkl_update(self, _value=True) -> None:
         """Coalesce bursts of hkl_data_updated emits (one per HKL axis PV
-        tick) into a single handle_hkl_data_update() call at ~10 fps."""
+        tick) and cap expensive full-frame HKL recalculation at the configured
+        preview interval."""
         if not self._hkl_update_timer.isActive():
             self._hkl_update_timer.start()
 
@@ -1997,7 +2006,7 @@ class DiffractionImageWindow(BaseWindow):
                 if self.rsm_geometry_ready:
                     self.update_rsm()
             except Exception as e:
-                print(f'[DashPVA] HKL update failed (will retry next frame): {e}')
+                self.logger.error(f'[HKL] update failed: {e or type(e).__name__}')
   
                 
     def hkl_setup(self) -> None:
@@ -2008,10 +2017,11 @@ class DiffractionImageWindow(BaseWindow):
                     missing = [
                         channel
                         for channel, value in zip(channels, values)
-                        if value is None
+                        if value is None or (
+                            isinstance(value, (int, float, np.number)) and not np.isfinite(value))
                     ]
                     if missing:
-                        raise ValueError(f"Missing {description} PV data: {missing}")
+                        raise ValueError(f"Missing or non-finite {description} PV data: {missing}")
                     return values
 
                 self.sample_circle_directions = _values(
@@ -2022,14 +2032,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(self.hkl_config, 'sample', 'POSITION'),
                     'sample circle position',
                 )
-                self.sample_circle_names = _values(
-                    axis_field_channels(
-                        self.hkl_config,
-                        'sample',
-                        required=False,
-                    ),
-                    'sample circle motor name',
-                )
                 self.det_circle_directions = _values(
                     axis_field_channels(self.hkl_config, 'detector', 'DIRECTION_AXIS'),
                     'detector circle direction',
@@ -2038,15 +2040,6 @@ class DiffractionImageWindow(BaseWindow):
                     axis_field_channels(self.hkl_config, 'detector', 'POSITION'),
                     'detector circle position',
                 )
-                self.det_circle_names = _values(
-                    axis_field_channels(
-                        self.hkl_config,
-                        'detector',
-                        required=False,
-                    ),
-                    'detector circle motor name',
-                )
-
                 vector_fields = ('AXIS_NUMBER_1', 'AXIS_NUMBER_2', 'AXIS_NUMBER_3')
                 self.primary_beam_directions = _values(
                     section_field_channels(
@@ -2113,7 +2106,7 @@ class DiffractionImageWindow(BaseWindow):
                 self.rsm_geometry_ready = True
 
             except Exception as e:
-                print(f'[Diffraction Image Viewer] Error Setting up HKL: {e}')
+                self.logger.error(f'[HKL] setup failed: {e or type(e).__name__}')
                 self.rsm_geometry_ready = False
                 self._rsm_geometry_cache = None
                 self._rsm_geometry_cache_key = None
@@ -2189,7 +2182,7 @@ class DiffractionImageWindow(BaseWindow):
                     self.det_circle_positions,
                 )
             except Exception as e:
-                print(f'[Diffration Image Viewer] Error Creating RSM: {e}')
+                self.logger.error(f'[HKL] RSM calculation failed: {e or type(e).__name__}')
                 return
         else:
             return
