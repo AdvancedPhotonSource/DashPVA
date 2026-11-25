@@ -200,8 +200,7 @@ CONFIRM_UNSAVED_CHANGES_ON_CLOSE: bool = True
 # relative to PROJECT_ROOT (static -- not config-driven). The label order is the
 # dropdown order; the first entry is the default.
 #: ``options`` lists only the flags that server's parser accepts -- passing any
-#: other makes argparse exit before the server starts. The RSM data server takes
-#: none at all.
+#: other makes argparse exit before the server starts.
 SIM_SERVER_TYPES: dict[str, dict] = {
     "Area detector": {
         "path": "src/dashpva/consumers/caIOC_servers/ad_sim_server_modified.py",
@@ -210,10 +209,6 @@ SIM_SERVER_TYPES: dict[str, dict] = {
     "Probe beam": {
         "path": "src/dashpva/consumers/caIOC_servers/probe_sim_server.py",
         "options": ("cn", "nx", "ny", "fps", "dt", "rt", "rp", "shape"),
-    },
-    "RSM data": {
-        "path": "src/dashpva/consumers/caIOC_servers/sim_rsm_data.py",
-        "options": (),
     },
 }
 
@@ -324,6 +319,9 @@ SCAN_START_SCAN: Optional[bool] = None
 SCAN_STOP_SCAN: Optional[bool] = None
 SCAN_THRESHOLD: Optional[float] = None
 SCAN_MAX_CACHE_SIZE: Optional[int] = None
+# HKL3D frame cache budget: full-resolution Q is ~24 bytes/pixel, so a frame
+# count alone can exceed the machine's RAM on a large detector.
+RSM_CACHE_MAX_BYTES: int = 8 * 1024 ** 3
 BIN_COUNT: Optional[int] = None
 BIN_SIZE: Optional[int] = None
 

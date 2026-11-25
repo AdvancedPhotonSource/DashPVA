@@ -197,6 +197,7 @@ class HKLImageWindow(BaseWindow):
         self._cum_pts_raw        = None  # plain np.ndarray (MAX*ppf, 3) — ring buffer for xyz
         self._cum_int_raw        = None  # plain np.ndarray (MAX*ppf,)   — ring buffer for intensity
         self._pending_frame = None
+        self._cache_notice_shown = ""
         # Auto-scale color range only on the first plot of each live-view session
         self._first_plot = True
 
@@ -387,6 +388,10 @@ class HKLImageWindow(BaseWindow):
             self._set_connection_label(self.reader.channel.isMonitorActive())
             self.missed_frames_val.setText(f'{self.reader.frames_missed:d}')
             self.frames_received_val.setText(f'{self.reader.frames_received:d}')
+            notice = self.reader.cache_limit_notice
+            if notice and notice != self._cache_notice_shown:
+                self._cache_notice_shown = notice
+                self.update_status(notice, 'warning')
 
     def update_image_from_scan(self) -> None:
         self.update_image(is_scan_signal=True)
