@@ -36,7 +36,7 @@ from dashpva.utils.log_manager import LogMixin
 class ScanMonitorWindow(QMainWindow, LogMixin):
     signal_start_monitor = pyqtSignal()
     signal_trigger_save = pyqtSignal(bool, bool, bool, str)  # clear_caches, write_temp, write_output, output_override
-    
+
     def __init__(self, channel: str = ""):
         super(ScanMonitorWindow, self).__init__()
         uic.loadUi(ui_path("scan_view.ui"), self)
